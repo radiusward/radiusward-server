@@ -17,18 +17,21 @@ radclient acct --server 127.0.0.1:1813 --secret testing123 \
 # re-sign and send a recorded packet (fixture or hex file)
 radclient replay radius-codec/src/test/resources/fixtures/huawei/interim.fixture --server 127.0.0.1:1813 --secret s
 
-# pretty-print a packet
+# pretty-print a packet, or turn a capture into a vendor fixture (docs/testing/vendor-captures.md)
 radclient decode 0401001a00000000000000000000000000000000280600000002
+radclient decode <hex|file> --fixture [--anonymise] [--comment "Cisco ASR 1001-X, IOS-XE 17.9: interim"]
 
 # load: sessions over simulated NAS, Start/Interim/Stop, paced, retransmitting, with an ack log
 radclient load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 --nas 10 --sessions 1000 \
                --rate 1000 --duration 60s --interim 10s [--timeout 3s] [--retries 3] [--retry-other-server] \
-               [--no-stop] [--ack-log acks.csv]
+               [--no-stop] [--ack-log acks.csv] [--first-session 0]
 ```
 
 `load` prints sent/acked/failed/retransmissions and p50/p99/max latency; the ack log has one line per event
 (`session_id,status,session_time,acked,attempts,latency_ms`). It retransmits the identical datagram like a
-NAS, so it exercises the gateways' response caches and the cluster's dedup.
+NAS, so it exercises the gateways' response caches and the cluster's dedup. `radiusward admin verify-acks`
+checks an ack log against the replicated state. `--sessions` is the total; the request rate is at most
+sessions / interim. Several generators in parallel need distinct `--first-session` values.
 
 - `--attr` takes dictionary names, including vendor paths (`Cisco.AVPair=...`); integers accept `VALUE`
   names (`NAS-Port-Type=Virtual`), any type accepts `0x` hex.

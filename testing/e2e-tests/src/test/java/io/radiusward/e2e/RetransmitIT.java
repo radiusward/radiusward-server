@@ -6,7 +6,7 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.radiusward.testing.AdminClient;
+import io.radiusward.tools.admin.AdminClient;
 import org.junit.jupiter.api.Test;
 
 /** Identical retransmits hit the gateway cache; changed retransmits are recognised by the cluster. */

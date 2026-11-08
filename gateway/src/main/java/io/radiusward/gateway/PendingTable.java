@@ -19,6 +19,9 @@ final class PendingTable {
     /** Room for Proxy-State attributes per request; requests with more are dropped. */
     static final int PROXY_STATE_CAPACITY = 256;
 
+    /** Room for the encoded cluster command, for resubmission on a new leader; larger ones rely on NAS retransmits. */
+    static final int COMMAND_CAPACITY = 1024;
+
     private final int capacity;
     private final int[] generation;
     private final boolean[] inUse;
@@ -30,6 +33,8 @@ final class PendingTable {
     private final InetSocketAddress[] sender;
     private final NasClient[] nas;
     private final int[] proxyStateLength;
+    private final int[] commandLength;
+    private final UnsafeBuffer commands;
     private final UnsafeBuffer authenticators;
     private final UnsafeBuffer proxyStates;
     private final int[] free;
@@ -48,6 +53,8 @@ final class PendingTable {
         sender = new InetSocketAddress[capacity];
         nas = new NasClient[capacity];
         proxyStateLength = new int[capacity];
+        commandLength = new int[capacity];
+        commands = new UnsafeBuffer(new byte[capacity * COMMAND_CAPACITY]);
         authenticators = new UnsafeBuffer(new byte[capacity * 16]);
         proxyStates = new UnsafeBuffer(new byte[capacity * PROXY_STATE_CAPACITY]);
         free = new int[capacity];
@@ -72,6 +79,7 @@ final class PendingTable {
         identifier[slot] = id;
         withMessageAuthenticator[slot] = withMa;
         proxyStateLength[slot] = 0;
+        commandLength[slot] = 0;
         size++;
         return ((long) generation[slot] << 32) | slot;
     }
@@ -112,6 +120,29 @@ final class PendingTable {
         proxyStates.putBytes(slot * PROXY_STATE_CAPACITY + used, source, attributeOffset, attributeLength);
         proxyStateLength[slot] = used + attributeLength;
         return true;
+    }
+
+    /** Keeps the encoded command for resubmission; returns false (and keeps nothing) if it is too large. */
+    boolean command(int slot, DirectBuffer source, int offset, int length) {
+        if (length > COMMAND_CAPACITY) {
+            commandLength[slot] = 0;
+            return false;
+        }
+        commands.putBytes(slot * COMMAND_CAPACITY, source, offset, length);
+        commandLength[slot] = length;
+        return true;
+    }
+
+    int commandLength(int slot) {
+        return commandLength[slot];
+    }
+
+    int commandOffset(int slot) {
+        return slot * COMMAND_CAPACITY;
+    }
+
+    UnsafeBuffer commands() {
+        return commands;
     }
 
     boolean inUse(int slot) {

@@ -12,6 +12,7 @@ import io.radiusward.gateway.Gateway;
 import io.radiusward.gateway.GatewayConfig;
 import io.radiusward.gateway.NasClient;
 import io.radiusward.gateway.NasRegistry;
+import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
 import java.net.DatagramSocket;
 import java.nio.charset.StandardCharsets;
@@ -89,10 +90,12 @@ public final class LocalCluster implements AutoCloseable {
                 new File(baseDir, "data/node-" + id),
                 new File(baseDir, "aeron/node-" + id).getPath(),
                 Profile.SMALL,
-                Duration.ofSeconds(2),
+                Duration.ofMillis(1500),
+                Duration.ofMillis(500),
                 Duration.ofSeconds(10),
                 snapshotInterval,
                 2,
+                0,
                 AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions()),
                 Duration.ofSeconds(60));
     }
@@ -129,6 +132,7 @@ public final class LocalCluster implements AutoCloseable {
                 Duration.ofSeconds(1),
                 Duration.ofSeconds(30),
                 false,
+                Profile.SMALL.idleStrategyName(),
                 new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
                 null,
                 Duration.ZERO);

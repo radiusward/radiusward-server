@@ -32,6 +32,7 @@
         <module>cluster-node</module>
         <module>gateway</module>
         <module>tools/radclient</module>
+        <module>tools/admin-cli</module>
         <module>distribution</module>
         <module>testing/test-harness</module>
     </modules>
@@ -46,7 +47,7 @@
         <agrona.version>2.7.0</agrona.version><!-- keep aligned with the Agrona version Aeron uses -->
         <aeron.version>1.54.0</aeron.version>
         <log4j.version>2.26.1</log4j.version>
-        <disruptor.version>3.4.4</disruptor.version><!-- the version Log4j 2.26 is built and tested with -->
+        <disruptor.version>4.0.0</disruptor.version><!-- 4.x uses VarHandles: no sun.misc.Unsafe warnings on Java 25 -->
         <sbe.version>1.42.0</sbe.version><!-- build time only -->
 
         <!-- test -->
@@ -136,6 +137,11 @@
             <dependency>
                 <groupId>io.radiusward</groupId>
                 <artifactId>radclient</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>admin-cli</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -458,6 +464,18 @@
             <id>e2e</id>
             <modules>
                 <module>testing/e2e-tests</module>
+            </modules>
+        </profile>
+        <profile>
+            <!-- fault-injection tests in Linux containers (Docker; images built by scripts/linux-tests.sh):
+                 ./mvnw -Plinux verify -->
+            <id>linux</id>
+            <properties>
+                <radiusward.image>radiusward:dev</radiusward.image>
+                <radiusward.test.image>radiusward-test:dev</radiusward.test.image>
+            </properties>
+            <modules>
+                <module>testing/linux-tests</module>
             </modules>
         </profile>
         <profile>

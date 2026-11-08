@@ -26,9 +26,11 @@ public record ClusterNodeConfig(
         String aeronDir,
         Profile profile,
         Duration leaderHeartbeatTimeout,
+        Duration electionTimeout,
         Duration sessionTimeout,
         Duration snapshotInterval,
         int fileSyncLevel,
+        long diskMinFree,
         AccountingStateMachine.Settings serviceSettings,
         Duration sweepInterval) {
 
@@ -73,10 +75,14 @@ public record ClusterNodeConfig(
                 dataDir,
                 aeronDir,
                 profile,
-                config.duration("cluster.leader.heartbeat.timeout", Duration.ofSeconds(10)),
+                // 1.5 s: a crashed leader is replaced in ~2 s, below a typical 3 s NAS timeout (Phase 2 plan, P2.3)
+                config.duration("cluster.leader.heartbeat.timeout", Duration.ofMillis(1500)),
+                config.duration("cluster.election.timeout", Duration.ofMillis(500)),
                 config.duration("cluster.session.timeout", Duration.ofSeconds(10)),
                 config.duration("snapshot.interval", Duration.ofHours(1)),
                 syncLevel,
+                // below this the member reports not ready: a full disk ends in SIGBUS on a mapped file
+                config.bytes("cluster.disk.min.free", 1L << 30),
                 settings,
                 config.duration("service.sweep.interval", Duration.ofSeconds(60)));
     }

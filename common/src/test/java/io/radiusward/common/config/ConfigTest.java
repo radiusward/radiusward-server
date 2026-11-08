@@ -122,7 +122,13 @@ class ConfigTest {
             assertThat(p.idleStrategy()).isNotNull();
             assertThat(p.maxSessions()).isPositive();
             assertThat(p.pendingRequests()).isPositive();
+            assertThat(Profile.IDLE_STRATEGIES).contains(p.idleStrategyName());
         }
+        for (String name : Profile.IDLE_STRATEGIES) {
+            assertThat(Profile.idleStrategy(name)).isNotNull();
+        }
+        assertThat(Profile.idleStrategy("backoff-100us")).isNotSameAs(Profile.idleStrategy("backoff-100us"));
+        assertThatThrownBy(() -> Profile.idleStrategy("yield")).hasMessageContaining("known:");
     }
 
     @Test

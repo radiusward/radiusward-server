@@ -17,6 +17,7 @@
 | Gateway component | `UdpAgentTest`, `GatewayAllocationIT` | `./mvnw verify` | real loopback UDP with the cluster simulated through the rings; no allocation per packet |
 | Cluster (in-JVM) | `ThreeNodeClusterIT`, `LocalClusterIT` | `./mvnw verify` | real Aeron Cluster members and gateways in one JVM: commit, failover, snapshot, restart, load |
 | End-to-end | `testing/e2e-tests` | `./mvnw -Pe2e verify` | separate JVMs from `radiusward.jar`, real `kill -9`: the 8 scenarios in [failure-matrix.md](failure-matrix.md) |
+| Fault injection (Linux) | `testing/linux-tests` | `./mvnw -Plinux verify` / `scripts/linux-tests.sh`, nightly CI | shipped image + compose config in containers: power loss of all members (LazyFS, with a no-fsync negative control), partition, full disk, overload at the memory limits, failover timing, compose smoke ([ADR 0016](../adr/0016-fault-injection-tests.md)) |
 | Logging | `NonBlockingLoggingIT` | `./mvnw verify` | async, garbage-free, never blocks on a full ring |
 | Benchmarks | `testing/benchmarks`, `-Pbench` | manual | throughput baselines |
 
@@ -48,16 +49,34 @@ the diff.
 
 ### Replacing synthetic fixtures with captures
 
-All current fixtures are **synthetic** (built from vendor documentation). Before Phase 2 they should be
-replaced or complemented by real captures:
+All current fixtures are **synthetic** (built from vendor documentation). Real captures are better; see
+[vendor-captures.md](vendor-captures.md) for capturing, `radclient decode --fixture --anonymise` and the
+review checklist.
 
-1. Capture on a lab NAS: `tcpdump -i any -w acct.pcap udp port 1813`.
-2. Extract the RADIUS payload of one Accounting-Request (Wireshark → *Export Packet Bytes*, or
-   `tshark -r acct.pcap -T fields -e radius` ).
-3. **Anonymise**: replace user names, MAC addresses, IPs and session ids with documentation values
-   (RFC 5737 / RFC 3849 addresses), keeping lengths and formats.
-4. Write the attributes into a `.fixture` (`radclient decode <hex>` prints them), mark it
-   `# CAPTURED (anonymised) from <device, software version>`, and run with `-Dfixtures.update=true`.
+## Latency in containers (Phase 2)
+
+Compose stack, small profile (members 1 CPU / 1 GiB, gateways 384 MiB), Colima VM on an Apple M4 Pro
+(8 CPU, 12 GiB). `radclient load` from the tools container through both gateways, 30 s per run; latency is
+request sent → verified Accounting-Response. Idle CPU: gateway container 5 s after start, no traffic.
+
+| `archive.file.sync.level` | `gateway.idle.strategy` | 200 req/s p50 / p99 | 2,000 req/s p50 / p99 | gateway idle CPU |
+|---|---|---|---|---|
+| 2 | `sleep-1ms` | 6.5 / 45 ms | 2.7 / 58 ms | 5.2 % |
+| 2 | `backoff-100us` | 5.3 / 37 ms | **1.6 / 47 ms** | 6.0 % |
+| 1 | `sleep-1ms` | 6.3 / 40 ms | 2.2 / 52 ms | 6.1 % |
+| 1 | `backoff-100us` | 5.1 / 43 ms | 1.3 / 51 ms | 6.1 % |
+| 0 | `sleep-1ms` | 5.8 / 48 ms | 2.2 / 60 ms | 6.0 % |
+| 0 | `backoff-100us` | 4.9 / 54 ms | 1.0 / 73 ms | 6.3 % |
+
+- **Default chosen:** `backoff-100us` for small and standard (was a 1 ms sleep): lower p50 for well under one
+  percentage point of idle CPU. `busy-spin` stays limited to the large profile.
+- **fsync** costs almost nothing here because the VM's disk is backed by the macOS page cache. On real disks
+  the fsync of each batch is what bounds commit latency; measure on the target hardware (SSD with power-loss
+  protection recommended). Keep level 2 regardless: lower levels lose acknowledged events on power loss
+  (`PowerLossIT`).
+- Throughput: ~32k requests/s served with all members at one CPU each (`OverloadIT`); a single `radclient
+  load` process tops out around 8k/s, so use several (`--first-session`).
+- p99 is dominated by scheduling jitter of one-CPU containers on a shared VM, not by radiusward's code path.
 
 ## Benchmark baseline (Phase 0)
 

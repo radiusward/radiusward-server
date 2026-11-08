@@ -16,5 +16,7 @@
 | [0012](0012-session-store-dedup.md) | SessionStore layout and dedup rules | Accepted |
 | [0013](0013-operational-endpoints-logging.md) | Management endpoints; non-blocking Log4j2 async logging | Accepted |
 | [0014](0014-log-purge.md) | Log purge (spike result, Phase 3) | Accepted |
+| [0015](0015-container-image.md) | Container image and runtime layout | Accepted |
+| [0016](0016-fault-injection-tests.md) | Fault injection and durability tests in Linux containers | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

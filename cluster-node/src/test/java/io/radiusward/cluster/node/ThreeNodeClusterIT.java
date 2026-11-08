@@ -63,10 +63,12 @@ class ThreeNodeClusterIT {
                 new File(dir.toFile(), "data/node-" + id),
                 new File(dir.toFile(), "aeron-" + id).getPath(),
                 Profile.SMALL,
-                Duration.ofSeconds(2),
+                Duration.ofMillis(1500),
+                Duration.ofMillis(500),
                 Duration.ofSeconds(10),
                 Duration.ZERO,
                 2,
+                id == 2 ? Long.MAX_VALUE / 2 : 1, // node 2 never has enough disk space: reports not ready
                 AccountingStateMachine.Settings.defaults(1000),
                 Duration.ofSeconds(60));
     }
@@ -113,7 +115,14 @@ class ThreeNodeClusterIT {
         await(() -> allDigestsEqual(2), "remaining replicas converge");
         assertThat(newLeader.stats().applied()).isEqualTo(3);
         assertThat(newLeader.stateJson()).contains("\"role\":\"LEADER\"").contains("\"applied\":3");
-        assertThat(newLeader.ready().up()).isTrue();
+        for (ClusterNode n : live()) {
+            int id = n.config().nodeId();
+            assertThat(n.ready().up()).as("node %d ready", id).isEqualTo(id != 2);
+            if (id == 2) {
+                assertThat(n.ready().detail()).startsWith("low disk space");
+            }
+        }
+        assertThat(newLeader.stateJson()).contains("\"diskFreeBytes\":");
     }
 
     private void connectClient() {

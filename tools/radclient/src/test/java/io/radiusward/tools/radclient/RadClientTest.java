@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HexFormat;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -193,6 +194,45 @@ class RadClientTest {
                 dir.resolve("p.hex"), "04 01 00 1a\n" + "00".repeat(16) + "\n28 06 00000002 # status\n");
         assertThat(run("decode", file.toString())).isEqualTo(RadClient.EXIT_OK);
         assertThat(run("decode", "0401")).isEqualTo(RadClient.EXIT_BAD_RESPONSE);
+    }
+
+    @Test
+    void decodeAsAnonymisedFixture() {
+        byte[] packet = new PacketBuilder(DictionaryLoader.loadBundled(), 7)
+                .add("Acct-Status-Type", "Start")
+                .add("User-Name", "alice@corp.example")
+                .add("NAS-IP-Address", "10.1.2.3")
+                .add("Framed-IP-Address", "100.70.1.1")
+                .add("Calling-Station-Id", "AA:BB:CC:00:11:22")
+                .add("Event-Timestamp", "1780000000")
+                .add("Cisco.AVPair", "client-mac-address=aabb.cc00.1122 ip=10.1.2.3")
+                .build("s".getBytes(StandardCharsets.US_ASCII));
+        String hex = HexFormat.of().formatHex(packet);
+
+        assertThat(run("decode", hex, "--fixture", "--comment", "Cisco ASR 1000, IOS-XE 17.9: start"))
+                .as(err())
+                .isEqualTo(RadClient.EXIT_OK);
+        assertThat(out())
+                .contains("# Cisco ASR 1000, IOS-XE 17.9: start")
+                .contains("identifier: 7")
+                .contains("  Acct-Status-Type: Start")
+                .contains("  User-Name: alice@corp.example")
+                .contains("  Event-Timestamp: 1780000000")
+                .doesNotContain("\npacket:");
+
+        out.reset();
+        assertThat(run("decode", hex, "--fixture", "--anonymise")).isEqualTo(RadClient.EXIT_OK);
+        assertThat(out())
+                .contains("anonymised")
+                .contains("  User-Name: user1@example.net")
+                .contains("  NAS-IP-Address: 192.0.2.1")
+                .contains("  Framed-IP-Address: 192.0.2.2")
+                .contains("  Calling-Station-Id: 02:00:00:00:00:01")
+                // same IP, same replacement; a MAC in another notation is a different string
+                .contains("  Cisco.AVPair: client-mac-address=0200.0000.0002 ip=192.0.2.1")
+                .doesNotContain("alice")
+                .doesNotContain("10.1.2.3")
+                .doesNotContain("AA:BB");
     }
 
     @Test

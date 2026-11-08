@@ -1,0 +1,10 @@
+[faults]
+fifo_path="/tmp/faults.fifo"
+[cache]
+apply_eviction=false
+[cache.simple]
+custom_size="128mb"
+blocks_per_page=1
+[filesystem]
+log_all_operations=false
+logfile=""

@@ -80,6 +80,7 @@ class UdpAgentTest {
                 Duration.ofSeconds(1),
                 Duration.ofSeconds(30),
                 false,
+                Profile.SMALL.idleStrategyName(),
                 "/tmp/unused",
                 null,
                 delay);
@@ -393,6 +394,30 @@ class UdpAgentTest {
         assertThat(receive()).isNull();
         commit(again.get(0).correlationId(), Outcome.DUPLICATE);
         assertThat(verifiesAgainst(receive(), packet)).isTrue();
+    }
+
+    @Test
+    void newLeaderResubmitsEverythingPending() throws Exception {
+        start();
+        byte[] a = request(20, false, "nl-a", 1);
+        byte[] b = request(21, false, "nl-b", 1);
+        send(a);
+        send(b);
+        List<Command> first = commands();
+        assertThat(first).hasSize(2);
+        commit(first.get(0).correlationId(), Outcome.APPLIED); // a is done, b was lost with the old leader
+        assertThat(receive()).isNotNull();
+
+        fromCluster.write(UdpAgent.NEW_LEADER_MSG, new UnsafeBuffer(new byte[1]), 0, 1);
+        work();
+        List<Command> resubmitted = commands();
+        assertThat(resubmitted).as("only the pending one").hasSize(1);
+        assertThat(resubmitted.get(0).correlationId()).isEqualTo(first.get(1).correlationId());
+        assertThat(resubmitted.get(0).exactHi()).isEqualTo(first.get(1).exactHi());
+        assertThat(stats.get(GatewayStats.Counter.RESUBMITTED_ON_NEW_LEADER)).isEqualTo(1);
+
+        commit(resubmitted.get(0).correlationId(), Outcome.APPLIED);
+        assertThat(verifiesAgainst(receive(), b)).isTrue();
     }
 
     @Test

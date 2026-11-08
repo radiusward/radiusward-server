@@ -7,6 +7,7 @@ package io.radiusward.gateway;
 import io.aeron.cluster.client.AeronCluster;
 import io.aeron.driver.MediaDriver;
 import io.aeron.driver.ThreadingMode;
+import io.radiusward.common.Profile;
 import io.radiusward.common.logging.NonBlockingQueueFullPolicy;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.JsonWriter;
@@ -83,13 +84,16 @@ public final class Gateway implements AutoCloseable {
             AgentRunner[] runners;
             if (config.dedicatedThreads()) {
                 runners = new AgentRunner[] {
-                    new AgentRunner(config.profile().idleStrategy(), Gateway::error, null, udp),
-                    new AgentRunner(config.profile().idleStrategy(), Gateway::error, null, client)
+                    new AgentRunner(Profile.idleStrategy(config.idleStrategy()), Gateway::error, null, udp),
+                    new AgentRunner(Profile.idleStrategy(config.idleStrategy()), Gateway::error, null, client)
                 };
             } else {
                 runners = new AgentRunner[] {
                     new AgentRunner(
-                            config.profile().idleStrategy(), Gateway::error, null, new CompositeAgent(udp, client))
+                            Profile.idleStrategy(config.idleStrategy()),
+                            Gateway::error,
+                            null,
+                            new CompositeAgent(udp, client))
                 };
             }
             for (AgentRunner runner : runners) {

@@ -34,6 +34,8 @@ Status: ✅ covered · 🔜 planned (phase).
 
 ## Cluster and gateway (Phase 1–2)
 
+`linux` tests run in containers (`-Plinux`, [ADR 0016](../adr/0016-fault-injection-tests.md)).
+
 | Case | Expected behaviour | Test | Status |
 |---|---|---|---|
 | no majority (2 of 3 members down) | no ACK; after recovery the retransmit is acknowledged, applied once | e2e `AckAfterCommitIT` | ✅ |
@@ -50,10 +52,13 @@ Status: ✅ covered · 🔜 planned (phase).
 | duplicates in any position | never change the result | `DuplicatesPropertyTest` (jqwik) | ✅ |
 | pending table or ring full | packet dropped, counted; NAS retransmits | `UdpAgentTest.fullPendingTableDrops` | ✅ |
 | logging ring full | log events dropped and counted, caller never blocks | `NonBlockingLoggingIT` | ✅ |
-| loss of quorum by network partition | no ACKs while no majority; resumes after | Linux network tests | 🔜 P2 |
-| disk full / fsync failure | no ACK | Linux test | 🔜 P2 |
-| power loss of one node | acknowledged records survive | Linux test with fsync | 🔜 P2 |
-| sustained overload | bounded memory, drops instead of OOM | load test `--memory=1g` | 🔜 P2 |
+| leader cut off from both followers (iptables) | minority never acknowledges; majority elects a new leader, gateways follow; after healing the old leader rejoins as follower, digests equal, nothing acknowledged lost | linux `PartitionIT` | ✅ |
+| leader `kill -9` at ~2k requests/s in containers | writable again in ~2.2 s, 0 retransmissions | linux `FailoverTimingIT`, e2e `LeaderFailoverIT` | ✅ |
+| data directory nearly full | member reports not ready with the reason, warning logged | linux `DiskFullIT`, `ThreeNodeClusterIT` | ✅ |
+| data directory full | member stops (SIGBUS on a mapped file), majority continues, replaced member catches up, nothing acknowledged lost | linux `DiskFullIT` | ✅ |
+| power loss of all three members at once | with fsync level 2 every acknowledged event survives; level 0 loses them (negative control) | linux `PowerLossIT` (LazyFS) | ✅ |
+| sustained overload (1.5× capacity, 2M sessions) | memory bounded under the container limits, no OOM kill, gateways drop and the NAS retries, consistent afterwards | linux `OverloadIT` | ✅ |
+| shipped compose file | starts healthy, both gateways acknowledge | linux `ComposeSmokeIT` | ✅ |
 
 ## Export (Phase 3)
 

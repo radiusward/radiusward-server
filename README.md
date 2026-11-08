@@ -7,8 +7,9 @@ of a three-node cluster** (fsync on), so an acknowledged accounting record survi
 single node. Duplicate and retransmitted requests — including retries that arrive through another
 gateway after a failover — are recognised and answered without being counted twice.
 
-> **Status:** Phase 1 complete — a replicated accounting cluster (3 Aeron Cluster members, 2 gateways)
-> running locally without Docker, proven with `kill -9` failover tests. Containers arrive in Phase 2.
+> **Status:** Phase 2 complete — container image and compose stack; durability proven on Linux with
+> simulated power loss of all members, partitions, full disks and overload (2M sessions in 1 GiB per member);
+> a crashed leader is replaced in ~2.2 s without NAS retransmissions. Export to Postgres follows in Phase 3.
 > See the [roadmap](docs/plans/roadmap.md).
 
 ## Architecture in short
@@ -29,9 +30,21 @@ gateway after a failover — are recognised and answered without being counted t
 Details: [docs/architecture.md](docs/architecture.md) · what an ACK guarantees:
 [docs/accounting-contract.md](docs/accounting-contract.md) · decisions: [docs/adr](docs/adr).
 
-## Quickstart
+## Quickstart with Docker
 
-Requirements: JDK 21+ (CI also tests 25). No Docker needed.
+```bash
+./mvnw -q install -DskipTests && docker build -f deploy/docker/Dockerfile -t radiusward:dev .
+docker compose -f deploy/compose/compose.yaml up -d --wait   # 3 members + 2 gateways, fsync on
+docker compose -f deploy/compose/compose.yaml run --rm tools acct --server gateway-a:1813 \
+     --secret testing123 --status start --session-id abc123
+deploy/compose/demo-failover.sh                              # kill -9 the leader under load, nothing lost
+```
+
+Released images: `ghcr.io/radiusward/radiusward-server` ([docs/operations/docker.md](docs/operations/docker.md)).
+
+## Quickstart without Docker
+
+Requirements: JDK 21+ (CI also tests 25).
 
 ```bash
 ./mvnw verify                          # build + unit/integration tests (~1 min)
@@ -43,6 +56,7 @@ java -jar tools/radclient/target/radclient.jar acct --server 127.0.0.1:1813 --se
 
 scripts/run-local.sh demo-failover     # load through both gateways, kill -9 the leader, nothing lost
 ./mvnw -Pe2e verify                    # end-to-end tests against real processes
+scripts/linux-tests.sh                 # fault injection in containers (needs Docker)
 ```
 
 More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
@@ -63,8 +77,10 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 | [`radius-codegen`](radius-codegen/README.md) | Generates constants and the hot-attribute extractor |
 | [`radius-codec`](radius-codec/README.md) | Zero-allocation RADIUS packet codec |
 | [`tools/radclient`](tools/radclient/README.md) | Command-line accounting test client |
-| [`testing/test-harness`](testing/test-harness/README.md) | in-JVM local cluster, dev mode, admin client |
+| [`tools/admin-cli`](tools/admin-cli/README.md) | queries the replicated state; verifies acknowledgement logs |
+| [`testing/test-harness`](testing/test-harness/README.md) | in-JVM local cluster, dev mode |
 | [`testing/e2e-tests`](testing/e2e-tests/README.md) | end-to-end tests against real processes (`-Pe2e`) |
+| [`testing/linux-tests`](testing/linux-tests/README.md) | fault injection in containers: power loss, partitions, full disk, overload (`-Plinux`) |
 | [`testing/benchmarks`](testing/benchmarks/README.md) | JMH benchmarks |
 
 ## Supported vendors

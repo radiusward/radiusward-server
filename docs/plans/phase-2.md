@@ -1,6 +1,7 @@
 # Phase 2 build plan: containers, Linux durability, production defaults
 
-Status: **planned** (not started) · Created: 2026-11-08 · Builds on: [Phase 1](phase-1.md)
+Status: **done** (2026-11-08) except the first release tag and the first nightly CI run, which wait for
+the maintainer · Created: 2026-11-08 · Builds on: [Phase 1](phase-1.md) · Report: [below](#phase-2-report)
 
 ## Goal
 
@@ -197,3 +198,69 @@ P2.5 latency after P2.2 · P2.8 whenever captures arrive · P2.9 alongside
 | shorter heartbeat causes needless elections | `OverloadIT` / `DiskFullIT` run with the new defaults and count elections; fall back to 2–2.5 s |
 | Aeron in containers (hostnames, `/dev/shm` size) | explicit `shm_size`; Aeron re-resolves hostnames; restart tests cover it |
 | UDP source IP in Docker | test clients inside the network; documented for operators |
+
+## Phase 2 report
+
+Measured on an Apple M4 Pro: locally (JDK 21) and in a Colima VM (Linux 6.8, 8 CPU, 12 GiB, Docker 27).
+Container results come from that VM; absolute latencies are not bare-metal numbers.
+
+### Exit criteria
+
+| Step | Result |
+|---|---|
+| P2.1 image | ✅ `eclipse-temurin:25-jre-noble`, uid 10001, all subcommands; ~100 MB compressed (340 MB unpacked, mostly the JRE — kept for a maintained glibc base) |
+| P2.2 compose | ✅ 3 members + 2 gateways healthy, ACK from the tools container, `demo-failover.sh`, `ComposeSmokeIT` |
+| P2.3 failover | ✅ heartbeat 1.5 s + election 0.5 s + resubmit on new leader: **0 retransmissions**, worst ACK 2.2–2.3 s (local, e2e, containers) |
+| P2.4 linux tests | ✅ 7 tests green locally (`PowerLossIT` ×2 incl. control, `PartitionIT`, `DiskFullIT`, `OverloadIT`, `FailoverTimingIT`, `ComposeSmokeIT`); nightly job prepared, runs after the push |
+| P2.5 latency | ✅ table in [strategy.md](../testing/strategy.md#latency-in-containers-phase-2); gateway default now `backoff-100us` |
+| P2.6 memory | ✅ 2M sessions under overload: member ≤ 448 MiB unreclaimable of 1 GiB, gateway ≤ 321 MiB of 384 MiB, no OOM kill |
+| P2.7 CI and releases | 🟡 `ci.yml` e2e job, `linux-tests.yml`, `release.yml` written; first RC tag waits for the maintainer |
+| P2.8 vendor captures | 🟡 `radclient decode --fixture --anonymise` + [guide](../testing/vendor-captures.md); captures need real devices |
+| P2.9 docs | ✅ ADR 0015, 0016; ADR 0004/0009/0011 amended; docker.md, release.md, vendor-captures.md; configuration, failure matrix, architecture, READMEs |
+
+### Numbers
+
+| What | Result |
+|---|---|
+| failover, leader `kill -9` at 2k req/s | 59,913 events, 0 failed, 0 retransmissions, worst ACK 2.29 s; each gateway resubmits ~2,200 pending commands |
+| partition, leader cut off from followers | 34,924 events, 0 retransmissions; old leader back as follower; `lost=0` |
+| power loss of all 3 members, fsync 2 | cluster recovers, every acknowledged event present (`lost=0`) |
+| power loss, fsync 0 (control) | archive catalog zeroed, no member starts: acknowledged data gone |
+| full disk on the leader | not ready with reason below `cluster.disk.min.free`; full → member stops, new leader, replaced member catches up; 22,443 events, 0 failed, `lost=0` |
+| throughput, small profile, 1 CPU per member | ~32k req/s served (8 generators, 48k offered); gateways shed ~140k requests, the NAS side retried, 4.0M events all acknowledged |
+| latency at 2k req/s, fsync 2 | p50 1.6 ms, p99 47 ms (`backoff-100us`); 2.7 / 58 ms with the old 1 ms sleep |
+
+### Deviations from the plan
+
+| Plan | What was done | Why |
+|---|---|---|
+| LazyFS as published | Built from source with a `statfs` patch, spdlog fetched by git | Upstream reports 0 bytes free, so Aeron Archive refuses to record; GitHub archive downloads failed intermittently during the build |
+| Power loss "clears the LazyFS cache" via its fault FIFO | `docker kill` of all three members (LazyFS dies with the container) | Same effect, no FIFO protocol, and it is a real crash of the JVM as well |
+| `PowerLossIT` control "must show losses" | Control passes if acknowledged events are missing **or** the cluster cannot start | Without fsync the catalog comes back zeroed and no member starts — the stronger form of loss |
+| `OverloadIT` at ~3× sustainable rate | 48k req/s offered ≈ 1.5× the measured ~32k/s | Capacity was 4× higher than the estimate; one tools container cannot generate more. The gateways still had to shed load |
+| `AdminClient` in the test harness | New module `tools/admin-cli`, `radiusward admin state|verify-acks` | Verification runs inside the Docker network, from the image |
+| — | `radclient load --first-session`, `gateway.idle.strategy`, `cluster.disk.min.free` | Needed for parallel generators, the latency comparison and the full-disk warning |
+
+### Findings worth knowing
+
+- **Aeron Cluster's own `fileSyncLevel` was 0.** The recording log and `node-state.dat` were never fsynced;
+  after a power loss `node-state.dat` was empty and no member could start. Fixed: tied to
+  `archive.file.sync.level`. Found only because `PowerLossIT` simulates the page cache being lost.
+- **A full disk kills the member with SIGBUS** (write to a memory-mapped file on a full filesystem). Safe
+  for durability, but silent — hence the readiness check.
+- Docker DNS for a stopped container blocks Aeron's re-resolution for seconds: static addresses in compose
+  (election 5.4 s → 0.6 s).
+- On macOS, Docker rewrites UDP source addresses through published ports; test clients run in the network.
+- Disruptor 3.4 printed `sun.misc.Unsafe` warnings on Java 25; upgraded to 4.0.0.
+- fsync is nearly free in the Colima VM (host page cache), so the fsync cost on real disks is still unmeasured.
+- One run of `SnapshotRestoreIT` (macOS, full build) hit `DriverTimeoutException` while restarting two
+  members; it passed in isolation three times and in every other run. Watch it in CI.
+
+### Open items for Phase 3
+
+- Push, then let the first nightly `linux-tests` run on GitHub; tag the first RC (`v0.2.0-rc.1`) when the
+  maintainer decides.
+- Replace synthetic fixtures with anonymised captures (needs devices).
+- Measure fsync-bound commit latency on real SSDs; the gateway at 384 MiB has ~16 % headroom.
+- Phase 3: exporter tailing the log, sink SPI, Postgres sink, lag policy, Prometheus metrics (`/metrics`
+  from the stats counters), log purge as designed in ADR 0014.

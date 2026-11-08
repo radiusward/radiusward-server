@@ -66,6 +66,20 @@ class ResponseCacheAndPendingTest {
     }
 
     @Test
+    void storedCommands() {
+        PendingTable table = new PendingTable(2);
+        int slot = (int) table.allocate(1, 1, null, null, 1, false);
+        UnsafeBuffer command = new UnsafeBuffer(new byte[2048]);
+        command.putByte(0, (byte) 42);
+        assertThat(table.command(slot, command, 0, 100)).isTrue();
+        assertThat(table.commandLength(slot)).isEqualTo(100);
+        assertThat(table.commands().getByte(table.commandOffset(slot))).isEqualTo((byte) 42);
+        assertThat(table.command(slot, command, 0, PendingTable.COMMAND_CAPACITY + 1))
+                .isFalse();
+        assertThat(table.commandLength(slot)).as("too large: nothing kept").isZero();
+    }
+
+    @Test
     void proxyStateCapacity() {
         PendingTable table = new PendingTable(1);
         int slot = (int) table.allocate(1, 1, null, null, 1, false);

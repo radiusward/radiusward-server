@@ -7,7 +7,7 @@ package io.radiusward.e2e;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.protocol.SessionStatus;
-import io.radiusward.testing.AdminClient;
+import io.radiusward.tools.admin.AdminClient;
 import io.radiusward.tools.radclient.LoadGenerator;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
@@ -59,6 +59,11 @@ class LeaderFailoverIT extends E2eTestBase {
         assertThat(result[0].failed())
                 .as("every event acknowledged despite the failover")
                 .isZero();
+        // Phase 2 target: the failover finishes below the 3 s client timeout, so nothing is retransmitted
+        assertThat(result[0].retransmissions())
+                .as("requests needing a second attempt")
+                .isZero();
+        assertThat(result[0].maxMicros()).as("worst ACK latency").isLessThan(3_000_000);
         cluster.awaitConverged();
 
         // the last acknowledged event of every session must be what the cluster holds

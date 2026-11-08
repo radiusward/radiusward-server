@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.testing;
+package io.radiusward.tools.admin;
 
 import io.aeron.cluster.client.AeronCluster;
 import io.aeron.cluster.client.EgressListener;
@@ -27,6 +27,9 @@ import org.agrona.concurrent.UnsafeBuffer;
 /**
  * Queries the replicated state through the cluster log ({@code StateQuery}, {@code SessionQuery}), so answers
  * reflect everything committed before the query. For tests and tooling; not used by the gateways.
+ *
+ * <p>The egress host must be an address of this machine that the cluster members can reach: {@code localhost}
+ * when they run on the same host, the container IP inside a Docker network.
  */
 public final class AdminClient implements AutoCloseable, EgressListener {
 
@@ -56,6 +59,10 @@ public final class AdminClient implements AutoCloseable, EgressListener {
     private long replyCorrelation;
 
     public AdminClient(List<String> members, int basePort) {
+        this(members, basePort, "localhost");
+    }
+
+    public AdminClient(List<String> members, int basePort, String egressHost) {
         try {
             File dir = Files.createTempDirectory("radiusward-admin").toFile();
             driver = MediaDriver.launchEmbedded(new MediaDriver.Context()
@@ -82,7 +89,7 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 .aeronDirectoryName(driver.aeronDirectoryName())
                 .ingressChannel("aeron:udp?term-length=1m")
                 .ingressEndpoints(endpoints.toString())
-                .egressChannel("aeron:udp?endpoint=localhost:0")
+                .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")
                 .messageTimeoutNs(Duration.ofSeconds(20).toNanos())
                 .egressListener(this));
     }

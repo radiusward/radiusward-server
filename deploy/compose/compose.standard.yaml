@@ -1,0 +1,9 @@
+# Standard profile: docker compose -f compose.yaml -f compose.standard.yaml up -d
+x-env: &env
+  RADIUSWARD_PROFILE: standard
+services:
+  node-0: {mem_limit: 2g, cpus: 2.0, shm_size: 1g, environment: {<<: *env, RADIUSWARD_CLUSTER_NODE_ID: "0"}}
+  node-1: {mem_limit: 2g, cpus: 2.0, shm_size: 1g, environment: {<<: *env, RADIUSWARD_CLUSTER_NODE_ID: "1"}}
+  node-2: {mem_limit: 2g, cpus: 2.0, shm_size: 1g, environment: {<<: *env, RADIUSWARD_CLUSTER_NODE_ID: "2"}}
+  gateway-a: {mem_limit: 768m, environment: {<<: *env}}
+  gateway-b: {mem_limit: 768m, environment: {<<: *env}}

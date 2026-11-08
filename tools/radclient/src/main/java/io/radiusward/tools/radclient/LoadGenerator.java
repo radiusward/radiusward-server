@@ -53,7 +53,39 @@ public final class LoadGenerator {
             int retries,
             boolean retryOtherServer,
             boolean stopAtEnd,
-            Path ackLog) {}
+            Path ackLog,
+            int firstSession) {
+
+        /** Sessions numbered from 0. */
+        public Settings(
+                List<InetSocketAddress> servers,
+                byte[] secret,
+                int nas,
+                int sessions,
+                int rate,
+                Duration duration,
+                Duration interim,
+                Duration timeout,
+                int retries,
+                boolean retryOtherServer,
+                boolean stopAtEnd,
+                Path ackLog) {
+            this(
+                    servers,
+                    secret,
+                    nas,
+                    sessions,
+                    rate,
+                    duration,
+                    interim,
+                    timeout,
+                    retries,
+                    retryOtherServer,
+                    stopAtEnd,
+                    ackLog,
+                    0);
+        }
+    }
 
     public record Result(
             long sent,
@@ -295,8 +327,9 @@ public final class LoadGenerator {
 
     private Request newRequest(Due d) {
         Request r = new Request();
-        int nasIndex = d.session() % settings.nas();
-        r.sessionId = "nas" + nasIndex + "-" + d.session();
+        int session = settings.firstSession() + d.session();
+        int nasIndex = session % settings.nas();
+        r.sessionId = "nas" + nasIndex + "-" + session;
         r.status = d.status();
         r.sessionTime = d.sessionTime();
         return r;

@@ -57,7 +57,7 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
  └───────────┘   ExportCheckpoint(sinkId, position) → cluster
 ```
 
-### Gateway (implemented in Phase 1) — built on `radius-codec`
+### Gateway (implemented in Phase 1, failover hardened in Phase 2) — built on `radius-codec`
 
 - **UdpAgent** owns a NIO `DatagramChannel`: receive, validate (`RadiusPacket.wrap`), look up the NAS by
   source IP, verify the Request Authenticator (and Message-Authenticator if present), extract the hot
@@ -68,14 +68,18 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
   the cluster backpressures or elects a leader, matches `AccountingCommitted` to pending requests.
 - Hand-off between them: two Agrona `OneToOneRingBuffer`s carrying SBE bytes (zero-copy). Full ring →
   drop (the NAS retries); never answer without a commit. A retransmit of a request pending for over 1 s
-  is resubmitted, which recovers commands lost with a failed leader ([ADR 0011](adr/0011-gateway-pipeline.md)).
+  is resubmitted, and when a new leader is elected every pending command is resubmitted at once, which
+  recovers commands lost with a failed leader before the NAS times out ([ADR 0011](adr/0011-gateway-pipeline.md)).
 - Scale-out: more gateway pods, or `SO_REUSEPORT` with several UdpAgents per pod.
 - Everything per packet is allocation-free (`HotPathAllocationIT`).
 
 ### Cluster (implemented in Phase 1)
 
 - Three nodes, majority commit = leader + one follower; survives one node down.
-- `aeron.archive.file.sync.level=2` and catalog sync level 2: committed means fsynced on a majority.
+- `archive.file.sync.level=2` for the archive, its catalog and the cluster's recording log and node state:
+  committed means fsynced on a majority. Proven by simulated power loss of all members (`PowerLossIT`).
+- Failure detection: leader heartbeat timeout 1.5 s, election timeout 0.5 s → a crashed leader is replaced
+  in ~2.2 s, below a typical 3 s NAS timeout.
 - **AccountingService** (deterministic, cluster time only):
   - **per-session dedup**: last applied `(status type, session time, counters)` per logical session;
     an event that is not newer is a duplicate and gets the original outcome;
@@ -106,7 +110,8 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
 | Cluster service | session table, dedup state | I/O, wall clock, randomness |
 | Exporter sink threads | one sink each | write to the cluster except checkpoints |
 
-Idle strategies are backoff/sleeping in the small profile (≤1 CPU), busy-spin only in the latency profile.
+Idle strategies: backoff parking at most 100 µs in the small and standard profiles (gateway; Aeron's backoff
+in the members), busy-spin only in the large profile ([measurements](testing/strategy.md#latency-in-containers-phase-2)).
 
 ## Sizing (reference load)
 
@@ -120,25 +125,30 @@ Idle strategies are backoff/sleeping in the small profile (≤1 CPU), busy-spin 
 | log growth per node | ~3 GB/h | ~15 GB/h |
 
 Codec cost measured in Phase 0: ~2.2 M packets/s per core for the full receive path
-([testing/strategy.md](testing/strategy.md)). Measured locally in Phase 1 (M4 Pro, small profile, fsync on):
-ACK latency p50 ~20 ms, p99 ~45 ms; `kill -9` of the leader under load → ~6 s outage, every event
-acknowledged after retransmission.
+([testing/strategy.md](testing/strategy.md)). Measured in Phase 2 in containers (small profile, one CPU per
+member, fsync on, Colima VM on an M4 Pro): ~32k requests/s served; ACK latency p50 ~1.6 ms, p99 ~47 ms at
+2k/s; `kill -9` of the leader at 2k/s → worst ACK 2.3 s, **no retransmissions**; 2M sessions in ≤ 448 MiB per
+member.
 
 ## Memory profiles (ADR 0004)
 
 | Profile | Cluster node | Gateway | Aeron terms | Threading |
 |---|---|---|---|---|
-| small (default) | 1 GiB (heap ~384 MB) | 256–384 MiB | 1–4 MB | SHARED, backoff idle |
-| standard | 2 GiB | 512 MiB | 8 MB | SHARED_NETWORK |
+| small (default) | 1 GiB (heap 384 MB; measured ≤ 448 MiB at 2M sessions) | 384 MiB (measured ≤ 321 MiB) | 2 MB | SHARED, backoff idle |
+| standard | 2 GiB | 768 MiB | 8 MB | SHARED_NETWORK |
 | large | 4 GiB+ | 1 GiB | 16–64 MB | DEDICATED, busy-spin |
 
-## Deployment (planned)
+## Deployment
 
-- **Phase 0–1:** local only, no Docker: in-JVM test harness, single-process dev mode, `scripts/run-local.sh`.
-- **Phase 2:** one container image with entrypoints `cluster-node | gateway | exporter`, docker-compose.
+- **Phase 0–1 (done):** local, no Docker: in-JVM test harness, single-process dev mode, `scripts/run-local.sh`.
+- **Phase 2 (done):** one container image `ghcr.io/radiusward/radiusward-server` with subcommands
+  `cluster-node | gateway | radclient | admin | probe`, non-root, multi-arch; compose stack with static
+  addresses ([ADR 0015](adr/0015-container-image.md), [docker.md](operations/docker.md)); fault-injection
+  tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)). The exporter joins the image in Phase 3.
 - **Phase 4:** Helm chart — cluster as a StatefulSet with a headless Service and one PVC (~100 GB) per
   node, `/dev/shm` as `emptyDir: Memory`, anti-affinity, `PodDisruptionBudget maxUnavailable: 1`;
   gateways behind a UDP LoadBalancer with `externalTrafficPolicy: Local` so the NAS source IP is kept.
   systemd units for bare metal.
 - Inter-node traffic is always `aeron:udp`; shared memory is only used inside a pod.
-- Images built by GitHub Actions on Java 25, published to GHCR.
+- Images built by GitHub Actions on Java 25 (amd64 + arm64, SBOM, provenance), published to GHCR
+  ([release.md](operations/release.md)).

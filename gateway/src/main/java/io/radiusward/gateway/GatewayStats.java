@@ -20,6 +20,7 @@ public final class GatewayStats {
         CACHE_HITS,
         RETRANSMIT_IN_FLIGHT,
         RESUBMITTED,
+        RESUBMITTED_ON_NEW_LEADER,
         PENDING_FULL,
         RING_FULL,
         TOO_MANY_PROXY_STATES,

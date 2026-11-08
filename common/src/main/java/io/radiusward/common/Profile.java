@@ -4,6 +4,7 @@
  */
 package io.radiusward.common;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.agrona.concurrent.BackoffIdleStrategy;
 import org.agrona.concurrent.BusySpinIdleStrategy;
@@ -71,13 +72,36 @@ public enum Profile {
         return pendingRequests;
     }
 
-    /** Idle strategy for agents: low CPU in small/standard, busy-spin only in large. */
-    public IdleStrategy idleStrategy() {
+    /** Idle strategies by name, for {@code gateway.idle.strategy}. */
+    public static final List<String> IDLE_STRATEGIES =
+            List.of("sleep-1ms", "backoff-1ms", "backoff-100us", "busy-spin");
+
+    /**
+     * Name of the default idle strategy: backoff parking at most 100 µs in small/standard (measured in Phase 2:
+     * p50 2.7 → 1.6 ms at 2k requests/s against a 1 ms sleep, < 1 % more idle CPU), busy-spin only in large.
+     */
+    public String idleStrategyName() {
         return switch (this) {
-            case SMALL -> new SleepingMillisIdleStrategy(1);
-            case STANDARD ->
+            case SMALL, STANDARD -> "backoff-100us";
+            case LARGE -> "busy-spin";
+        };
+    }
+
+    public IdleStrategy idleStrategy() {
+        return idleStrategy(idleStrategyName());
+    }
+
+    /** A new instance (idle strategies keep state, so every agent runner needs its own). */
+    public static IdleStrategy idleStrategy(String name) {
+        return switch (name) {
+            case "sleep-1ms" -> new SleepingMillisIdleStrategy(1);
+            case "backoff-1ms" ->
                 new BackoffIdleStrategy(10, 20, TimeUnit.MICROSECONDS.toNanos(1), TimeUnit.MILLISECONDS.toNanos(1));
-            case LARGE -> new BusySpinIdleStrategy();
+            case "backoff-100us" ->
+                new BackoffIdleStrategy(10, 20, TimeUnit.MICROSECONDS.toNanos(1), TimeUnit.MICROSECONDS.toNanos(100));
+            case "busy-spin" -> new BusySpinIdleStrategy();
+            default ->
+                throw new IllegalArgumentException("unknown idle strategy " + name + "; known: " + IDLE_STRATEGIES);
         };
     }
 

@@ -1,6 +1,6 @@
 # ADR 0004: 1 GiB default memory profile
 
-Status: Accepted (2026-11-07)
+Status: Accepted (2026-11-07). Amended in Phase 2 with measurements.
 
 ## Context
 The product should run in small containers. Aeron and JVM defaults (64 MB term buffers, unbounded
@@ -26,5 +26,10 @@ primitive collections, streamed snapshots, explicit JVM flags (`-Xmx`, `MaxMetas
 ## Consequences
 - Small profile handles ~1–2M concurrent sessions per node; the reference load (500k) uses ~40 MB of
   session state.
-- CI will run the 3-node cluster with `--memory=1g` under load and snapshot (Phase 2).
+- Measured in Phase 2 (`OverloadIT`: containers limited to 1 GiB / 384 MiB, 2M sessions, 48k requests/s
+  offered for 2 min, ~32k/s served): members at most **448 MiB** heap + native + `/dev/shm` (the rest of the
+  1 GiB is page cache, reclaimable), gateways at most **321 MiB** of 384 MiB; no OOM kill. The small profile
+  holds its 2M-session maximum within 1 GiB.
+- The gateway has the least headroom (~16 % at 384 MiB): response cache (~340k entries at that rate) and
+  1 KiB per pending slot for stored commands (ADR 0011).
 - Profiles appear as Helm values and compose files.

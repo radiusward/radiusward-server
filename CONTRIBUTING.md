@@ -4,13 +4,15 @@ Thanks for helping. This guide is the single source of truth for how the project
 rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
 [docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
 
-Current state: **Phase 1** (replicated accounting, local) is done; Phase 2 (containers, Linux durability)
-is next — see the [roadmap](docs/plans/roadmap.md).
+Current state: **Phase 2** (container image, compose, Linux fault-injection tests) is done; Phase 3
+(export to Postgres) is next — see the [roadmap](docs/plans/roadmap.md).
 
 ## Setup
 
 - JDK 21 (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS). CI also runs Java 25.
-- No Docker needed in Phase 0–1. Details: [docs/operations/local-dev.md](docs/operations/local-dev.md).
+- No Docker needed for `./mvnw verify` and `-Pe2e`. Docker (Linux, or Colima on macOS) only for the image,
+  compose and `-Plinux`. Details: [docs/operations/local-dev.md](docs/operations/local-dev.md),
+  [docs/operations/docker.md](docs/operations/docker.md).
 - Every JVM that loads Agrona/Aeron needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`
   (already set for tests via `${radiusward.jvm.args}` and in the `Add-Exports` manifest of runnable jars;
   add it to IDE run configurations).
@@ -27,6 +29,9 @@ is next — see the [roadmap](docs/plans/roadmap.md).
 ./mvnw -Pe2e verify                             # end-to-end tests against separate radiusward processes
 ./mvnw -Pinterop verify                         # also runs against a local FreeRADIUS (brew install freeradius-server)
 scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 gateways (docs/operations/local-cluster.md)
+docker build -f deploy/docker/Dockerfile -t radiusward:dev .   # image (after ./mvnw install -DskipTests)
+docker compose -f deploy/compose/compose.yaml up -d --wait     # compose stack (docs/operations/docker.md)
+scripts/linux-tests.sh [TestClass]              # fault injection in containers (-Plinux, ~15 min)
 java -jar tools/radclient/target/radclient.jar --help
 scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
 ```
@@ -40,14 +45,16 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `cluster-service` | `AccountingService` + deterministic `AccountingStateMachine`, `SessionStore`, snapshots |
 | `cluster-node` | Launches a member (media driver, archive, consensus module, service) |
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
-| `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `cluster-tool` |
-| `testing/test-harness` | `LocalCluster`, `AdminClient`, `DevCluster` |
+| `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool` |
+| `testing/test-harness` | `LocalCluster`, `DevCluster` |
 | `testing/e2e-tests` | Process-based end-to-end tests (`-Pe2e`) |
+| `testing/linux-tests` | Fault injection in containers with Testcontainers and LazyFS (`-Plinux`) |
 | `radius-dictionary` | Dictionary model + FreeRADIUS-format parser (v3 + v4 subset), strict/lenient modes, `dictionary.d` overrides |
 | `radius-dictionary-freeradius` | Bundled FreeRADIUS dictionaries (CC BY 4.0, unmodified, pinned commit) — resources only |
 | `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder; generated `io.radiusward.radius.codec.attributes` |
-| `tools/radclient` | CLI test client (`acct`, `replay`, `decode`, `load`), executable jar |
+| `tools/radclient` | CLI test client (`acct`, `replay`, `decode [--fixture]`, `load`), executable jar |
+| `tools/admin-cli` | `AdminClient`; `admin state`, `admin verify-acks` (acknowledged events vs replicated state) |
 | `testing/benchmarks` | JMH, only with `-Pbench` |
 
 ## Project rules
@@ -64,7 +71,8 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
   The Maven enforcer bans both. Discuss any new runtime dependency before adding it.
 - **Logging (Phase 1+):** Log4j2 async loggers; never log per packet on the hot path, never block the
   logging thread; parameterized, garbage-free calls only.
-- **No Docker in Phase 0–1.** Everything runs locally; Docker/compose arrive in Phase 2.
+- **Docker stays optional for development:** `./mvnw verify` and `-Pe2e` never need it; only the image,
+  compose and `-Plinux` do. Container and durability changes come with a `linux-tests` scenario.
 - **Configuration** goes through `Config` (properties + `RADIUSWARD_*` env); document new keys in
   `docs/configuration.md`. `debug.*` keys only work with `debug.enabled=true`.
 - **Gateways never block:** full rings or tables drop the packet (the NAS retransmits); never answer

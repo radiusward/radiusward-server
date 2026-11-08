@@ -1,0 +1,8 @@
+# only what the Dockerfile copies
+*
+!distribution/target/radiusward.jar
+!deploy/docker/entrypoint.sh
+!LICENSE
+!NOTICE
+!THIRD-PARTY-LICENSES.md
+!testing/linux-tests/docker/

@@ -6,7 +6,7 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.radiusward.testing.AdminClient;
+import io.radiusward.tools.admin.AdminClient;
 import org.junit.jupiter.api.Test;
 
 /** Accounting-On from a rebooted NAS closes its open sessions. */

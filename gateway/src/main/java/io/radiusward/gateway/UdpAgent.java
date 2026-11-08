@@ -51,6 +51,8 @@ final class UdpAgent implements Agent {
     static final int COMMAND_MSG = 1;
     static final int COMMITTED_MSG = 2;
     static final int REJECTED_MSG = 3;
+    /** From the cluster client: a new leader (or a new session); resubmit everything pending. */
+    static final int NEW_LEADER_MSG = 4;
 
     private static final int RECEIVE_BATCH = 64;
     private static final int PROXY_STATE = 33;
@@ -297,6 +299,7 @@ final class UdpAgent implements Agent {
         commandEncoder.putRawAttributes(
                 received, packet.attributesOffset(), packet.length() - RadiusPacket.HEADER_LENGTH);
         int commandLength = MessageHeaderEncoder.ENCODED_LENGTH + commandEncoder.encodedLength();
+        pending.command(slot, commandBuffer, 0, commandLength);
         if (!toCluster.write(COMMAND_MSG, commandBuffer, 0, commandLength)) {
             pending.release(slot);
             stats.increment(Counter.RING_FULL);
@@ -335,6 +338,10 @@ final class UdpAgent implements Agent {
     // ---- commit path -------------------------------------------------------------------------------
 
     private void onNotification(int msgTypeId, DirectBuffer buffer, int index, int length) {
+        if (msgTypeId == NEW_LEADER_MSG) {
+            resubmitPending();
+            return;
+        }
         headerDecoder.wrap(buffer, index);
         if (msgTypeId == COMMITTED_MSG) {
             committedDecoder.wrapAndApplyHeader(buffer, index, headerDecoder);
@@ -362,6 +369,29 @@ final class UdpAgent implements Agent {
             if (slot >= 0) {
                 cache.remove(pending.cacheKey(slot)); // stay silent; let the NAS retry later
                 pending.release(slot);
+            }
+        }
+    }
+
+    /**
+     * Commands offered to a leader that died before committing are gone; resubmit every pending one right away
+     * instead of waiting for NAS retransmissions (Phase 2, P2.3). Duplicates of commands the old leader did
+     * commit are answered as DUPLICATE by the cluster.
+     */
+    private void resubmitPending() {
+        for (int slot = 0, n = pending.capacity(); slot < n; slot++) {
+            if (!pending.inUse(slot) || pending.readyAt(slot) != 0) {
+                continue; // free, or already committed and only waiting for the debug delay
+            }
+            int length = pending.commandLength(slot);
+            if (length == 0) {
+                continue; // too large to keep; the NAS retransmit will be resubmitted (ADR 0011)
+            }
+            if (toCluster.write(COMMAND_MSG, pending.commands(), pending.commandOffset(slot), length)) {
+                stats.increment(Counter.RESUBMITTED_ON_NEW_LEADER);
+            } else {
+                stats.increment(Counter.RING_FULL);
+                return;
             }
         }
     }

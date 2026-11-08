@@ -1,6 +1,6 @@
 # ADR 0009: Local-first development, no Docker in Phase 0–1
 
-Status: Accepted (2026-11-07)
+Status: Accepted (2026-11-07). Phase 2 added Docker as planned (ADR 0015, ADR 0016).
 
 ## Context
 The concept (codec, cluster, failover, dedup) should be provable quickly and debuggable in the IDE.
@@ -16,5 +16,7 @@ tests for real fsync durability; Testcontainers for Postgres in Phase 3.
 - Fast feedback; no container tooling needed to contribute.
 - macOS caveats: `fsync` is not power-loss durable (needs `F_FULLFSYNC`), small default UDP socket
   buffers (`kern.ipc.maxsockbuf`), no `/dev/shm` (Aeron uses the temp directory). Durability claims are
-  verified on Linux in Phase 2.
+  verified on Linux in Phase 2 (done: `PowerLossIT` with LazyFS, ADR 0016).
+- From Phase 2 on, contributors still need no Docker for `./mvnw verify` and `-Pe2e`; only `-Plinux` and
+  the compose stack need it.
 - The interop test against FreeRADIUS uses a Homebrew install, also without Docker.

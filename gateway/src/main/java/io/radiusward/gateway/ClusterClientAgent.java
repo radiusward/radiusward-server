@@ -44,6 +44,7 @@ final class ClusterClientAgent implements Agent, EgressListener {
     private final BufferClaim claim = new BufferClaim();
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final ControlledMessageHandler commandHandler = this::onCommand;
+    private final org.agrona.concurrent.UnsafeBuffer signal = new org.agrona.concurrent.UnsafeBuffer(new byte[1]);
 
     private AeronCluster cluster;
     private AeronCluster.AsyncConnect connecting;
@@ -97,6 +98,7 @@ final class ClusterClientAgent implements Agent, EgressListener {
                 lastSendNs = now;
                 stats.increment(Counter.CLUSTER_CONNECTS);
                 stats.connected(true);
+                notifyNewLeader(); // after a lost session, commands offered to the old one may be gone
                 LOG.info(
                         "connected to cluster, session {}, leader {}",
                         connected.clusterSessionId(),
@@ -144,7 +146,14 @@ final class ClusterClientAgent implements Agent, EgressListener {
 
     @Override
     public void onNewLeader(long clusterSessionId, long leadershipTermId, int leaderMemberId, String ingressEndpoints) {
-        LOG.info("new cluster leader {} (term {})", leaderMemberId, leadershipTermId);
+        LOG.info("new cluster leader {} (term {}); resubmitting pending requests", leaderMemberId, leadershipTermId);
+        notifyNewLeader();
+    }
+
+    private void notifyNewLeader() {
+        if (!fromCluster.write(UdpAgent.NEW_LEADER_MSG, signal, 0, 1)) {
+            stats.increment(Counter.RING_FULL); // NAS retransmits remain the fallback
+        }
     }
 
     boolean connected() {

@@ -29,6 +29,7 @@ public record GatewayConfig(
         Duration resubmitAfter,
         Duration responseCacheTtl,
         boolean dedicatedThreads,
+        String idleStrategy,
         String aeronDir,
         Path dictionaryDir,
         Duration debugResponseDelay) {
@@ -47,6 +48,11 @@ public record GatewayConfig(
         if (!threading.equals("shared") && !threading.equals("dedicated")) {
             throw new ConfigException("gateway.threading: expected shared or dedicated, got \"" + threading + "\"");
         }
+        String idle = config.string("gateway.idle.strategy", profile.idleStrategyName());
+        if (!Profile.IDLE_STRATEGIES.contains(idle)) {
+            throw new ConfigException(
+                    "gateway.idle.strategy: expected one of " + Profile.IDLE_STRATEGIES + ", got \"" + idle + "\"");
+        }
         Path dictionaryDir = Path.of(config.string("dictionary.dir", "/etc/radiusward/dictionary.d"));
         return new GatewayConfig(
                 id,
@@ -62,6 +68,7 @@ public record GatewayConfig(
                 config.duration("gateway.retransmit.resubmit.after", Duration.ofSeconds(1)),
                 config.duration("gateway.response.cache.ttl", Duration.ofSeconds(30)),
                 threading.equals("dedicated"),
+                idle,
                 config.string(
                         "gateway.aeron.dir",
                         new File(

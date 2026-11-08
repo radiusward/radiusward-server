@@ -4,8 +4,8 @@
  */
 package io.radiusward.e2e;
 
-import io.radiusward.testing.AdminClient;
 import io.radiusward.testing.LocalCluster;
+import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
 import java.io.IOException;
 import java.net.DatagramSocket;
@@ -72,7 +72,8 @@ final class ProcessCluster implements AutoCloseable {
                 cluster.members=localhost,localhost,localhost
                 cluster.base.port=%d
                 cluster.data.dir=%s
-                cluster.leader.heartbeat.timeout=3s
+                cluster.leader.heartbeat.timeout=1500ms
+                cluster.election.timeout=500ms
                 archive.file.sync.level=2
                 snapshot.interval=0
                 management.http.host=127.0.0.1

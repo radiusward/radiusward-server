@@ -43,6 +43,7 @@ public final class ClusterNode implements AutoCloseable {
     private final ClusteredServiceContainer container;
     private final ScheduledExecutorService scheduler;
     private volatile boolean terminated;
+    private volatile boolean lowDisk;
 
     private ClusterNode(
             ClusterNodeConfig config,
@@ -108,12 +109,16 @@ public final class ClusterNode implements AutoCloseable {
                 .clusterMemberId(id)
                 .clusterMembers(config.clusterMembers())
                 .clusterDir(clusterDir)
+                // recording log and node state: without this they are never fsynced and a power loss can
+                // leave them empty, so the member cannot start again (found by PowerLossIT)
+                .fileSyncLevel(config.fileSyncLevel())
                 .archiveContext(archiveClient.clone())
                 .serviceCount(1)
                 .ingressChannel("aeron:udp")
                 .logChannel("aeron:udp?" + profile.termLengthParam())
                 .replicationChannel("aeron:udp?endpoint=" + host + ":0")
                 .leaderHeartbeatTimeoutNs(config.leaderHeartbeatTimeout().toNanos())
+                .electionTimeoutNs(config.electionTimeout().toNanos())
                 .sessionTimeoutNs(config.sessionTimeout().toNanos())
                 .errorHandler(errorHandler);
 
@@ -240,11 +245,29 @@ public final class ClusterNode implements AutoCloseable {
         return terminated ? Health.down("terminated") : Health.up("cluster node " + config.nodeId() + " running");
     }
 
-    /** Ready when the service has started and a leader is known. */
+    /** Ready when the service has started, a leader is known and the data directory has space left. */
     public Health ready() {
         ServiceStats s = service.stats();
         if (!s.started()) {
             return Health.down("service not started");
+        }
+        long free = config.dataDir().getUsableSpace();
+        boolean low = config.diskMinFree() > 0 && free < config.diskMinFree();
+        if (low != lowDisk) {
+            lowDisk = low;
+            if (low) {
+                LOG.warn(
+                        "low disk space in {}: {} MiB free, cluster.disk.min.free {} MiB; a full disk stops this member",
+                        config.dataDir(),
+                        free >> 20,
+                        config.diskMinFree() >> 20);
+            } else {
+                LOG.info("disk space in {} back to {} MiB free", config.dataDir(), free >> 20);
+            }
+        }
+        if (low) {
+            return Health.down(
+                    "low disk space: " + (free >> 20) + " MiB free, need " + (config.diskMinFree() >> 20) + " MiB");
         }
         if (s.leaderMemberId() < 0) {
             return Health.down("no leader");
@@ -268,6 +291,7 @@ public final class ClusterNode implements AutoCloseable {
                 .field("activeSessions", s.activeSessions())
                 .field("stoppedSessions", s.stoppedSessions())
                 .field("stateDigest", Long.toHexString(s.digest()))
+                .field("diskFreeBytes", config.dataDir().getUsableSpace())
                 .field("snapshots", s.snapshots())
                 .field("egressDropped", s.egressDropped())
                 .object("log")

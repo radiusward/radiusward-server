@@ -395,6 +395,6 @@ commit; it is far below NAS timeouts (3–5 s) and will be profiled on Linux in 
 
 - Container image from `radiusward.jar`, docker-compose; Linux runs for real fsync / power-loss, quorum
   loss by partition, disk full, overload with `--memory=1g`.
-- Production default for `cluster.leader.heartbeat.timeout` and faster failover — decided, see [phase-2.md](phase-2.md#faster-failover-decided-2026-11-08); latency profiling on Linux.
+- Production default for `cluster.leader.heartbeat.timeout` and faster failover — decided, see [phase-2.md](phase-2.md#p23-faster-failover-size-m--decided-2026-11-08); latency profiling on Linux.
 - Replace synthetic vendor fixtures with anonymised captures.
 - GitHub owner for the GHCR image path (already known: `radiusward/radiusward-server`).

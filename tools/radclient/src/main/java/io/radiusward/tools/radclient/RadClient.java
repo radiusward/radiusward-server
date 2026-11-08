@@ -155,7 +155,12 @@ public final class RadClient {
             err.println("invalid packet: " + status);
             return EXIT_BAD_RESPONSE;
         }
-        out.print(new PacketPrinter(dictionary).print(view));
+        if (o.flag("fixture")) {
+            out.print(new FixtureWriter(dictionary, o.flag("anonymise"))
+                    .write(view, o.value("comment", "<vendor, device, software version>: <event>")));
+        } else {
+            out.print(new PacketPrinter(dictionary).print(view));
+        }
         return EXIT_OK;
     }
 
@@ -177,7 +182,8 @@ public final class RadClient {
                 o.retries(),
                 o.flag("retry-other-server"),
                 !o.flag("no-stop"),
-                o.has("ack-log") ? Path.of(o.value("ack-log")) : null);
+                o.has("ack-log") ? Path.of(o.value("ack-log")) : null,
+                o.has("first-session") ? Integer.parseInt(o.value("first-session")) : 0);
         LoadGenerator.Result result = new LoadGenerator(settings, out).run();
         return result.failed() == 0 ? EXIT_OK : EXIT_TIMEOUT;
     }
@@ -253,9 +259,11 @@ public final class RadClient {
                                    [--id n] [--retries 3] [--timeout 3s] [--dictionary-dir dir]
                   radclient replay <file.fixture|file.hex> --server host:port --secret s [--id n] [--retries n] [--timeout 3s]
                   radclient decode <file.fixture|file.hex|hex> [--dictionary-dir dir]
+                                   [--fixture [--anonymise] [--comment text]]  (print as a vendor fixture)
                   radclient load   --server host:port[,host:port...] --secret s [--nas 10] [--sessions 1000]
                                    [--rate 1000] [--duration 60s] [--interim 10s] [--timeout 3s] [--retries 3]
                                    [--retry-other-server] [--no-stop] [--ack-log acks.csv]
+                                   [--first-session 0]  (number sessions from here; parallel generators)
                 exit codes: 0 verified Accounting-Response, 1 no response, 2 bad response, 64 usage error""";
     }
 
@@ -265,7 +273,8 @@ public final class RadClient {
         private final List<String> positional = new ArrayList<>();
         private final Map<String, List<String>> values = new java.util.HashMap<>();
 
-        private static final List<String> FLAGS = List.of("message-authenticator", "retry-other-server", "no-stop");
+        private static final List<String> FLAGS =
+                List.of("message-authenticator", "retry-other-server", "no-stop", "fixture", "anonymise");
 
         private Options(String command) {
             this.command = command;

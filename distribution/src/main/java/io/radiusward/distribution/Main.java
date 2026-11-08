@@ -24,6 +24,9 @@ public final class Main {
                 case "cluster-node" -> ClusterNodeMain.main(rest);
                 case "gateway" -> GatewayMain.main(rest);
                 case "cluster-tool" -> io.aeron.cluster.ClusterTool.main(rest); // e.g. <cluster-dir> snapshot
+                case "radclient" -> io.radiusward.tools.radclient.RadClient.main(rest);
+                case "admin" -> io.radiusward.tools.admin.AdminMain.main(rest);
+                case "probe" -> System.exit(Probe.run(rest));
                 case "version", "--version" -> System.out.println(version());
                 default -> {
                     usage();
@@ -46,6 +49,9 @@ public final class Main {
                 usage: radiusward cluster-node --config <file.properties> [--config ...]
                        radiusward gateway      --config <file.properties> [--config ...]
                        radiusward cluster-tool <cluster-dir> <command>   (Aeron ClusterTool: describe, snapshot, ...)
+                       radiusward radclient ...                          (test client: acct, replay, decode, load)
+                       radiusward admin state|verify-acks ...            (query the replicated state)
+                       radiusward probe <url>                            (exit 0 if the URL answers 200; health checks)
                        radiusward version""");
     }
 }

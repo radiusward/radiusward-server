@@ -1,0 +1,9 @@
+# Large profile (latency-tuned, busy-spinning agents): docker compose -f compose.yaml -f compose.large.yaml up -d
+x-env: &env
+  RADIUSWARD_PROFILE: large
+services:
+  node-0: {mem_limit: 4g, cpus: 4.0, shm_size: 2g, environment: {<<: *env, RADIUSWARD_CLUSTER_NODE_ID: "0"}}
+  node-1: {mem_limit: 4g, cpus: 4.0, shm_size: 2g, environment: {<<: *env, RADIUSWARD_CLUSTER_NODE_ID: "1"}}
+  node-2: {mem_limit: 4g, cpus: 4.0, shm_size: 2g, environment: {<<: *env, RADIUSWARD_CLUSTER_NODE_ID: "2"}}
+  gateway-a: {mem_limit: 1536m, cpus: 2.0, environment: {<<: *env}}
+  gateway-b: {mem_limit: 1536m, cpus: 2.0, environment: {<<: *env}}

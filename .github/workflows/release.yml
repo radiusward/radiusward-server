@@ -1,0 +1,74 @@
+name: release
+
+# main  -> ghcr.io/radiusward/radiusward-server:edge
+# vX.Y.Z[-rc.N] -> :X.Y.Z[-rc.N] (+ :X.Y and :latest for final releases), SBOM and provenance attached,
+#                  GitHub Release with radiusward.jar and radclient.jar (see docs/operations/release.md)
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/radiusward/radiusward-server
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write   # GitHub Release
+      packages: write   # GHCR
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'   # bytecode stays Java 21 (maven.compiler.release)
+          cache: maven
+      - name: Set the release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: ./mvnw -B -ntp versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
+      - name: Build, unit and end-to-end tests
+        run: ./mvnw -B -ntp -Pe2e verify
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=auto
+          tags: |
+            type=edge,branch=main
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.meta.outputs.version }}
+            REVISION=${{ github.sha }}
+          sbom: true
+          provenance: mode=max
+      - name: GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prerelease=""
+          [[ "$GITHUB_REF_NAME" == *-* ]] && prerelease="--prerelease"
+          gh release create "$GITHUB_REF_NAME" $prerelease --verify-tag --generate-notes \
+            --title "radiusward ${GITHUB_REF_NAME#v}" \
+            distribution/target/radiusward.jar tools/radclient/target/radclient.jar
