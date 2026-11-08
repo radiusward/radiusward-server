@@ -20,6 +20,7 @@ public final class GatewayMain {
 
     private GatewayMain() {}
 
+    @SuppressWarnings("try") // the management server only has to stay open until shutdown
     public static void main(String[] args) {
         Config config = Config.load(
                 ConfigArgs.files(args, "gateway --config <file.properties> [--config ...]"), System.getenv());

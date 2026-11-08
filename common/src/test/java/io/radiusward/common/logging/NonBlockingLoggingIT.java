@@ -65,11 +65,11 @@ class NonBlockingLoggingIT {
         appender.start();
         configuration.addAppender(appender);
         LoggerConfig loggerConfig = LoggerConfig.newBuilder()
-                .withLoggerName("io.radiusward.test")
-                .withLevel(org.apache.logging.log4j.Level.INFO)
-                .withAdditivity(false)
-                .withIncludeLocation("false") // as in log4j2.xml: location capture walks the stack and allocates
-                .withConfig(configuration)
+                .setLoggerName("io.radiusward.test")
+                .setLevel(org.apache.logging.log4j.Level.INFO)
+                .setAdditivity(false)
+                .setIncludeLocation("false") // as in log4j2.xml: location capture walks the stack and allocates
+                .setConfig(configuration)
                 .build();
         loggerConfig.addAppender(appender, null, null);
         configuration.addLogger("io.radiusward.test", loggerConfig);
