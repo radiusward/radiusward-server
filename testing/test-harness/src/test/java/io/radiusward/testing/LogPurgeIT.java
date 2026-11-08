@@ -42,15 +42,9 @@ class LogPurgeIT {
                 LocalCluster.freePortBase(3),
                 new int[2],
                 Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE)) {
-            // members were started with the defaults; restart them with small segments and a short interval
-            cluster.purge(new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)));
-            for (int i = 0; i < 3; i++) {
-                cluster.stopNode(i);
-            }
-            for (int i = 0; i < 3; i++) {
-                cluster.startNode(i);
-            }
+                id -> io.radiusward.exporter.ExportConfig.NONE,
+                // from the first start: the log recording keeps the segment length it was created with
+                new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
 

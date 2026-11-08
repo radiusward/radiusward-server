@@ -257,6 +257,13 @@ order). Defaults (`fillfactor`, batch size, write path, history encoding) are ch
   (`docker compose --profile monitoring up`).
 - ✅ **Done when:** a test parses `/metrics` of every component (format and names pinned); the alert rules
   pass `promtool check rules`; the compose dashboard shows lag during `PostgresOutageIT`-style runs.
+- **Result (2026-11-08):** `PrometheusWriter` (+ `validate`) and `JvmMetrics` in `common`, `/metrics` on members
+  and gateways, metric list in [monitoring.md](../operations/monitoring.md); `EXPORT_LAG` rejections and sink
+  errors counted separately. 10 alert rules in `deploy/monitoring/alerts.yml`, compose profile `monitoring`
+  (Prometheus v3.16.0, Grafana 13.3.0, dashboard with 8 panels). Checked: format pinned in `ThreeNodeClusterIT`
+  and `LocalClusterIT`, `promtool` in `MonitoringConfigIT`, `/metrics` in `ComposeSmokeIT`; live in compose all
+  5 targets up, applied counts equal on all members, no alert firing. The lag dashboard during an outage is
+  checked with `PostgresOutageIT` (P3.9).
 
 ### P3.7: Tools (size S)
 

@@ -39,6 +39,17 @@ public final class ManagementServer implements AutoCloseable {
      */
     public static ManagementServer start(
             String host, int port, Supplier<Health> health, Supplier<Health> ready, Supplier<String> state) {
+        return start(host, port, health, ready, state, null);
+    }
+
+    /** As above, plus {@code /metrics} in the Prometheus text format when {@code metrics} is not {@code null}. */
+    public static ManagementServer start(
+            String host,
+            int port,
+            Supplier<Health> health,
+            Supplier<Health> ready,
+            Supplier<String> state,
+            Supplier<String> metrics) {
         try {
             HttpServer server = HttpServer.create(new InetSocketAddress(host, port), 16);
             ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
@@ -50,6 +61,10 @@ public final class ManagementServer implements AutoCloseable {
             server.createContext("/health", exchange -> healthResponse(exchange, health));
             server.createContext("/ready", exchange -> healthResponse(exchange, ready));
             server.createContext("/state", exchange -> respond(exchange, 200, state.get()));
+            if (metrics != null) {
+                server.createContext(
+                        "/metrics", exchange -> respond(exchange, 200, metrics.get(), PrometheusWriter.CONTENT_TYPE));
+            }
             server.start();
             return new ManagementServer(server, executor);
         } catch (IOException e) {
@@ -60,6 +75,16 @@ public final class ManagementServer implements AutoCloseable {
     /** Starts the server from {@code management.http.*} keys, or returns {@code null} if disabled. */
     public static ManagementServer start(
             Config config, int defaultPort, Supplier<Health> health, Supplier<Health> ready, Supplier<String> state) {
+        return start(config, defaultPort, health, ready, state, null);
+    }
+
+    public static ManagementServer start(
+            Config config,
+            int defaultPort,
+            Supplier<Health> health,
+            Supplier<Health> ready,
+            Supplier<String> state,
+            Supplier<String> metrics) {
         if (!config.bool("management.http.enabled", true)) {
             return null;
         }
@@ -68,7 +93,8 @@ public final class ManagementServer implements AutoCloseable {
                 config.integer("management.http.port", defaultPort),
                 health,
                 ready,
-                state);
+                state,
+                metrics);
     }
 
     public int port() {
@@ -90,13 +116,17 @@ public final class ManagementServer implements AutoCloseable {
     }
 
     private static void respond(HttpExchange exchange, int status, String body) throws IOException {
+        respond(exchange, status, body, "application/json");
+    }
+
+    private static void respond(HttpExchange exchange, int status, String body, String contentType) throws IOException {
         try (exchange) {
             if (!"GET".equals(exchange.getRequestMethod()) && !"HEAD".equals(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(405, -1);
                 return;
             }
             byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.getResponseHeaders().set("Content-Type", contentType);
             exchange.sendResponseHeaders(status, bytes.length);
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(bytes);

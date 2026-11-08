@@ -77,8 +77,33 @@ public final class LocalCluster implements AutoCloseable {
             int[] radiusPorts,
             Duration snapshotInterval,
             java.util.function.IntFunction<ExportConfig> export) {
+        return start(
+                baseDir,
+                members,
+                gatewayCount,
+                basePort,
+                radiusPorts,
+                snapshotInterval,
+                export,
+                LogPurgeConfig.DEFAULTS);
+    }
+
+    /**
+     * As above, with purge settings from the first start: an archive recording keeps the segment length it was
+     * created with, so changing {@code archive.segment.length} later does not affect the existing log.
+     */
+    public static LocalCluster start(
+            File baseDir,
+            int members,
+            int gatewayCount,
+            int basePort,
+            int[] radiusPorts,
+            Duration snapshotInterval,
+            java.util.function.IntFunction<ExportConfig> export,
+            LogPurgeConfig purge) {
         LocalCluster cluster = new LocalCluster(baseDir, basePort, members, snapshotInterval);
         cluster.export = export;
+        cluster.purge = purge;
         try {
             for (int i = 0; i < members; i++) {
                 cluster.startNode(i);

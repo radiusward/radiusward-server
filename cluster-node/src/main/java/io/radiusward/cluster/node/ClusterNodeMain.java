@@ -29,7 +29,12 @@ public final class ClusterNodeMain {
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
                 ClusterNode node = ClusterNode.launch(nodeConfig, barrier::signalAll);
                 ManagementServer ignored = ManagementServer.start(
-                        config, 9090 + nodeConfig.nodeId(), node::health, node::ready, node::stateJson)) {
+                        config,
+                        9090 + nodeConfig.nodeId(),
+                        node::health,
+                        node::ready,
+                        node::stateJson,
+                        node::metrics)) {
             barrier.await();
             node.markTerminated();
         } finally {

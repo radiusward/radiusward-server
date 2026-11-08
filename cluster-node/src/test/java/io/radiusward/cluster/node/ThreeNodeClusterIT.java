@@ -160,6 +160,13 @@ class ThreeNodeClusterIT {
                 .isEqualTo(LeaseResult.GRANTED);
         assertThat(send(7, 200, AccountingStateMachine.STATUS_START, 0)).isEqualTo(Outcome.APPLIED);
         await(() -> allDigestsEqual(2), "replicas agree after the export commands");
+        String metrics = byId[
+                takeover.owner == 1 && byId[1] != null ? 1 : newLeader.config().nodeId()].metrics();
+        io.radiusward.common.management.PrometheusWriter.validate(metrics);
+        assertThat(metrics)
+                .contains("radiusward_accounting_events_total{member=")
+                .contains("radiusward_accounting_export_lag_rejections_total")
+                .contains("radiusward_jvm_memory_used_bytes");
     }
 
     private record Ack(LeaseResult result, int owner, long epoch) {}

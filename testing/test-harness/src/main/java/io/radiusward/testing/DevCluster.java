@@ -33,12 +33,13 @@ public final class DevCluster {
                         LocalCluster.start(dir, 3, 2, 9000, new int[] {1813, 1814}, Duration.ofHours(1))) {
             for (int i = 0; i < 3; i++) {
                 var node = cluster.node(i);
-                servers.add(ManagementServer.start("127.0.0.1", 9090 + i, node::health, node::ready, node::stateJson));
+                servers.add(ManagementServer.start(
+                        "127.0.0.1", 9090 + i, node::health, node::ready, node::stateJson, node::metrics));
             }
             for (int g = 0; g < 2; g++) {
                 var gateway = cluster.gateway(g);
                 servers.add(ManagementServer.start(
-                        "127.0.0.1", 9190 + g, gateway::health, gateway::ready, gateway::stateJson));
+                        "127.0.0.1", 9190 + g, gateway::health, gateway::ready, gateway::stateJson, gateway::metrics));
             }
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();

@@ -70,6 +70,12 @@ stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per gateway.
   (measured, `PowerLossIT`).
 - Health checks call `radiusward probe http://127.0.0.1:9090/ready`.
 
+## Monitoring
+
+`docker compose -f deploy/compose/compose.yaml --profile monitoring up -d` adds Prometheus
+(127.0.0.1:9095, with the alert rules) and Grafana (127.0.0.1:3000, dashboard "radiusward") —
+[monitoring.md](monitoring.md).
+
 ## Querying the state
 
 ```bash

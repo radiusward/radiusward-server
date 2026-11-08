@@ -20,10 +20,13 @@ import io.radiusward.common.Profile;
 import io.radiusward.common.logging.NonBlockingQueueFullPolicy;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.JsonWriter;
+import io.radiusward.common.management.JvmMetrics;
+import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.exporter.Exporter;
 import io.radiusward.exporter.ExporterContext;
 import io.radiusward.exporter.SinkStatus;
 import java.io.File;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -404,6 +407,84 @@ public final class ClusterNode implements AutoCloseable {
             json.end();
         }
         return json.finish();
+    }
+
+    /** {@code /metrics} in the Prometheus text format (metric list in docs/operations/monitoring.md). */
+    public String metrics() {
+        ServiceStats s = service.stats();
+        String member = Integer.toString(config.nodeId());
+        PrometheusWriter w = new PrometheusWriter();
+        w.gauge("radiusward_cluster_leader", "1 on the leader")
+                .sample("LEADER".equals(s.role()) ? 1 : 0, "member", member);
+        w.gauge("radiusward_cluster_leader_member", "Member id of the current leader, -1 while unknown")
+                .sample(s.leaderMemberId(), "member", member);
+        w.counter("radiusward_cluster_leadership_terms_total", "Leadership term id (increases with every election)")
+                .sample(Math.max(0, s.term()), "member", member);
+        w.gauge("radiusward_cluster_log_position_bytes", "Log position of the last accounting entry applied")
+                .sample(s.lastPosition(), "member", member);
+        w.counter("radiusward_accounting_events_total", "Accounting events by outcome")
+                .sample(s.applied(), "member", member, "outcome", "applied")
+                .sample(s.duplicates(), "member", member, "outcome", "duplicate")
+                .sample(s.stale(), "member", member, "outcome", "stale")
+                .sample(s.rejected(), "member", member, "outcome", "rejected");
+        w.counter(
+                        "radiusward_accounting_export_lag_rejections_total",
+                        "Accounting not acknowledged because a required sink was over its maxLag")
+                .sample(s.exportLagRejections(), "member", member);
+        w.gauge("radiusward_sessions", "Sessions in the replicated state")
+                .sample(s.activeSessions(), "member", member, "state", "active")
+                .sample(s.stoppedSessions(), "member", member, "state", "stopped");
+        w.counter("radiusward_snapshots_total", "Snapshots taken").sample(s.snapshots(), "member", member);
+        w.counter("radiusward_egress_dropped_total", "Replies to gateways given up under back pressure")
+                .sample(s.egressDropped(), "member", member);
+        w.gauge("radiusward_disk_free_bytes", "Usable space in the data directory")
+                .sample(config.dataDir().getUsableSpace(), "member", member);
+        w.gauge("radiusward_disk_min_free_bytes", "cluster.disk.min.free")
+                .sample(config.diskMinFree(), "member", member);
+        LogPurger.Result purge = lastPurge;
+        if (purge != null) {
+            w.gauge("radiusward_log_start_bytes", "Lowest log position still on this member's disk")
+                    .sample(purge.newStart(), "member", member);
+            w.gauge("radiusward_log_purge_floor_bytes", "Position below which nobody needs the log any more")
+                    .sample(purge.floor(), "member", member);
+        }
+        w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
+                .sample(NonBlockingQueueFullPolicy.dropped());
+        Exporter e = exporter;
+        if (e != null) {
+            long now = System.currentTimeMillis();
+            List<SinkStatus> sinks = e.status();
+            w.gauge("radiusward_export_exporting", "1 on the member that holds the sink's lease");
+            sinks.forEach(k -> w.sample(k.exporting() ? 1 : 0, "member", member, "sink", k.name()));
+            w.gauge("radiusward_export_lag_bytes", "Accounting log not yet written by the sink");
+            sinks.forEach(k -> w.sample(
+                    Math.max(0, s.lastPosition() - k.clusterCheckpoint()), "member", member, "sink", k.name()));
+            w.gauge("radiusward_export_lag_seconds", "Age of the newest exported entry (exporting member only)");
+            sinks.stream()
+                    .filter(SinkStatus::exporting)
+                    .forEach(k -> w.sample(
+                            k.lastEventTime() == 0 || k.clusterCheckpoint() >= s.lastPosition()
+                                    ? 0
+                                    : Math.max(0, now - k.lastEventTime()) / 1000.0,
+                            "member",
+                            member,
+                            "sink",
+                            k.name()));
+            w.gauge("radiusward_export_detached", "1 when an optional sink has been detached");
+            sinks.forEach(k -> w.sample(k.detached() ? 1 : 0, "member", member, "sink", k.name()));
+            w.gauge("radiusward_export_epoch", "Lease epoch of the sink");
+            sinks.forEach(k -> w.sample(k.epoch(), "member", member, "sink", k.name()));
+            w.counter("radiusward_export_rows_total", "Rows written by this member");
+            sinks.forEach(k -> w.sample(k.rows(), "member", member, "sink", k.name()));
+            w.counter("radiusward_export_batches_total", "Batches written by this member");
+            sinks.forEach(k -> w.sample(k.batches(), "member", member, "sink", k.name()));
+            w.gauge("radiusward_export_last_batch_seconds", "Duration of the last batch write");
+            sinks.forEach(k -> w.sample(k.lastBatchNanos() / 1e9, "member", member, "sink", k.name()));
+            w.counter("radiusward_export_errors_total", "Failed sink writes and other sink errors");
+            sinks.forEach(k -> w.sample(k.errors(), "member", member, "sink", k.name()));
+        }
+        JvmMetrics.write(w);
+        return w.finish();
     }
 
     void markTerminated() {

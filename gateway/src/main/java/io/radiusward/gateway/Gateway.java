@@ -11,6 +11,8 @@ import io.radiusward.common.Profile;
 import io.radiusward.common.logging.NonBlockingQueueFullPolicy;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.JsonWriter;
+import io.radiusward.common.management.JvmMetrics;
+import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.VendorFormats;
 import io.radiusward.radius.dictionary.Dictionary;
 import io.radiusward.radius.dictionary.DictionaryLoader;
@@ -190,6 +192,26 @@ public final class Gateway implements AutoCloseable {
                 .field("dropped", NonBlockingQueueFullPolicy.dropped())
                 .end()
                 .finish();
+    }
+
+    /** {@code /metrics}: every packet counter by result, pending requests, cache size, connection, JVM. */
+    public String metrics() {
+        String id = Integer.toString(config.gatewayId());
+        PrometheusWriter w = new PrometheusWriter();
+        w.counter("radiusward_gateway_packets_total", "RADIUS packets and requests by what happened to them");
+        for (GatewayStats.Counter c : GatewayStats.counters()) {
+            w.sample(stats.get(c), "gateway", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
+        }
+        w.gauge("radiusward_gateway_pending_requests", "Requests waiting for a commit")
+                .sample(stats.pending(), "gateway", id);
+        w.gauge("radiusward_gateway_response_cache_entries", "Entries in the RFC 5080 response cache")
+                .sample(stats.cacheSize(), "gateway", id);
+        w.gauge("radiusward_gateway_cluster_connected", "1 when connected to the cluster")
+                .sample(stats.connected() ? 1 : 0, "gateway", id);
+        w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
+                .sample(NonBlockingQueueFullPolicy.dropped());
+        JvmMetrics.write(w);
+        return w.finish();
     }
 
     @Override

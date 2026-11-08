@@ -37,6 +37,10 @@ class ManagementServerTest {
                 () -> new JsonWriter()
                         .field("role", "LEADER")
                         .field("applied", 5)
+                        .finish(),
+                () -> new PrometheusWriter()
+                        .counter("radiusward_x_total", "x")
+                        .sample(5)
                         .finish())) {
             HttpResponse<String> health = get(server.port(), "/health");
             assertThat(health.statusCode()).isEqualTo(200);
@@ -49,6 +53,11 @@ class ManagementServerTest {
 
             HttpResponse<String> state = get(server.port(), "/state");
             assertThat(state.body()).isEqualTo("{\"role\":\"LEADER\",\"applied\":5}");
+
+            HttpResponse<String> metrics = get(server.port(), "/metrics");
+            assertThat(metrics.statusCode()).isEqualTo(200);
+            assertThat(metrics.headers().firstValue("Content-Type")).contains(PrometheusWriter.CONTENT_TYPE);
+            assertThat(metrics.body()).endsWith("radiusward_x_total 5\n");
 
             HttpResponse<String> post = http.send(
                     HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + server.port() + "/state"))

@@ -29,8 +29,9 @@ public final class ServiceStats {
     private static final int STARTED = 13;
 
     private static final int EXPORT_FLOOR = 14;
+    private static final int EXPORT_LAG_REJECTED = 15;
 
-    private final AtomicLongArray values = new AtomicLongArray(15);
+    private final AtomicLongArray values = new AtomicLongArray(16);
     /** Log position each member reported for itself; -1 = never reported (indexed by member id). */
     private final AtomicLongArray memberPositions = new AtomicLongArray(ExportState.MAX_MEMBERS);
 
@@ -51,6 +52,15 @@ public final class ServiceStats {
         for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
             memberPositions.setRelease(m, export.memberReported(m) ? export.memberPosition(m) : -1);
         }
+    }
+
+    void recordExportLagRejection() {
+        values.getAndIncrement(EXPORT_LAG_REJECTED);
+    }
+
+    /** Accounting this member rejected because a required sink was over its {@code maxLag} (since start). */
+    public long exportLagRejections() {
+        return values.getAcquire(EXPORT_LAG_REJECTED);
     }
 
     /** Lowest checkpoint of the sinks that hold the log, {@code Long.MAX_VALUE} without such sinks. */

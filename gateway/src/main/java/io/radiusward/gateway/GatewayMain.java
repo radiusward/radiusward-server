@@ -34,7 +34,8 @@ public final class GatewayMain {
                         9189 + gatewayConfig.gatewayId(),
                         gateway::health,
                         gateway::ready,
-                        gateway::stateJson)) {
+                        gateway::stateJson,
+                        gateway::metrics)) {
             barrier.await();
         } finally {
             LogManager.shutdown();

@@ -19,6 +19,8 @@ public final class SinkStatus {
     private volatile long batches;
     private volatile long lastBatchNanos;
     private volatile String lastError;
+    private volatile long errors;
+    private volatile long lastEventTime;
 
     SinkStatus(String name, String type) {
         this.name = name;
@@ -47,6 +49,21 @@ public final class SinkStatus {
 
     void error(String error) {
         lastError = error;
+        errors++;
+    }
+
+    void lastEventTime(long time) {
+        lastEventTime = time;
+    }
+
+    /** Failed writes and other errors since start. */
+    public long errors() {
+        return errors;
+    }
+
+    /** Cluster time of the newest entry this member has exported (0 before the first batch). */
+    public long lastEventTime() {
+        return lastEventTime;
     }
 
     public String name() {

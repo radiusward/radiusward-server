@@ -1,0 +1,82 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Example Prometheus alert rules for radiusward (docs/operations/monitoring.md). Thresholds assume the default
+# lag policy (maxLag 4h) and cluster.disk.min.free 1 GiB; adjust them to your settings.
+groups:
+  - name: radiusward
+    rules:
+      - alert: RadiuswardNoLeader
+        expr: max(radiusward_cluster_leader) == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations:
+          summary: No cluster member is leader
+          description: Accounting is not acknowledged while there is no leader; NAS devices retransmit and buffer.
+
+      - alert: RadiuswardFrequentElections
+        expr: increase(max(radiusward_cluster_leadership_terms_total)[15m:]) > 3
+        labels: {severity: warning}
+        annotations:
+          summary: More than 3 leader elections in 15 minutes
+          description: Check the network between members, CPU starvation and GC pauses.
+
+      - alert: RadiuswardMemberDown
+        expr: up{job="radiusward-member"} == 0
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "Cluster member {{ $labels.instance }} does not answer"
+          description: Two of three members keep accounting going; with a member down the log is not purged below its position.
+
+      - alert: RadiuswardExportLagWarning
+        expr: max by (sink) (radiusward_export_lag_seconds) > 2 * 3600
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Sink {{ $labels.sink }} is more than 2 h behind"
+          description: At maxLag (default 4 h) a required sink stops new ACKs (block); an optional one is detached.
+
+      - alert: RadiuswardExportBlocking
+        expr: increase(sum(radiusward_accounting_export_lag_rejections_total)[5m:]) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: Accounting is rejected because a required sink is over its maxLag
+          description: Fix the sink (database down?); ACKs resume as soon as it is below maxLag again.
+
+      - alert: RadiuswardSinkDetached
+        expr: max by (sink) (radiusward_export_detached) == 1
+        labels: {severity: warning}
+        annotations:
+          summary: "Optional sink {{ $labels.sink }} was detached"
+          description: It no longer holds the log; data purged meanwhile has to be resynced by hand (radiusward admin resync).
+
+      - alert: RadiuswardSinkErrors
+        expr: increase(sum by (sink) (radiusward_export_errors_total)[10m:]) > 5
+        labels: {severity: warning}
+        annotations:
+          summary: "Sink {{ $labels.sink }} keeps failing"
+          description: See lastError on /state of the exporting member.
+
+      - alert: RadiuswardDiskLow
+        expr: radiusward_disk_free_bytes < radiusward_disk_min_free_bytes
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Member {{ $labels.member }} is low on disk space"
+          description: A full disk stops the member. Check the log purge (radiusward_log_purge_floor_bytes) and sink lag.
+
+      - alert: RadiuswardGatewayDropping
+        expr: sum by (gateway) (rate(radiusward_gateway_packets_total{result=~"pending_full|ring_full"}[5m])) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Gateway {{ $labels.gateway }} drops requests (overload)"
+          description: NAS devices retransmit; add gateways or capacity.
+
+      - alert: RadiuswardGatewayDisconnected
+        expr: radiusward_gateway_cluster_connected == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "Gateway {{ $labels.gateway }} is not connected to the cluster"

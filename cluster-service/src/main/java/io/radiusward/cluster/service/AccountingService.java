@@ -144,6 +144,9 @@ public final class AccountingService implements ClusteredService {
 
     private void onCommand(ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
         int outcome = applier.apply(buffer, offset, header.position(), timestamp);
+        if (outcome == Outcomes.REJECTED_EXPORT_LAG) {
+            stats.recordExportLagRejection();
+        }
         if (applier.claimSweepTimer()) {
             scheduleSweep(timestamp);
         }

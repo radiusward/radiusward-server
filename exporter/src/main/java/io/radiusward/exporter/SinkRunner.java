@@ -204,6 +204,7 @@ final class SinkRunner implements Runnable {
         durablePosition = pending.toPosition();
         if (pending.lastEventTime() > 0) {
             lastEventTime = pending.lastEventTime();
+            status.lastEventTime(lastEventTime);
         }
         pending = null;
         renew();

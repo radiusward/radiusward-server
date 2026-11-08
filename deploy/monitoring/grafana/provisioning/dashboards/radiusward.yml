@@ -1,0 +1,8 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: 1
+providers:
+  - name: radiusward
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

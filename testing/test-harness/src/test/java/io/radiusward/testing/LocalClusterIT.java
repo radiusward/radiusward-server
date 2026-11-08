@@ -263,5 +263,13 @@ class LocalClusterIT {
             assertThat(state.active()).isZero();
             assertThat(state.applied()).isLessThanOrEqualTo(result.sent());
         }
+        String gatewayMetrics = cluster.gateway(0).metrics();
+        io.radiusward.common.management.PrometheusWriter.validate(gatewayMetrics);
+        assertThat(gatewayMetrics)
+                .contains("radiusward_gateway_packets_total{gateway=\"1\",result=\"committed\"}")
+                .contains("radiusward_gateway_cluster_connected{gateway=\"1\"} 1");
+        String nodeMetrics = cluster.awaitLeader().metrics();
+        io.radiusward.common.management.PrometheusWriter.validate(nodeMetrics);
+        assertThat(nodeMetrics).contains("radiusward_sessions{member=").contains("radiusward_cluster_leader{");
     }
 }

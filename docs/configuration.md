@@ -34,6 +34,9 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.election.timeout` | `500ms` | how long a candidate waits for votes |
 | `cluster.session.timeout` | `10s` | client session timeout |
 | `archive.file.sync.level` | `2` | `0` page cache, `1` fsync data, `2` fsync data + metadata; the archive catalog and the cluster's recording log and node state use the same level. Below `2` a power loss can lose acknowledged events or stop members from starting (`PowerLossIT`) |
+| `archive.segment.length` | `128m` | archive segment file size, a power of two of at least the term length; the log is purged in whole segments. **Fixed per recording**: a change only affects recordings created afterwards |
+| `log.purge.enabled` / `log.purge.dry.run` | `true` / `false` | purge the log below what nobody needs ([ADR 0014](adr/0014-log-purge.md)); dry run only logs |
+| `log.purge.interval` | `1m` | how often a member reports its log position and purges |
 | `cluster.disk.min.free` | `1g` | below this free space in the data directory the member reports not ready (`/ready`, with the reason) and logs a warning; a full disk stops the member. `0` disables |
 | `snapshot.interval` | `1h` | automatic snapshot on the leader; `0` disables |
 | `service.max.sessions` | profile (small: 2,000,000) | session capacity; new sessions beyond it are rejected |

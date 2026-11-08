@@ -44,6 +44,12 @@ class ComposeSmokeIT {
                     .as("acct via " + gateway + "\n" + acct.output())
                     .isZero();
         }
+        Result metrics = compose(
+                "run", "--rm", "--entrypoint", "radiusward", "tools", "probe", "http://172.28.0.10:9090/metrics");
+        assertThat(metrics.exit()).as("/metrics\n" + metrics.output()).isZero();
+        assertThat(metrics.output())
+                .contains("radiusward_accounting_events_total")
+                .contains("radiusward_jvm_threads");
     }
 
     @AfterEach
