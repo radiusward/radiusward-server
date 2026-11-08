@@ -39,7 +39,8 @@ public final class AdminMain {
         System.exit(run(args, System.out, System.err));
     }
 
-    static int run(String[] args, PrintStream out, PrintStream err) {
+    /** Runs one command; returns the exit code. Public for embedding and tests. */
+    public static int run(String[] args, PrintStream out, PrintStream err) {
         if (args.length == 0) {
             err.println(usage());
             return EXIT_USAGE;
@@ -152,7 +153,7 @@ public final class AdminMain {
             if (o.containsKey("members")) {
                 try (AdminClient admin = cluster(o)) {
                     report = ExportVerifier.verify(
-                            Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), db, admin);
+                            Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), db, admin::session);
                 }
             } else {
                 report = ExportVerifier.verify(Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), db, null);

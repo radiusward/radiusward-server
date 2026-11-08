@@ -148,7 +148,7 @@ public final class PostgresSink implements AccountingSink {
                 if (!dataError(e)) {
                     throw e;
                 }
-                connection.rollback();
+                rollback();
                 fence(batch.epoch());
                 writeRowByRow(rows, batch.sessions(), batch.toPosition());
             }
@@ -156,13 +156,22 @@ public final class PostgresSink implements AccountingSink {
             connection.commit();
         } catch (SQLException | IOException | FencedException | RuntimeException e) {
             try {
-                connection.rollback();
+                rollback();
             } catch (SQLException ignored) {
                 // the connection is probably gone; the exporter reopens the sink
             }
             throw e;
         }
         housekeeping();
+    }
+
+    /**
+     * Rolls back and forgets which partitions exist: partitions created in the rolled-back transaction are gone
+     * (they are created again with {@code IF NOT EXISTS} on the next write).
+     */
+    private void rollback() throws SQLException {
+        partitions.clear();
+        connection.rollback();
     }
 
     private void fence(long epoch) throws SQLException, FencedException {

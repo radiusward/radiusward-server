@@ -22,7 +22,36 @@
 | Logging | `NonBlockingLoggingIT` | `./mvnw verify` | async, garbage-free, never blocks on a full ring |
 | Benchmarks | `testing/benchmarks`, `-Pbench` | manual | throughput baselines |
 
-Coverage floors (line): `radius-codec` 90 % excluding generated code, `radius-dictionary` 80 %.
+## Coverage
+
+`./mvnw verify` measures unit tests only and enforces the module floors of `radius-codec` (90 % lines,
+generated code excluded) and `radius-dictionary` (80 %). Most of the cluster, exporter and sink code is only
+reached by the integration tests, so a second, honest measurement covers both:
+
+```bash
+./mvnw -Pcoverage verify -Dradiusward.require.docker=true    # report: testing/coverage/target/site/jacoco-aggregate/
+```
+
+- The `coverage` profile instruments Failsafe (`jacoco-it.exec`) as well as Surefire and builds one aggregate
+  report over all modules in `testing/coverage`. CI runs it as the `coverage` job and uploads the report.
+- The allocation ITs (`*AllocationIT`) are excluded from it: the JaCoCo agent allocates and would fail them.
+  They still run in the normal build.
+- Generated code (SBE codecs in `io.radiusward.protocol`, hot-attribute accessors) is excluded; the generators
+  have their own tests.
+- `-Pe2e` processes are not instrumented, so `distribution` (the `main` entry points) shows 0 % here and has no
+  floor; `test-harness` is test support and has none either.
+- `testing/coverage/floors.properties` holds a line floor per module and for the total, a few points below the
+  measured value; `check-floors.sh` fails the build below any of them. Raise a floor when a module gains
+  tests; never lower one to let a change pass.
+
+Measured 2026-11-08 (lines / branches): total 89.7 %; radius-codec 98.7 / 94.0, common 97.5 / 91.2,
+cluster-service 95.5 / 84.6, radius-codegen 95.2 / 82.1, sink-file 94.4 / 76.4, sink-postgres 93.6 / 80.0,
+admin-cli 93.1 / 80.6, exporter 91.1 / 81.0, gateway 90.1 / 81.0, export-api 87.4 / 73.7, radclient 86.0 / 72.0,
+cluster-node 82.5 / 65.6, radius-dictionary 81.7 / 67.7. The first measurement (total 87 %) found untested
+configuration validation (`GatewayConfig`, `ClusterNodeConfig`), admin command paths and exporter decisions,
+now tested (`GatewayConfigTest`, `ClusterNodeConfigTest`, `ExportDecisionsTest`, `ExportVerifierTest`), and two
+bugs: a PostgreSQL partition cached by a rolled-back transaction sent later good rows to quarantine, and the
+admin client did not reconnect after the cluster closed its idle session.
 
 ## Vendor fixtures
 

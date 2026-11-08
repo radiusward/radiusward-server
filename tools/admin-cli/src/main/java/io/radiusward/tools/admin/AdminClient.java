@@ -48,7 +48,9 @@ public final class AdminClient implements AutoCloseable, EgressListener {
             long outputOctets) {}
 
     private final MediaDriver driver;
-    private final AeronCluster cluster;
+    private final String ingressEndpoints;
+    private final String egressHost;
+    private AeronCluster cluster;
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[256]);
     private final MessageHeaderEncoder headerEncoder = new MessageHeaderEncoder();
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
@@ -85,10 +87,17 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                     .append(':')
                     .append(basePort + 100 * i);
         }
+        this.ingressEndpoints = endpoints.toString();
+        this.egressHost = egressHost;
+        connect();
+    }
+
+    private void connect() {
+        CloseHelper.quietClose(cluster);
         cluster = AeronCluster.connect(new AeronCluster.Context()
                 .aeronDirectoryName(driver.aeronDirectoryName())
                 .ingressChannel("aeron:udp?term-length=1m")
-                .ingressEndpoints(endpoints.toString())
+                .ingressEndpoints(ingressEndpoints)
                 .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")
                 .messageTimeoutNs(Duration.ofSeconds(20).toNanos())
                 .egressListener(this));
@@ -156,9 +165,16 @@ public final class AdminClient implements AutoCloseable, EgressListener {
         reply = null;
         long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
         while (true) {
+            // an idle client sends no keep-alives, so the cluster may have closed its session meanwhile
+            if (cluster.isClosed()) {
+                connect();
+            }
             while (cluster.offer(buffer, 0, length) < 0) {
                 cluster.pollEgress();
                 check(deadline);
+                if (cluster.isClosed()) {
+                    connect();
+                }
             }
             long resendAt = System.nanoTime() + Duration.ofSeconds(5).toNanos();
             while (reply == null || replyCorrelation != id) {
@@ -166,7 +182,7 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                     java.util.concurrent.locks.LockSupport.parkNanos(20_000);
                 }
                 check(deadline);
-                if (System.nanoTime() > resendAt) {
+                if (System.nanoTime() > resendAt || cluster.isClosed()) {
                     break;
                 }
             }

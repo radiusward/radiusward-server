@@ -522,6 +522,44 @@
             </modules>
         </profile>
         <profile>
+            <!-- coverage including the integration tests: ./mvnw -Pcoverage verify
+                 → testing/coverage/target/site/jacoco-aggregate/index.html (docs/testing/strategy.md#coverage) -->
+            <id>coverage</id>
+            <modules>
+                <module>testing/coverage</module>
+            </modules>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>prepare-agent-integration</id>
+                                <goals>
+                                    <goal>prepare-agent-integration</goal>
+                                </goals>
+                                <configuration>
+                                    <propertyName>jacocoItArgLine</propertyName>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <configuration>
+                            <argLine>@{jacocoItArgLine} ${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
+                            <excludes>
+                                <!-- these measure allocation; the agent would distort them (they run in the normal build) -->
+                                <exclude>**/*AllocationIT.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <profile>
             <!-- interop tests against a locally installed FreeRADIUS (brew install freeradius-server) -->
             <id>interop</id>
             <properties>

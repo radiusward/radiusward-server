@@ -106,6 +106,41 @@ class AckVerifierTest {
                 .isEqualTo(AdminMain.EXIT_USAGE);
     }
 
+    @Test
+    void everyCommandChecksItsOptions() {
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        PrintStream e = new PrintStream(err, true, StandardCharsets.UTF_8);
+        PrintStream o = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8);
+        String[][] usage = {
+            {"sinks"},
+            {"resync", "--members", "x", "--sink", "pg"},
+            {"verify-acks", "--members", "x", "--ack-log", "a.csv"},
+            {"verify-export", "--jdbc-url", "jdbc:x"},
+            {"verify-export", "--jdbc-url", "jdbc:x", "--ack-log", "a"},
+            {"state", "members", "x"},
+        };
+        for (String[] args : usage) {
+            assertThat(AdminMain.run(args, o, e)).as(String.join(" ", args)).isEqualTo(AdminMain.EXIT_USAGE);
+        }
+        assertThat(err.toString(StandardCharsets.UTF_8))
+                .contains("--members is required")
+                .contains("--position is required");
+        // a database that is not there: a failure (1), not a usage error
+        assertThat(AdminMain.run(
+                        new String[] {
+                            "verify-export",
+                            "--jdbc-url",
+                            "jdbc:postgresql://127.0.0.1:1/x",
+                            "--ack-log",
+                            "a.csv",
+                            "--nas-id",
+                            "1"
+                        },
+                        o,
+                        e))
+                .isEqualTo(AdminMain.EXIT_FAILED);
+    }
+
     private static String key(String sessionId) {
         EventKeys keys = new EventKeys();
         UnsafeBuffer id = new UnsafeBuffer(sessionId.getBytes(StandardCharsets.US_ASCII));

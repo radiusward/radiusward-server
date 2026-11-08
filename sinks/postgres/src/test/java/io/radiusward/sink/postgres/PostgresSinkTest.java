@@ -326,6 +326,79 @@ class PostgresSinkTest {
     }
 
     @Test
+    void rowsWithDataErrorsGoToQuarantine() throws Exception {
+        // a source event time PostgreSQL cannot store (year ~31 million) is a data error for that row only
+        ExportEvent broken = new ExportEvent(
+                new UUID(9, 99),
+                300,
+                T,
+                7,
+                1,
+                SESSION,
+                "s1",
+                3,
+                ExportEvent.EventOutcome.APPLIED,
+                60L,
+                1_000_000_000_000_000L,
+                1,
+                1,
+                ALICE);
+        try (PostgresSink sink = open(Map.of())) {
+            sink.write(batch(1, 0, 300, List.of(event(1, 100, T), broken), List.of()));
+            assertThat(sink.storedPosition())
+                    .as("the batch still counts as written")
+                    .isEqualTo(300);
+        }
+        assertThat(count("SELECT count(*) FROM accounting_event")).isEqualTo(1);
+        assertThat(value("SELECT sink || ' ' || log_position || ' ' || payload FROM quarantine"))
+                .isEqualTo("pg 300 event 00000000-0000-0009-0000-000000000063");
+    }
+
+    @Test
+    void closedSessionsExpireWithSessionsRetention() throws Exception {
+        long old = T - 10L * 86_400_000L;
+        SessionSnapshot closed = new SessionSnapshot(
+                new UUID(5, 5),
+                100,
+                7,
+                "old",
+                SessionSnapshot.State.STOPPED,
+                SessionSnapshot.CloseCause.STOP,
+                2,
+                60L,
+                1,
+                1,
+                old,
+                old,
+                old,
+                ALICE);
+        try (PostgresSink sink = open(Map.of("sessions.retention", "7d", "mode", "sessions"))) {
+            sink.write(batch(
+                    1,
+                    0,
+                    200,
+                    List.of(),
+                    List.of(closed, session(200, 60, SessionSnapshot.State.ACTIVE, ALICE, "s1"))));
+        }
+        try (PostgresSink sink = open(Map.of("sessions.retention", "7d", "mode", "sessions"))) {
+            sink.write(batch(1, 200, 300, List.of(), List.of())); // housekeeping runs on the first write after open
+        }
+        assertThat(count("SELECT count(*) FROM accounting_session WHERE acct_session_id = 'old'"))
+                .isZero();
+        assertThat(count("SELECT count(*) FROM accounting_session WHERE acct_session_id = 's1'"))
+                .as("open sessions are kept")
+                .isEqualTo(1);
+    }
+
+    @Test
+    void invalidSettingsAreRejected() {
+        assertThatThrownBy(() -> open(Map.of("attributes", "xml"))).hasMessageContaining("expected json, raw or none");
+        assertThat(PostgresSink.duration("12h")).isEqualTo(java.time.Duration.ofHours(12));
+        assertThat(PostgresSink.duration("30m")).isEqualTo(java.time.Duration.ofMinutes(30));
+        assertThatThrownBy(() -> PostgresSink.duration("5w")).hasMessageContaining("expected a duration");
+    }
+
+    @Test
     void radacctViewForFreeRadiusTools() throws Exception {
         try (PostgresSink sink = open(Map.of("radacct.view", "true"))) {
             sink.write(

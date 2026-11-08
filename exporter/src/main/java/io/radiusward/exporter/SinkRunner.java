@@ -163,9 +163,7 @@ final class SinkRunner implements Runnable {
     private void becomeOwner(LeaseClient.Ack ack) throws Exception {
         epoch = ack.epoch();
         // after a resync the cluster's checkpoint wins over the sink's own position (re-export from there)
-        long start = ack.resync()
-                ? Math.max(ack.checkpoint(), 0)
-                : Math.max(Math.max(ack.checkpoint(), sink.storedPosition()), 0);
+        long start = ExportDecisions.startPosition(ack, ack.resync() ? -1 : sink.storedPosition());
         replica = StateMachineReplica.fromSnapshot(
                 aeron, archive, exporter.clusterDir(), start, exporter.serviceSettings(), streamBase + 1, builder);
         builder.attach(replica, start);
@@ -185,7 +183,7 @@ final class SinkRunner implements Runnable {
 
     private void exportStep() throws Exception {
         long now = System.nanoTime();
-        if (now - lastRenewedNs > config.leaseTimeoutMs() * 1_000_000L) {
+        if (ExportDecisions.leaseStale(now, lastRenewedNs, config.leaseTimeoutMs())) {
             LOG.warn("sink {}: lease not renewed for {} ms; stepping back", config.name(), config.leaseTimeoutMs());
             loseLease();
             return;
@@ -201,20 +199,22 @@ final class SinkRunner implements Runnable {
                 batchStartedNs = now;
             }
         }
-        boolean full = builder.rows() >= config.batchRows();
-        boolean lingered = builder.rows() > 0 && now - batchStartedNs >= config.batchLingerMs() * 1_000_000L;
-        if (full || lingered) {
+        boolean timer = now >= nextFlushNs;
+        if (timer) {
+            nextFlushNs = now + renewIntervalNs();
+        }
+        ExportDecisions.Flush flush = ExportDecisions.flush(
+                builder.rows(),
+                config.batchRows(),
+                batchStartedNs == 0 ? 0 : now - batchStartedNs,
+                config.batchLingerMs() * 1_000_000L,
+                timer,
+                builder.hasProgress());
+        if (flush != ExportDecisions.Flush.NONE) {
+            // BATCH: full or lingered; EMPTY: moves the stored position past entries without rows
             pending = builder.take(epoch);
             batchStartedNs = 0;
             writePending();
-            return;
-        }
-        if (now >= nextFlushNs) {
-            nextFlushNs = now + renewIntervalNs();
-            if (builder.rows() == 0 && builder.hasProgress()) {
-                pending = builder.take(epoch); // empty batch: moves the stored position past entries without rows
-                writePending();
-            }
             return;
         }
         if (fragments == 0) {
@@ -240,22 +240,24 @@ final class SinkRunner implements Runnable {
         nextRenewNs = now + renewIntervalNs();
         LeaseClient.Ack ack =
                 lease.checkpoint(config, exporter.memberId(), epoch, durablePosition, lastEventTime, ACK_TIMEOUT);
-        if (ack == null) {
-            return; // no answer (election?); retried on the next tick, stepping back after a lease timeout
+        switch (ExportDecisions.renewal(ack, epoch)) {
+            case NO_ANSWER -> {} // election?; retried on the next tick, stepping back after a lease timeout
+            case LOST -> {
+                status.lease(ack.owner(), ack.epoch(), ack.checkpoint(), ack.detached());
+                LOG.warn("sink {}: lease refused, member {} exports it now", config.name(), ack.owner());
+                loseLease();
+            }
+            case RESYNC -> {
+                status.lease(ack.owner(), ack.epoch(), ack.checkpoint(), ack.detached());
+                pendingResync = ack; // handled by the export loop
+            }
+            case KEEP -> {
+                status.lease(ack.owner(), ack.epoch(), ack.checkpoint(), ack.detached());
+                epoch = ack.epoch();
+                lastRenewedNs = now;
+                status.owner(true, epoch, durablePosition);
+            }
         }
-        status.lease(ack.owner(), ack.epoch(), ack.checkpoint(), ack.detached());
-        if (ack.result() != LeaseResult.GRANTED) {
-            LOG.warn("sink {}: lease refused, member {} exports it now", config.name(), ack.owner());
-            loseLease();
-            return;
-        }
-        if (ack.resync() && ack.epoch() != epoch) {
-            pendingResync = ack; // handled by the export loop
-            return;
-        }
-        epoch = ack.epoch();
-        lastRenewedNs = now;
-        status.owner(true, epoch, durablePosition);
     }
 
     /** Renews the lease every third of its timeout while this member owns the sink, whatever the sink does. */
@@ -266,13 +268,14 @@ final class SinkRunner implements Runnable {
                         config, exporter.memberId(), epoch, durablePosition, lastEventTime, ACK_TIMEOUT);
                 if (ack != null && owner) {
                     status.lease(ack.owner(), ack.epoch(), ack.checkpoint(), ack.detached());
-                    if (ack.result() != LeaseResult.GRANTED) {
-                        leaseLost = true;
-                    } else if (ack.resync() && ack.epoch() != epoch) {
-                        pendingResync = ack;
-                    } else {
-                        epoch = ack.epoch();
-                        lastRenewedNs = System.nanoTime();
+                    switch (ExportDecisions.renewal(ack, epoch)) {
+                        case LOST -> leaseLost = true;
+                        case RESYNC -> pendingResync = ack;
+                        case KEEP -> {
+                            epoch = ack.epoch();
+                            lastRenewedNs = System.nanoTime();
+                        }
+                        case NO_ANSWER -> {}
                     }
                 }
             }

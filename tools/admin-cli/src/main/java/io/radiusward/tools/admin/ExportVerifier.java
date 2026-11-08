@@ -28,7 +28,7 @@ public final class ExportVerifier {
 
     private ExportVerifier() {}
 
-    public static AckVerifier.Report verify(Path ackLog, int nasId, Connection db, AdminClient cluster)
+    public static AckVerifier.Report verify(Path ackLog, int nasId, Connection db, AckVerifier.SessionLookup cluster)
             throws IOException, SQLException {
         Map<String, AckVerifier.Expected> expected =
                 AckVerifier.lastAcknowledged(Files.readAllLines(ackLog, StandardCharsets.UTF_8));

@@ -21,6 +21,7 @@ sinks) and Phase 4 (Kubernetes) are next — see the [roadmap](docs/plans/roadma
 
 ```bash
 ./mvnw verify                                   # build, unit + integration tests, coverage, format check
+./mvnw -Pcoverage verify -Dradiusward.require.docker=true   # unit + integration coverage, module floors
 ./mvnw spotless:apply                           # format (palantir-java-format) + license headers
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dsurefire.failIfNoSpecifiedTests=false
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dfixtures.update=true -Dsurefire.failIfNoSpecifiedTests=false
@@ -59,6 +60,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `tools/radclient` | CLI test client (`acct`, `replay`, `decode [--fixture]`, `load`), executable jar |
 | `tools/admin-cli` | `AdminClient`; `admin state`, `admin verify-acks` (acknowledged events vs replicated state) |
 | `testing/benchmarks` | JMH, only with `-Pbench` |
+| `testing/coverage` | Aggregate coverage report and module floors, only with `-Pcoverage` |
 
 ## Project rules
 
@@ -89,7 +91,8 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
   `radius-codec/src/main/codegen/hot-attributes.txt` (at most 64 fields until the presence mask is widened).
 - **Every source file** carries the SPDX header (`./mvnw spotless:apply` adds it).
 - **Tests with every change.** Coverage floors: `radius-codec` 90 % (generated code excluded),
-  `radius-dictionary` 80 %.
+  `radius-dictionary` 80 % in `./mvnw verify`; per module over unit + integration tests in
+  `testing/coverage/floors.properties` (`-Pcoverage`, CI). Raise a floor when its module gains tests, never lower it.
 - **Docs are part of the change:** update the relevant README / ADR / doc in the same commit; new
   decisions get an ADR.
 

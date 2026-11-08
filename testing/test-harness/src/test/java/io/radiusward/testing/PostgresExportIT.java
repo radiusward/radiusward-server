@@ -171,9 +171,42 @@ class PostgresExportIT {
             try (AdminClient admin = cluster.admin();
                     Connection c = connect()) {
                 io.radiusward.tools.admin.AckVerifier.Report report =
-                        io.radiusward.tools.admin.ExportVerifier.verify(ackLog, LocalCluster.NAS_ID, c, admin);
+                        io.radiusward.tools.admin.ExportVerifier.verify(ackLog, LocalCluster.NAS_ID, c, admin::session);
                 assertThat(report.lost()).as("verify-export").isEmpty();
                 assertThat(report.sessions()).isEqualTo(3000);
+
+                // the same through the command line
+                String members = String.join(",", cluster.members());
+                String port = Integer.toString(cluster.basePort());
+                assertThat(admin("state", "--members", members, "--base-port", port))
+                        .contains("applied=");
+                assertThat(admin("sinks", "--members", members, "--base-port", port))
+                        .contains("pg ");
+                assertThat(admin(
+                                "verify-acks",
+                                "--members",
+                                members,
+                                "--base-port",
+                                port,
+                                "--ack-log",
+                                ackLog.toString(),
+                                "--nas-id",
+                                Integer.toString(LocalCluster.NAS_ID)))
+                        .contains("lost=0");
+                assertThat(admin(
+                                "verify-export",
+                                "--jdbc-url",
+                                postgres.getJdbcUrl(),
+                                "--jdbc-user",
+                                postgres.getUsername(),
+                                "--jdbc-password",
+                                postgres.getPassword(),
+                                "--ack-log",
+                                ackLog.toString(),
+                                "--nas-id",
+                                Integer.toString(LocalCluster.NAS_ID)))
+                        .contains("lost=0");
+                assertThat(admin("export-schema")).contains("CREATE TABLE accounting_session");
 
                 AdminClient.SinkInfo before = admin.sinks().sinks().get(0);
                 assertThat(before.name()).isEqualTo("pg");
@@ -193,6 +226,16 @@ class PostgresExportIT {
             assertThat(count("SELECT count(DISTINCT event_id) FROM accounting_event"))
                     .isEqualTo(events);
         }
+    }
+
+    /** {@code radiusward admin <args>} in this JVM; fails unless it exits with 0. */
+    private static String admin(String... args) {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        java.io.ByteArrayOutputStream err = new java.io.ByteArrayOutputStream();
+        int exit =
+                io.radiusward.tools.admin.AdminMain.run(args, new PrintStream(out, true), new PrintStream(err, true));
+        assertThat(exit).as(String.join(" ", args) + "\n" + out + err).isZero();
+        return out.toString();
     }
 
     private static long count(String sql) throws SQLException {

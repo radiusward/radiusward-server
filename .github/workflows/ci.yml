@@ -53,3 +53,22 @@ jobs:
         with:
           name: e2e-reports
           path: '**/target/failsafe-reports/'
+
+  coverage:
+    name: coverage (Java 21)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Unit and integration tests with coverage, module floors
+        run: ./mvnw -B -ntp -Pcoverage verify -Dradiusward.require.docker=true
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: testing/coverage/target/site/jacoco-aggregate/

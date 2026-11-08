@@ -401,6 +401,10 @@ PostgreSQL 17 in a container on the same VM. Absolute rates are not bare-metal n
 - Found in the final regression run: `RADIUSWARD_EXPORT_SINKS=` (empty), documented as "no exporter", was rejected
   as a missing key and stopped members from starting; an empty list now disables the exporter
   (`SinkConfigTest`). The admin client also re-sends a query without a reply after 5 s.
+- Found by the coverage work (`-Pcoverage`, [strategy](../testing/strategy.md#coverage)): a partition created in
+  a rolled-back transaction stayed in the PostgreSQL sink's partition cache, so later good rows for that day
+  failed and went to quarantine — a rollback now clears the cache. The admin client did not notice that the
+  cluster had closed its idle session (no keep-alives) and now reconnects.
 
 ### Deviations from the plan
 

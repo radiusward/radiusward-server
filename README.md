@@ -88,6 +88,7 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 | [`testing/e2e-tests`](testing/e2e-tests/README.md) | end-to-end tests against real processes (`-Pe2e`) |
 | [`testing/linux-tests`](testing/linux-tests/README.md) | fault injection in containers: power loss, partitions, full disk, overload (`-Plinux`) |
 | [`testing/benchmarks`](testing/benchmarks/README.md) | JMH benchmarks |
+| `testing/coverage` | Aggregate coverage over unit + integration tests, module floors (`-Pcoverage`) |
 
 ## Supported vendors
 
