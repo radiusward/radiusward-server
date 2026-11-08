@@ -60,6 +60,11 @@ public final class AccountingService implements ClusteredService {
     private final SessionReportEncoder sessionReportEncoder = new SessionReportEncoder();
     private final StateReportEncoder stateReportEncoder = new StateReportEncoder();
     private final ExportCheckpointAckEncoder checkpointAckEncoder = new ExportCheckpointAckEncoder();
+    private final io.radiusward.protocol.SinkQueryDecoder sinkQueryDecoder =
+            new io.radiusward.protocol.SinkQueryDecoder();
+    private final io.radiusward.protocol.SinkReportEncoder sinkReportEncoder =
+            new io.radiusward.protocol.SinkReportEncoder();
+    private final UnsafeBuffer sinkBuffer = new UnsafeBuffer(new byte[4096]);
     private final UnsafeBuffer egressBuffer = new UnsafeBuffer(new byte[256]);
 
     private Cluster cluster;
@@ -132,6 +137,15 @@ public final class AccountingService implements ClusteredService {
             case io.radiusward.protocol.AccountingCommandDecoder.TEMPLATE_ID ->
                 onCommand(session, timestamp, buffer, offset, header);
             case ExportCheckpointDecoder.TEMPLATE_ID -> onCheckpoint(session, timestamp, buffer, offset, header);
+            case io.radiusward.protocol.SinkQueryDecoder.TEMPLATE_ID -> {
+                sinkQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                replySinks(session, sinkQueryDecoder.correlationId());
+            }
+            case io.radiusward.protocol.SinkResyncDecoder.TEMPLATE_ID -> {
+                applier.apply(buffer, offset, header.position(), timestamp);
+                stats.purgeInputs(machine.export());
+                replySinks(session, applier.resync().correlationId());
+            }
             case io.radiusward.protocol.MemberLogPositionDecoder.TEMPLATE_ID -> {
                 applier.apply(buffer, offset, header.position(), timestamp);
                 stats.purgeInputs(machine.export());
@@ -194,12 +208,47 @@ public final class AccountingService implements ClusteredService {
                 .owner(slot < 0 ? -1 : export.owner(slot))
                 .epoch(slot < 0 ? 0 : export.epoch(slot))
                 .checkpoint(slot < 0 ? 0 : export.checkpoint(slot))
-                .detached((short) (slot >= 0 && export.detached(slot) ? 1 : 0));
+                .detached((short) (slot >= 0 && export.detached(slot) ? 1 : 0))
+                .resync((short) (slot >= 0 && export.resyncFrom(slot) >= 0 ? 1 : 0));
         if (session != null) {
             reply(session, MessageHeaderEncoder.ENCODED_LENGTH + checkpointAckEncoder.encodedLength());
         }
         // no publishStats: the published position is that of the last accounting entry, so lag on /state
         // counts accounting not yet exported, not the checkpoints themselves
+    }
+
+    private void replySinks(ClientSession session, long correlationId) {
+        ExportState export = machine.export();
+        io.radiusward.protocol.SinkReportEncoder.SinksEncoder sinks = sinkReportEncoder
+                .wrapAndApplyHeader(sinkBuffer, 0, headerEncoder)
+                .correlationId(correlationId)
+                .logPosition(export.lastCommandPosition())
+                .sinksCount(export.count());
+        byte[] name = new byte[ExportState.NAME_LENGTH];
+        for (int i = 0; i < export.count(); i++) {
+            java.util.Arrays.fill(name, (byte) 0);
+            byte[] ascii = export.name(i).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            System.arraycopy(ascii, 0, name, 0, Math.min(ascii.length, name.length));
+            sinks.next()
+                    .putName(name, 0)
+                    .checkpoint(export.checkpoint(i))
+                    .owner(export.owner(i))
+                    .epoch(export.epoch(i))
+                    .leaseExpiry(export.leaseExpiry(i))
+                    .required((short) (export.required(i) ? 1 : 0))
+                    .detached((short) (export.detached(i) ? 1 : 0))
+                    .resync((short) (export.resyncFrom(i) >= 0 ? 1 : 0));
+        }
+        if (session != null) {
+            int length = MessageHeaderEncoder.ENCODED_LENGTH + sinkReportEncoder.encodedLength();
+            for (int attempt = 0; attempt < 3; attempt++) {
+                long result = session.offer(sinkBuffer, 0, length);
+                if (result > 0 || result == Publication.NOT_CONNECTED || result == Publication.CLOSED) {
+                    return;
+                }
+                idleStrategy.idle();
+            }
+        }
     }
 
     private void onStateQuery(ClientSession session, DirectBuffer buffer, int offset) {

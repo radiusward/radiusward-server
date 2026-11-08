@@ -118,12 +118,38 @@
         <field name="epoch" id="4" type="int64"/>
         <field name="checkpoint" id="5" type="int64"/>
         <field name="detached" id="6" type="uint8"/>
+        <field name="resync" id="7" type="uint8" description="1: start from checkpoint, ignore the sink's own position"/>
     </sbe:message>
 
     <!-- every member -> cluster: how far its own copy of the log reaches (log purge floor, ADR 0014) -->
     <sbe:message name="MemberLogPosition" id="10" sinceVersion="2">
         <field name="memberId" id="1" type="int32"/>
         <field name="logPosition" id="2" type="int64" description="this member's local log recording position"/>
+    </sbe:message>
+
+    <!-- admin -> cluster -> admin: sinks in the replicated state (radiusward admin sinks | resync) -->
+    <sbe:message name="SinkQuery" id="11" sinceVersion="2">
+        <field name="correlationId" id="1" type="int64"/>
+    </sbe:message>
+    <sbe:message name="SinkResync" id="13" sinceVersion="2"
+                 description="Moves a sink's checkpoint (also back), fences its exporter and re-attaches it">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="sinkName" id="2" type="SinkName"/>
+        <field name="position" id="3" type="int64"/>
+    </sbe:message>
+    <sbe:message name="SinkReport" id="12" sinceVersion="2">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="logPosition" id="2" type="int64" description="position of the last accounting entry"/>
+        <group name="sinks" id="3" dimensionType="groupSizeEncoding">
+            <field name="name" id="1" type="SinkName"/>
+            <field name="checkpoint" id="2" type="int64"/>
+            <field name="owner" id="3" type="int32"/>
+            <field name="epoch" id="4" type="int64"/>
+            <field name="leaseExpiry" id="5" type="int64"/>
+            <field name="required" id="6" type="uint8"/>
+            <field name="detached" id="7" type="uint8"/>
+            <field name="resync" id="8" type="uint8"/>
+        </group>
     </sbe:message>
 
     <!-- admin / tests -->
@@ -209,6 +235,7 @@
             <field name="maxLagMs" id="10" type="int64"/>
             <field name="onMaxLag" id="11" type="OnMaxLag"/>
             <field name="detached" id="12" type="uint8"/>
+            <field name="resyncFrom" id="13" type="int64" description="-1 = no resync pending"/>
         </group>
     </sbe:message>
     <sbe:message name="MemberPositionChunk" id="25" sinceVersion="2">

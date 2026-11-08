@@ -139,7 +139,10 @@ final class SinkRunner implements Runnable {
 
     private void becomeOwner(LeaseClient.Ack ack) throws Exception {
         epoch = ack.epoch();
-        long start = Math.max(Math.max(ack.checkpoint(), sink.storedPosition()), 0);
+        // after a resync the cluster's checkpoint wins over the sink's own position (re-export from there)
+        long start = ack.resync()
+                ? Math.max(ack.checkpoint(), 0)
+                : Math.max(Math.max(ack.checkpoint(), sink.storedPosition()), 0);
         replica = StateMachineReplica.fromSnapshot(
                 aeron, archive, exporter.clusterDir(), start, exporter.serviceSettings(), streamBase + 1, builder);
         builder.attach(replica, start);
@@ -222,6 +225,18 @@ final class SinkRunner implements Runnable {
         if (ack.result() != LeaseResult.GRANTED) {
             LOG.warn("sink {}: lease refused, member {} exports it now", config.name(), ack.owner());
             loseLease();
+            return;
+        }
+        if (ack.resync() && ack.epoch() != epoch) {
+            LOG.warn(
+                    "sink {}: resync to log position {}; restarting the export there", config.name(), ack.checkpoint());
+            loseLease();
+            try {
+                becomeOwner(ack);
+            } catch (Exception e) {
+                status.error(e.toString());
+                LOG.error("sink {}: restart after resync failed: {}", config.name(), e.toString());
+            }
             return;
         }
         epoch = ack.epoch();

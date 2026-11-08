@@ -89,6 +89,23 @@ class AckVerifierTest {
         assertThat(err.toString(StandardCharsets.UTF_8)).contains("usage: admin state");
     }
 
+    @Test
+    void exportSchemaPrintsTheFullSql() {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        PrintStream o = new PrintStream(out, true, StandardCharsets.UTF_8);
+        PrintStream e = new PrintStream(new ByteArrayOutputStream(), true, StandardCharsets.UTF_8);
+        assertThat(AdminMain.run(new String[] {"export-schema"}, o, e)).isEqualTo(AdminMain.EXIT_OK);
+        assertThat(out.toString(StandardCharsets.UTF_8))
+                .contains("CREATE TABLE IF NOT EXISTS schema_version")
+                .contains("CREATE TABLE accounting_session")
+                .contains("PARTITION BY RANGE (commit_day)")
+                .contains("INSERT INTO schema_version (version, name, checksum, applied_at) VALUES (1, 'V1__init.sql'");
+        assertThat(AdminMain.run(new String[] {"export-schema", "--type", "oracle"}, o, e))
+                .isEqualTo(AdminMain.EXIT_USAGE);
+        assertThat(AdminMain.run(new String[] {"resync", "--members", "x"}, o, e))
+                .isEqualTo(AdminMain.EXIT_USAGE);
+    }
+
     private static String key(String sessionId) {
         EventKeys keys = new EventKeys();
         UnsafeBuffer id = new UnsafeBuffer(sessionId.getBytes(StandardCharsets.US_ASCII));

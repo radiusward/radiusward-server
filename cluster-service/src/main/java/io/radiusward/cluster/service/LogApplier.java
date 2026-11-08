@@ -9,6 +9,7 @@ import io.radiusward.protocol.ExportCheckpointDecoder;
 import io.radiusward.protocol.MemberLogPositionDecoder;
 import io.radiusward.protocol.MessageHeaderDecoder;
 import io.radiusward.protocol.OnMaxLag;
+import io.radiusward.protocol.SinkResyncDecoder;
 import org.agrona.DirectBuffer;
 
 /**
@@ -30,6 +31,9 @@ public final class LogApplier {
     /** {@link #apply} result for an {@code ExportCheckpoint}; see {@link #leaseResult()}. */
     public static final int CHECKPOINT = -2;
 
+    /** {@link #apply} result for a {@code SinkResync}. */
+    public static final int RESYNC = -4;
+
     /** {@link #apply} result for a {@code MemberLogPosition}. */
     public static final int MEMBER_POSITION = -3;
 
@@ -38,6 +42,7 @@ public final class LogApplier {
     private final AccountingCommandDecoder commandDecoder = new AccountingCommandDecoder();
     private final ExportCheckpointDecoder checkpointDecoder = new ExportCheckpointDecoder();
     private final MemberLogPositionDecoder memberPositionDecoder = new MemberLogPositionDecoder();
+    private final SinkResyncDecoder resyncDecoder = new SinkResyncDecoder();
     private final byte[] sinkName = new byte[ExportState.NAME_LENGTH];
     private int leaseResult;
     private int sinkSlot = -1;
@@ -64,6 +69,19 @@ public final class LogApplier {
         return switch (headerDecoder.templateId()) {
             case AccountingCommandDecoder.TEMPLATE_ID -> applyCommand(buffer, offset, position, timestamp);
             case ExportCheckpointDecoder.TEMPLATE_ID -> applyCheckpoint(buffer, offset, timestamp);
+            case SinkResyncDecoder.TEMPLATE_ID -> {
+                resyncDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                int n = resyncDecoder.getSinkName(sinkName, 0);
+                int end = 0;
+                while (end < n && sinkName[end] != 0) {
+                    end++;
+                }
+                machine.export()
+                        .resync(
+                                new String(sinkName, 0, end, java.nio.charset.StandardCharsets.US_ASCII),
+                                resyncDecoder.position());
+                yield RESYNC;
+            }
             case MemberLogPositionDecoder.TEMPLATE_ID -> {
                 memberPositionDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
                 machine.export().memberPosition(memberPositionDecoder.memberId(), memberPositionDecoder.logPosition());
@@ -136,6 +154,11 @@ public final class LogApplier {
     /** The command decoded by the last {@link #apply} that returned an outcome. */
     public AccountingCommandDecoder command() {
         return commandDecoder;
+    }
+
+    /** The resync decoded by the last {@link #apply} that returned {@link #RESYNC}. */
+    public SinkResyncDecoder resync() {
+        return resyncDecoder;
     }
 
     /** The checkpoint decoded by the last {@link #apply} that returned {@link #CHECKPOINT}. */

@@ -205,7 +205,8 @@ public final class SnapshotCodec {
                             export.onMaxLag(i) == ExportState.ON_MAX_LAG_DETACH
                                     ? io.radiusward.protocol.OnMaxLag.DETACH
                                     : io.radiusward.protocol.OnMaxLag.BLOCK)
-                    .detached((short) (export.detached(i) ? 1 : 0));
+                    .detached((short) (export.detached(i) ? 1 : 0))
+                    .resyncFrom(export.resyncFrom(i));
         }
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sinkChunkEncoder.encodedLength());
     }
@@ -300,7 +301,8 @@ public final class SnapshotCodec {
                                     s.onMaxLag() == io.radiusward.protocol.OnMaxLag.DETACH
                                             ? ExportState.ON_MAX_LAG_DETACH
                                             : ExportState.ON_MAX_LAG_BLOCK,
-                                    s.detached() != 0);
+                                    s.detached() != 0,
+                                    s.resyncFrom());
                     loadedSinks++;
                 }
             }

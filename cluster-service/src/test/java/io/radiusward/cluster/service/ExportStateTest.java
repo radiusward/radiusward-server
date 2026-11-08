@@ -111,6 +111,30 @@ class ExportStateTest {
     }
 
     @Test
+    void resyncMovesTheCheckpointBackAndFencesTheExporter() {
+        assertThat(checkpoint("pg", 0, 0, 5_000, 1_000)).isEqualTo(GRANTED);
+        int slot = state.find("pg");
+        assertThat(state.resync("pg", 1_000)).isTrue();
+        assertThat(state.resync("nope", 0)).isFalse();
+        assertThat(state.checkpoint(slot)).isEqualTo(1_000);
+        assertThat(state.epoch(slot)).as("old exporter fenced").isEqualTo(2);
+        assertThat(state.resyncFrom(slot)).isEqualTo(1_000);
+
+        // the old exporter renews with its old epoch and position: granted a new epoch, but its position is ignored
+        assertThat(checkpoint("pg", 0, 1, 6_000, 2_000)).isEqualTo(GRANTED);
+        assertThat(state.epoch(slot)).isEqualTo(3);
+        assertThat(state.checkpoint(slot)).isEqualTo(1_000);
+        assertThat(state.resyncFrom(slot))
+                .as("still pending: start from the checkpoint")
+                .isEqualTo(1_000);
+
+        // the restarted exporter writes past the resync point with the current epoch: done
+        assertThat(checkpoint("pg", 0, 3, 1_500, 3_000)).isEqualTo(GRANTED);
+        assertThat(state.checkpoint(slot)).isEqualTo(1_500);
+        assertThat(state.resyncFrom(slot)).isEqualTo(-1);
+    }
+
+    @Test
     void sinkTableIsBounded() {
         for (int i = 0; i < ExportState.MAX_SINKS; i++) {
             assertThat(checkpoint("s" + i, 0, 0, 0, 0)).isEqualTo(GRANTED);
@@ -159,6 +183,7 @@ class ExportStateTest {
             assertThat(r.maxLagMs(i)).isEqualTo(export.maxLagMs(i));
             assertThat(r.onMaxLag(i)).isEqualTo(export.onMaxLag(i));
             assertThat(r.detached(i)).isEqualTo(export.detached(i));
+            assertThat(r.resyncFrom(i)).isEqualTo(export.resyncFrom(i));
         }
     }
 

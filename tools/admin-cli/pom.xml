@@ -26,5 +26,10 @@
             <groupId>io.radiusward</groupId>
             <artifactId>gateway</artifactId>
         </dependency>
+        <dependency>
+            <!-- export-schema and verify-export (also brings the JDBC driver) -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>sink-postgres</artifactId>
+        </dependency>
     </dependencies>
 </project>

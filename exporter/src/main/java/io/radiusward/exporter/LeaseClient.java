@@ -27,7 +27,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 public final class LeaseClient implements AutoCloseable, EgressListener {
 
     /** The cluster's answer. */
-    public record Ack(LeaseResult result, int owner, long epoch, long checkpoint, boolean detached) {}
+    public record Ack(LeaseResult result, int owner, long epoch, long checkpoint, boolean detached, boolean resync) {}
 
     private final String aeronDir;
     private final String ingressEndpoints;
@@ -124,7 +124,8 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
                     ackDecoder.owner(),
                     ackDecoder.epoch(),
                     ackDecoder.checkpoint(),
-                    ackDecoder.detached() != 0);
+                    ackDecoder.detached() != 0,
+                    ackDecoder.resync() != 0);
         }
     }
 

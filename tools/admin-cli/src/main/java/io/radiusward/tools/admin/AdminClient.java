@@ -110,6 +110,44 @@ public final class AdminClient implements AutoCloseable, EgressListener {
         return (Session) request(id, MessageHeaderEncoder.ENCODED_LENGTH + SessionQueryEncoder.BLOCK_LENGTH);
     }
 
+    /** One sink as the replicated state holds it. */
+    public record SinkInfo(
+            String name,
+            long checkpoint,
+            int owner,
+            long epoch,
+            long leaseExpiry,
+            boolean required,
+            boolean detached,
+            boolean resyncPending) {}
+
+    /** The sinks and the position of the last accounting entry (lag = logPosition - checkpoint). */
+    public record Sinks(long logPosition, List<SinkInfo> sinks) {}
+
+    public Sinks sinks() {
+        long id = ++correlation;
+        new io.radiusward.protocol.SinkQueryEncoder()
+                .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                .correlationId(id);
+        return (Sinks)
+                request(id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkQueryEncoder.BLOCK_LENGTH);
+    }
+
+    /** Moves a sink's checkpoint to {@code position}, fences its exporter and re-attaches it; returns the sinks. */
+    public Sinks resync(String sink, long position) {
+        long id = ++correlation;
+        byte[] name = new byte[32];
+        byte[] ascii = sink.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        System.arraycopy(ascii, 0, name, 0, Math.min(ascii.length, name.length));
+        new io.radiusward.protocol.SinkResyncEncoder()
+                .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                .correlationId(id)
+                .putSinkName(name, 0)
+                .position(position);
+        return (Sinks) request(
+                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkResyncEncoder.BLOCK_LENGTH);
+    }
+
     private Object request(long id, int length) {
         reply = null;
         long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
@@ -145,6 +183,31 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                     stateDecoder.activeSessions(),
                     stateDecoder.stoppedSessions(),
                     stateDecoder.stateDigest());
+        } else if (headerDecoder.templateId() == io.radiusward.protocol.SinkReportDecoder.TEMPLATE_ID) {
+            io.radiusward.protocol.SinkReportDecoder report = new io.radiusward.protocol.SinkReportDecoder();
+            report.wrapAndApplyHeader(buf, offset, headerDecoder);
+            long correlationId = report.correlationId();
+            long logPosition = report.logPosition();
+            List<SinkInfo> sinks = new java.util.ArrayList<>();
+            byte[] name = new byte[32];
+            for (io.radiusward.protocol.SinkReportDecoder.SinksDecoder s : report.sinks()) {
+                int n = s.getName(name, 0);
+                int end = 0;
+                while (end < n && name[end] != 0) {
+                    end++;
+                }
+                sinks.add(new SinkInfo(
+                        new String(name, 0, end, java.nio.charset.StandardCharsets.US_ASCII),
+                        s.checkpoint(),
+                        s.owner(),
+                        s.epoch(),
+                        s.leaseExpiry(),
+                        s.required() != 0,
+                        s.detached() != 0,
+                        s.resync() != 0));
+            }
+            replyCorrelation = correlationId;
+            reply = new Sinks(logPosition, List.copyOf(sinks));
         } else if (headerDecoder.templateId() == SessionReportDecoder.TEMPLATE_ID) {
             sessionDecoder.wrapAndApplyHeader(buf, offset, headerDecoder);
             replyCorrelation = sessionDecoder.correlationId();

@@ -269,6 +269,12 @@ order). Defaults (`fillfactor`, batch size, write path, history encoding) are ch
 
 - `admin verify-export` (cluster sessions and ack log against the database), `admin sinks` (checkpoint, lag,
   lease, epoch, detached), `admin resync <sink> --from <position>`, `admin export-schema --sink <name>`.
+- **Result (2026-11-08):** `admin sinks`, `admin resync --sink --position`, `admin export-schema [--type]`,
+  `admin verify-export` (ack log against `accounting_session`, and against the cluster with `--members`).
+  New schema-2 messages `SinkQuery`/`SinkReport`/`SinkResync`; a resync lowers the checkpoint, fences the
+  exporter with a new epoch, and the next lease grant carries a resync flag so the exporter starts from the
+  checkpoint instead of the sink's own position. `PostgresExportIT`: verify-export clean for 3,000 sessions,
+  `sinks` shows the handover, `resync` to 0 re-exports the whole log with the same 47,843 distinct rows.
 
 ### P3.8: Compose and image (size S)
 

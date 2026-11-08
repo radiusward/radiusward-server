@@ -42,6 +42,9 @@ public final class ExportState {
     private final long[] maxLagMs = new long[MAX_SINKS];
     private final int[] onMaxLag = new int[MAX_SINKS];
     private final boolean[] detached = new boolean[MAX_SINKS];
+    /** Position a resync asked for, or -1; while set the exporter starts from the checkpoint. */
+    private final long[] resyncFrom = new long[MAX_SINKS];
+
     private int count;
     private long lastCommandPosition;
 
@@ -76,6 +79,7 @@ public final class ExportState {
             names[slot] = name;
             owner[slot] = -1;
             behindSince[slot] = NONE;
+            resyncFrom[slot] = -1;
         }
         boolean leaseValid = owner[slot] >= 0 && now < leaseExpiry[slot];
         if (owner[slot] == member && claimedEpoch == epoch[slot] && leaseValid) {
@@ -91,7 +95,10 @@ public final class ExportState {
         maxLagBytes[slot] = lagBytesLimit;
         maxLagMs[slot] = lagMsLimit;
         onMaxLag[slot] = policy;
-        if (position > checkpoint[slot]) {
+        if (resyncFrom[slot] >= 0 && position > resyncFrom[slot] && claimedEpoch == epoch[slot]) {
+            resyncFrom[slot] = -1; // the new exporter has written past the resync point
+        }
+        if (position > checkpoint[slot] && (resyncFrom[slot] < 0 || claimedEpoch == epoch[slot])) {
             checkpoint[slot] = position;
             lastEventTime[slot] = eventTime;
         }
@@ -124,6 +131,30 @@ public final class ExportState {
             }
         }
         return block;
+    }
+
+    /**
+     * {@code radiusward admin resync}: moves the sink's checkpoint to {@code position} (also backwards), frees the
+     * lease with a new epoch (fencing the current exporter) and re-attaches the sink. The next exporter starts at
+     * the checkpoint, ignoring the position the sink stored itself. Returns false for an unknown sink.
+     */
+    public boolean resync(String name, long position) {
+        int slot = find(name);
+        if (slot < 0) {
+            return false;
+        }
+        checkpoint[slot] = Math.max(0, position);
+        resyncFrom[slot] = checkpoint[slot];
+        epoch[slot]++;
+        owner[slot] = -1;
+        leaseExpiry[slot] = 0;
+        detached[slot] = false;
+        behindSince[slot] = NONE;
+        return true;
+    }
+
+    public long resyncFrom(int slot) {
+        return resyncFrom[slot];
     }
 
     /** Records that an accounting entry at {@code position} was processed (applied or not). */
@@ -264,7 +295,8 @@ public final class ExportState {
             long lagBytesLimit,
             long lagMsLimit,
             int policy,
-            boolean isDetached) {
+            boolean isDetached,
+            long resync) {
         if (count == MAX_SINKS) {
             throw new IllegalStateException("snapshot has more than " + MAX_SINKS + " sinks");
         }
@@ -281,6 +313,7 @@ public final class ExportState {
         maxLagMs[slot] = lagMsLimit;
         onMaxLag[slot] = policy;
         detached[slot] = isDetached;
+        resyncFrom[slot] = resync;
     }
 
     public void restoreLastCommandPosition(long position) {

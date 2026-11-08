@@ -109,8 +109,9 @@ class PostgresExportIT {
                         null))) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
+            Path ackLog = dir.resolve("acks.csv");
             CompletableFuture<LoadGenerator.Result> load =
-                    CompletableFuture.supplyAsync(() -> load(cluster, Duration.ofSeconds(15)));
+                    CompletableFuture.supplyAsync(() -> load(cluster, Duration.ofSeconds(15), ackLog));
             Thread.sleep(6_000);
             int exporting = awaitExporter(cluster, -1);
             cluster.stopNode(exporting);
@@ -165,6 +166,32 @@ class PostgresExportIT {
                 }
                 assertThat(sessions).isEqualTo(state.active() + state.stopped());
             }
+
+            // the admin tools: verify-export against the ack log and the cluster, sinks, resync
+            try (AdminClient admin = cluster.admin();
+                    Connection c = connect()) {
+                io.radiusward.tools.admin.AckVerifier.Report report =
+                        io.radiusward.tools.admin.ExportVerifier.verify(ackLog, LocalCluster.NAS_ID, c, admin);
+                assertThat(report.lost()).as("verify-export").isEmpty();
+                assertThat(report.sessions()).isEqualTo(3000);
+
+                AdminClient.SinkInfo before = admin.sinks().sinks().get(0);
+                assertThat(before.name()).isEqualTo("pg");
+                assertThat(before.owner()).isEqualTo(next);
+                assertThat(before.epoch()).isEqualTo(epoch);
+
+                admin.resync("pg", 0); // export everything again: idempotent, nothing may change
+                LocalCluster.await(Duration.ofSeconds(60), "resync re-exported", () -> {
+                    AdminClient.SinkInfo s = admin.sinks().sinks().get(0);
+                    return !s.resyncPending() && s.checkpoint() >= node.stats().lastPosition();
+                });
+                assertThat(admin.sinks().sinks().get(0).epoch()).isGreaterThan(epoch);
+            }
+            assertThat(count("SELECT count(*) FROM accounting_event"))
+                    .as("after resync")
+                    .isEqualTo(events);
+            assertThat(count("SELECT count(DISTINCT event_id) FROM accounting_event"))
+                    .isEqualTo(events);
         }
     }
 
@@ -198,7 +225,7 @@ class PostgresExportIT {
         return found[0];
     }
 
-    private static LoadGenerator.Result load(LocalCluster cluster, Duration duration) {
+    private static LoadGenerator.Result load(LocalCluster cluster, Duration duration, Path ackLog) {
         try {
             return new LoadGenerator(
                             new LoadGenerator.Settings(
@@ -219,7 +246,7 @@ class PostgresExportIT {
                                     4,
                                     true,
                                     true,
-                                    null),
+                                    ackLog),
                             new PrintStream(System.out))
                     .run();
         } catch (IOException e) {
