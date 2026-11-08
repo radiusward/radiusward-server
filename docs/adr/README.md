@@ -11,5 +11,10 @@
 | [0007](0007-sink-spi-lag-policy.md) | Pluggable sinks, log-tailing exporter, lag policy | Accepted |
 | [0008](0008-dictionaries-licensing-codegen.md) | Bundled CC BY 4.0 FreeRADIUS dictionaries + code generation | Accepted |
 | [0009](0009-local-first-development.md) | Local-first development, no Docker in Phase 0–1 | Accepted |
+| [0010](0010-configuration.md) | Properties files with environment overrides | Accepted |
+| [0011](0011-gateway-pipeline.md) | Gateway pipeline: ring buffers, stateless response cache, resubmission | Accepted |
+| [0012](0012-session-store-dedup.md) | SessionStore layout and dedup rules | Accepted |
+| [0013](0013-operational-endpoints-logging.md) | Management endpoints; non-blocking Log4j2 async logging | Accepted |
+| [0014](0014-log-purge.md) | Log purge (spike result, Phase 3) | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

@@ -36,14 +36,21 @@ Status: ✅ covered · 🔜 planned (phase).
 
 | Case | Expected behaviour | Test | Status |
 |---|---|---|---|
-| leader killed before commit | no ACK; NAS retries; new leader commits once | e2e `LeaderFailoverIT` | 🔜 P1 |
-| leader killed after commit, before response | NAS retries; duplicate answered, applied once | e2e `LeaderFailoverIT` | 🔜 P1 |
-| gateway killed after commit | retry via other gateway answered as duplicate | e2e `GatewayFailoverIT` | 🔜 P1 |
-| identical retransmit, same gateway | answered from response cache | e2e `RetransmitIT` | 🔜 P1 |
-| retransmit with new Identifier / Acct-Delay-Time | cluster dedup, applied once | e2e `RetransmitIT` | 🔜 P1 |
-| node restart | catches up from snapshot + log | e2e `NodeRestartIT` | 🔜 P1 |
-| snapshot + restore with dedup state | duplicates still recognised | `AccountingServiceSnapshotTest` | 🔜 P1 |
-| loss of quorum / partition | no ACKs while no majority; resumes after | e2e `QuorumLossIT` | 🔜 P2 |
+| no majority (2 of 3 members down) | no ACK; after recovery the retransmit is acknowledged, applied once | e2e `AckAfterCommitIT` | ✅ |
+| leader killed (-9) under load | every acknowledged event in the state; per-session state = last acked event; replicas equal | e2e `LeaderFailoverIT`, `LocalClusterIT.leaderLossDoesNotLoseAcknowledgedEvents` | ✅ |
+| commands lost with the failed leader | retransmit after > 1 s is resubmitted by the gateway; late commits ignored | `UdpAgentTest.retransmitOfALongPendingRequestIsResubmitted`, e2e `LeaderFailoverIT` | ✅ |
+| gateway killed after commit, before response | retry via other gateway answered as duplicate, applied once | e2e `GatewayFailoverIT` | ✅ |
+| identical retransmit, same gateway | answered from the response cache, no cluster round trip | e2e `RetransmitIT`, `UdpAgentTest` | ✅ |
+| retransmit with new Identifier / Acct-Delay-Time / other gateway | same event keys, cluster duplicate, state unchanged | e2e `RetransmitIT`, `UdpAgentTest.eventKeysIgnoreIdentifierAndDelayForAllFixtures` | ✅ |
+| follower killed (-9) and restarted at once | waits for the stale mark file, catches up, same digest | e2e `NodeRestartIT` | ✅ |
+| snapshot + restart of every member | dedup state restored, old events are duplicates | e2e `SnapshotRestoreIT`, `SnapshotAndReplayTest` | ✅ |
+| Accounting-On/Off | all active sessions of the NAS stopped | e2e `AccountingOnOffIT`, `AccountingStateMachineTest` | ✅ |
+| session capacity reached | new sessions rejected (no ACK), Stops still applied | `AccountingStateMachineTest.capacity` | ✅ |
+| lost Stop | session removed after the idle timeout | `AccountingStateMachineTest.sweep…` | ✅ |
+| duplicates in any position | never change the result | `DuplicatesPropertyTest` (jqwik) | ✅ |
+| pending table or ring full | packet dropped, counted; NAS retransmits | `UdpAgentTest.fullPendingTableDrops` | ✅ |
+| logging ring full | log events dropped and counted, caller never blocks | `NonBlockingLoggingIT` | ✅ |
+| loss of quorum by network partition | no ACKs while no majority; resumes after | Linux network tests | 🔜 P2 |
 | disk full / fsync failure | no ACK | Linux test | 🔜 P2 |
 | power loss of one node | acknowledged records survive | Linux test with fsync | 🔜 P2 |
 | sustained overload | bounded memory, drops instead of OOM | load test `--memory=1g` | 🔜 P2 |

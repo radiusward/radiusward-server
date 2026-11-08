@@ -1,0 +1,92 @@
+/*
+ * Copyright 2026 The radiusward Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package io.radiusward.cluster.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import net.jqwik.api.ForAll;
+import net.jqwik.api.Property;
+import net.jqwik.api.constraints.IntRange;
+
+/**
+ * Retransmissions must never change the outcome: a clean stream of events and the same stream with
+ * duplicates of already-sent events inserted at random positions end in the same state, digest and
+ * applied count.
+ */
+class DuplicatesPropertyTest {
+
+    record Event(long session, int status, long sessionTime, long octets, int nas) {}
+
+    static List<Event> cleanStream(Random random, int sessions) {
+        List<Event> events = new ArrayList<>();
+        List<long[]> live = new ArrayList<>(); // session, time
+        for (int s = 0; s < sessions; s++) {
+            events.add(new Event(s, AccountingStateMachine.STATUS_START, 0, 0, s % 4));
+            live.add(new long[] {s, 0});
+            while (!live.isEmpty() && random.nextInt(3) == 0) {
+                long[] l = live.get(random.nextInt(live.size()));
+                l[1] += 60 + random.nextInt(240);
+                boolean stop = random.nextInt(4) == 0;
+                events.add(new Event(
+                        l[0],
+                        stop ? AccountingStateMachine.STATUS_STOP : AccountingStateMachine.STATUS_INTERIM,
+                        l[1],
+                        l[1] * 1000,
+                        (int) (l[0] % 4)));
+                if (stop) {
+                    live.remove(l);
+                }
+            }
+        }
+        return events;
+    }
+
+    static AccountingStateMachine run(List<Event> events) {
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000_000));
+        long now = 1_000;
+        for (Event e : events) {
+            now += 10;
+            sm.apply(
+                    e.session(),
+                    e.session() * 7,
+                    e.session() * 31 + e.status(),
+                    e.sessionTime(),
+                    e.nas(),
+                    e.status(),
+                    AccountingStateMachine.FLAG_SESSION_TIME,
+                    e.sessionTime(),
+                    0,
+                    e.octets(),
+                    0,
+                    now);
+        }
+        return sm;
+    }
+
+    @Property(tries = 200)
+    void duplicatesDoNotChangeTheResult(
+            @ForAll @IntRange(min = 1, max = 60) int sessions,
+            @ForAll long seed,
+            @ForAll @IntRange(max = 200) int dups) {
+        Random random = new Random(seed);
+        List<Event> clean = cleanStream(random, sessions);
+        List<Event> noisy = new ArrayList<>(clean);
+        for (int i = 0; i < dups; i++) {
+            int at = 1 + random.nextInt(noisy.size());
+            Event earlier = noisy.get(random.nextInt(at)); // a duplicate always comes after its original
+            noisy.add(at, earlier);
+        }
+        AccountingStateMachine a = run(clean);
+        AccountingStateMachine b = run(noisy);
+        assertThat(b.applied()).isEqualTo(a.applied());
+        assertThat(b.digest()).isEqualTo(a.digest());
+        assertThat(b.store().size()).isEqualTo(a.store().size());
+        assertThat(b.store().activeCount()).isEqualTo(a.store().activeCount());
+        assertThat(b.duplicates() + b.stale()).isEqualTo((long) dups);
+    }
+}

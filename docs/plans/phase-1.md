@@ -1,6 +1,6 @@
 # Phase 1 build plan: replicated accounting, running locally
 
-Status: **planned** (not started) · Created: 2026-11-08 · Builds on: [Phase 0](phase-0.md)
+Status: **done** (2026-11-08) · Created: 2026-11-08 · Builds on: [Phase 0](phase-0.md) · Report: [below](#phase-1-report)
 
 ## Goal
 
@@ -334,3 +334,67 @@ P1.3 and P1.5/P1.6 can be built in parallel; they only share the protocol.
 
 - Commit Phase 0 before starting Phase 1.
 - 61 of 64 extractor fields are used; widen the presence mask (two longs) before adding more.
+
+---
+
+## Phase 1 report
+
+Completed 2026-11-08. `./mvnw clean verify` (JDK 21): **BUILD SUCCESS, 251 tests, 1 skipped** (FreeRADIUS
+interop, `radiusd` not installed). `./mvnw -Pe2e verify`: **8/8 e2e scenarios, 3 runs in a row** (~175 s
+each). In-JVM integration tests: 10+ consecutive green runs.
+
+### Exit criteria
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | `verify` and `-Pe2e verify` green | ✅ both; e2e 3× in a row |
+| 2 | ACK only after commit | ✅ `AckAfterCommitIT`: with 2 of 3 members down nothing is acknowledged; after recovery the retransmit is acknowledged and applied once |
+| 3 | `kill -9` of the leader under ~2k req/s | ✅ local processes: 70,000 events at 2,057 req/s, **70,000 acknowledged, 0 failed**, 10,000 sessions ended STOPPED on both survivors, identical digests. `LeaderFailoverIT` additionally checks every session's state against the ack log |
+| 4 | Duplicates | ✅ cache hit for identical retransmits; new Identifier / Acct-Delay-Time / other gateway → cluster duplicate (`RetransmitIT`, `GatewayFailoverIT`) |
+| 5 | Restarts | ✅ follower restart right after `kill -9` (`NodeRestartIT`); snapshot + full restart keeps dedup (`SnapshotRestoreIT`) |
+| 6 | No allocation per packet | ✅ gateway (100k packets < 64 KB incl. the test client), state machine (2M commands < 4 KB), logging (100k calls < 64 KB). JDK caveat: sender address allocation when the sender changes |
+| 7 | ≤ ~80 bytes per session, `-Xmx384m` | ✅ ~77 bytes (500k sessions ≈ 38 MB, asserted ≤ 45 MB); nodes run with `-Xmx384m` in `run-local.sh` and the e2e tests |
+| 8 | Three ways to run | ✅ `LocalCluster`, `DevCluster` (ready in 885 ms), `scripts/run-local.sh` incl. `demo-failover` |
+| 9 | Docs | ✅ ADR 0010–0014, configuration reference, local-cluster guide, protocol (final), module READMEs, contributor guide, failure matrix; links checked |
+
+### Measurements (Apple M4 Pro, JDK 21, small profile, fsync level 2, all on one machine)
+
+| | |
+|---|---|
+| ACK latency, steady | p50 ~18–20 ms, p99 ~30–45 ms |
+| Failover (`kill -9` leader, 3 s heartbeat timeout) | ~6 s outage; every event acknowledged after NAS retransmission |
+| Throughput tested | 2,057 req/s sustained through 2 gateways during failover |
+| Session state | ~77 bytes per session |
+| Dev mode startup | 885 ms |
+
+Latency is dominated by the small profile's 1 ms sleeping idle strategy in several agents and the fsync per
+commit; it is far below NAS timeouts (3–5 s) and will be profiled on Linux in Phase 2.
+
+### Deviations from the plan
+
+| Plan | What was done | Why |
+|---|---|---|
+| Gateway resends pending commands after a reconnect | A retransmit of a request pending > 1 s is resubmitted (`gateway.retransmit.resubmit.after`) | Found by the failover demo: 846 of 7,000 events failed because the gateway swallowed retransmits of commands lost with the dead leader. Resubmission on retransmit needs no stored command bytes; afterwards 0 failures |
+| — | Launcher retries for up to 20 s on "active mark file detected" | Aeron's archive/cluster mark files count as alive for a fixed 10 s; without this a member cannot restart right after `kill -9` (systemd/Kubernetes would crash-loop) |
+| `scripts/cluster-tool.sh` | `radiusward cluster-tool …` subcommand | `java -cp` does not apply the jar's `Add-Exports`; the subcommand does |
+| Interim progress compared field by field when both carry it | A value only the incoming event carries counts as 0 on the stored side | Found by the smoke test: the first Interim after a Start (same second, no traffic) was taken for a duplicate |
+| Garbage-free Log4j2 via thread-locals and direct encoders | Also `log4j2.clock=SystemMillisClock` | JFR showed the default clock allocates a `java.time.Instant` per event (~140 → ~0.5 bytes per call) |
+| Stats as Aeron counters | `AtomicLongArray` with release stores | Simpler, same non-blocking property; Aeron counters can come with `/metrics` in Phase 3 |
+
+### Findings worth knowing
+
+- Aeron's default leader heartbeat timeout (10 s) would make failover take ~13 s; the local profile uses
+  3 s. The production default needs a decision in Phase 2 together with real NAS retry settings.
+- Followers never receive `onRoleChange` at start; the role is read in `onStart`.
+- Out-of-order delivery after a failover turns some older Interims into STALE — correct, their progress is
+  already reflected.
+- IPv6 NAS source addresses are not supported yet (IPv4 exact and CIDR are).
+- All six vendors use the default event-key strategy; vendor rules wait for real captures.
+
+### Open items for Phase 2
+
+- Container image from `radiusward.jar`, docker-compose; Linux runs for real fsync / power-loss, quorum
+  loss by partition, disk full, overload with `--memory=1g`.
+- Production default for `cluster.leader.heartbeat.timeout`; latency profiling on Linux.
+- Replace synthetic vendor fixtures with anonymised captures.
+- GitHub owner for the GHCR image path (already known: `radiusward/radiusward-server`).

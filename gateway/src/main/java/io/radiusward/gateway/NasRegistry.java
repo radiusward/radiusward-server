@@ -1,0 +1,148 @@
+/*
+ * Copyright 2026 The radiusward Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package io.radiusward.gateway;
+
+import io.radiusward.common.config.Config;
+import io.radiusward.common.config.ConfigException;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.agrona.collections.Int2ObjectHashMap;
+
+/**
+ * The configured NAS clients, looked up by source address. IPv4 exact matches are allocation-free
+ * ({@code Inet4Address.hashCode()} is the address); CIDR ranges are scanned in configuration order. The NAS
+ * identity always comes from here, never from attributes in the packet.
+ *
+ * <pre>
+ * nas.core.address = 10.255.0.1          # or a CIDR range: 10.0.0.0/24
+ * nas.core.secret  = ${env:NAS_CORE_SECRET}
+ * nas.core.vendor  = mikrotik
+ * nas.core.message-authenticator = optional   # required | optional | off
+ * nas.core.id      = 1001                # optional, defaults to a hash of the name
+ * </pre>
+ */
+public final class NasRegistry {
+
+    private final Int2ObjectHashMap<NasClient> exact = new Int2ObjectHashMap<>();
+    private final NasClient[] ranges;
+    private final List<NasClient> all;
+
+    private NasRegistry(List<NasClient> clients) {
+        List<NasClient> rangeList = new ArrayList<>();
+        Map<Integer, String> ids = new HashMap<>();
+        for (NasClient c : clients) {
+            String other = ids.put(c.id(), c.name());
+            if (other != null) {
+                throw new ConfigException("nas." + c.name() + ".id: id " + c.id() + " already used by nas." + other
+                        + "; set nas.<name>.id explicitly");
+            }
+            if (c.prefixLength() == 32) {
+                if (exact.put(c.network(), c) != null) {
+                    throw new ConfigException("nas." + c.name() + ".address: duplicate address");
+                }
+            } else {
+                rangeList.add(c);
+            }
+        }
+        this.ranges = rangeList.toArray(NasClient[]::new);
+        this.all = List.copyOf(clients);
+    }
+
+    public static NasRegistry of(List<NasClient> clients) {
+        return new NasRegistry(clients);
+    }
+
+    public static NasRegistry from(Config config) {
+        List<NasClient> clients = new ArrayList<>();
+        for (String name : config.names("nas")) {
+            String prefix = "nas." + name + ".";
+            String address = config.string(prefix + "address");
+            int slash = address.indexOf('/');
+            int prefixLength = slash < 0 ? 32 : parsePrefix(prefix, address.substring(slash + 1));
+            int network = ipv4(prefix + "address", slash < 0 ? address : address.substring(0, slash));
+            byte[] secret = config.string(prefix + "secret").getBytes(StandardCharsets.UTF_8);
+            NasClient.MessageAuthenticatorPolicy policy = config.enumValue(
+                    prefix + "message-authenticator",
+                    NasClient.MessageAuthenticatorPolicy.class,
+                    NasClient.MessageAuthenticatorPolicy.OPTIONAL);
+            int id = config.integer(prefix + "id", fnv1a(name));
+            clients.add(new NasClient(
+                    name,
+                    id,
+                    network,
+                    prefixLength,
+                    secret,
+                    config.string(prefix + "vendor", "default").toLowerCase(Locale.ROOT),
+                    policy));
+        }
+        if (clients.isEmpty()) {
+            throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");
+        }
+        return new NasRegistry(clients);
+    }
+
+    /** The NAS for a source address, or {@code null}. Allocation-free for IPv4. */
+    public NasClient lookup(InetAddress address) {
+        if (!(address instanceof Inet4Address)) {
+            return null; // IPv6 NAS support arrives later
+        }
+        int ip = address.hashCode();
+        NasClient client = exact.get(ip);
+        if (client != null) {
+            return client;
+        }
+        for (NasClient range : ranges) {
+            if (range.matches(ip)) {
+                return range;
+            }
+        }
+        return null;
+    }
+
+    public Collection<NasClient> clients() {
+        return Collections.unmodifiableCollection(all);
+    }
+
+    static int fnv1a(String name) {
+        int h = 0x811c9dc5;
+        for (byte b : name.getBytes(StandardCharsets.UTF_8)) {
+            h ^= b & 0xFF;
+            h *= 0x01000193;
+        }
+        return h;
+    }
+
+    private static int parsePrefix(String key, String text) {
+        try {
+            int p = Integer.parseInt(text);
+            if (p < 0 || p > 32) {
+                throw new NumberFormatException();
+            }
+            return p;
+        } catch (NumberFormatException e) {
+            throw new ConfigException(key + "address: invalid prefix length /" + text);
+        }
+    }
+
+    private static int ipv4(String key, String text) {
+        if (!text.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
+            throw new ConfigException(key + ": expected an IPv4 address or CIDR range, got \"" + text + "\"");
+        }
+        try {
+            return InetAddress.getByName(text).hashCode();
+        } catch (UnknownHostException e) {
+            throw new ConfigException(key + ": invalid address " + text, e);
+        }
+    }
+}

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- radiusward default logging. Set -Dradiusward.log.dir=<dir> to also write a rolling file. -->
+<Configuration status="WARN">
+    <Appenders>
+        <Console name="console" target="SYSTEM_OUT" immediateFlush="false">
+            <PatternLayout pattern="%d{ISO8601} %-5level [%t] %c{1} - %m%n"/>
+        </Console>
+        <SystemPropertyArbiter propertyName="radiusward.log.dir">
+            <RollingRandomAccessFile name="file"
+                                     fileName="${sys:radiusward.log.dir}/radiusward.log"
+                                     filePattern="${sys:radiusward.log.dir}/radiusward-%d{yyyy-MM-dd}-%i.log.gz"
+                                     immediateFlush="false">
+                <PatternLayout pattern="%d{ISO8601} %-5level [%t] %c{1} - %m%n"/>
+                <Policies>
+                    <TimeBasedTriggeringPolicy/>
+                    <SizeBasedTriggeringPolicy size="100 MB"/>
+                </Policies>
+                <DefaultRolloverStrategy max="10"/>
+            </RollingRandomAccessFile>
+        </SystemPropertyArbiter>
+    </Appenders>
+    <Loggers>
+        <Logger name="io.radiusward" level="${sys:radiusward.log.level:-INFO}"/>
+        <Root level="INFO">
+            <AppenderRef ref="console"/>
+            <SystemPropertyArbiter propertyName="radiusward.log.dir">
+                <AppenderRef ref="file"/>
+            </SystemPropertyArbiter>
+        </Root>
+    </Loggers>
+</Configuration>

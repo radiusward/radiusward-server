@@ -12,6 +12,11 @@ export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # JDK 21; CI also runs 25
 
 Every JVM that loads Agrona/Aeron needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`.
 
+```bash
+./mvnw -Pe2e verify               # end-to-end tests against real processes
+scripts/run-local.sh start        # local cluster; see docs/operations/local-cluster.md
+```
+
 ## Rules you must follow
 
 - Follow every rule in [CONTRIBUTING.md § Project rules](CONTRIBUTING.md#project-rules), in particular:

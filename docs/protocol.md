@@ -1,49 +1,47 @@
 # Cluster protocol
 
-> **Status: draft.** Finalised in Phase 1 together with the SBE schema in the `protocol` module.
-
-Gateways, the cluster and the exporter talk SBE-encoded messages over Aeron Cluster ingress/egress.
-RADIUS bytes never cross this boundary unparsed except as the opaque `rawAttributes` field kept for
-export.
+SBE messages between gateways, the cluster and tools, plus the snapshot format. Schema:
+[`protocol/src/main/resources/sbe/radiusward-schema.xml`](../protocol/src/main/resources/sbe/radiusward-schema.xml)
+(schema id 7101, version 1, little endian); Java codecs are generated at build time into
+`io.radiusward.protocol`.
 
 ## Messages
 
-| Message | Direction | Purpose |
-|---|---|---|
-| `AccountingCommand` | gateway → cluster | one accounting event to apply |
-| `AccountingCommitted` | cluster → gateway | the event is committed (or was a duplicate); gateway may answer the NAS |
-| `AccountingRejected` | cluster → gateway | not applied (e.g. a required sink over `maxLag`); gateway stays silent |
-| `ExportCheckpoint` | exporter → cluster | sink `sinkId` has durably written everything up to `logPosition` |
-| `ActivateVersion` | operator → cluster | switch state-machine behaviour at a log position (ADR 0005) |
+| Id | Message | Direction | Purpose |
+|---|---|---|---|
+| 1 | `AccountingCommand` | gateway → cluster | one accounting event |
+| 2 | `AccountingCommitted` | cluster → gateway | applied, duplicate or stale — answer the NAS |
+| 3 | `AccountingRejected` | cluster → gateway | not applied (capacity) — stay silent |
+| 4 / 5 | `SessionQuery` / `SessionReport` | admin → cluster → admin | one session's replicated state |
+| 6 / 7 | `StateQuery` / `StateReport` | admin → cluster → admin | totals and state digest |
+| 20–23 | `SnapshotHeader`, `SessionChunk`, `ExactKeyChunk`, `SnapshotFooter` | snapshot | state machine snapshot |
 
-### `AccountingCommand` (draft)
+### AccountingCommand
 
 | Field | Type | Notes |
 |---|---|---|
-| `correlationId` | int64 | per gateway attempt; matches the response |
+| `correlationId` | int64 | gateway pending slot + generation; matches the reply |
 | `gatewayId` | int32 | |
-| `operationKey` | 128 bit | logical event key hash (ADR 0003), stable across retries and gateways |
-| `nasId` | int32 | configured NAS identity, not the source port |
-| `statusType` | uint32 | |
-| `sessionTime` | uint32 | |
-| `eventTimestamp` | uint32 | 0 if absent |
-| `inputOctets64`, `outputOctets64` | uint64 | gigawords already combined |
+| `nasId` | int32 | configured NAS identity (never taken from the packet) |
+| `sessionKeyHi/Lo` | int64 ×2 | Murmur3-128 of (nasId, Acct-Session-Id) |
+| `exactKeyHi/Lo` | int64 ×2 | Murmur3-128 of (nasId, status, session time, event time, octets, presence, session id) — no Acct-Delay-Time, no Identifier |
+| `statusType` | uint32 | Acct-Status-Type |
+| `flags` | set | `sessionTimePresent`, `eventTimestampPresent`, `sessionIdPresent` |
+| `sessionTime`, `eventTimestamp` | uint32 | 0 when absent |
+| `inputOctets`, `outputOctets` | int64 | gigawords combined |
 | `sessionId` | var string | |
-| `rawAttributes` | var bytes | attribute section of the request, for the exporter |
+| `rawAttributes` | var data | attribute section of the request, kept for export (Phase 3) |
 
-### `AccountingCommitted` (draft)
+The key layout is pinned by `EventKeysTest` against reference vectors: changing it would make gateways
+compute keys the dedup state has never seen.
 
-| Field | Type | Notes |
-|---|---|---|
-| `correlationId` | int64 | |
-| `operationKey` | 128 bit | |
-| `duplicate` | bool | true if the event had been applied before |
-| `logPosition` | int64 | position of the original event |
+### AccountingCommitted
+
+`correlationId`, `outcome` (`APPLIED` \| `DUPLICATE` \| `STALE`), `eventId` = log position of the event.
 
 ## Versioning rules
 
-- SBE schema id fixed; `version` increments on every change; fields are only appended.
-- A node must replay any log written by an earlier version identically — behaviour changes are gated by
-  `ActivateVersion` at a log position, never by deploying new code alone (ADR 0005).
-- Gateways and the cluster may run different versions during a rolling upgrade: the cluster accepts
-  commands of version N-1.
+- Fields are only appended, with `sinceVersion`; ids are never reused; the schema version increments with
+  every change. `ProtocolRoundTripTest` proves a v1 decoder reads a v2 message.
+- Behaviour changes are activated at a log position, never by deploying code alone (ADR 0005); snapshots
+  carry the state version and a node refuses a snapshot newer than its software.

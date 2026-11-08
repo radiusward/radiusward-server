@@ -4,8 +4,8 @@ Thanks for helping. This guide is the single source of truth for how the project
 rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
 [docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
 
-Current state: **Phase 0** (codec foundation) is done; Phase 1 (cluster + gateway) is next — see the
-[roadmap](docs/plans/roadmap.md).
+Current state: **Phase 1** (replicated accounting, local) is done; Phase 2 (containers, Linux durability)
+is next — see the [roadmap](docs/plans/roadmap.md).
 
 ## Setup
 
@@ -24,7 +24,9 @@ Current state: **Phase 0** (codec foundation) is done; Phase 1 (cluster + gatewa
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dfixtures.update=true -Dsurefire.failIfNoSpecifiedTests=false
                                                 # rewrite fixture packet: lines after editing a fixture
 ./mvnw -Pbench -pl testing/benchmarks -am package -DskipTests && java -jar testing/benchmarks/target/benchmarks.jar
+./mvnw -Pe2e verify                             # end-to-end tests against separate radiusward processes
 ./mvnw -Pinterop verify                         # also runs against a local FreeRADIUS (brew install freeradius-server)
+scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 gateways (docs/operations/local-cluster.md)
 java -jar tools/radclient/target/radclient.jar --help
 scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
 ```
@@ -33,11 +35,19 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 
 | Module | Purpose |
 |---|---|
+| `protocol` | SBE schema and generated codecs (gateway ↔ cluster, snapshots) |
+| `common` | Config (properties + env), profiles, management HTTP server, non-blocking Log4j2 |
+| `cluster-service` | `AccountingService` + deterministic `AccountingStateMachine`, `SessionStore`, snapshots |
+| `cluster-node` | Launches a member (media driver, archive, consensus module, service) |
+| `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
+| `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `cluster-tool` |
+| `testing/test-harness` | `LocalCluster`, `AdminClient`, `DevCluster` |
+| `testing/e2e-tests` | Process-based end-to-end tests (`-Pe2e`) |
 | `radius-dictionary` | Dictionary model + FreeRADIUS-format parser (v3 + v4 subset), strict/lenient modes, `dictionary.d` overrides |
 | `radius-dictionary-freeradius` | Bundled FreeRADIUS dictionaries (CC BY 4.0, unmodified, pinned commit) — resources only |
 | `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder; generated `io.radiusward.radius.codec.attributes` |
-| `tools/radclient` | CLI test client (`acct`, `replay`, `decode`), executable jar |
+| `tools/radclient` | CLI test client (`acct`, `replay`, `decode`, `load`), executable jar |
 | `testing/benchmarks` | JMH, only with `-Pbench` |
 
 ## Project rules
@@ -55,6 +65,10 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 - **Logging (Phase 1+):** Log4j2 async loggers; never log per packet on the hot path, never block the
   logging thread; parameterized, garbage-free calls only.
 - **No Docker in Phase 0–1.** Everything runs locally; Docker/compose arrive in Phase 2.
+- **Configuration** goes through `Config` (properties + `RADIUSWARD_*` env); document new keys in
+  `docs/configuration.md`. `debug.*` keys only work with `debug.enabled=true`.
+- **Gateways never block:** full rings or tables drop the packet (the NAS retransmits); never answer
+  without a commit.
 - **Dictionaries:** only FreeRADIUS files carrying the CC BY 4.0 header; never edit them by hand —
   use `scripts/update-dictionaries.sh`. Keep `NOTICE` / `THIRD-PARTY-LICENSES.md` in sync.
 - **Generated code** lives in `target/generated-sources`, is never committed, and is driven by

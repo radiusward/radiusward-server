@@ -1,0 +1,379 @@
+/*
+ * Copyright 2026 The radiusward Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */
+package io.radiusward.tools.radclient;
+
+import io.radiusward.radius.codec.DecodeStatus;
+import io.radiusward.radius.codec.RadiusAuthenticator;
+import io.radiusward.radius.codec.RadiusCode;
+import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.radius.codec.RadiusPacketEncoder;
+import java.io.BufferedWriter;
+import java.io.IOException;
+import java.io.PrintStream;
+import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.DatagramChannel;
+import java.nio.channels.SelectionKey;
+import java.nio.channels.Selector;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.PriorityQueue;
+import java.util.Random;
+import org.agrona.concurrent.UnsafeBuffer;
+
+/**
+ * Accounting load: {@code sessions} sessions spread over {@code nas} simulated NAS, each sending a Start,
+ * Interim-Updates every {@code interim} and a Stop at the end, paced to {@code rate} requests per second.
+ * Requests that get no response are retransmitted unchanged (as a NAS does), optionally to the next server.
+ * Every event's outcome goes to the ack log, so tests can check that each acknowledged event is in the
+ * cluster state.
+ *
+ * <p>All simulated NAS share this machine's address, so the gateway sees one NAS; session ids are unique
+ * ({@code nas<n>-<s>}) and the simulated NAS is reported in {@code NAS-Identifier}.
+ */
+public final class LoadGenerator {
+
+    public record Settings(
+            List<InetSocketAddress> servers,
+            byte[] secret,
+            int nas,
+            int sessions,
+            int rate,
+            Duration duration,
+            Duration interim,
+            Duration timeout,
+            int retries,
+            boolean retryOtherServer,
+            boolean stopAtEnd,
+            Path ackLog) {}
+
+    public record Result(
+            long sent,
+            long acked,
+            long failed,
+            long retransmissions,
+            long p50Micros,
+            long p99Micros,
+            long maxMicros,
+            double seconds) {}
+
+    private static final int IDS_PER_CHANNEL = 256;
+
+    private final Settings settings;
+    private final PrintStream out;
+    private final Random random = new Random(42);
+    private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
+    private final RadiusPacketEncoder encoder = new RadiusPacketEncoder();
+    private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
+    private final ByteBuffer receive = ByteBuffer.allocate(RadiusPacket.MAX_LENGTH);
+    private final RadiusPacket responseView = new RadiusPacket();
+
+    /** One request in flight. */
+    private static final class Request {
+        String sessionId;
+        int status;
+        long sessionTime;
+        byte[] bytes;
+        int attempts;
+        long firstSentNanos;
+        long deadlineNanos;
+        int server;
+        int identifier;
+    }
+
+    private final class Port {
+        final DatagramChannel channel;
+        final Request[] inFlight = new Request[IDS_PER_CHANNEL];
+        final ArrayDeque<Integer> freeIds = new ArrayDeque<>();
+
+        Port(Selector selector) throws IOException {
+            channel = DatagramChannel.open().bind(new InetSocketAddress(0));
+            channel.configureBlocking(false);
+            channel.register(selector, SelectionKey.OP_READ, this);
+            for (int i = 0; i < IDS_PER_CHANNEL; i++) {
+                freeIds.add(i);
+            }
+        }
+    }
+
+    /** A scheduled accounting event of one session. */
+    private record Due(long atNanos, int session, int status, long sessionTime) implements Comparable<Due> {
+        @Override
+        public int compareTo(Due o) {
+            return Long.compare(atNanos, o.atNanos);
+        }
+    }
+
+    public LoadGenerator(Settings settings, PrintStream out) {
+        this.settings = settings;
+        this.out = out;
+    }
+
+    public Result run() throws IOException {
+        long start = System.nanoTime();
+        long end = start + settings.duration().toNanos();
+        long interimNanos = settings.interim().toNanos();
+        long gapNanos = 1_000_000_000L / Math.max(1, settings.rate());
+
+        PriorityQueue<Due> schedule = new PriorityQueue<>();
+        for (int s = 0; s < settings.sessions(); s++) {
+            long offset = (long) (random.nextDouble()
+                    * Math.min(interimNanos, settings.duration().toNanos() / 2));
+            schedule.add(new Due(start + offset, s, 1, 0));
+        }
+
+        List<Long> latencies = new ArrayList<>();
+        long sent = 0;
+        long acked = 0;
+        long failed = 0;
+        long retransmissions = 0;
+        int nextServer = 0;
+        long nextSendAt = start;
+
+        try (Selector selector = Selector.open();
+                BufferedWriter log = settings.ackLog() == null
+                        ? null
+                        : Files.newBufferedWriter(settings.ackLog(), StandardCharsets.UTF_8)) {
+            if (log != null) {
+                log.write("session_id,status,session_time,acked,attempts,latency_ms\n");
+            }
+            int channels = Math.max(
+                    2, (settings.rate() * (int) Math.max(1, settings.timeout().toSeconds())) / 200 + 1);
+            List<Port> ports = new ArrayList<>();
+            for (int i = 0; i < channels; i++) {
+                ports.add(new Port(selector));
+            }
+            boolean stopping = false;
+            int inFlight = 0;
+
+            while (true) {
+                long now = System.nanoTime();
+                if (!stopping && now >= end) {
+                    stopping = true;
+                    if (settings.stopAtEnd()) {
+                        for (Due d : drainLatest(schedule)) {
+                            schedule.add(new Due(now, d.session(), 2, d.sessionTime()));
+                        }
+                    } else {
+                        schedule.clear();
+                    }
+                }
+                if (stopping && schedule.isEmpty() && inFlight == 0) {
+                    break;
+                }
+
+                // new events, paced to the rate
+                while (now >= nextSendAt
+                        && !schedule.isEmpty()
+                        && schedule.peek().atNanos() <= now) {
+                    if (!hasFreeId(ports)) {
+                        break; // too many in flight; wait for responses or timeouts
+                    }
+                    Due d = schedule.poll();
+                    Request r = newRequest(d);
+                    r.server = nextServer;
+                    nextServer = (nextServer + 1) % settings.servers().size();
+                    if (!stopping && d.status() != 2) {
+                        schedule.add(new Due(
+                                d.atNanos() + interimNanos,
+                                d.session(),
+                                3,
+                                d.sessionTime() + settings.interim().toSeconds()));
+                    }
+                    send(r, ports, now);
+                    sent++;
+                    inFlight++;
+                    nextSendAt += gapNanos;
+                    if (nextSendAt < now - gapNanos * 10) {
+                        nextSendAt = now; // do not burst after a stall
+                    }
+                }
+
+                // responses
+                selector.select(1);
+                for (SelectionKey key : selector.selectedKeys()) {
+                    Port port = (Port) key.attachment();
+                    while (true) {
+                        receive.clear();
+                        if (port.channel.receive(receive) == null) {
+                            break;
+                        }
+                        Request r = matchResponse(port, receive.position());
+                        if (r != null) {
+                            long latency = (System.nanoTime() - r.firstSentNanos) / 1000;
+                            latencies.add(latency);
+                            acked++;
+                            inFlight--;
+                            record(log, r, true, latency);
+                        }
+                    }
+                }
+                selector.selectedKeys().clear();
+
+                // timeouts: retransmit the identical datagram (same port, Identifier and authenticator) like a NAS
+                now = System.nanoTime();
+                for (Port port : ports) {
+                    for (int id = 0; id < IDS_PER_CHANNEL; id++) {
+                        Request r = port.inFlight[id];
+                        if (r != null && now > r.deadlineNanos) {
+                            if (r.attempts <= settings.retries()) {
+                                if (settings.retryOtherServer()) {
+                                    r.server =
+                                            (r.server + 1) % settings.servers().size();
+                                }
+                                r.attempts++;
+                                r.deadlineNanos = now + settings.timeout().toNanos();
+                                port.channel.send(
+                                        ByteBuffer.wrap(r.bytes),
+                                        settings.servers().get(r.server));
+                                retransmissions++;
+                            } else {
+                                port.inFlight[id] = null;
+                                port.freeIds.add(id);
+                                failed++;
+                                inFlight--;
+                                record(log, r, false, 0);
+                            }
+                        }
+                    }
+                }
+            }
+            for (Port port : ports) {
+                port.channel.close();
+            }
+        }
+        double seconds = (System.nanoTime() - start) / 1e9;
+        long[] sorted = latencies.stream().mapToLong(Long::longValue).sorted().toArray();
+        Result result = new Result(
+                sent,
+                acked,
+                failed,
+                retransmissions,
+                percentile(sorted, 50),
+                percentile(sorted, 99),
+                sorted.length == 0 ? 0 : sorted[sorted.length - 1],
+                seconds);
+        out.printf(
+                "load: sent %d, acked %d, failed %d, retransmissions %d in %.1fs (%.0f req/s); latency p50 %.1f ms, p99 %.1f ms, max %.1f ms%n",
+                result.sent(),
+                result.acked(),
+                result.failed(),
+                result.retransmissions(),
+                seconds,
+                result.acked() / seconds,
+                result.p50Micros() / 1000.0,
+                result.p99Micros() / 1000.0,
+                result.maxMicros() / 1000.0);
+        return result;
+    }
+
+    private static List<Due> drainLatest(PriorityQueue<Due> schedule) {
+        // the latest scheduled event of every session that is still active
+        List<Due> all = new ArrayList<>(schedule);
+        schedule.clear();
+        java.util.Map<Integer, Due> latest = new java.util.TreeMap<>();
+        for (Due d : all) {
+            latest.merge(d.session(), d, (a, b) -> a.sessionTime() >= b.sessionTime() ? a : b);
+        }
+        List<Due> result = new ArrayList<>();
+        for (Due d : latest.values()) {
+            // a session whose Start is still pending has not started: just drop it
+            if (d.status() != 1) {
+                result.add(new Due(d.atNanos(), d.session(), d.status(), d.sessionTime()));
+            }
+        }
+        return result;
+    }
+
+    private Request newRequest(Due d) {
+        Request r = new Request();
+        int nasIndex = d.session() % settings.nas();
+        r.sessionId = "nas" + nasIndex + "-" + d.session();
+        r.status = d.status();
+        r.sessionTime = d.sessionTime();
+        return r;
+    }
+
+    private static boolean hasFreeId(List<Port> ports) {
+        for (Port p : ports) {
+            if (!p.freeIds.isEmpty()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void send(Request r, List<Port> ports, long now) throws IOException {
+        Port port = null;
+        int base = random.nextInt(ports.size());
+        for (int i = 0; i < ports.size() && port == null; i++) {
+            Port candidate = ports.get((base + i) % ports.size());
+            if (!candidate.freeIds.isEmpty()) {
+                port = candidate;
+            }
+        }
+        int id = port.freeIds.poll();
+        r.bytes = encode(r, id);
+        r.identifier = id;
+        port.inFlight[id] = r;
+        r.firstSentNanos = now;
+        r.attempts = 1;
+        r.deadlineNanos = now + settings.timeout().toNanos();
+        port.channel.send(ByteBuffer.wrap(r.bytes), settings.servers().get(r.server));
+    }
+
+    private byte[] encode(Request r, int identifier) {
+        long octets = r.sessionTime * 125_000L; // ~1 Mbit/s
+        encoder.wrap(buffer, 0)
+                .header(RadiusCode.ACCOUNTING_REQUEST, identifier)
+                .uint32(40, r.status)
+                .attribute(44, r.sessionId)
+                .attribute(1, r.sessionId + "@load.example")
+                .attribute(32, r.sessionId.substring(0, r.sessionId.indexOf('-')))
+                .ipv4(4, 0x7F000001L)
+                .uint32(55, 1_780_000_000L + r.sessionTime);
+        if (r.status != 1) {
+            encoder.uint32(46, r.sessionTime).uint32(42, octets & 0xFFFF_FFFFL).uint32(43, (octets * 4) & 0xFFFF_FFFFL);
+        }
+        int length = encoder.finish();
+        authenticator.signAccountingRequest(buffer, 0, length, -1, settings.secret());
+        return Arrays.copyOf(buffer.byteArray(), length);
+    }
+
+    private Request matchResponse(Port port, int length) {
+        if (responseView.wrap(new UnsafeBuffer(receive.array(), 0, length), 0, length) != DecodeStatus.OK
+                || responseView.code() != RadiusCode.ACCOUNTING_RESPONSE) {
+            return null;
+        }
+        int id = responseView.identifier();
+        Request r = port.inFlight[id];
+        if (r == null || !authenticator.verifyResponse(responseView, new UnsafeBuffer(r.bytes), 4, settings.secret())) {
+            return null;
+        }
+        port.inFlight[id] = null;
+        port.freeIds.add(id);
+        return r;
+    }
+
+    private static void record(BufferedWriter log, Request r, boolean acked, long latencyMicros) throws IOException {
+        if (log != null) {
+            log.write(r.sessionId + "," + r.status + "," + r.sessionTime + "," + (acked ? 1 : 0) + "," + r.attempts
+                    + "," + String.format("%.3f", latencyMicros / 1000.0) + "\n");
+        }
+    }
+
+    private static long percentile(long[] sorted, int p) {
+        if (sorted.length == 0) {
+            return 0;
+        }
+        return sorted[Math.min(sorted.length - 1, (int) Math.ceil(p / 100.0 * sorted.length) - 1)];
+    }
+}

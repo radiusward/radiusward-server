@@ -33,10 +33,10 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
    │ UdpAgent        │         │                 │
    │  NIO socket     │         │                 │
    │  validate/auth  │         │                 │
-   │  extract        │         │                 │
+   │  extract, keys  │         │                 │
    │  response cache │         │                 │
    │      │ Agrona   │         │                 │
-   │      ▼ queues   │         │                 │
+   │      ▼ rings    │         │                 │
    │ ClusterClient   │         │                 │
    │  Agent          │         │                 │
    └────────┬────────┘         └────────┬────────┘
@@ -57,7 +57,7 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
  └───────────┘   ExportCheckpoint(sinkId, position) → cluster
 ```
 
-### Gateway (Phase 1) — built on `radius-codec`
+### Gateway (implemented in Phase 1) — built on `radius-codec`
 
 - **UdpAgent** owns a NIO `DatagramChannel`: receive, validate (`RadiusPacket.wrap`), look up the NAS by
   source IP, verify the Request Authenticator (and Message-Authenticator if present), extract the hot
@@ -66,12 +66,13 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
   The same agent sends the Accounting-Response, so replies leave from the socket the NAS sent to.
 - **ClusterClientAgent** owns the Aeron Cluster client: offers commands, keeps polling egress even while
   the cluster backpressures or elects a leader, matches `AccountingCommitted` to pending requests.
-- Hand-off between them: Agrona `ManyToOneConcurrentArrayQueue`s, bounded. Full queue → drop (the NAS
-  retries); never answer without a commit.
+- Hand-off between them: two Agrona `OneToOneRingBuffer`s carrying SBE bytes (zero-copy). Full ring →
+  drop (the NAS retries); never answer without a commit. A retransmit of a request pending for over 1 s
+  is resubmitted, which recovers commands lost with a failed leader ([ADR 0011](adr/0011-gateway-pipeline.md)).
 - Scale-out: more gateway pods, or `SO_REUSEPORT` with several UdpAgents per pod.
 - Everything per packet is allocation-free (`HotPathAllocationIT`).
 
-### Cluster (Phase 1–2)
+### Cluster (implemented in Phase 1)
 
 - Three nodes, majority commit = leader + one follower; survives one node down.
 - `aeron.archive.file.sync.level=2` and catalog sync level 2: committed means fsynced on a majority.
@@ -119,7 +120,9 @@ Idle strategies are backoff/sleeping in the small profile (≤1 CPU), busy-spin 
 | log growth per node | ~3 GB/h | ~15 GB/h |
 
 Codec cost measured in Phase 0: ~2.2 M packets/s per core for the full receive path
-([testing/strategy.md](testing/strategy.md)).
+([testing/strategy.md](testing/strategy.md)). Measured locally in Phase 1 (M4 Pro, small profile, fsync on):
+ACK latency p50 ~20 ms, p99 ~45 ms; `kill -9` of the leader under load → ~6 s outage, every event
+acknowledged after retransmission.
 
 ## Memory profiles (ADR 0004)
 

@@ -88,6 +88,7 @@ public final class RadClient {
                 case "acct" -> acct(options);
                 case "replay" -> replay(options);
                 case "decode" -> decode(options);
+                case "load" -> load(options);
                 default -> throw new UsageException("unknown command " + options.command);
             };
         } catch (UsageException e) {
@@ -156,6 +157,29 @@ public final class RadClient {
         }
         out.print(new PacketPrinter(dictionary).print(view));
         return EXIT_OK;
+    }
+
+    private int load(Options o) throws IOException {
+        List<InetSocketAddress> servers = new ArrayList<>();
+        for (String server : o.required("server").split(",")) {
+            servers.add(Options.parse(new String[] {"load", "--server", server.trim()})
+                    .server());
+        }
+        LoadGenerator.Settings settings = new LoadGenerator.Settings(
+                servers,
+                o.secret(),
+                o.has("nas") ? Integer.parseInt(o.value("nas")) : 10,
+                o.has("sessions") ? Integer.parseInt(o.value("sessions")) : 1000,
+                o.has("rate") ? Integer.parseInt(o.value("rate")) : 1000,
+                o.duration("duration", Duration.ofSeconds(60)),
+                o.duration("interim", Duration.ofSeconds(10)),
+                o.timeout(),
+                o.retries(),
+                o.flag("retry-other-server"),
+                !o.flag("no-stop"),
+                o.has("ack-log") ? Path.of(o.value("ack-log")) : null);
+        LoadGenerator.Result result = new LoadGenerator(settings, out).run();
+        return result.failed() == 0 ? EXIT_OK : EXIT_TIMEOUT;
     }
 
     private int exchange(Options o, Dictionary dictionary, byte[] request, byte[] secret) throws IOException {
@@ -229,6 +253,9 @@ public final class RadClient {
                                    [--id n] [--retries 3] [--timeout 3s] [--dictionary-dir dir]
                   radclient replay <file.fixture|file.hex> --server host:port --secret s [--id n] [--retries n] [--timeout 3s]
                   radclient decode <file.fixture|file.hex|hex> [--dictionary-dir dir]
+                  radclient load   --server host:port[,host:port...] --secret s [--nas 10] [--sessions 1000]
+                                   [--rate 1000] [--duration 60s] [--interim 10s] [--timeout 3s] [--retries 3]
+                                   [--retry-other-server] [--no-stop] [--ack-log acks.csv]
                 exit codes: 0 verified Accounting-Response, 1 no response, 2 bad response, 64 usage error""";
     }
 
@@ -238,7 +265,7 @@ public final class RadClient {
         private final List<String> positional = new ArrayList<>();
         private final Map<String, List<String>> values = new java.util.HashMap<>();
 
-        private static final List<String> FLAGS = List.of("message-authenticator");
+        private static final List<String> FLAGS = List.of("message-authenticator", "retry-other-server", "no-stop");
 
         private Options(String command) {
             this.command = command;
@@ -343,6 +370,23 @@ public final class RadClient {
                         (Double.parseDouble(t.endsWith("s") ? t.substring(0, t.length() - 1) : t) * 1000));
             } catch (NumberFormatException e) {
                 throw new UsageException("invalid timeout " + t);
+            }
+        }
+
+        Duration duration(String key, Duration fallback) {
+            if (!has(key)) {
+                return fallback;
+            }
+            String saved = value("timeout", null);
+            values.put("timeout", List.of(value(key)));
+            try {
+                return timeout();
+            } finally {
+                if (saved == null) {
+                    values.remove("timeout");
+                } else {
+                    values.put("timeout", List.of(saved));
+                }
             }
         }
 

@@ -26,7 +26,14 @@
         <module>radius-dictionary-freeradius</module>
         <module>radius-codegen</module>
         <module>radius-codec</module>
+        <module>protocol</module>
+        <module>common</module>
+        <module>cluster-service</module>
+        <module>cluster-node</module>
+        <module>gateway</module>
         <module>tools/radclient</module>
+        <module>distribution</module>
+        <module>testing/test-harness</module>
     </modules>
 
     <properties>
@@ -38,6 +45,9 @@
         <!-- runtime -->
         <agrona.version>2.7.0</agrona.version><!-- keep aligned with the Agrona version Aeron uses -->
         <aeron.version>1.54.0</aeron.version>
+        <log4j.version>2.26.1</log4j.version>
+        <disruptor.version>3.4.4</disruptor.version><!-- the version Log4j 2.26 is built and tested with -->
+        <sbe.version>1.42.0</sbe.version><!-- build time only -->
 
         <!-- test -->
         <junit.version>5.14.4</junit.version><!-- aligned with jqwik's JUnit Platform -->
@@ -99,9 +109,77 @@
             </dependency>
 
             <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>cluster-service</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>cluster-node</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>gateway</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radclient</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>test-harness</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
                 <groupId>org.agrona</groupId>
                 <artifactId>agrona</artifactId>
                 <version>${agrona.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.aeron</groupId>
+                <artifactId>aeron-client</artifactId>
+                <version>${aeron.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.aeron</groupId>
+                <artifactId>aeron-driver</artifactId>
+                <version>${aeron.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.aeron</groupId>
+                <artifactId>aeron-archive</artifactId>
+                <version>${aeron.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.aeron</groupId>
+                <artifactId>aeron-cluster</artifactId>
+                <version>${aeron.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.logging.log4j</groupId>
+                <artifactId>log4j-bom</artifactId>
+                <version>${log4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.lmax</groupId>
+                <artifactId>disruptor</artifactId>
+                <version>${disruptor.version}</version>
             </dependency>
 
             <dependency>
@@ -376,8 +454,11 @@
             </modules>
         </profile>
         <profile>
-            <!-- end-to-end tests against separately started JVMs; module arrives in Phase 1 -->
+            <!-- end-to-end tests against separately started JVMs: ./mvnw -Pe2e verify -->
             <id>e2e</id>
+            <modules>
+                <module>testing/e2e-tests</module>
+            </modules>
         </profile>
         <profile>
             <!-- interop tests against a locally installed FreeRADIUS (brew install freeradius-server) -->

@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!--
+  Copyright 2026 The radiusward Authors
+  SPDX-License-Identifier: Apache-2.0
+
+  Messages between gateways, the cluster and tools, plus the snapshot format.
+  Rules (ADR 0005, docs/protocol.md): fields are only appended; every new field gets sinceVersion;
+  the schema version increments with each change; ids are never reused.
+-->
+<sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
+                   package="io.radiusward.protocol"
+                   id="7101"
+                   version="1"
+                   semanticVersion="1.0"
+                   description="radiusward cluster protocol"
+                   byteOrder="littleEndian">
+    <types>
+        <composite name="messageHeader" description="Message identifiers and length of message root">
+            <type name="blockLength" primitiveType="uint16"/>
+            <type name="templateId" primitiveType="uint16"/>
+            <type name="schemaId" primitiveType="uint16"/>
+            <type name="version" primitiveType="uint16"/>
+        </composite>
+        <composite name="groupSizeEncoding" description="Repeating group dimensions">
+            <type name="blockLength" primitiveType="uint16"/>
+            <type name="numInGroup" primitiveType="uint16"/>
+        </composite>
+        <composite name="varStringEncoding">
+            <type name="length" primitiveType="uint32" maxValue="65535"/>
+            <type name="varData" primitiveType="uint8" length="0" characterEncoding="UTF-8"/>
+        </composite>
+        <composite name="varDataEncoding">
+            <type name="length" primitiveType="uint32" maxValue="65535"/>
+            <type name="varData" primitiveType="uint8" length="0"/>
+        </composite>
+
+        <enum name="Outcome" encodingType="uint8" description="Result of applying an accounting event">
+            <validValue name="APPLIED" description="new event, state changed">0</validValue>
+            <validValue name="DUPLICATE" description="same event seen before; the NAS gets an ACK">1</validValue>
+            <validValue name="STALE" description="older than the stored progress; ACK, not applied">2</validValue>
+        </enum>
+        <enum name="RejectReason" encodingType="uint8">
+            <validValue name="CAPACITY">0</validValue>
+            <validValue name="INVALID">1</validValue>
+        </enum>
+        <enum name="SessionStatus" encodingType="uint8">
+            <validValue name="UNKNOWN">0</validValue>
+            <validValue name="ACTIVE">1</validValue>
+            <validValue name="STOPPED">2</validValue>
+        </enum>
+        <set name="EventFlags" encodingType="uint8" description="Which optional RADIUS values were present">
+            <choice name="sessionTimePresent">0</choice>
+            <choice name="eventTimestampPresent">1</choice>
+            <choice name="sessionIdPresent">2</choice>
+        </set>
+    </types>
+
+    <!-- gateway -> cluster -->
+    <sbe:message name="AccountingCommand" id="1" description="One accounting event to apply">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="gatewayId" id="2" type="int32"/>
+        <field name="nasId" id="3" type="int32"/>
+        <field name="sessionKeyHi" id="4" type="int64"/>
+        <field name="sessionKeyLo" id="5" type="int64"/>
+        <field name="exactKeyHi" id="6" type="int64"/>
+        <field name="exactKeyLo" id="7" type="int64"/>
+        <field name="statusType" id="8" type="uint32"/>
+        <field name="flags" id="9" type="EventFlags"/>
+        <field name="sessionTime" id="10" type="uint32"/>
+        <field name="eventTimestamp" id="11" type="uint32"/>
+        <field name="inputOctets" id="12" type="int64" description="64 bit, gigawords combined"/>
+        <field name="outputOctets" id="13" type="int64" description="64 bit, gigawords combined"/>
+        <data name="sessionId" id="14" type="varStringEncoding"/>
+        <data name="rawAttributes" id="15" type="varDataEncoding" description="attribute section of the request, for export"/>
+    </sbe:message>
+
+    <!-- cluster -> gateway -->
+    <sbe:message name="AccountingCommitted" id="2" description="The event is committed or was a duplicate; the gateway may answer">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="outcome" id="2" type="Outcome"/>
+        <field name="eventId" id="3" type="int64" description="log position of the applied event"/>
+    </sbe:message>
+    <sbe:message name="AccountingRejected" id="3" description="Not applied; the gateway stays silent">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="reason" id="2" type="RejectReason"/>
+    </sbe:message>
+
+    <!-- admin / tests -->
+    <sbe:message name="SessionQuery" id="4">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="sessionKeyHi" id="2" type="int64"/>
+        <field name="sessionKeyLo" id="3" type="int64"/>
+    </sbe:message>
+    <sbe:message name="SessionReport" id="5">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="status" id="2" type="SessionStatus"/>
+        <field name="nasId" id="3" type="int32"/>
+        <field name="statusType" id="4" type="uint32"/>
+        <field name="sessionTime" id="5" type="uint32"/>
+        <field name="eventTimestamp" id="6" type="uint32"/>
+        <field name="inputOctets" id="7" type="int64"/>
+        <field name="outputOctets" id="8" type="int64"/>
+    </sbe:message>
+    <sbe:message name="StateQuery" id="6">
+        <field name="correlationId" id="1" type="int64"/>
+    </sbe:message>
+    <sbe:message name="StateReport" id="7">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="applied" id="2" type="int64"/>
+        <field name="duplicates" id="3" type="int64"/>
+        <field name="stale" id="4" type="int64"/>
+        <field name="rejected" id="5" type="int64"/>
+        <field name="activeSessions" id="6" type="int64"/>
+        <field name="stoppedSessions" id="7" type="int64"/>
+        <field name="stateDigest" id="8" type="int64"/>
+        <field name="stateVersion" id="9" type="int32"/>
+    </sbe:message>
+
+    <!-- snapshot, written by onTakeSnapshot and read in onStart -->
+    <sbe:message name="SnapshotHeader" id="20">
+        <field name="stateVersion" id="1" type="int32"/>
+        <field name="applied" id="2" type="int64"/>
+        <field name="duplicates" id="3" type="int64"/>
+        <field name="stale" id="4" type="int64"/>
+        <field name="rejected" id="5" type="int64"/>
+        <field name="stateDigest" id="6" type="int64"/>
+        <field name="sessionCount" id="7" type="int64"/>
+        <field name="exactKeyCount" id="8" type="int64"/>
+        <field name="timerScheduled" id="9" type="uint8"/>
+    </sbe:message>
+    <sbe:message name="SessionChunk" id="21">
+        <group name="sessions" id="1" dimensionType="groupSizeEncoding">
+            <field name="keyHi" id="1" type="int64"/>
+            <field name="keyLo" id="2" type="int64"/>
+            <field name="nasId" id="3" type="int32"/>
+            <field name="status" id="4" type="SessionStatus"/>
+            <field name="statusType" id="5" type="uint8"/>
+            <field name="sessionTime" id="6" type="uint32"/>
+            <field name="eventTimestamp" id="7" type="uint32"/>
+            <field name="inputOctets" id="8" type="int64"/>
+            <field name="outputOctets" id="9" type="int64"/>
+            <field name="startKey" id="10" type="int32"/>
+            <field name="lastSeen" id="11" type="int32"/>
+            <field name="tombstoneUntil" id="12" type="int32"/>
+            <field name="flags" id="13" type="uint8"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="ExactKeyChunk" id="22">
+        <group name="keys" id="1" dimensionType="groupSizeEncoding">
+            <field name="key" id="1" type="int64"/>
+            <field name="expiry" id="2" type="int64"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="SnapshotFooter" id="23">
+        <field name="sessionCount" id="1" type="int64"/>
+        <field name="exactKeyCount" id="2" type="int64"/>
+    </sbe:message>
+</sbe:messageSchema>

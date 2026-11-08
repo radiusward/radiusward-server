@@ -7,3 +7,6 @@ target/
 .DS_Store
 dependency-reduced-pom.xml
 .mvn/wrapper/maven-wrapper.jar
+
+# local cluster runtime (run-local.sh)
+.local/

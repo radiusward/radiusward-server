@@ -19,7 +19,16 @@ radclient replay radius-codec/src/test/resources/fixtures/huawei/interim.fixture
 
 # pretty-print a packet
 radclient decode 0401001a00000000000000000000000000000000280600000002
+
+# load: sessions over simulated NAS, Start/Interim/Stop, paced, retransmitting, with an ack log
+radclient load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 --nas 10 --sessions 1000 \
+               --rate 1000 --duration 60s --interim 10s [--timeout 3s] [--retries 3] [--retry-other-server] \
+               [--no-stop] [--ack-log acks.csv]
 ```
+
+`load` prints sent/acked/failed/retransmissions and p50/p99/max latency; the ack log has one line per event
+(`session_id,status,session_time,acked,attempts,latency_ms`). It retransmits the identical datagram like a
+NAS, so it exercises the gateways' response caches and the cluster's dedup.
 
 - `--attr` takes dictionary names, including vendor paths (`Cisco.AVPair=...`); integers accept `VALUE`
   names (`NAS-Port-Type=Virtual`), any type accepts `0x` hex.
