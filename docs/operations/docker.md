@@ -70,6 +70,23 @@ stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per gateway.
   (measured, `PowerLossIT`).
 - Health checks call `radiusward probe http://127.0.0.1:9090/ready`.
 
+## PostgreSQL export
+
+The stack includes PostgreSQL 17 (172.28.0.40, `127.0.0.1:5432`, database `radius`, user `radiusward`, password
+`PG_PASSWORD`, default `radiusward`). The members export to it (`export.sinks=pg` in
+[config/cluster.properties](../../deploy/compose/config/cluster.properties)): one row per session in
+`accounting_session`, like FreeRADIUS `radacct`, plus the `radacct` view.
+
+```bash
+docker compose -f deploy/compose/compose.yaml exec postgres psql -U radiusward radius -f /sql/examples.sql
+docker compose -f deploy/compose/compose.yaml run --rm --entrypoint sh tools -c \
+    'radiusward admin sinks --members 172.28.0.10,172.28.0.11,172.28.0.12 --egress-host $(hostname -i)'
+```
+
+`demo-failover.sh` also verifies that every acknowledged session reached PostgreSQL. Event history:
+`sink.pg.mode=sessions+events`; no export: `RADIUSWARD_EXPORT_SINKS=` (empty). Details:
+[export.md](export.md).
+
 ## Monitoring
 
 `docker compose -f deploy/compose/compose.yaml --profile monitoring up -d` adds Prometheus

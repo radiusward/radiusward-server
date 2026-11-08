@@ -50,3 +50,16 @@ docker exec "$tools" radiusward admin verify-acks --members "$members" --egress-
     --ack-log /tmp/acks.csv --nas-id 1001 2>/dev/null | grep -E '^(sessions|lost)='
 compose start "$old" >/dev/null
 echo "$old restarted; it rejoins as a follower and catches up"
+
+echo "waiting for the export to PostgreSQL to catch up..."
+for _ in $(seq 1 60); do
+    lag=$(docker exec "$tools" radiusward admin sinks --members "$members" --egress-host "$tools_ip" 2>/dev/null \
+        | awk '$1 == "pg" {print $3}')
+    [ "${lag:-1}" = "0" ] && break
+    sleep 1
+done
+echo "verifying every acknowledged session in PostgreSQL (and against the cluster)..."
+docker exec "$tools" radiusward admin verify-export --jdbc-url jdbc:postgresql://172.28.0.40:5432/radius \
+    --jdbc-user radiusward --jdbc-password "${PG_PASSWORD:-radiusward}" --ack-log /tmp/acks.csv --nas-id 1001 \
+    --members "$members" --egress-host "$tools_ip" 2>/dev/null | grep -E '^(sessions|lost)='
+docker exec "$tools" radiusward admin sinks --members "$members" --egress-host "$tools_ip" 2>/dev/null

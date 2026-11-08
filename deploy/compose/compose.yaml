@@ -20,6 +20,7 @@ x-node: &node
   restart: unless-stopped
   environment: &node-env
     RADIUSWARD_PROFILE: ${RADIUSWARD_PROFILE:-small}
+    PG_PASSWORD: ${PG_PASSWORD:-radiusward}
   healthcheck:
     test: ["CMD", "radiusward", "probe", "http://127.0.0.1:9090/ready"]
     interval: 5s
@@ -91,6 +92,22 @@ services:
     networks: {radius: {ipv4_address: 172.28.0.21}}
     ports: ["1814:1813/udp", "127.0.0.1:9191:9090"]
 
+  # the exporter's PostgreSQL (radiusward_export_* metrics; psql: docker compose exec postgres psql -U radiusward radius)
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: radius
+      POSTGRES_USER: radiusward
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-radiusward}
+    volumes: ["postgres:/var/lib/postgresql/data", "./sql:/sql:ro"]
+    networks: {radius: {ipv4_address: 172.28.0.40}}
+    ports: ["127.0.0.1:5432:5432"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "radiusward", "-d", "radius"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
   # docker compose run --rm tools <radclient arguments>
   tools:
     image: ${RADIUSWARD_IMAGE:-radiusward:dev}
@@ -125,6 +142,7 @@ networks:
       config: [{subnet: 172.28.0.0/24}]
 
 volumes:
+  postgres:
   node-0:
   node-1:
   node-2:

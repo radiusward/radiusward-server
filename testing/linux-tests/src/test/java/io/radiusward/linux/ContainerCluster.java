@@ -114,6 +114,8 @@ final class ContainerCluster implements AutoCloseable {
                 .withEnv("RADIUSWARD_CLUSTER_NODE_ID", Integer.toString(id))
                 .withEnv("RADIUSWARD_ARCHIVE_FILE_SYNC_LEVEL", Integer.toString(options.fileSyncLevel()))
                 .withEnv("RADIUSWARD_TEST_LAZYFS", options.lazyFs() ? "1" : "0")
+                // the compose configuration exports to its PostgreSQL; tests that want an exporter set it themselves
+                .withEnv("RADIUSWARD_EXPORT_SINKS", "")
                 // a small tmpfs data directory needs a matching warning threshold (default 1 GiB)
                 .withEnv(
                         "RADIUSWARD_CLUSTER_DISK_MIN_FREE",

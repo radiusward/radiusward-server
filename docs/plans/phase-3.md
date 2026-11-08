@@ -280,6 +280,11 @@ order). Defaults (`fillfactor`, batch size, write path, history encoding) are ch
 
 - PostgreSQL service in compose, exporter configuration, demo queries; `demo-failover.sh` also verifies the
   export.
+- **Result (2026-11-08):** PostgreSQL 17 at 172.28.0.40 in the default compose stack, `export.sinks=pg`
+  (sessions + `radacct` view), `deploy/compose/sql/examples.sql`. `demo-failover.sh`: leader and exporter
+  killed at 2k req/s → 59,907 events acknowledged, 0 retransmissions, the lease moved (epoch 2), lag back to 0,
+  `verify-export` 10,000 of 10,000 sessions equal to the cluster. Linux tests disable the compose sink unless a
+  test configures one (`RADIUSWARD_EXPORT_SINKS=`).
 
 ### P3.9: Tests (size L)
 
