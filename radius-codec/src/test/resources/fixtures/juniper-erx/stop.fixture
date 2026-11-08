@@ -1,0 +1,31 @@
+# Juniper MX PPPoE subscriber stop with 64 bit IPv4 and IPv6 counters (ERX gigawords / gigapackets).
+# SYNTHETIC: built from the Junos subscriber management RADIUS attribute documentation, not a capture.
+identifier: 62
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 4294967361
+  User-Name: sub-2001@isp.example
+  NAS-IP-Address: 192.0.2.40
+  Acct-Session-Time: 90000
+  Acct-Input-Octets: 7
+  Acct-Input-Gigawords: 2
+  Acct-Output-Octets: 9
+  Acct-Output-Gigawords: 25
+  Acct-Terminate-Cause: User-Request
+  Event-Timestamp: 1780090000
+  Unisphere.Input-Gigapackets: 1
+  Unisphere.Output-Gigapackets: 3
+  Unisphere.IPv6-Acct-Input-Octets: 11
+  Unisphere.IPv6-Acct-Input-Gigawords: 4
+  Unisphere.IPv6-Acct-Output-Octets: 13
+  Unisphere.IPv6-Acct-Output-Gigawords: 40
+packet: 043e00b449bc24261acd5f90016a9b18f7486f4d2806000000022c0c3432393439363733363101167375622d32303031406973702e6578616d706c650406c00002282e0600015f902a06000000073406000000022b060000000935060000001931060000000137066a1a04901a0c0000130a2a06000000011a0c0000130a2b06000000031a0c0000130a97060000000b1a0c0000130a9b06000000041a0c0000130a98060000000d1a0c0000130a9c0600000028
+expect:
+  statusType: 2
+  inputOctets64: 8589934599
+  outputOctets64: 107374182409
+  erxInputGigapackets: 1
+  erxOutputGigapackets: 3
+  erxIpv6InputGigawords: 4
+  erxIpv6OutputGigawords: 40
+  terminateCause: 1

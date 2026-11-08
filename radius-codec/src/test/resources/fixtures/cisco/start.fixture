@@ -1,0 +1,30 @@
+# Cisco IOS-XE ISG, PPPoE subscriber session start.
+# SYNTHETIC: built from the Cisco ISG RADIUS attribute documentation, not a capture.
+identifier: 17
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 00000A1B
+  User-Name: user1@isp.example
+  NAS-IP-Address: 192.0.2.1
+  NAS-Port-Type: Virtual
+  NAS-Port: 0
+  Service-Type: Framed-User
+  Framed-Protocol: PPP
+  Framed-IP-Address: 100.64.0.10
+  Calling-Station-Id: aabb.cc00.0101
+  Acct-Authentic: RADIUS
+  Acct-Delay-Time: 0
+  Event-Timestamp: 1780000000
+  Cisco.AVPair: connect-progress=Call Up
+  Cisco.AVPair: client-mac-address=aabb.cc00.0101
+  Cisco.NAS-Port: 0/1/0/100
+packet: 041100d7777c0438b392adcca305881f4894bb272806000000012c0a303030303041314201137573657231406973702e6578616d706c650406c00002013d060000000505060000000006060000000207060000000108066440000a1f10616162622e636330302e303130312d060000000129060000000037066a18a5001a2000000009011a636f6e6e6563742d70726f67726573733d43616c6c2055701a29000000090123636c69656e742d6d61632d616464726573733d616162622e636330302e303130311a1100000009020b302f312f302f313030
+expect:
+  statusType: 1
+  sessionId: 00000A1B
+  userName: user1@isp.example
+  nasIpAddress: 192.0.2.1
+  framedIpAddress: 100.64.0.10
+  eventTimestamp: 1780000000
+  ciscoAvPair: connect-progress=Call Up|client-mac-address=aabb.cc00.0101
+  ciscoNasPort: 0/1/0/100

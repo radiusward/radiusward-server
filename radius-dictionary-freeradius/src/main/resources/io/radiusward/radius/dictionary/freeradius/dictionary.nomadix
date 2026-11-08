@@ -1,0 +1,49 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: f95ab42baffb9b75940676af0fb6b6b644614de5 $
+#
+#	Nomadix VSAs
+#	From:
+#http://business.nomadix.com/aghelp/common/ag_userguide/QuickReference/Nomadix_Vendor-Specific_RADIUS_Attributes.htm
+# But the type is not specified.
+#
+# Version:	$Id: f95ab42baffb9b75940676af0fb6b6b644614de5 $
+#
+VENDOR		Nomadix				3309
+#
+BEGIN-VENDOR	Nomadix
+
+ATTRIBUTE	Bw-Up					1	uint32
+ATTRIBUTE	Bw-Down					2	uint32
+ATTRIBUTE	URL-Redirection				3	string
+ATTRIBUTE	IP-Upsell				4	uint32
+ATTRIBUTE	Expiration				5	string
+ATTRIBUTE	Subnet					6	string
+ATTRIBUTE	MaxBytesUp				7	uint32
+ATTRIBUTE	MaxBytesDown				8	uint32
+ATTRIBUTE	EndofSession				9	uint32
+ALIAS		Session-Terminate-End-Of-Day		.EndofSession
+ATTRIBUTE	Logoff-URL				10	string
+ATTRIBUTE	Net-VLAN				11	uint32
+ATTRIBUTE	Config-URL				12	string
+ATTRIBUTE	Goodbye-URL				13	string
+ATTRIBUTE	Qos-Policy				14	string
+ATTRIBUTE	SMTP-Redirect				17	uint32
+ATTRIBUTE	Centralized-Mgmt			18	string
+ATTRIBUTE	Group-Policy-Id				19	uint32
+ATTRIBUTE	Group-Bw-Max-Up				20	uint32
+ATTRIBUTE	Group-Bw-Max-Down			21	uint32
+ATTRIBUTE	MaxGigaWords-Up				22	uint32
+ATTRIBUTE	MaxGigaWords-Down			23	uint32
+ATTRIBUTE	Preferred-WAN				24	string
+ATTRIBUTE	Bw-Class-Name				27	string
+ATTRIBUTE	MaxBytesTotal				28	uint32
+ATTRIBUTE	MaxGigawordsTotal			29	uint32
+
+VALUE	IP-Upsell			PrivatePool		0
+VALUE	IP-Upsell			PublicPool		1
+
+END-VENDOR	Nomadix
+
+ALIAS		Nomadix					Vendor-Specific.Nomadix

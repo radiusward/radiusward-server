@@ -1,0 +1,19 @@
+# Huawei BRAS interim update.
+# SYNTHETIC: built from the Huawei BRAS RADIUS attribute documentation, not a capture.
+identifier: 101
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: me60-1:0001020300000a1b
+  User-Name: 0123456789@isp
+  NAS-IP-Address: 192.0.2.30
+  Acct-Session-Time: 900
+  Acct-Input-Octets: 123456789
+  Acct-Output-Octets: 987654321
+  Event-Timestamp: 1780000900
+  Huawei.Domain-Name: isp
+packet: 0465006c1ea0b1f404ae37bd9c8ee52c92ab2e412806000000032c196d6536302d313a30303031303230333030303030613162011030313233343536373839406973700406c000021e2e06000003842a06075bcd152b063ade68b137066a18a8841a0b000007db8a05697370
+expect:
+  statusType: 3
+  sessionTime: 900
+  inputOctets: 123456789
+  outputOctets: 987654321

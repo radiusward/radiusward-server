@@ -1,0 +1,21 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 8cdc0add3135774c17f685ca6ae75380c8e8a607 $
+#
+# dictionary.pfsense
+# pfSense Captive Portal Dictionary
+#
+# https://github.com/pfsense/pfsense/blob/master/src/usr/share/doc/radius/dictionary.pfsense
+#
+
+VENDOR		pfSense				13644
+
+BEGIN-VENDOR	pfSense
+
+ATTRIBUTE	Bandwidth-Max-Up			1	uint32
+ATTRIBUTE	Bandwidth-Max-Down			2	uint32
+ATTRIBUTE	Max-Total-Octets			3	uint32
+
+END-VENDOR	pfSense
+ALIAS		pfSense					Vendor-Specific.pfSense

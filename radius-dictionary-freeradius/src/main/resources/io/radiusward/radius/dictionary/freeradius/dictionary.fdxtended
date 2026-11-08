@@ -1,0 +1,20 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 54709ee11d88924f4c642a4eac81f6729d2d4fd9 $
+VENDOR		fdXtended			34536
+
+BEGIN-VENDOR	fdXtended
+ATTRIBUTE	Bandwidth-Up				1	uint32
+ATTRIBUTE	Bandwidth-Down				2	uint32
+ATTRIBUTE	PostAuthURL				3	string
+ATTRIBUTE	One2onenat-IP				4	string
+ATTRIBUTE	ContentFilter				5	uint32
+ATTRIBUTE	NetworkPolicy				6	uint32
+ATTRIBUTE	BytesDown				7	uint32
+ATTRIBUTE	BytesUp					8	uint32
+ATTRIBUTE	Expiration				9	string
+ATTRIBUTE	SessionTimeout				10	uint32
+ATTRIBUTE	Wan-Interface				11	string
+END-VENDOR fdXtended
+ALIAS		fdXtended				Vendor-Specific.fdXtended

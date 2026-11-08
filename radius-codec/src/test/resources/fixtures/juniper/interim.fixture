@@ -1,0 +1,16 @@
+# Junos management login accounting interim.
+# SYNTHETIC: built from the Junos RADIUS accounting documentation, not a capture.
+identifier: 41
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 7781
+  User-Name: noc-alice
+  NAS-Identifier: mx-edge-1
+  Acct-Session-Time: 600
+  Event-Timestamp: 1780000600
+  Juniper.Local-User-Name: super-user
+packet: 04290054cc6277798d8855d9f297b10b3dfcc5592806000000032c0637373831010b6e6f632d616c696365200b6d782d656467652d312e060000025837066a18a7581a1200000a4c010c73757065722d75736572
+expect:
+  statusType: 3
+  sessionTime: 600
+  juniperLocalUserName: super-user

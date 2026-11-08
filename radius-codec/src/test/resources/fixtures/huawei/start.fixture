@@ -1,0 +1,28 @@
+# Huawei ME60/NE40E BRAS IPoE subscriber start with QoS rates.
+# SYNTHETIC: built from the Huawei BRAS RADIUS attribute documentation, not a capture.
+identifier: 100
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: me60-1:0001020300000a1b
+  User-Name: 0123456789@isp
+  NAS-IP-Address: 192.0.2.30
+  NAS-Identifier: me60-1
+  NAS-Port-Type: Ethernet
+  NAS-Port-Id: slot=1;subslot=0;port=1;vlanid=100;
+  Framed-IP-Address: 100.64.2.30
+  Calling-Station-Id: 00e0-fc00-0001
+  Event-Timestamp: 1780000000
+  Huawei.Input-Average-Rate: 20480
+  Huawei.Output-Average-Rate: 102400
+  Huawei.Input-Peak-Rate: 25600
+  Huawei.Output-Peak-Rate: 128000
+  Huawei.Domain-Name: isp
+packet: 046400d30104e3783ed7557f53e52077abaedb232806000000012c196d6536302d313a30303031303230333030303030613162011030313233343536373839406973700406c000021e20086d6536302d313d060000000f5725736c6f743d313b737562736c6f743d303b706f72743d313b766c616e69643d3130303b08066440021e1f10303065302d666330302d3030303137066a18a5001a0c000007db0206000050001a0c000007db0506000190001a0c000007db0306000064001a0c000007db06060001f4001a0b000007db8a05697370
+expect:
+  statusType: 1
+  nasPortId: slot=1;subslot=0;port=1;vlanid=100;
+  huaweiInputAverageRate: 20480
+  huaweiOutputAverageRate: 102400
+  huaweiInputPeakRate: 25600
+  huaweiOutputPeakRate: 128000
+  huaweiDomainName: isp

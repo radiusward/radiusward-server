@@ -1,0 +1,75 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: e4e076b300bb056fa895d7bc615b5902edf39e1d $
+#
+#       For ZTE.
+#
+#       $Id: e4e076b300bb056fa895d7bc615b5902edf39e1d $
+#
+# QoS attributes Mostly derived from:
+# http://wwwen.zte.com.cn/en/products/bearer/201308/P020130828522349526032.pdf
+#
+VENDOR		ZTE				3902
+BEGIN-VENDOR	ZTE
+
+ATTRIBUTE	Client-DNS-Pri				1	string
+ATTRIBUTE	Client-DNS-Sec				2	string
+ATTRIBUTE	Context-Name				4	uint32
+ATTRIBUTE	Tunnel-Max-Sessions			21	uint32
+ATTRIBUTE	Tunnel-Max-Tunnels			22	uint32
+ATTRIBUTE	Tunnel-Window				24	uint32
+ATTRIBUTE	Tunnel-Retransmit			25	uint32
+ATTRIBUTE	Tunnel-Cmd-Timeout			26	uint32
+ATTRIBUTE	PPPOE-URL				27	string
+ATTRIBUTE	PPPOE-MOTM				28	string
+ATTRIBUTE	Tunnel-Algorithm			31	uint32
+ATTRIBUTE	Tunnel-Deadtime				32	uint32
+ATTRIBUTE	Mcast-Send				33	uint32
+ATTRIBUTE	Mcast-Receive				34	uint32
+ATTRIBUTE	Mcast-MaxGroups				35	uint32
+ATTRIBUTE	Access-Type				74	uint32
+
+ATTRIBUTE	QoS-Type				81	uint32
+ATTRIBUTE	QoS-Profile-Down			82	string
+ATTRIBUTE	Rate-Ctrl-SCR-Down			83	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Down			84	uint32
+ATTRIBUTE	Rate-Ctrl-PCR				86	uint32
+ATTRIBUTE	TCP-Syn-Rate				88	uint32
+ATTRIBUTE	Rate-Ctrl-SCR-Up			89	uint32
+ATTRIBUTE	Priority-Level				90	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Up			91	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Max-Down		92	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Max-Up			93	uint32
+ATTRIBUTE	QOS-Profile-Up				94	string
+
+ATTRIBUTE	TCP-Limit-Num				95	uint32
+ATTRIBUTE	TCP-Limit-Mode				96	uint32
+ATTRIBUTE	IGMP-Service-Profile-Num		97	uint32
+ATTRIBUTE	PPP-Sservice-Type			101	uint32
+ATTRIBUTE	SW-Privilege				104	uint32
+ATTRIBUTE	Access-Domain				151	string
+ATTRIBUTE	VPN-ID					190	string
+
+# 0 (lowest) - 15 (highest) privilege level
+#ATTRIBUTE	SW-Privilege			191	uint32
+
+ATTRIBUTE	Rate-Bust-DPIR				191	uint32
+ATTRIBUTE	Rate-Bust-UPIR				192	uint32
+
+ATTRIBUTE	Rate-Ctrl-PBS-Down			202	uint32
+ATTRIBUTE	Rate-Ctrl-PBS-Up			203	uint32
+ATTRIBUTE	Rate-Ctrl-SCR-Up-v6			228	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Up-v6			229	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Max-Up-v6		230	uint32
+ATTRIBUTE	Rate-Ctrl-PBS-Up-v6			231	uint32
+ATTRIBUTE	QoS-Profile-Up-v6			232	string
+
+ATTRIBUTE	Rate-Ctrl-SCR-Down-v6			233	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Down-v6			234	uint32
+ATTRIBUTE	Rate-Ctrl-Burst-Max-Down-v6		235	uint32
+ATTRIBUTE	Rate-Ctrl-PBS-Down-v6			236	uint32
+ATTRIBUTE	QoS-Profile-Down-v6			237	string
+
+END-VENDOR      ZTE
+ALIAS		ZTE					Vendor-Specific.ZTE

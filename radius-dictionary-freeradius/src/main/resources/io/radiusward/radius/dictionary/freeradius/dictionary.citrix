@@ -1,0 +1,26 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 8c51f6aa0777785ed8205e7155613271e11cc954 $
+##############################################################################
+#
+#	Citrix VSAs
+#
+#	$Id: 8c51f6aa0777785ed8205e7155613271e11cc954 $
+#
+##############################################################################
+
+VENDOR		Citrix				66
+
+BEGIN-VENDOR	Citrix
+
+ATTRIBUTE	UID					10	uint32
+ATTRIBUTE	GID					11	uint32
+ATTRIBUTE	Home					12	string
+ATTRIBUTE	Shell					13	string
+ATTRIBUTE	Group-Names				14	string
+ATTRIBUTE	Group-Ids				15	string
+ATTRIBUTE	User-Groups				16	string
+
+END-VENDOR Citrix
+ALIAS		Citrix					Vendor-Specific.Citrix

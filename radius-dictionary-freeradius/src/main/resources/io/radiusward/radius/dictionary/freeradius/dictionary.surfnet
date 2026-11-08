@@ -1,0 +1,22 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: f7fab1f793cd3cf8984ef25305ee3c5b1c43c7b7 $
+##############################################################################
+#
+#	Surfnet
+#
+#	$Id: f7fab1f793cd3cf8984ef25305ee3c5b1c43c7b7 $
+#
+##############################################################################
+
+VENDOR		Surfnet				1076
+
+BEGIN-VENDOR	Surfnet
+
+ATTRIBUTE	AVPair					1	string
+ATTRIBUTE	Service-Identifier			2	string
+ATTRIBUTE	Service-Provider			3	string
+
+END-VENDOR	Surfnet
+ALIAS		Surfnet					Vendor-Specific.Surfnet

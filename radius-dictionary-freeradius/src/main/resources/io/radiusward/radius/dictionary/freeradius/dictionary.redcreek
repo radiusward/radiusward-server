@@ -1,0 +1,25 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: f06783caa1346c8d849cc137d95799f1c4b1da82 $
+#
+#	http://www.redcreek.com
+#	$Id: f06783caa1346c8d849cc137d95799f1c4b1da82 $
+#
+
+VENDOR		RedCreek			1958
+
+BEGIN-VENDOR	RedCreek
+
+ATTRIBUTE	Tunneled-IP-Addr			5	ipaddr
+ATTRIBUTE	Tunneled-IP-Netmask			6	ipaddr
+ATTRIBUTE	Tunneled-Gateway			7	ipaddr
+ATTRIBUTE	Tunneled-DNS-Server			8	string
+ATTRIBUTE	Tunneled-WINS-Server1			9	string
+ATTRIBUTE	Tunneled-WINS-Server2			10	string
+ATTRIBUTE	Tunneled-HostName			11	string
+ATTRIBUTE	Tunneled-DomainName			12	string
+ATTRIBUTE	Tunneled-Search-List			13	string
+
+END-VENDOR	RedCreek
+ALIAS		RedCreek				Vendor-Specific.RedCreek

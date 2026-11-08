@@ -1,0 +1,21 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 3f7c1b44e0337941daa9b0cfaf0b1fa3fa282e5f $
+#
+#	Found on the net.
+#
+#	$Id: 3f7c1b44e0337941daa9b0cfaf0b1fa3fa282e5f $
+#
+
+VENDOR		Propel				14895
+
+BEGIN-VENDOR	Propel
+ATTRIBUTE	Accelerate				1	uint32
+ATTRIBUTE	Dialed-Digits				2	string
+ATTRIBUTE	Client-IP-Address			3	ipaddr
+ATTRIBUTE	Client-NAS-IP-Address			4	ipaddr
+ATTRIBUTE	Client-Source-ID			5	uint32
+ATTRIBUTE	Content-Filter-ID			6	uint32
+END-VENDOR	Propel
+ALIAS		Propel					Vendor-Specific.Propel

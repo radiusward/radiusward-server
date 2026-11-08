@@ -1,0 +1,26 @@
+# Cisco IOS-XE ISG, PPPoE session stop with a 64 bit download counter (gigawords).
+# SYNTHETIC: built from the Cisco ISG RADIUS attribute documentation, not a capture.
+identifier: 19
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 00000A1B
+  User-Name: user1@isp.example
+  NAS-IP-Address: 192.0.2.1
+  Framed-IP-Address: 100.64.0.10
+  Acct-Session-Time: 7260
+  Acct-Input-Octets: 734003200
+  Acct-Output-Octets: 1073741824
+  Acct-Output-Gigawords: 3
+  Acct-Terminate-Cause: User-Request
+  Acct-Delay-Time: 2
+  Event-Timestamp: 1780007260
+  Cisco.AVPair: disc-cause-ext=PPP Receive Term
+packet: 0413009498889d57273b2fc5472f95afc05ff6ed2806000000022c0a303030303041314201137573657231406973702e6578616d706c650406c000020108066440000a2e0600001c5c2a062bc000002b064000000035060000000331060000000129060000000237066a18c15c1a27000000090121646973632d63617573652d6578743d5050502052656365697665205465726d
+expect:
+  statusType: 2
+  sessionTime: 7260
+  outputOctets: 1073741824
+  outputGigawords: 3
+  outputOctets64: 13958643712
+  terminateCause: 1
+  delayTime: 2

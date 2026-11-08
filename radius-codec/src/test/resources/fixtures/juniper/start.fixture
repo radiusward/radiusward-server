@@ -1,0 +1,21 @@
+# Junos (MX/SRX) management login accounting start for a local template user.
+# SYNTHETIC: built from the Junos RADIUS accounting documentation, not a capture.
+identifier: 40
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 7781
+  User-Name: noc-alice
+  NAS-Identifier: mx-edge-1
+  NAS-IP-Address: 198.51.100.7
+  Calling-Station-Id: 203.0.113.50
+  Service-Type: Login-User
+  Event-Timestamp: 1780000000
+  Juniper.Local-User-Name: super-user
+  Juniper.Interface-id: ge-0/0/0.0
+packet: 0428007add4ec4cad15bddd2d676b39587135c612806000000012c0637373831010b6e6f632d616c696365200b6d782d656467652d310406c63364071f0e3230332e302e3131332e353006060000000137066a18a5001a1200000a4c010c73757065722d757365721a1200000a4c230c67652d302f302f302e30
+expect:
+  statusType: 1
+  sessionId: 7781
+  nasIdentifier: mx-edge-1
+  juniperLocalUserName: super-user
+  juniperInterfaceId: ge-0/0/0.0

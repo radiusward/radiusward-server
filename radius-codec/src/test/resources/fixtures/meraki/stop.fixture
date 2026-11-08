@@ -1,0 +1,18 @@
+# Cisco Meraki MR client disassociation stop.
+# SYNTHETIC: built from the Meraki RADIUS attribute documentation, not a capture.
+identifier: 202
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 5F3A1B2C3D4E5F60
+  User-Name: bob@corp.example
+  NAS-IP-Address: 10.10.0.5
+  Acct-Session-Time: 1800
+  Acct-Input-Octets: 9000000
+  Acct-Output-Octets: 70000000
+  Acct-Terminate-Cause: User-Request
+  Event-Timestamp: 1780001800
+packet: 04ca00626937ca5b7992e2f6ed05e21aaca5ae742806000000022c12354633413142324333443445354636300112626f6240636f72702e6578616d706c6504060a0a00052e06000007082a06008954402b06042c1d8031060000000137066a18ac08
+expect:
+  statusType: 2
+  sessionTime: 1800
+  terminateCause: 1

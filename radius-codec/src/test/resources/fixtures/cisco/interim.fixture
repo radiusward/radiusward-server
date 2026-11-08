@@ -1,0 +1,27 @@
+# Cisco IOS-XE ISG, PPPoE interim update after 5 minutes.
+# SYNTHETIC: built from the Cisco ISG RADIUS attribute documentation, not a capture.
+identifier: 18
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 00000A1B
+  User-Name: user1@isp.example
+  NAS-IP-Address: 192.0.2.1
+  NAS-Port-Type: Virtual
+  Framed-IP-Address: 100.64.0.10
+  Acct-Session-Time: 300
+  Acct-Input-Octets: 1048576
+  Acct-Output-Octets: 52428800
+  Acct-Input-Packets: 2048
+  Acct-Output-Packets: 40000
+  Acct-Delay-Time: 0
+  Event-Timestamp: 1780000300
+  Cisco.AVPair: connect-progress=LAN Ses Up
+packet: 041200969ad6cc62c8176db749e2619fb59b9fbc2806000000032c0a303030303041314201137573657231406973702e6578616d706c650406c00002013d060000000508066440000a2e060000012c2a06001000002b06032000002f0600000800300600009c4029060000000037066a18a62c1a2300000009011d636f6e6e6563742d70726f67726573733d4c414e20536573205570
+expect:
+  statusType: 3
+  sessionTime: 300
+  inputOctets: 1048576
+  outputOctets: 52428800
+  inputPackets: 2048
+  outputPackets: 40000
+  ciscoAvPair: connect-progress=LAN Ses Up

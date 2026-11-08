@@ -1,0 +1,17 @@
+# Ruckus SmartZone WLAN client stop on idle timeout.
+# SYNTHETIC: built from the Ruckus SmartZone RADIUS attribute documentation, not a capture.
+identifier: 79
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 64A1B2C3-0001
+  User-Name: carol
+  NAS-IP-Address: 10.30.0.2
+  Acct-Session-Time: 2400
+  Acct-Terminate-Cause: Idle-Timeout
+  Event-Timestamp: 1780002400
+  Ruckus.SSID: Guest
+packet: 044f0055adce16dc2f322d30f5daa021fae6ab392806000000022c0f36344131423243332d3030303101076361726f6c04060a1e00022e060000096031060000000437066a18ae601a0d000061dd03074775657374
+expect:
+  statusType: 2
+  sessionTime: 2400
+  terminateCause: 4

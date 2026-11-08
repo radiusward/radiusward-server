@@ -1,0 +1,21 @@
+# Huawei BRAS session stop on session timeout.
+# SYNTHETIC: built from the Huawei BRAS RADIUS attribute documentation, not a capture.
+identifier: 102
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: me60-1:0001020300000a1b
+  User-Name: 0123456789@isp
+  NAS-IP-Address: 192.0.2.30
+  Acct-Session-Time: 86400
+  Acct-Input-Octets: 5
+  Acct-Input-Gigawords: 12
+  Acct-Output-Octets: 6
+  Acct-Output-Gigawords: 140
+  Acct-Terminate-Cause: Session-Timeout
+  Event-Timestamp: 1780086400
+packet: 046600734037ad7bc0f7ed14069a98f462cdb5452806000000022c196d6536302d313a30303031303230333030303030613162011030313233343536373839406973700406c000021e2e06000151802a060000000534060000000c2b060000000635060000008c31060000000537066a19f680
+expect:
+  statusType: 2
+  inputOctets64: 51539607557
+  outputOctets64: 601295421446
+  terminateCause: 5

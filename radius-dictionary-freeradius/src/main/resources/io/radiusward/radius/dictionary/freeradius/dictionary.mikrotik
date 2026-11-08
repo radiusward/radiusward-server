@@ -1,0 +1,61 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 80bb073cb27bca449b0f05a8cdd6eed1faea482c $
+#	http://www.mikrotik.com
+#
+#	https://wiki.mikrotik.com/wiki/Manual:RADIUS_Client/vendor_dictionary
+#
+#	$Id: 80bb073cb27bca449b0f05a8cdd6eed1faea482c $
+#
+VENDOR		Mikrotik			14988
+
+BEGIN-VENDOR	Mikrotik
+
+ATTRIBUTE	Recv-Limit				1	uint32
+ATTRIBUTE	Xmit-Limit				2	uint32
+
+# this attribute is unused
+ATTRIBUTE	Group					3	string
+
+ATTRIBUTE	Wireless-Forward			4	uint32
+ATTRIBUTE	Wireless-Skip-Dot1x			5	uint32
+ATTRIBUTE	Wireless-Enc-Algo			6	uint32
+ATTRIBUTE	Wireless-Enc-Key			7	string
+ATTRIBUTE	Rate-Limit				8	string
+ATTRIBUTE	Realm					9	string
+ATTRIBUTE	Host-IP					10	ipaddr
+ATTRIBUTE	Mark-Id					11	string
+ATTRIBUTE	Advertise-URL				12	string
+ATTRIBUTE	Advertise-Interval			13	uint32
+ATTRIBUTE	Recv-Limit-Gigawords			14	uint32
+ATTRIBUTE	Xmit-Limit-Gigawords			15	uint32
+ATTRIBUTE	Wireless-PSK				16	string
+ATTRIBUTE	Total-Limit				17	uint32
+ATTRIBUTE	Total-Limit-Gigawords			18	uint32
+ATTRIBUTE	Address-List				19	string
+ATTRIBUTE	Wireless-MPKey				20	string
+ATTRIBUTE	Wireless-Comment			21	string
+ATTRIBUTE	Delegated-IPv6-Pool			22	string
+ATTRIBUTE	DHCP-Option-Set				23	string
+ATTRIBUTE	DHCP-Option-Param-STR1			24	string
+ATTRIBUTE	DHCP-Option-ParamSTR2			25	string
+ATTRIBUTE	Wireless-VLANID				26	uint32
+ATTRIBUTE	Wireless-VLANID-Type			27	uint32
+ATTRIBUTE	Wireless-Minsignal			28	string
+ATTRIBUTE	Wireless-Maxsignal			29	string
+ATTRIBUTE	Switching-Filter			30	string
+
+# MikroTik Values
+
+VALUE	Wireless-Enc-Algo		No-encryption		0
+VALUE	Wireless-Enc-Algo		40-bit-WEP		1
+VALUE	Wireless-Enc-Algo		104-bit-WEP		2
+VALUE	Wireless-Enc-Algo		AES-CCM			3
+VALUE	Wireless-Enc-Algo		TKIP			4
+
+VALUE	Wireless-VLANID-Type		802.1q			0
+VALUE	Wireless-VLANID-Type		802.1ad			1
+
+END-VENDOR	Mikrotik
+ALIAS		Mikrotik				Vendor-Specific.Mikrotik

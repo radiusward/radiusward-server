@@ -1,0 +1,22 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: e84ca04e6b766897357fefa5122fc44ccaae127b $
+##############################################################################
+#
+#	Quiconnect VSA's.
+#
+#	$Id: e84ca04e6b766897357fefa5122fc44ccaae127b $
+#
+##############################################################################
+
+VENDOR		Quiconnect			14436
+
+BEGIN-VENDOR	Quiconnect
+
+ATTRIBUTE	AVPair					1	string
+ATTRIBUTE	VNP-Information				2	string
+ATTRIBUTE	HSP-Information				3	string
+
+END-VENDOR	Quiconnect
+ALIAS		Quiconnect				Vendor-Specific.Quiconnect

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.radiusward</groupId>
+        <artifactId>radiusward-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>radius-dictionary</artifactId>
+    <name>radiusward :: RADIUS dictionary</name>
+
+    <description>Dictionary model and FreeRADIUS-format dictionary parser</description>
+
+    <properties>
+        <jacoco.minimum.coverage>0.80</jacoco.minimum.coverage>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.agrona</groupId>
+            <artifactId>agrona</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radius-dictionary-freeradius</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+</project>

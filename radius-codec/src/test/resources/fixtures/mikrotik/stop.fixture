@@ -1,0 +1,20 @@
+# MikroTik RouterOS PPPoE session stop after the link dropped.
+# SYNTHETIC: built from the RouterOS RADIUS client documentation, not a capture.
+identifier: 5
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 81a00001
+  User-Name: cust-1001
+  NAS-Identifier: core-ccr
+  Acct-Session-Time: 3600
+  Acct-Input-Octets: 4000000000
+  Acct-Input-Gigawords: 1
+  Acct-Output-Octets: 1000
+  Acct-Terminate-Cause: Lost-Carrier
+  Event-Timestamp: 1780003600
+packet: 0405005dfee754c72fb3b33d28652f6063cc9fc12806000000022c0a3831613030303031010b637573742d31303031200a636f72652d6363722e0600000e102a06ee6b28003406000000012b06000003e831060000000237066a18b310
+expect:
+  statusType: 2
+  inputGigawords: 1
+  inputOctets64: 8294967296
+  terminateCause: 2

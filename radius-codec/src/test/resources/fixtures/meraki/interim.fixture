@@ -1,0 +1,18 @@
+# Cisco Meraki MR interim update.
+# SYNTHETIC: built from the Meraki RADIUS attribute documentation, not a capture.
+identifier: 201
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 5F3A1B2C3D4E5F60
+  User-Name: bob@corp.example
+  NAS-IP-Address: 10.10.0.5
+  Acct-Session-Time: 120
+  Acct-Input-Octets: 250000
+  Acct-Output-Octets: 4000000
+  Event-Timestamp: 1780000120
+  Meraki.Network-Name: HQ - wireless
+packet: 04c90071719085e9b66ae913e6db53a15e79080d2806000000032c12354633413142324333443445354636300112626f6240636f72702e6578616d706c6504060a0a00052e06000000782a060003d0902b06003d090037066a18a5781a15000073e7020f4851202d20776972656c657373
+expect:
+  statusType: 3
+  sessionTime: 120
+  merakiNetworkName: HQ - wireless

@@ -1,0 +1,97 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 9c530bce3764c5949290c9b193f24db08d3c2c9e $
+##############################################################################
+#
+#	ASN Attributes.
+#
+#	Taken from http://svn.asn.pl/misc/freeradius/dictionary.asn
+#
+#	$Id: 9c530bce3764c5949290c9b193f24db08d3c2c9e $
+#
+##############################################################################
+
+VENDOR		ASN				23782
+
+BEGIN-VENDOR	ASN
+
+## Server-side extensions
+# dynamic IP pool name
+ATTRIBUTE	IP-Pool-Name				1	string
+
+### 2-99: free ###
+
+## limits
+ATTRIBUTE	Kbps-Down				100	uint32
+ATTRIBUTE	Kbps-Down-Localmedia			112	uint32
+ATTRIBUTE	Kbps-Up					101	uint32
+ATTRIBUTE	Pps-Down				102	uint32
+ATTRIBUTE	Pps-Up					103	uint32
+ATTRIBUTE	TCP-Connlimit				104	uint32
+
+## firewall
+ATTRIBUTE	Firewall-Available			110	uint32
+VALUE	Firewall-Available		Yes			1
+VALUE	Firewall-Available		No			2
+
+ATTRIBUTE	Firewall-State				105	uint32
+VALUE	Firewall-State			Enabled			1
+VALUE	Firewall-State			Disabled		2
+
+ATTRIBUTE	Firewall-Block-Ping			107	uint32
+VALUE	Firewall-Block-Ping		Enabled			1
+VALUE	Firewall-Block-Ping		Disabled		2
+
+# hosts to allow "<tcp/udp/sctp> <host> <port1,port2,...>"
+ATTRIBUTE	Firewall-Open				106	string
+
+## QoS
+ATTRIBUTE	QoS-Available				111	uint32
+VALUE	QoS-Available			Yes			1
+VALUE	QoS-Available			No			2
+
+ATTRIBUTE	QoS-State				108	uint32
+VALUE	QoS-State			Enabled			1
+VALUE	QoS-State			Disabled		2
+
+# IP redirection, with optional randomness
+#  "<tcp/udp/sctp> src/dst [<dsthost[/mask]>:]<port1,port2,...> <host>:<port> [<random%>]"
+# where src/dst decides whether to match source or destination ports
+#       random is an uint32 number from 1 to 99, or null - no randomness
+ATTRIBUTE	IP-Redirect				109	string
+
+## web filtering
+# decides whether to deny or to allow only the specified web topics
+ATTRIBUTE	Webfilter-Mode				113	uint32
+VALUE	Webfilter-Mode			Deny			1
+VALUE	Webfilter-Mode			Allow			2
+
+# where to redirect blocked request
+#  "[301:302]<new url>"
+#  301/302   - redirect permanently (301) or temporarily (302) (default 302)
+#  <new url> - an URL address, with following possible substitutions:
+#    %a - IP address of the client
+#    %i - user ID (RFC931) or "unknown"
+#    %n - domainname of the client or "unknown"
+#    %p - REQUEST_URI, ie. the path and the optional
+#         query string of %u, but note for convenience
+#         without the leading "/".
+#    %t - matched destination group or "unknown"
+#    %u - requested URL
+#    %% - single '%'
+#
+ATTRIBUTE	Webfilter-Redirect			114	string
+
+# squidGuard destination group to match
+#   destinations available by default: sglists-<tag> - tags:
+#   ads adult audioandvideo banks blogs chatandforum finance freemail games
+#   home jobsearch keylogger news onlineGames phishing proxies recreation
+#   reference science searchengine
+ATTRIBUTE	Webfilter-Destination			115	string
+
+# web domain to match (will match all subdomains, too)
+ATTRIBUTE	Webfilter-Domain			116	string
+
+END-VENDOR                             ASN
+ALIAS		ASN					Vendor-Specific.ASN

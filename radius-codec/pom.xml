@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.radiusward</groupId>
+        <artifactId>radiusward-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>radius-codec</artifactId>
+    <name>radiusward :: RADIUS codec</name>
+
+    <description>Zero-allocation RADIUS packet codec</description>
+
+    <properties>
+        <jacoco.minimum.coverage>0.90</jacoco.minimum.coverage>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.agrona</groupId>
+            <artifactId>agrona</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radius-dictionary</artifactId>
+        </dependency>
+
+        <!-- build-time only: generate-sources runs the code generator against the bundled dictionaries -->
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radius-codegen</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radius-dictionary-freeradius</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>net.jqwik</groupId>
+            <artifactId>jqwik</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- reference implementation for differential tests only -->
+        <dependency>
+            <groupId>org.aaa4j.radius</groupId>
+            <artifactId>aaa4j-radius-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.aaa4j.radius</groupId>
+            <artifactId>aaa4j-radius-dictionary-freeradius</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>generate-attributes</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>io.radiusward.radius.codegen.CodeGenerator</mainClass>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>--spec</argument>
+                                <argument>${project.basedir}/src/main/codegen/hot-attributes.txt</argument>
+                                <argument>--output</argument>
+                                <argument>${project.build.directory}/generated-sources/radius</argument>
+                                <argument>--package</argument>
+                                <argument>io.radiusward.radius.codec.attributes</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <!-- generated code is reported but not part of the 90% check; the generator has its own tests -->
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>check</id>
+                        <configuration>
+                            <excludes>
+                                <exclude>io/radiusward/radius/codec/attributes/**</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>add-generated-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>add-source</goal>
+                        </goals>
+                        <configuration>
+                            <sources>
+                                <source>${project.build.directory}/generated-sources/radius</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,0 +1,4 @@
+/*
+ * Copyright $YEAR The radiusward Authors
+ * SPDX-License-Identifier: Apache-2.0
+ */

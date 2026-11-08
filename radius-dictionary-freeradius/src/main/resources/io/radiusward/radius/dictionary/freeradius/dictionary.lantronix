@@ -1,0 +1,17 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 2c4ea0253b5607d42b9f3743e8e9149f86fb2649 $
+# dictionary.lantronix
+#
+# Lantronix SLC Secure Lantronix Console Manager
+# Provides SLC-specific user attributes
+#
+VENDOR		Lantronix			244
+
+BEGIN-VENDOR	Lantronix
+
+ATTRIBUTE	User-Attributes				1	string
+
+END-VENDOR Lantronix
+ALIAS		Lantronix				Vendor-Specific.Lantronix

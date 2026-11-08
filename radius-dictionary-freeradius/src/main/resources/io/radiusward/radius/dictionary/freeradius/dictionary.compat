@@ -1,0 +1,51 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: c9b3b607daaba2ca541e3b7d9b1f5a163ecd2545 $
+#
+#	Obsolete names for backwards compatibility with older users files.
+#	Move the $INCLUDE in the main dictionary file to the end if you want
+#	these names to be used in the "details" logfile.
+#
+
+#  This has been removed.  Too many people get it wrong.
+#ATTRIBUTE	Password				2	string	encrypt=User-Password
+ALIAS		Client-Id				NAS-IP-Address
+ALIAS		Client-Port-Id				NAS-Port
+ALIAS		Framed-Address				Framed-IP-Address
+ALIAS		Framed-Netmask				Framed-IP-Netmask
+ALIAS		Framed-Filter-Id			Filter-ID
+ALIAS		Login-Host				Login-IP-Host
+ALIAS		Login-Port				Login-TCP-Port
+ATTRIBUTE	Old-Password				17	string
+ALIAS		Port-Message				Reply-Message
+ALIAS		Dialback-No				Callback-Number
+ALIAS		Dialback-Name				Callback-Id
+ALIAS		Challenge-State				State
+
+# Other enumeration names for hte same uint32s
+VALUE	Framed-Compression		Van-Jacobsen-TCP-IP	1
+VALUE	Framed-Compression		VJ-TCP-IP		1
+
+VALUE	Service-Type			Shell-User		6
+VALUE	Service-Type			Dialback-Login-User	3
+VALUE	Service-Type			Dialback-Framed-User	4
+VALUE	Service-Type			Dialout-Framed-User	5
+
+#
+#	For compatibility with MERIT users files.
+#
+ALIAS	Login-Callback-Number				Callback-Number
+ALIAS	Framed-Callback-Id				Callback-Id
+ALIAS	Client-Port-DNIS				Called-Station-ID
+ALIAS	Caller-ID					Calling-Station-Id
+
+VALUE	Service-Type			Login			1
+VALUE	Service-Type			Framed			2
+VALUE	Service-Type			Callback-Login		3
+VALUE	Service-Type			Callback-Framed		4
+VALUE	Service-Type			Exec-User		7
+
+VALUE	Acct-Status-Type		Alive			3
+
+ALIAS	User-Service-Type			Service-Type

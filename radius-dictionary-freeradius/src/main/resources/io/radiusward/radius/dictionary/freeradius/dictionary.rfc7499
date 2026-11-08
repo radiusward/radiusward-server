@@ -1,0 +1,20 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 3782fec5a1ae8fed8a030f1c0cef8009a3a17953 $
+#
+#	Attributes and values defined in RFC 7499.
+#	http://www.ietf.org/rfc/rfc7499.txt
+#
+#	$Id: 3782fec5a1ae8fed8a030f1c0cef8009a3a17953 $
+#
+
+ATTRIBUTE	Frag-Status				241.1	uint32
+
+VALUE	Frag-Status			Reserved		0
+VALUE	Frag-Status			Fragmentation-Supported	1
+VALUE	Frag-Status			More-Data-Pending	2
+VALUE	Frag-Status			More-Data-Request	3
+
+ATTRIBUTE	Proxy-State-Length			241.2	uint32
+

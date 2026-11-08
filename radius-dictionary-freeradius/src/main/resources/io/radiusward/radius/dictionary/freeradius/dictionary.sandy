@@ -1,0 +1,58 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 78f8ecf06ffc7fc7cd146de54937ddcd4e53136e $
+#
+#	The SANDY Vendor-Specific dictionary.
+#
+# Version:	$Id: 78f8ecf06ffc7fc7cd146de54937ddcd4e53136e $
+#
+#	For a complete list of Private Enterprise Codes, see:
+#
+#	http://www.isi.edu/in-notes/iana/assignments/enterprise-numbers
+#
+
+VENDOR		Sandy				11406
+
+BEGIN-VENDOR	Sandy
+
+ATTRIBUTE	User-Id					1	uint32
+ATTRIBUTE	Group-Id				2	uint32
+ATTRIBUTE	GECOS					3	string
+ATTRIBUTE	Shell					4	string
+ATTRIBUTE	Home					5	string
+
+ATTRIBUTE	Mail-Service				100	uint32
+ATTRIBUTE	Mail-Authtype				101	uint32
+ATTRIBUTE	Mail-Challenge				102	string
+ATTRIBUTE	Mail-Response				103	octets
+ATTRIBUTE	Mail-Address				104	string
+ATTRIBUTE	Mail-Spamcontrol			105	uint32
+ATTRIBUTE	Mail-Notification			106	octets
+ATTRIBUTE	Mail-Box				107	string
+ATTRIBUTE	Mail-Quota				108	uint32
+ATTRIBUTE	Mail-Filter				109	octets
+ATTRIBUTE	Mail-Box-Control			110	uint32
+ATTRIBUTE	Mail-Client-IP				111	ipaddr
+#ATTRIBUTE	Mail-Client-Helo			110	string
+
+VALUE	Mail-Service			Transfer		1
+VALUE	Mail-Service			Delivery		2
+VALUE	Mail-Service			POP			3
+VALUE	Mail-Service			IMAP			4
+VALUE	Mail-Service			WEBMAIL			5
+VALUE	Mail-Service			Control			6
+
+VALUE	Mail-Authtype			NONE			0
+VALUE	Mail-Authtype			PLAIN			1
+VALUE	Mail-Authtype			CRAM-MD5		2
+VALUE	Mail-Authtype			APOP			3
+VALUE	Mail-Authtype			KRB4			4
+VALUE	Mail-Authtype			KRB5			5
+VALUE	Mail-Authtype			NTLM			6
+VALUE	Mail-Authtype			NTLM2			7
+VALUE	Mail-Authtype			CRAM-MD4		8
+VALUE	Mail-Authtype			CRAM-SHA1		9
+
+END-VENDOR Sandy
+ALIAS		Sandy					Vendor-Specific.Sandy

@@ -1,0 +1,26 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 610a59c72d85d6948b30eb90ac77b6ad8fe92541 $
+##############################################################################
+#
+#	Yubico VSA's
+#
+#	$Id: 610a59c72d85d6948b30eb90ac77b6ad8fe92541 $
+#
+##############################################################################
+
+VENDOR		Yubico				41482
+
+BEGIN-VENDOR	Yubico
+
+ATTRIBUTE	Yubikey-Key				1	octets secret
+ATTRIBUTE	Yubikey-Public-ID			2	string
+ATTRIBUTE	Yubikey-Private-ID			3	octets secret
+ATTRIBUTE	Yubikey-Counter				4	uint32
+ATTRIBUTE	Yubikey-Timestamp			5	uint32
+ATTRIBUTE	Yubikey-Random				6	uint32
+ATTRIBUTE	Yubikey-OTP				7	string secret
+
+END-VENDOR	Yubico
+ALIAS		Yubico					Vendor-Specific.Yubico

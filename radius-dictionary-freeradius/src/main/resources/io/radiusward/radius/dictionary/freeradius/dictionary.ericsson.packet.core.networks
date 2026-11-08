@@ -1,0 +1,20 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 5afefde762c80849431fa1c3f2e7d602e2fa6e61 $
+#
+# dictionary.ericsson.packet.core.networks
+#
+
+VENDOR		Ericsson-Packet-Core-Networks	10923
+
+#
+# Ericsson specific
+
+BEGIN-VENDOR	Ericsson-Packet-Core-Networks
+
+ATTRIBUTE	Suggested-Rule-Space			30	string
+ATTRIBUTE	Suggested-Secondary-Rule-Space		31	string
+
+END-VENDOR      Ericsson-Packet-Core-Networks
+ALIAS		Ericsson-Packet-Core-Networks		Vendor-Specific.Ericsson-Packet-Core-Networks

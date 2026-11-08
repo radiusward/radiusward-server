@@ -1,0 +1,17 @@
+# Junos management login accounting stop.
+# SYNTHETIC: built from the Junos RADIUS accounting documentation, not a capture.
+identifier: 42
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 7781
+  User-Name: noc-alice
+  NAS-Identifier: mx-edge-1
+  Acct-Session-Time: 1250
+  Acct-Terminate-Cause: Idle-Timeout
+  Event-Timestamp: 1780001250
+  Juniper.Local-User-Name: super-user
+packet: 042a005af6f025d3fe80337b6c3963d38c29e1fb2806000000022c0637373831010b6e6f632d616c696365200b6d782d656467652d312e06000004e231060000000437066a18a9e21a1200000a4c010c73757065722d75736572
+expect:
+  statusType: 2
+  sessionTime: 1250
+  terminateCause: 4

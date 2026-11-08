@@ -1,0 +1,80 @@
+# Contributing to radiusward
+
+Thanks for helping. This guide is the single source of truth for how the project is built and which
+rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
+[docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
+
+Current state: **Phase 0** (codec foundation) is done; Phase 1 (cluster + gateway) is next — see the
+[roadmap](docs/plans/roadmap.md).
+
+## Setup
+
+- JDK 21 (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS). CI also runs Java 25.
+- No Docker needed in Phase 0–1. Details: [docs/operations/local-dev.md](docs/operations/local-dev.md).
+- Every JVM that loads Agrona/Aeron needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`
+  (already set for tests via `${radiusward.jvm.args}` and in the `Add-Exports` manifest of runnable jars;
+  add it to IDE run configurations).
+
+## Commands
+
+```bash
+./mvnw verify                                   # build, unit + integration tests, coverage, format check
+./mvnw spotless:apply                           # format (palantir-java-format) + license headers
+./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dsurefire.failIfNoSpecifiedTests=false
+./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dfixtures.update=true -Dsurefire.failIfNoSpecifiedTests=false
+                                                # rewrite fixture packet: lines after editing a fixture
+./mvnw -Pbench -pl testing/benchmarks -am package -DskipTests && java -jar testing/benchmarks/target/benchmarks.jar
+./mvnw -Pinterop verify                         # also runs against a local FreeRADIUS (brew install freeradius-server)
+java -jar tools/radclient/target/radclient.jar --help
+scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
+```
+
+## Modules
+
+| Module | Purpose |
+|---|---|
+| `radius-dictionary` | Dictionary model + FreeRADIUS-format parser (v3 + v4 subset), strict/lenient modes, `dictionary.d` overrides |
+| `radius-dictionary-freeradius` | Bundled FreeRADIUS dictionaries (CC BY 4.0, unmodified, pinned commit) — resources only |
+| `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
+| `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder; generated `io.radiusward.radius.codec.attributes` |
+| `tools/radclient` | CLI test client (`acct`, `replay`, `decode`), executable jar |
+| `testing/benchmarks` | JMH, only with `-Pbench` |
+
+## Project rules
+
+- **No allocation on the hot path.** Receive → validate → verify → extract → respond uses flyweights over
+  `DirectBuffer`, primitive collections, no `String`/boxing/lambdas capturing per packet.
+  `HotPathAllocationIT` enforces it; keep it green and extend it when the hot path grows.
+- **Return status codes, don't throw, for bad input.** Malformed packets are silently discarded (RFC 2865 §3).
+- **Determinism in the cluster service (Phase 1+):** cluster time only, no I/O, no randomness, no wall
+  clock, no iteration over hash-ordered collections that affects output.
+- **ACK boundary:** an Accounting-Response is sent only after the cluster reports the command committed.
+  There is no Accounting-Reject; on failure stay silent.
+- **Dependencies:** plain JDBC, never Hibernate/an ORM; plain NIO `DatagramChannel`, never Netty.
+  The Maven enforcer bans both. Discuss any new runtime dependency before adding it.
+- **Logging (Phase 1+):** Log4j2 async loggers; never log per packet on the hot path, never block the
+  logging thread; parameterized, garbage-free calls only.
+- **No Docker in Phase 0–1.** Everything runs locally; Docker/compose arrive in Phase 2.
+- **Dictionaries:** only FreeRADIUS files carrying the CC BY 4.0 header; never edit them by hand —
+  use `scripts/update-dictionaries.sh`. Keep `NOTICE` / `THIRD-PARTY-LICENSES.md` in sync.
+- **Generated code** lives in `target/generated-sources`, is never committed, and is driven by
+  `radius-codec/src/main/codegen/hot-attributes.txt` (at most 64 fields until the presence mask is widened).
+- **Every source file** carries the SPDX header (`./mvnw spotless:apply` adds it).
+- **Tests with every change.** Coverage floors: `radius-codec` 90 % (generated code excluded),
+  `radius-dictionary` 80 %.
+- **Docs are part of the change:** update the relevant README / ADR / doc in the same commit; new
+  decisions get an ADR.
+
+## Conventions
+
+- Java 21 language level, `io.radiusward` package root, palantir-java-format.
+- Tests: JUnit 5 + AssertJ; jqwik for property-based fuzzing; `*IT` classes run under Failsafe
+  (no JaCoCo agent — allocation measurements).
+- Fixtures: `radius-codec/src/test/resources/fixtures/<vendor>/<event>.fixture` (format in
+  [docs/testing/strategy.md](docs/testing/strategy.md)); currently synthetic.
+
+## Submitting changes
+
+1. Run `./mvnw spotless:apply verify` before pushing.
+2. Commits: imperative subject line, explain the why in the body.
+3. By contributing you agree that your contribution is licensed under the Apache License 2.0.

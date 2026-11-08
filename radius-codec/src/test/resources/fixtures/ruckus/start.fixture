@@ -1,0 +1,26 @@
+# Ruckus SmartZone WLAN client start.
+# SYNTHETIC: built from the Ruckus SmartZone RADIUS attribute documentation, not a capture.
+identifier: 77
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 64A1B2C3-0001
+  User-Name: carol
+  NAS-IP-Address: 10.30.0.2
+  NAS-Identifier: sz-ctrl-1
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: 2C-5D-93-00-00-10:Guest
+  Calling-Station-Id: 11-22-33-44-55-66
+  Event-Timestamp: 1780000000
+  Ruckus.SSID: Guest
+  Ruckus.User-Groups: guests
+  Ruckus.Wlan-Id: 4
+  Ruckus.VLAN-ID: 210
+  Ruckus.BSSID: 0x2c5d93000010
+packet: 044d00baf3cf0833c5b3133b85ddb2d03f428c712806000000012c0f36344131423243332d3030303101076361726f6c04060a1e0002200b737a2d6374726c2d313d06000000131e1932432d35442d39332d30302d30302d31303a47756573741f1331312d32322d33332d34342d35352d363637066a18a5001a0d000061dd030747756573741a0e000061dd01086775657374731a0c000061dd0406000000041a0c000061dd0906000000d21a0e000061dd0e082c5d93000010
+expect:
+  statusType: 1
+  ruckusSsid: Guest
+  ruckusUserGroups: guests
+  ruckusWlanId: 4
+  ruckusVlanId: 210
+  ruckusBssid: 0x2c5d93000010

@@ -1,0 +1,54 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: d5e666eeca15d896664881fb6aafc093d85b9b7a $
+##############################################################################
+#
+#	Azaire VSAs
+#
+#	$Id: d5e666eeca15d896664881fb6aafc093d85b9b7a $
+#
+##############################################################################
+
+VENDOR		Azaire				7751
+
+BEGIN-VENDOR	Azaire
+
+ATTRIBUTE	Triplets				1	octets
+ATTRIBUTE	IMSI					2	octets
+ATTRIBUTE	MSISDN					3	octets
+ATTRIBUTE	APN					4	string
+ATTRIBUTE	QoS					5	octets
+ATTRIBUTE	Selection-Mode				6	uint32
+ATTRIBUTE	APN-Resolution-Req			7	uint32
+ATTRIBUTE	Start-Time				8	octets
+ATTRIBUTE	NAS-Type				9	uint32
+ATTRIBUTE	Status					10	uint32
+ATTRIBUTE	APN-OI					11	string
+ATTRIBUTE	Auth-Type				12	uint32
+ATTRIBUTE	Gn-User-Name				13	string
+ATTRIBUTE	Brand-Code				14	string
+ATTRIBUTE	Policy-Name				15	string
+ATTRIBUTE	Client-Local-IP				16	ipaddr
+
+VALUE	Selection-Mode			Subscribed		0
+VALUE	Selection-Mode			Sent-By-MS		1
+VALUE	Selection-Mode			Chosen-By-SGSN		2
+
+VALUE	APN-Resolution-Req		Not-Required		0
+VALUE	APN-Resolution-Req		Required		1
+
+VALUE	Status				Success			0
+VALUE	Status				Failure			1
+
+VALUE	Auth-Type			PPP-SIM			1
+VALUE	Auth-Type			Dummy-IMSI		2
+VALUE	Auth-Type			Soft-SIM		3
+VALUE	Auth-Type			Radius-SIM		4
+VALUE	Auth-Type			Post-paid		5
+VALUE	Auth-Type			Pre-paid		6
+VALUE	Auth-Type			Local-Radius		7
+VALUE	Auth-Type			Proxy-Radius		8
+
+END-VENDOR	Azaire
+ALIAS		Azaire					Vendor-Specific.Azaire

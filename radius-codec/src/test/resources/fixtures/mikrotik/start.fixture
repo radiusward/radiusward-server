@@ -1,0 +1,25 @@
+# MikroTik RouterOS PPPoE server session start with a rate limit.
+# SYNTHETIC: built from the RouterOS RADIUS client documentation, not a capture.
+identifier: 3
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 81a00001
+  User-Name: cust-1001
+  NAS-Identifier: core-ccr
+  NAS-IP-Address: 10.255.0.1
+  NAS-Port-Type: Ethernet
+  NAS-Port-Id: ether2
+  Calling-Station-Id: 4C:5E:0C:00:00:01
+  Called-Station-Id: pppoe-svc
+  Framed-IP-Address: 100.64.1.20
+  Acct-Authentic: RADIUS
+  Event-Timestamp: 1780000000
+  Mikrotik.Rate-Limit: 20M/100M
+  Mikrotik.Realm: isp.example
+packet: 040300a0682335f11bf5c68faa7f9ed4bcfb3f622806000000012c0a3831613030303031010b637573742d31303031200a636f72652d63637204060aff00013d060000000f57086574686572321f1334433a35453a30433a30303a30303a30311e0b7070706f652d7376630806644001142d060000000137066a18a5001a1000003a8c080a32304d2f3130304d1a1300003a8c090d6973702e6578616d706c65
+expect:
+  statusType: 1
+  nasPortId: ether2
+  callingStationId: 4C:5E:0C:00:00:01
+  mikrotikRateLimit: 20M/100M
+  mikrotikRealm: isp.example

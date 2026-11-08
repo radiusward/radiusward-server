@@ -1,0 +1,23 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 7fe1eedec5efd5bd287364fc676f4c34c86698de $
+#
+# Gemtek Systems VSA's
+# Version: dictionary.gemtek, v1.2 2004/07/13
+
+VENDOR		Gemtek				10529
+
+BEGIN-VENDOR	Gemtek
+
+# Attributes for volume accounting limit.
+
+ATTRIBUTE	Acct-Session-Input-Octets		21	uint32
+ATTRIBUTE	Acct-Session-Input-Gigawords		22	uint32
+ATTRIBUTE	Acct-Session-Output-Octets		23	uint32
+ATTRIBUTE	Acct-Session-Output-Gigawords		24	uint32
+ATTRIBUTE	Acct-Session-Octets			25	uint32
+ATTRIBUTE	Acct-Session-Gigawords			26	uint32
+
+END-VENDOR Gemtek
+ALIAS		Gemtek					Vendor-Specific.Gemtek

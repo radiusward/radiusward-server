@@ -1,0 +1,28 @@
+# Juniper MX (Junos subscriber management) PPPoE subscriber start, ERX vendor attributes (4874).
+# SYNTHETIC: built from the Junos subscriber management RADIUS attribute documentation, not a capture.
+identifier: 60
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 4294967361
+  User-Name: sub-2001@isp.example
+  NAS-IP-Address: 192.0.2.40
+  NAS-Identifier: mx-bng-1
+  NAS-Port-Type: Ethernet
+  NAS-Port-Id: ge-1/0/2.demux0.3221225472:100-200
+  Framed-IP-Address: 100.64.3.40
+  Calling-Station-Id: 00:00:5e:00:53:01
+  Event-Timestamp: 1780000000
+  Unisphere.Virtual-Router-Name: default:default
+  Unisphere.Pppoe-Description: pppoe 00:00:5e:00:53:01
+  Unisphere.Interface-Desc: ge-1/0/2.demux0.3221225472:100-200
+  Unisphere.DHCP-Mac-Addr: 0000.5e00.5301
+  Unisphere.Acct-Request-Reason: Acct-Start-Ack
+packet: 043c0117e4ddff52bda2b76b6b19cf523d48fd102806000000012c0c3432393439363733363101167375622d32303031406973702e6578616d706c650406c0000228200a6d782d626e672d313d060000000f572467652d312f302f322e64656d7578302e333232313232353437323a3130302d3230300806644003281f1330303a30303a35653a30303a35333a303137066a18a5001a170000130a011164656661756c743a64656661756c741a1f0000130a18197070706f652030303a30303a35653a30303a35333a30311a2a0000130a3f2467652d312f302f322e64656d7578302e333232313232353437323a3130302d3230301a160000130a3810303030302e356530302e353330311a0c0000130ad20600000001
+expect:
+  statusType: 1
+  nasIdentifier: mx-bng-1
+  erxVirtualRouterName: default:default
+  erxPppoeDescription: pppoe 00:00:5e:00:53:01
+  erxInterfaceDesc: ge-1/0/2.demux0.3221225472:100-200
+  erxDhcpMacAddr: 0000.5e00.5301
+  erxAcctRequestReason: 1

@@ -1,0 +1,381 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 2382f3fec7b70fb96c0d52dbe58bfc557a42d6d6 $
+#
+#        Cisco Adaptative Security Appliance (ASA) Dictionary
+#
+#       https://www.cisco.com/c/en/us/td/docs/security/asa/asa912/configuration/general/asa-912-general-config/aaa-radius.html
+#
+#       $Id: 2382f3fec7b70fb96c0d52dbe58bfc557a42d6d6 $
+#
+
+VENDOR		Cisco-ASA			3076
+
+BEGIN-VENDOR	Cisco-ASA
+
+ATTRIBUTE	Simultaneous-Logins			2	uint32
+ATTRIBUTE	Primary-DNS				5	ipaddr
+ATTRIBUTE	Secondary-DNS				6	ipaddr
+ATTRIBUTE	Primary-WINS				7	ipaddr
+ATTRIBUTE	Secondary-WINS				8	ipaddr
+ATTRIBUTE	SEP-Card-Assignment			9	uint32
+ATTRIBUTE	Tunneling-Protocols			11	uint32
+ATTRIBUTE	IPsec-Sec-Association			12	string
+ATTRIBUTE	IPsec-Authentication			13	uint32
+ATTRIBUTE	Banner1					15	string
+ATTRIBUTE	IPsec-Allow-Passwd-Store		16	uint32
+ATTRIBUTE	Use-Client-Address			17	uint32
+ATTRIBUTE	PPTP-Encryption				20	uint32
+ATTRIBUTE	L2TP-Encryption				21	uint32
+ATTRIBUTE	Group-Policy				25	string
+ATTRIBUTE	IPsec-Split-Tunnel-List			27	string
+ATTRIBUTE	IPsec-Default-Domain			28	string
+ATTRIBUTE	IPsec-Split-DNS-Names			29	string
+ATTRIBUTE	IPsec-Tunnel-Type			30	uint32
+ATTRIBUTE	IPsec-Mode-Config			31	uint32
+ATTRIBUTE	IPsec-Over-UDP				34	uint32
+ATTRIBUTE	IPsec-Over-UDP-Port			35	uint32
+ATTRIBUTE	Banner2					36	string
+ATTRIBUTE	PPTP-MPPC-Compression			37	uint32
+ATTRIBUTE	L2TP-MPPC-Compression			38	uint32
+ATTRIBUTE	IPsec-IP-Compression			39	uint32
+ATTRIBUTE	IPsec-IKE-Peer-ID-Check			40	uint32
+ATTRIBUTE	IKE-Keep-Alives				41	uint32
+ATTRIBUTE	IPsec-Auth-On-Rekey			42	uint32
+ATTRIBUTE	Required-Client-Firewall-Vendor-Code	45	uint32
+ATTRIBUTE	Required-Client-Firewall-Product-Code	46	uint32
+ATTRIBUTE	Required-Client-Firewall-Description	47	string
+ATTRIBUTE	Require-HW-Client-Auth			48	uint32
+ATTRIBUTE	Required-Individual-User-Auth		49	uint32
+ATTRIBUTE	Authenticated-User-Idle-Timeout		50	uint32
+ATTRIBUTE	Cisco-IP-Phone-Bypass			51	uint32
+ATTRIBUTE	IPsec-Split-Tunneling-Policy		55	uint32
+ATTRIBUTE	IPsec-Required-Client-Firewall-Capability 56	uint32
+ATTRIBUTE	IPsec-Client-Firewall-Filter-Name	57	string
+ATTRIBUTE	IPsec-Client-Firewall-Filter-Optional	58	uint32
+ATTRIBUTE	IPsec-Backup-Servers			59	uint32
+ATTRIBUTE	IPsec-Backup-Server-List		60	string
+ATTRIBUTE	DHCP-Network-Scope			61	ipaddr
+ATTRIBUTE	Intercept-DHCP-Configure-Msg		62	uint32
+ATTRIBUTE	MS-Client-Subnet-Mask			63	ipaddr
+ATTRIBUTE	Allow-Network-Extension-Mode		64	uint32
+ATTRIBUTE	Authorization-Type			65	uint32
+ATTRIBUTE	Authorization-Required			66	uint32
+ATTRIBUTE	Authorization-DN-Field			67	string
+ATTRIBUTE	IKE-KeepAlive-Confidence-Interval	68	uint32
+ATTRIBUTE	WebVPN-Content-Filter-Parameters	69	uint32
+ATTRIBUTE	WebVPN-HTML-Filter			70	uint32
+ATTRIBUTE	WebVPN-URL-List				71	string
+ATTRIBUTE	WebVPN-Port-Forwarding-List		72	string
+ATTRIBUTE	WebVPN-Access-List			73	string
+ALIAS		WebVPNACL			.WebVPN-Access-List
+ATTRIBUTE	WebVPN-HTTP-Proxy-IP-Address		74	string
+ATTRIBUTE	Cisco-LEAP-Bypass			75	uint32
+ATTRIBUTE	WebVPN-Default-Homepage			76	string
+ATTRIBUTE	Client-Type-Version-Limiting		77	string
+ATTRIBUTE	WebVPN-Group-based-HTTP/HTTPS-Proxy-Exception-List	78	string
+ATTRIBUTE	WebVPN-Port-Forwarding-Name		79	string
+ATTRIBUTE	IE-Proxy-Server				80	string
+ATTRIBUTE	IE-Proxy-Server-Policy			81	uint32
+ATTRIBUTE	IE-Proxy-Exception-List			82	string
+ATTRIBUTE	IE-Proxy-Bypass-Local			83	uint32
+ATTRIBUTE	IKE-Keepalive-Retry-Interval		84	uint32
+ATTRIBUTE	Tunnel-Group-Lock			85	string
+ATTRIBUTE	Access-List-Inbound			86	string
+ATTRIBUTE	Access-List-Outbound			87	string
+ATTRIBUTE	Perfect-Forward-Secrecy-Enable		88	uint32
+ATTRIBUTE	NAC-Enable				89	uint32
+ATTRIBUTE	NAC-Status-Query-Timer			90	uint32
+ATTRIBUTE	NAC-Revalidation-Timer			91	uint32
+ATTRIBUTE	NAC-Default-ACL				92	string
+ATTRIBUTE	WebVPN-URL-Entry-Enable			93	uint32
+ATTRIBUTE	WebVPN-File-Access-Enable		94	uint32
+ATTRIBUTE	WebVPN-File-Server-Entry-Enable		95	uint32
+ATTRIBUTE	WebVPN-File-Server-Browsing-Enable	96	uint32
+ATTRIBUTE	WebVPN-Port-Forwarding-Enable		97	uint32
+ATTRIBUTE	WebVPN-Port-Forwarding-Exchange-Proxy-Enable 98	uint32
+ATTRIBUTE	WebVPN-Port-Forwarding-HTTP-Proxy	99	uint32
+ATTRIBUTE	WebVPN-Citrix-Metaframe-Enable		101	uint32
+ATTRIBUTE	WebVPN-Apply-ACL			102	uint32
+ATTRIBUTE	WebVPN-SSL-VPN-Client-Enable		103	uint32
+ATTRIBUTE	WebVPN-SSL-VPN-Client-Required		104	uint32
+ATTRIBUTE	WebVPN-SSL-VPN-Client-Keep-Installation	105	uint32
+ATTRIBUTE	WebVPN-SVC-Keepalive-Frequency		107	uint32
+ALIAS		SVC-Keepalive				.WebVPN-SVC-Keepalive-Frequency
+
+ATTRIBUTE	WebVPN-SVC-Client-DPD-Frequency		108	uint32
+ALIAS		SVC-DPD-Interval-Client			.WebVPN-SVC-Client-DPD-Frequency
+
+ATTRIBUTE	WebVPN-SVC-Gateway-DPD-Frequency	109	uint32
+ALIAS		SVC-DPD-Interval-Gateway		.WebVPN-SVC-Gateway-DPD-Frequency
+
+ATTRIBUTE	WebVPN-SVC-Rekey-Time			110	uint32
+ALIAS		SVC-Rekey-Time				.WebVPN-SVC-Rekey-Time
+
+ATTRIBUTE	WebVPN-SVC-Rekey-Method			111	uint32
+ATTRIBUTE	WebVPN-SVC-Compression			112	uint32
+ATTRIBUTE	WebVPN-Customization			113	string
+ATTRIBUTE	WebVPN-SSO-Server-Name			114	string
+ATTRIBUTE	WebVPN-Deny-Message			116	string
+ATTRIBUTE	WebVPN-HTTP-Compression			120	uint32
+ATTRIBUTE	WebVPN-Keepalive-Ignore			121	uint32
+ATTRIBUTE	Extended-Authentication-On-Rekey	122	uint32
+
+ATTRIBUTE	WebVPN-SVC-DTLS-Enable			123	uint32
+ALIAS		SVC-DTLS-Enable				.WebVPN-SVC-DTLS-Enable
+
+ATTRIBUTE	WebVPN-Auto-HTTP-Signon			124	string
+
+ATTRIBUTE	WebVPN-SVC-DTLS-MTU			125	uint32
+ALIAS		SVC-MTU					.WebVPN-SVC-DTLS-MTU
+
+ATTRIBUTE	WebVPN-Hidden-Shares			126	uint32
+ATTRIBUTE	SVC-Modules				127	string
+ATTRIBUTE	SVC-Profiles				128	string
+ATTRIBUTE	SVC-Ask					131	uint32
+ATTRIBUTE	SVC-Ask-Timeout				132	uint32
+ATTRIBUTE	IE-Proxy-PAC-URL			133	string
+ATTRIBUTE	Strip-Realm				135	uint32
+
+ATTRIBUTE	WebVPN-Smart-Tunnel			136	string
+ALIAS		Smart-Tunnel				.WebVPN-Smart-Tunnel
+
+ATTRIBUTE	WebVPN-ActiveX-Relay			137	uint32
+
+ATTRIBUTE	WebVPN-Smart-Tunnel-Auto-Start		138	uint32
+ALIAS		Smart-Tunnel-Auto-Start			.WebVPN-Smart-Tunnel-Auto-Start
+
+ATTRIBUTE	WebVPN-Smart-Tunnel-Auto-Sign-On	139	string
+ALIAS		Smart-Tunnel-Auto-Signon-Enable		.WebVPN-Smart-Tunnel-Auto-Sign-On
+
+ATTRIBUTE	VLAN					140	uint32
+ATTRIBUTE	NAC-Settings				141	string
+ATTRIBUTE	Member-Of				145	string
+ATTRIBUTE	TunnelGroupName				146	string
+ATTRIBUTE	WebVPN-Idle-Timeout-Alert-Interval	148	uint32
+ATTRIBUTE	WebVPN-Session-Timeout-Alert-Interval	149	uint32
+ATTRIBUTE	ClientType				150	uint32
+ATTRIBUTE	SessionType				151	uint32
+ATTRIBUTE	SessionSubtype				152	uint32
+ATTRIBUTE	WebVPN-Download_Max-Size		157	uint32
+ATTRIBUTE	WebVPN-Upload-Max-Size			158	uint32
+ATTRIBUTE	WebVPN-Post-Max-Size			159	uint32
+ATTRIBUTE	WebVPN-User-Storage			160	string
+ATTRIBUTE	WebVPN-Storage-Objects			161	string
+ATTRIBUTE	WebVPN-Storage-Key			162	string
+ATTRIBUTE	WebVPN-VDI				163	string
+ATTRIBUTE	Address-Pools				217	string
+ATTRIBUTE	IPv6-Address-Pools			218	string
+ATTRIBUTE	IPv6-VPN-Filter				219	string
+ATTRIBUTE	Privilege-Level				220	uint32
+ATTRIBUTE	WebVPN-UNIX-User-ID			221	uint32
+ATTRIBUTE	WebVPN-UNIX-Group-ID			222	uint32
+ATTRIBUTE	WebVPN-Macro-Substitution-Value1	223	string
+ATTRIBUTE	WebVPN-Macro-Substitution-Value2	224	string
+ATTRIBUTE	WebVPNSmart-Card-Removal-Disconnect	225	uint32
+ATTRIBUTE	WebVPN-Smart-Tunnel-Tunnel-Policy	227	string
+ATTRIBUTE	WebVPN-Home-Page-Use-Smart-Tunnel	228	uint32
+
+VALUE	Authorization-Required		No			0
+VALUE	Authorization-Required		Yes			1
+
+VALUE	Authorization-Type		None			0
+VALUE	Authorization-Type		Radius			1
+VALUE	Authorization-Type		LDAP			2
+
+VALUE	Cisco-IP-Phone-Bypass		Disabled		0
+VALUE	Cisco-IP-Phone-Bypass		Enabled			1
+
+VALUE	Cisco-LEAP-Bypass		Disabled		0
+VALUE	Cisco-LEAP-Bypass		Enabled			1
+
+VALUE	ClientType			Cisco-VPN-Client-IKEv1	1
+VALUE	ClientType			AnyConnect-Client-SSL-VPN 2
+VALUE	ClientType			Clientless-SSL-VPN	3
+VALUE	ClientType			Cut-Through-Proxy	4
+VALUE	ClientType			L2TP/IPsec-SSL-VPN	5
+VALUE	ClientType			AnyConnect-Client-IPSec-VPN-IKEv2 6
+
+VALUE	Extended-Authentication-On-Rekey Disabled		0
+VALUE	Extended-Authentication-On-Rekey Enabled			1
+
+VALUE	IE-Proxy-Bypass-Local		None			0
+VALUE	IE-Proxy-Bypass-Local		Local			1
+
+VALUE	IE-Proxy-Server-Policy		No-Modify		1
+VALUE	IE-Proxy-Server-Policy		No-Proxy		2
+VALUE	IE-Proxy-Server-Policy		Auto-detect		3
+VALUE	IE-Proxy-Server-Policy		Use-Concentrator-Setting 4
+
+VALUE	IKE-Keep-Alives			Disabled		0
+VALUE	IKE-Keep-Alives			Enabled			1
+
+VALUE	Allow-Network-Extension-Mode	Disabled		0
+VALUE	Allow-Network-Extension-Mode	Enabled			1
+
+VALUE	Intercept-DHCP-Configure-Msg	Disabled		0
+VALUE	Intercept-DHCP-Configure-Msg	Enabled			1
+
+VALUE	IPsec-Allow-Passwd-Store	Disabled		0
+VALUE	IPsec-Allow-Passwd-Store	Enabled			1
+
+VALUE	IPsec-Authentication		None			0
+VALUE	IPsec-Authentication		RADIUS			1
+VALUE	IPsec-Authentication		LDAP-Authorization-only	2
+VALUE	IPsec-Authentication		NT-Domain		3
+VALUE	IPsec-Authentication		SDI			4
+VALUE	IPsec-Authentication		Internal		5
+VALUE	IPsec-Authentication		RADIUS-with-Expiry	6
+VALUE	IPsec-Authentication		Kerberos/Active-Directory 7
+
+VALUE	IPsec-Auth-On-Rekey		Disabled		0
+VALUE	IPsec-Auth-On-Rekey		Enabled			1
+
+VALUE	IPsec-Backup-Servers		Use-Client-Configured-List 1
+VALUE	IPsec-Backup-Servers		Disable-and-clear-client-list 2
+VALUE	IPsec-Backup-Servers		Use-Backup-Server-List	3
+
+VALUE	IPsec-Client-Firewall-Filter-Optional Required		0
+VALUE	IPsec-Client-Firewall-Filter-Optional Optional		1
+
+VALUE	IPsec-IKE-Peer-ID-Check		Required		1
+VALUE	IPsec-IKE-Peer-ID-Check		If-Supported-By-Peer-Certificate 2
+VALUE	IPsec-IKE-Peer-ID-Check		Do-Not-Check		3
+
+VALUE	IPsec-IP-Compression		Disabled		0
+VALUE	IPsec-IP-Compression		Enabled			1
+
+VALUE	IPsec-Mode-Config		Disabled		0
+VALUE	IPsec-Mode-Config		Enabled			1
+
+VALUE	IPsec-Over-UDP			Disabled		0
+VALUE	IPsec-Over-UDP			Enabled			1
+
+VALUE	IPsec-Required-Client-Firewall-Capability None			0
+VALUE	IPsec-Required-Client-Firewall-Capability Policy-Remotely-Defined	1
+VALUE	IPsec-Required-Client-Firewall-Capability Policy-Pushed		2
+VALUE	IPsec-Required-Client-Firewall-Capability Policy-from-Server	4
+
+VALUE	IPsec-Split-Tunneling-Policy	No-Split-Tunneling	0
+VALUE	IPsec-Split-Tunneling-Policy	Split-Tunneling		1
+VALUE	IPsec-Split-Tunneling-Policy	Local-LAN-Permitted	2
+
+VALUE	IPsec-Tunnel-Type		LAN-to-LAN		1
+VALUE	IPsec-Tunnel-Type		Remote-Access		2
+
+VALUE	L2TP-MPPC-Compression		Disabled		0
+VALUE	L2TP-MPPC-Compression		Enabled			1
+
+VALUE	NAC-Enable			No			0
+VALUE	NAC-Enable			Yes			1
+
+VALUE	Perfect-Forward-Secrecy-Enable	No			0
+VALUE	Perfect-Forward-Secrecy-Enable	Yes			1
+
+VALUE	PPTP-MPPC-Compression		Disabled		0
+VALUE	PPTP-MPPC-Compression		Enabled			1
+
+VALUE	Required-Client-Firewall-Vendor-Code Cisco-CIC		1
+VALUE	Required-Client-Firewall-Vendor-Code Zone-Labs		2
+VALUE	Required-Client-Firewall-Vendor-Code NetworkICE		3
+VALUE	Required-Client-Firewall-Vendor-Code Sygate			4
+VALUE	Required-Client-Firewall-Vendor-Code Cisco-IPSA		5
+
+VALUE	Required-Individual-User-Auth	Disabled		0
+VALUE	Required-Individual-User-Auth	Enabled			1
+
+VALUE	Require-HW-Client-Auth		Disabled		0
+VALUE	Require-HW-Client-Auth		Enabled			1
+
+VALUE	SessionSubtype			None			0
+VALUE	SessionSubtype			Clientless		1
+VALUE	SessionSubtype			Client			2
+VALUE	SessionSubtype			Client-Only		3
+
+VALUE	SessionType			None			0
+VALUE	SessionType			AnyConnect-Client-SSL-VPN 1
+VALUE	SessionType			AnyConnect-Client-IPSec-VPN/IKEv2 2
+VALUE	SessionType			Clientless-SSL-VPN	3
+VALUE	SessionType			Clientless-Email-Proxy	4
+VALUE	SessionType			Cisco-VPN-Client/IKEv1	5
+VALUE	SessionType			IKEv1-LAN-to-LAN	6
+VALUE	SessionType			IKEv2-LAN-to-LAN	7
+VALUE	SessionType			VPN-Load-Balancing	8
+
+VALUE	Smart-Tunnel-Auto-Start		Disabled		0
+VALUE	Smart-Tunnel-Auto-Start		Enabled			1
+VALUE	Smart-Tunnel-Auto-Start		AutoStart		2
+
+VALUE	Strip-Realm			Disabled		0
+VALUE	Strip-Realm			Enabled			1
+
+VALUE	SVC-Ask				Disabled		0
+VALUE	SVC-Ask				Enabled			1
+VALUE	SVC-Ask				Enable-Default-Service	3
+VALUE	SVC-Ask				Enable-Default-Clientless 5
+
+VALUE	Use-Client-Address		Disabled		0
+VALUE	Use-Client-Address		Enabled			1
+
+VALUE	WebVPN-Apply-ACL		Disabled		0
+VALUE	WebVPN-Apply-ACL		Enabled			1
+
+VALUE	WebVPN-Citrix-Metaframe-Enable	Disabled		0
+VALUE	WebVPN-Citrix-Metaframe-Enable	Enabled			1
+
+VALUE	WebVPN-File-Access-Enable	Disabled		0
+VALUE	WebVPN-File-Access-Enable	Enabled			1
+
+VALUE	WebVPN-File-Server-Browsing-Enable Disabled		0
+VALUE	WebVPN-File-Server-Browsing-Enable Enabled			1
+
+VALUE	WebVPN-File-Server-Entry-Enable	Disabled		0
+VALUE	WebVPN-File-Server-Entry-Enable	Enabled			1
+
+VALUE	WebVPN-Hidden-Shares		None			0
+VALUE	WebVPN-Hidden-Shares		Visible			1
+
+VALUE	WebVPN-HTTP-Compression		Off			0
+VALUE	WebVPN-HTTP-Compression		Deflate-Compression	1
+
+VALUE	WebVPN-Port-Forwarding-Enable	Disabled		0
+VALUE	WebVPN-Port-Forwarding-Enable	Enabled			1
+
+VALUE	WebVPN-Port-Forwarding-Exchange-Proxy-Enable Disabled		0
+VALUE	WebVPN-Port-Forwarding-Exchange-Proxy-Enable Enabled			1
+
+VALUE	WebVPN-Port-Forwarding-HTTP-Proxy Disabled		0
+VALUE	WebVPN-Port-Forwarding-HTTP-Proxy Enabled			1
+
+VALUE	WebVPNSmart-Card-Removal-Disconnect Disabled		0
+VALUE	WebVPNSmart-Card-Removal-Disconnect Enabled			1
+
+VALUE	WebVPN-Smart-Tunnel-Auto-Start	Disabled		0
+VALUE	WebVPN-Smart-Tunnel-Auto-Start	Enabled			1
+VALUE	WebVPN-Smart-Tunnel-Auto-Start	AutoStart		2
+
+VALUE	WebVPN-SSL-VPN-Client-Enable	Disabled		0
+VALUE	WebVPN-SSL-VPN-Client-Enable	Enabled			1
+
+VALUE	WebVPN-SSL-VPN-Client-Keep-Installation Disabled		0
+VALUE	WebVPN-SSL-VPN-Client-Keep-Installation Enabled			1
+
+VALUE	WebVPN-SSL-VPN-Client-Required	Disabled		0
+VALUE	WebVPN-SSL-VPN-Client-Required	Enabled			1
+
+VALUE	WebVPN-SVC-DTLS-Enable		Disabled		0
+VALUE	WebVPN-SVC-DTLS-Enable		Enabled			1
+
+VALUE	WebVPN-SVC-Rekey-Method		Off			0
+VALUE	WebVPN-SVC-Rekey-Method		SSL			1
+VALUE	WebVPN-SVC-Rekey-Method		New-Tunnel		2
+
+VALUE	WebVPN-SVC-Compression		Off			0
+VALUE	WebVPN-SVC-Compression		Deflate-Compression	1
+
+VALUE	WebVPN-URL-Entry-Enable		Disabled		0
+VALUE	WebVPN-URL-Entry-Enable		Enabled			1
+
+END-VENDOR      Cisco-ASA
+ALIAS		Cisco-ASA				Vendor-Specific.Cisco-ASA

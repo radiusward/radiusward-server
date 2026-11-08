@@ -1,0 +1,36 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 9153e9c79f30232c9f17af9e1acbac3a2b43ae5c $
+##############################################################################
+#
+#		Local-Web Accesspoints
+#
+##############################################################################
+
+VENDOR		Local-Web			19220
+
+BEGIN-VENDOR	Local-Web
+
+ATTRIBUTE	Client-Ip				192	string
+ATTRIBUTE	Border-Router				193	string
+
+ATTRIBUTE	Tx-Limit				200	uint32
+ATTRIBUTE	Rx-Limit				201	uint32
+
+ATTRIBUTE	Acct-Time				210	uint32
+ATTRIBUTE	Acct-Duration				211	uint32
+ATTRIBUTE	Acct-Interim-Tx-Bytes			212	uint32
+ATTRIBUTE	Acct-Interim-Rx-Bytes			213	uint32
+ATTRIBUTE	Acct-Interim-Tx-Gigawords		214	uint32
+ATTRIBUTE	Acct-Interim-Rx-Gigawords		215	uint32
+ATTRIBUTE	Acct-Interim-Tx-Mgmt			216	uint32
+ATTRIBUTE	Acct-Interim-Rx-Mgmt			217	uint32
+
+ATTRIBUTE	Acct-Tx-Mgmt				230	uint32
+ATTRIBUTE	Acct-Rx-Mgmt				231	uint32
+
+ATTRIBUTE	Reauth-Counter				240	uint32
+
+END-VENDOR	Local-Web
+ALIAS		Local-Web				Vendor-Specific.Local-Web

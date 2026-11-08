@@ -1,0 +1,47 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: d10d3b53abdc4c0a58c6d603a76890c1d8cdde28 $
+#
+#	http://www.digieurope.com/ (dead)
+#	$Id: d10d3b53abdc4c0a58c6d603a76890c1d8cdde28 $
+#
+VENDOR		ITK				1195
+
+BEGIN-VENDOR	ITK
+
+ATTRIBUTE	Auth-Serv-IP				100	ipaddr
+ATTRIBUTE	Auth-Serv-Prot				101	uint32
+ATTRIBUTE	Provider-Id				102	uint32
+ATTRIBUTE	Usergroup				103	uint32
+ATTRIBUTE	Banner					104	string
+ATTRIBUTE	Username-Prompt				105	string
+ATTRIBUTE	Password-Prompt				106	string
+ATTRIBUTE	Welcome-Message				107	string
+ATTRIBUTE	Prompt					108	string
+ATTRIBUTE	IP-Pool					109	uint32
+ATTRIBUTE	Tunnel-IP				110	ipaddr
+ATTRIBUTE	Tunnel-Prot				111	uint32
+ATTRIBUTE	Acct-Serv-IP				112	ipaddr
+ATTRIBUTE	Acct-Serv-Prot				113	uint32
+ATTRIBUTE	Filter-Rule				114	string
+ATTRIBUTE	Channel-Binding				115	uint32
+ATTRIBUTE	Start-Delay				116	uint32
+ATTRIBUTE	NAS-Name				117	string
+ATTRIBUTE	ISDN-Prot				118	uint32
+ATTRIBUTE	PPP-Auth-Type				119	uint32
+ATTRIBUTE	Dialout-Type				120	uint32
+ATTRIBUTE	Ftp-Auth-IP				121	ipaddr
+ATTRIBUTE	Users-Default-Entry			122	string
+ATTRIBUTE	Users-Default-Pw			123	string
+ATTRIBUTE	Auth-Req-Type				124	string
+ATTRIBUTE	Modem-Pool-Id				125	uint32
+ATTRIBUTE	Modem-Init-String			126	string
+ATTRIBUTE	PPP-Client-Server-Mode			127	uint32
+ATTRIBUTE	PPP-Compression-Prot			128	string
+ATTRIBUTE	Username				129	string
+ATTRIBUTE	Dest-No					130	string
+ATTRIBUTE	DDI					131	string
+
+END-VENDOR	ITK
+ALIAS		ITK					Vendor-Specific.ITK

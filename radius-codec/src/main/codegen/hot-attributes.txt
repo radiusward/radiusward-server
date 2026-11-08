@@ -1,0 +1,77 @@
+# Hot attributes for the accounting path (see radius-codegen/README.md).
+#
+#   constants <Vendor>...                      vendors that get a constants class (IETF always does)
+#   <vendor> <attribute> <field> [repeat=N]    vendor is "ietf" or a dictionary vendor name;
+#                                              attribute is the name inside that vendor
+#
+# Changing this file changes the generated AccountingFields / AccountingAttributeExtractor API.
+
+constants Cisco Juniper Unisphere Mikrotik Huawei Meraki Ruckus
+
+# --- RFC 2866 / 2869 accounting ----------------------------------------------------------------
+ietf      Acct-Status-Type            statusType
+ietf      Acct-Session-Id             sessionId
+ietf      Acct-Multi-Session-Id       multiSessionId
+ietf      Acct-Session-Time           sessionTime
+ietf      Acct-Delay-Time             delayTime
+ietf      Acct-Input-Octets           inputOctets
+ietf      Acct-Output-Octets          outputOctets
+ietf      Acct-Input-Gigawords        inputGigawords
+ietf      Acct-Output-Gigawords       outputGigawords
+ietf      Acct-Input-Packets          inputPackets
+ietf      Acct-Output-Packets         outputPackets
+ietf      Acct-Terminate-Cause        terminateCause
+ietf      Acct-Authentic              authentic
+ietf      Event-Timestamp             eventTimestamp
+
+# --- NAS and subscriber identity -----------------------------------------------------------------
+ietf      NAS-IP-Address              nasIpAddress
+ietf      NAS-IPv6-Address            nasIpv6Address
+ietf      NAS-Identifier              nasIdentifier
+ietf      NAS-Port                    nasPort
+ietf      NAS-Port-Id                 nasPortId
+ietf      NAS-Port-Type               nasPortType
+ietf      User-Name                   userName
+ietf      Calling-Station-Id          callingStationId
+ietf      Called-Station-Id           calledStationId
+ietf      Framed-IP-Address           framedIpAddress
+ietf      Framed-IPv6-Prefix          framedIpv6Prefix
+ietf      Delegated-IPv6-Prefix       delegatedIpv6Prefix
+ietf      Service-Type                serviceType
+ietf      Framed-Protocol             framedProtocol
+ietf      Class                       classValue              repeat=4
+
+# --- vendors --------------------------------------------------------------------------------------
+Cisco     AVPair                      ciscoAvPair             repeat=16
+Cisco     NAS-Port                    ciscoNasPort
+Juniper   Local-User-Name             juniperLocalUserName
+Juniper   Interface-id                juniperInterfaceId
+# Juniper MX/ERX subscriber management (BNG) uses the ERX vendor id 4874, named "Unisphere" in the dictionary
+Unisphere Virtual-Router-Name         erxVirtualRouterName
+Unisphere Pppoe-Description           erxPppoeDescription
+Unisphere Interface-Desc              erxInterfaceDesc
+Unisphere DHCP-Mac-Addr               erxDhcpMacAddr
+Unisphere Service-Session             erxServiceSession
+Unisphere Acct-Request-Reason         erxAcctRequestReason
+Unisphere Input-Gigapackets           erxInputGigapackets
+Unisphere Output-Gigapackets          erxOutputGigapackets
+Unisphere IPv6-Acct-Input-Octets      erxIpv6InputOctets
+Unisphere IPv6-Acct-Output-Octets     erxIpv6OutputOctets
+Unisphere IPv6-Acct-Input-Gigawords   erxIpv6InputGigawords
+Unisphere IPv6-Acct-Output-Gigawords  erxIpv6OutputGigawords
+Mikrotik  Rate-Limit                  mikrotikRateLimit
+Mikrotik  Realm                       mikrotikRealm
+Mikrotik  Group                       mikrotikGroup
+Huawei    Input-Average-Rate          huaweiInputAverageRate
+Huawei    Output-Average-Rate         huaweiOutputAverageRate
+Huawei    Input-Peak-Rate             huaweiInputPeakRate
+Huawei    Output-Peak-Rate            huaweiOutputPeakRate
+Huawei    Domain-Name                 huaweiDomainName
+Meraki    Device-Name                 merakiDeviceName
+Meraki    Network-Name                merakiNetworkName
+Meraki    Ap-Name                     merakiApName
+Ruckus    SSID                        ruckusSsid
+Ruckus    User-Groups                 ruckusUserGroups
+Ruckus    Wlan-Id                     ruckusWlanId
+Ruckus    VLAN-ID                     ruckusVlanId
+Ruckus    BSSID                       ruckusBssid

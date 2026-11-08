@@ -1,0 +1,24 @@
+# Cisco Meraki MR access point, 802.1X client association start.
+# SYNTHETIC: built from the Meraki RADIUS attribute documentation, not a capture.
+identifier: 200
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 5F3A1B2C3D4E5F60
+  User-Name: bob@corp.example
+  NAS-IP-Address: 10.10.0.5
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: E0-55-3D-00-00-01:Corp-WiFi
+  Calling-Station-Id: AA-BB-CC-DD-EE-01
+  Framed-IP-Address: 10.20.0.44
+  Event-Timestamp: 1780000000
+  Meraki.Device-Name: hq-floor2-ap1
+  Meraki.Network-Name: HQ - wireless
+  Meraki.Ap-Name: hq-floor2-ap1
+packet: 04c800c54fc0b1053b1c93dd3ceaebd698d27c262806000000012c12354633413142324333443445354636300112626f6240636f72702e6578616d706c6504060a0a00053d06000000131e1d45302d35352d33442d30302d30302d30313a436f72702d576946691f1341412d42422d43432d44442d45452d303108060a14002c37066a18a5001a15000073e7010f68712d666c6f6f72322d6170311a15000073e7020f4851202d20776972656c6573731a15000073e7030f68712d666c6f6f72322d617031
+expect:
+  statusType: 1
+  calledStationId: E0-55-3D-00-00-01:Corp-WiFi
+  nasPortType: 19
+  merakiDeviceName: hq-floor2-ap1
+  merakiNetworkName: HQ - wireless
+  merakiApName: hq-floor2-ap1

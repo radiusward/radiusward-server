@@ -1,0 +1,186 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 09766f1bbbed04bc3802bfa0ae222b989f0b2bf1 $
+#
+#	$Id: 09766f1bbbed04bc3802bfa0ae222b989f0b2bf1 $
+#
+
+VENDOR		Aptis				2637
+
+BEGIN-VENDOR	Aptis
+ATTRIBUTE	Identification				1	string
+ATTRIBUTE	VPOP-ID					2	uint32
+ATTRIBUTE	SS7-Session-ID-Type			3	uint32
+ATTRIBUTE	Radius-Redirect				4	uint32
+ATTRIBUTE	IPSVC-AZNLVL				5	uint32
+ATTRIBUTE	IPSVC-Mask				6	uint32
+ATTRIBUTE	Multilink-Match-Info			7	uint32
+ATTRIBUTE	Multilink-Group-Number			8	uint32
+ATTRIBUTE	PPP-Log-Mask				9	uint32
+
+ATTRIBUTE	Modem-Begin-Modulation			10	string
+ATTRIBUTE	Modem-End-Modulation			11	string
+ATTRIBUTE	Modem-Error-Correction			12	string
+ATTRIBUTE	Modem-Data-Compression			13	string
+ATTRIBUTE	Modem-Tx-Packets			14	uint32
+ATTRIBUTE	Modem-ReTx-Packets			15	uint32
+ATTRIBUTE	Modem-SNR				16	uint32
+ATTRIBUTE	Modem-Local-Retrains			17	uint32
+ATTRIBUTE	Modem-Remote-Retrains			18	uint32
+ATTRIBUTE	Modem-Local-Rate-Negs			19	uint32
+ATTRIBUTE	Modem-Remote-Rate-Negs			20	uint32
+ATTRIBUTE	Modem-Begin-Recv-Line-Lvl		21	uint32
+ATTRIBUTE	Modem-End-Recv-Line-Lvl			22	uint32
+ATTRIBUTE	Terminate-Component			23	uint32
+ATTRIBUTE	Terminate-Cause				24	uint32
+ATTRIBUTE	Reject-Reason				25	uint32
+
+#
+#	These are similar to the Ascend attributes
+#
+ATTRIBUTE	Primary-DNS				135	ipaddr
+ATTRIBUTE	Secondary-DNS				136	ipaddr
+ATTRIBUTE	Client-Assign-DNS			137	uint32
+ATTRIBUTE	Multicast-Rate-Limit			152	uint32
+ATTRIBUTE	Multicast-Client			155	uint32
+ATTRIBUTE	Disconnect-Cause			195	uint32
+ATTRIBUTE	Data-Rate				197	uint32
+ATTRIBUTE	PreSession-Time				198	uint32
+ATTRIBUTE	Assign-IP-Pool				218	uint32
+ATTRIBUTE	Maximum-Channels			235	uint32
+ATTRIBUTE	Data-Filter				242	string
+ATTRIBUTE	Idle-Limit				244	uint32
+ATTRIBUTE	PPP-Address				253	ipaddr
+ATTRIBUTE	Xmit-Rate				255	uint32
+
+#
+#	Aptis VSAs may have either one-octet or four-octet <type>
+#	fields.  One-octet types always have a type less than or equal
+#	to 127 (i.e.  the upper bit is set to 0); four-octet types
+#	always have the upper bit set to 1.
+#
+#	The 4-byte ones *appear* to also have a length, unlike the USR
+#	attributes, but there's no way of knowing for sure.
+#
+#	http://samuel.labs.nic.at/at43/dictionary
+#	says a number of these are "boolean", which means what, exactly?
+#
+#	These are commented out until we figure out how to parse them.
+#
+#ATTRIBUTE	VPOP-DSByteEnabled		0x84c80001	uint32
+#ATTRIBUTE	VPOP-DSByteValue		0x84c80002	uint32
+#ATTRIBUTE	PPP-EstablishTimeLimit	0x85210065	uint32
+#ATTRIBUTE	PPP-ConnectLimit		0x85210066	uint32
+#ATTRIBUTE	PPP-InactivityLimit		0x85210067	uint32
+#ATTRIBUTE	PPP-MonitorTxActivity	0x85210068	uint32
+#ATTRIBUTE	PPP-MonitorRxActivity	0x85210069	uint32
+#ATTRIBUTE	PPP-CountRIP		0x8521006a	uint32
+#ATTRIBUTE	PPP-CountPings		0x8521006b	uint32
+#ATTRIBUTE	PPP-CountIGMP		0x8521006c	uint32
+#ATTRIBUTE	PPP-UseEchoes		0x852100c9	uint32
+#ATTRIBUTE	PPP-SendID			0x852100ca	uint32
+#ATTRIBUTE	PPP-SendTimeRemaining	0x852100cb	uint32
+#ATTRIBUTE	PPP-SendMRU			0x8521012d	uint32
+#ATTRIBUTE	PPP-SendACCM		0x8521012e	uint32
+#ATTRIBUTE	PPP-SendMagic		0x8521012f	uint32
+#ATTRIBUTE	PPP-SendPFC			0x85210130	uint32
+#ATTRIBUTE	PPP-SendACFC		0x85210131	uint32
+#ATTRIBUTE	PPP-SendShortSeq		0x85210132	uint32
+#ATTRIBUTE	PPP-SendEndpointDisc	0x85210133	uint32
+#ATTRIBUTE	PPP-AllowMRU		0x85210137	uint32
+#ATTRIBUTE	PPP-AllowACCM		0x85210138	uint32
+#ATTRIBUTE	PPP-AllowMagic		0x85210139	uint32
+#ATTRIBUTE	PPP-AllowPFC		0x8521013a	uint32
+#ATTRIBUTE	PPP-AllowACFC		0x8521013b	uint32
+#ATTRIBUTE	PPP-AllowShortSeq		0x8521013c	uint32
+#ATTRIBUTE	PPP-AllowEndpointDisc	0x8521013d	uint32
+#ATTRIBUTE	PPP-LCPMaxConfigure		0x85210191	uint32
+#ATTRIBUTE	PPP-LCPRestartTimer		0x85210192	uint32
+#ATTRIBUTE	PPP-PassiveLCP		0x85210193	uint32
+#ATTRIBUTE	PPP-PassiveLCPTimeout	0x85210194	uint32
+#ATTRIBUTE	PPP-MinRemoteMRU		0x852101f5	uint32
+#ATTRIBUTE	PPP-MinLocalMRU		0x852101f6	uint32
+#ATTRIBUTE	PPP-DesiredLocalMRU		0x852101f7	uint32
+#ATTRIBUTE	PPP-TransmitACCM		0x852101f8	uint32
+#ATTRIBUTE	PPP-ReceiveACCM		0x852101f9	uint32
+#ATTRIBUTE	PPP-MinRemoteMRRU		0x852101fa	uint32
+#ATTRIBUTE	PPP-DesiredRemoteMRRU	0x852101fb	uint32
+#ATTRIBUTE	PPP-MinLocalMRRU		0x852101fc	uint32
+#ATTRIBUTE	PPP-DesiredLocalMRRU	0x852101fd	uint32
+#ATTRIBUTE	PPP-LCPEchoRetries		0x852101fe	uint32
+#ATTRIBUTE	PPP-LCPEchoTimeout		0x852101ff	uint32
+#ATTRIBUTE	PPP-LCPEchoErrorTimeout	0x85210200	uint32
+#ATTRIBUTE	PPP-TimeRemainingInterval	0x85210201	uint32
+#ATTRIBUTE	PPP-IDText			0x85210202	string
+#ATTRIBUTE	PPP-AuthRequire		0x85210259	uint32
+#ATTRIBUTE	PPP-AuthAllow		0x8521025a	uint32
+#ATTRIBUTE	PPP-AuthServerProtocol1	0x85210262	uint32
+#ATTRIBUTE	PPP-AuthServerProtocol2	0x85210263	uint32
+#ATTRIBUTE	PPP-AuthServerProtocol3	0x85210264	uint32
+#ATTRIBUTE	PPP-AuthServerProtocol4	0x85210265	uint32
+#ATTRIBUTE	PPP-AuthClientProtocol1	0x8521026d	uint32
+#ATTRIBUTE	PPP-AuthClientProtocol2	0x8521026e	uint32
+#ATTRIBUTE	PPP-AuthClientProtocol3	0x8521026f	uint32
+#ATTRIBUTE	PPP-AuthClientProtocol4	0x85210270	uint32
+#ATTRIBUTE	PPP-PAPClientRetries	0x85210277	uint32
+#ATTRIBUTE	PPP-PAPClientTimeout	0x85210278	uint32
+#ATTRIBUTE	PPP-PAPServerRetries	0x85210279	uint32
+#ATTRIBUTE	PPP-PAPServerTimeout	0x8521027a	uint32
+#ATTRIBUTE	PPP-CHAPClientRetries	0x85210281	uint32
+#ATTRIBUTE	PPP-CHAPClientTimeout	0x85210282	uint32
+#ATTRIBUTE	PPP-CHAPServerRetries	0x85210283	uint32
+#ATTRIBUTE	PPP-CHAPServerChallenges	0x85210284	uint32
+#ATTRIBUTE	PPP-CHAPServerTimeout	0x85210285	uint32
+#ATTRIBUTE	PPP-CHAPValueLength		0x85210286	uint32
+#ATTRIBUTE	PPP-AuthFailureRenegotiatesLCP	0x85210287	uint32
+#ATTRIBUTE	PPP-UserName		0x8521028b	string
+#ATTRIBUTE	PPP-Password		0x8521028c	string
+#ATTRIBUTE	PPP-IPCPEnabled		0x852102bd	uint32
+#ATTRIBUTE	PPP-LocalIPAddress		0x852102be	ipaddr
+#ATTRIBUTE	PPP-RemoteIPAddress		0x852102bf	ipaddr
+#ATTRIBUTE	PPP-AllowPeerIPAddress	0x852102c0	uint32
+#ATTRIBUTE	PPP-VJEnabled		0x852102c1	uint32
+#ATTRIBUTE	PPP-VJSlots			0x852102c2	uint32
+#ATTRIBUTE	PPP-SendDNS			0x852102c3	uint32
+#ATTRIBUTE	PPP-SendNBNS		0x852102c4	uint32
+#ATTRIBUTE	PPP-IPCPMaxConfigure	0x852102c5	uint32
+#ATTRIBUTE	PPP-IPCPRestartTimer	0x852102c6	uint32
+#ATTRIBUTE	PPP-PassiveIPCP		0x852102c7	uint32
+#ATTRIBUTE	PPP-PassiveIPCPTimeout	0x852102c8	uint32
+#ATTRIBUTE	PPP-DNS1			0x852102c9	ipaddr
+#ATTRIBUTE	PPP-DNS2			0x852102ca	ipaddr
+#ATTRIBUTE	PPP-NBNS1			0x852102cb	ipaddr
+#ATTRIBUTE	PPP-NBNS2			0x852102cc	ipaddr
+#ATTRIBUTE	PPP-SendLocalIPAddress	0x852102cd	uint32
+#ATTRIBUTE	PPP-RejectUnknownNS		0x852102ce	uint32
+#ATTRIBUTE	PPP-PeerNSStrategy		0x852102cf	uint32
+#ATTRIBUTE	PPP-MLPEnabled		0x85210321	uint32
+#ATTRIBUTE	PPP-MLPMaxLinks		0x85210322	uint32
+#ATTRIBUTE	PPP-MLPFragmentSize		0x85210323	uint32
+#ATTRIBUTE	PPP-MLPMaxFragments		0x85210324	uint32
+#ATTRIBUTE	PPP-MLPScaleFragments	0x85210325	uint32
+#ATTRIBUTE	PPP-MLPSendNullFragments	0x85210326	uint32
+#ATTRIBUTE	PPP-MLPNullFragmentTimeout	0x85210327	uint32
+#ATTRIBUTE	PPP-MLPEndpointDisc		0x85210328	uint32
+#ATTRIBUTE	PPP-MLPGroupNumber		0x85210329	uint32
+#ATTRIBUTE	PPP-LogEnabled		0x85210385	uint32
+#ATTRIBUTE	PPP-LogDump			0x85210386	uint32
+#ATTRIBUTE	PPP-LogSize			0x8521038e	uint32
+#ATTRIBUTE	PPP-LogControlFrames	0x8521038f	uint32
+#ATTRIBUTE	PPP-LogProtocolFrames	0x85210390	uint32
+#ATTRIBUTE	PPP-LogOptions		0x85210391	uint32
+#ATTRIBUTE	PPP-LogStates		0x85210392	uint32
+#ATTRIBUTE	PPP-LogCompression		0x85210393	uint32
+#ATTRIBUTE	PPP-LogMLP			0x85210394	uint32
+#ATTRIBUTE	PPP-LogVJ			0x85210395	uint32
+#ATTRIBUTE	PPP-CCPEnabled		0x852103e9	uint32
+#ATTRIBUTE	PPP-CompressFrames		0x852103ea	uint32
+#ATTRIBUTE	PPP-Stac3Enabled		0x852103eb	uint32
+#ATTRIBUTE	PPP-Stac4Enabled		0x852103ec	uint32
+#ATTRIBUTE	PPP-MPPCEnabled		0x852103ed	uint32
+#ATTRIBUTE	PPP-StacPerformance		0x852103ee	uint32
+#ATTRIBUTE	PPP-StacMode		0x852103ef	uint32
+
+END-VENDOR Aptis
+ALIAS		Aptis					Vendor-Specific.Aptis

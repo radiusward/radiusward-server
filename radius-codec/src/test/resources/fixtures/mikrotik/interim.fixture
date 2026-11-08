@@ -1,0 +1,20 @@
+# MikroTik RouterOS PPPoE interim update.
+# SYNTHETIC: built from the RouterOS RADIUS client documentation, not a capture.
+identifier: 4
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 81a00001
+  User-Name: cust-1001
+  NAS-Identifier: core-ccr
+  Acct-Session-Time: 60
+  Acct-Input-Octets: 4000000
+  Acct-Output-Octets: 90000000
+  Acct-Input-Packets: 3000
+  Acct-Output-Packets: 65000
+  Event-Timestamp: 1780000060
+packet: 0404005dcb1055560eff133ac9915e3221951aff2806000000032c0a3831613030303031010b637573742d31303031200a636f72652d6363722e060000003c2a06003d09002b06055d4a802f0600000bb830060000fde837066a18a53c
+expect:
+  statusType: 3
+  sessionTime: 60
+  inputOctets: 4000000
+  outputOctets: 90000000

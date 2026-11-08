@@ -1,0 +1,25 @@
+radiusward
+Copyright 2026 The radiusward Authors
+
+This product includes software developed by The radiusward Authors,
+licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+FreeRADIUS dictionaries
+
+radius-dictionary-freeradius bundles RADIUS dictionary files from the FreeRADIUS
+Server project (https://freeradius.org/), copied unmodified from
+https://github.com/FreeRADIUS/freeradius-server (share/dictionary/radius) at the
+commit recorded in
+radius-dictionary-freeradius/src/main/resources/io/radiusward/radius/dictionary/freeradius/SOURCE.properties.
+
+    Copyright (C) The FreeRADIUS Server project and contributors
+    Licensed under the Creative Commons Attribution 4.0 International License
+    (CC BY 4.0), https://creativecommons.org/licenses/by/4.0/
+
+Change made by radiusward: in the root file `dictionary`, the $INCLUDE line of
+dictionary.ingate (which does not carry the CC BY 4.0 header and is therefore
+not bundled) is commented out; the file header records this change.
+
+Java sources generated from these dictionaries (attribute numbers and value
+names) are marked "Derived from FreeRADIUS dictionaries (CC BY 4.0)".

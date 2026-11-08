@@ -1,0 +1,27 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 95aebb9ab28414dc06a5e206f319563bfdec689b $
+##############################################################################
+#
+#               XEDIA, AP series routers
+# From Yard RADIUS, and Piotr Orlewicz, porlewicz@teleton.pl www.real-data.pl
+#
+#	$Id: 95aebb9ab28414dc06a5e206f319563bfdec689b $
+#
+#############################################################################
+VENDOR		Xedia				838
+
+BEGIN-VENDOR	Xedia
+
+ATTRIBUTE	DNS-Server				1	ipaddr
+ATTRIBUTE	NetBios-Server				2	ipaddr
+ATTRIBUTE	Address-Pool				3	string
+ATTRIBUTE	PPP-Echo-Interval			4	uint32
+ATTRIBUTE	SSH-Privileges				5	uint32
+ATTRIBUTE	Client-Access-Network			6	string
+ATTRIBUTE	Client-Firewall-Setting			7	uint32
+ATTRIBUTE	Save-Password				8	uint32
+
+END-VENDOR	Xedia
+ALIAS		Xedia					Vendor-Specific.Xedia

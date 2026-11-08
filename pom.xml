@@ -1,0 +1,390 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.radiusward</groupId>
+    <artifactId>radiusward-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>radiusward</name>
+    <description>Replicated RADIUS accounting server built on Aeron Cluster</description>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <modules>
+        <module>radius-dictionary</module>
+        <module>radius-dictionary-freeradius</module>
+        <module>radius-codegen</module>
+        <module>radius-codec</module>
+        <module>tools/radclient</module>
+    </modules>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
+
+        <!-- runtime -->
+        <agrona.version>2.7.0</agrona.version><!-- keep aligned with the Agrona version Aeron uses -->
+        <aeron.version>1.54.0</aeron.version>
+
+        <!-- test -->
+        <junit.version>5.14.4</junit.version><!-- aligned with jqwik's JUnit Platform -->
+        <assertj.version>3.27.7</assertj.version>
+        <jqwik.version>1.10.2</jqwik.version>
+        <aaa4j.version>0.4.0</aaa4j.version>
+        <jmh.version>1.37</jmh.version>
+
+        <!-- plugins -->
+        <compiler-plugin.version>3.15.0</compiler-plugin.version>
+        <surefire.version>3.6.1</surefire.version>
+        <jar-plugin.version>3.5.1</jar-plugin.version>
+        <resources-plugin.version>3.5.0</resources-plugin.version>
+        <install-plugin.version>3.2.0</install-plugin.version>
+        <clean-plugin.version>3.5.0</clean-plugin.version>
+        <deploy-plugin.version>3.2.0</deploy-plugin.version>
+        <site-plugin.version>3.22.0</site-plugin.version>
+        <enforcer.version>3.7.0</enforcer.version>
+        <jacoco.version>0.8.16</jacoco.version>
+        <exec-plugin.version>3.6.4</exec-plugin.version>
+        <build-helper.version>3.7.0</build-helper.version>
+        <shade-plugin.version>3.6.2</shade-plugin.version>
+        <spotless.version>3.11.0</spotless.version>
+        <palantir-java-format.version>2.103.0</palantir-java-format.version>
+
+        <!-- Agrona 2.x / Aeron need access to jdk.internal.misc.Unsafe; every JVM we start must pass this -->
+        <radiusward.jvm.args>--add-exports java.base/jdk.internal.misc=ALL-UNNAMED</radiusward.jvm.args>
+
+        <!-- set by jacoco:prepare-agent; empty default keeps surefire working when JaCoCo is skipped -->
+        <jacocoArgLine/>
+
+        <!-- per-module overrides -->
+        <jacoco.minimum.coverage>0.00</jacoco.minimum.coverage>
+        <skipITs>false</skipITs>
+        <radiusward.interop>false</radiusward.interop>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radius-dictionary</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radius-dictionary-freeradius</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radius-codegen</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radius-codec</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.agrona</groupId>
+                <artifactId>agrona</artifactId>
+                <version>${agrona.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.junit</groupId>
+                <artifactId>junit-bom</artifactId>
+                <version>${junit.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.jqwik</groupId>
+                <artifactId>jqwik</artifactId>
+                <version>${jqwik.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.aaa4j.radius</groupId>
+                <artifactId>aaa4j-radius-core</artifactId>
+                <version>${aaa4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.aaa4j.radius</groupId>
+                <artifactId>aaa4j-radius-dictionary-freeradius</artifactId>
+                <version>${aaa4j.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjdk.jmh</groupId>
+                <artifactId>jmh-core</artifactId>
+                <version>${jmh.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openjdk.jmh</groupId>
+                <artifactId>jmh-generator-annprocess</artifactId>
+                <version>${jmh.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <!-- every module gets the same test stack -->
+    <dependencies>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${compiler-plugin.version}</version>
+                    <configuration>
+                        <release>${maven.compiler.release}</release>
+                        <compilerArgs>
+                            <arg>-Xlint:all,-processing,-serial</arg>
+                            <arg>-parameters</arg>
+                        </compilerArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${surefire.version}</version>
+                    <configuration>
+                        <argLine>@{jacocoArgLine} ${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${surefire.version}</version>
+                    <configuration>
+                        <!-- ITs measure allocation; no JaCoCo agent here -->
+                        <argLine>${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
+                        <skipITs>${skipITs}</skipITs>
+                        <systemPropertyVariables>
+                            <radiusward.interop>${radiusward.interop}</radiusward.interop>
+                        </systemPropertyVariables>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>integration-test</goal>
+                                <goal>verify</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-jar-plugin</artifactId>
+                    <version>${jar-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-resources-plugin</artifactId>
+                    <version>${resources-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-install-plugin</artifactId>
+                    <version>${install-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-clean-plugin</artifactId>
+                    <version>${clean-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-deploy-plugin</artifactId>
+                    <version>${deploy-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-site-plugin</artifactId>
+                    <version>${site-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-shade-plugin</artifactId>
+                    <version>${shade-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>${exec-plugin.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>build-helper-maven-plugin</artifactId>
+                    <version>${build-helper.version}</version>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>${enforcer.version}</version>
+                <executions>
+                    <execution>
+                        <id>enforce</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[21,)</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.9,)</version>
+                                </requireMavenVersion>
+                                <dependencyConvergence/>
+                                <bannedDependencies>
+                                    <!-- project rules: plain JDBC instead of an ORM, plain NIO instead of Netty -->
+                                    <excludes>
+                                        <exclude>org.hibernate</exclude>
+                                        <exclude>org.hibernate.*</exclude>
+                                        <exclude>io.netty</exclude>
+                                        <exclude>io.netty.*</exclude>
+                                    </excludes>
+                                    <message>Hibernate and Netty are not allowed in radiusward (see CONTRIBUTING.md).</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <id>prepare-agent</id>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                        <configuration>
+                            <propertyName>jacocoArgLine</propertyName>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <configuration>
+                            <haltOnFailure>true</haltOnFailure>
+                            <rules>
+                                <rule>
+                                    <element>BUNDLE</element>
+                                    <limits>
+                                        <limit>
+                                            <counter>LINE</counter>
+                                            <value>COVEREDRATIO</value>
+                                            <minimum>${jacoco.minimum.coverage}</minimum>
+                                        </limit>
+                                    </limits>
+                                </rule>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
+
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <includes>
+                            <include>src/main/java/**/*.java</include>
+                            <include>src/test/java/**/*.java</include>
+                        </includes>
+                        <palantirJavaFormat>
+                            <version>${palantir-java-format.version}</version>
+                        </palantirJavaFormat>
+                        <removeUnusedImports/>
+                        <licenseHeader>
+                            <file>${maven.multiModuleProjectDirectory}/etc/license-header.txt</file>
+                        </licenseHeader>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>verify</phase>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>bench</id>
+            <modules>
+                <module>testing/benchmarks</module>
+            </modules>
+        </profile>
+        <profile>
+            <!-- end-to-end tests against separately started JVMs; module arrives in Phase 1 -->
+            <id>e2e</id>
+        </profile>
+        <profile>
+            <!-- interop tests against a locally installed FreeRADIUS (brew install freeradius-server) -->
+            <id>interop</id>
+            <properties>
+                <radiusward.interop>true</radiusward.interop>
+            </properties>
+        </profile>
+    </profiles>
+</project>

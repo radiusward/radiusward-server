@@ -1,0 +1,25 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: b5e672ecf9ca82dc0a50e732e9fc3c858208ca4f $
+##############################################################################
+#
+#	Tekelec (Formerly Camiant) MSR dictionary
+#	http://www.tekelec.com/products/policy-management.asp
+#
+##############################################################################
+
+VENDOR		Camiant				21274
+
+BEGIN-VENDOR	Camiant
+
+ATTRIBUTE	MI-role					1	string
+ATTRIBUTE	SUI-role				2	uint32
+ATTRIBUTE	MI-scope				3	string
+
+VALUE	SUI-role			camiantView		101
+VALUE	SUI-role			camiantUser		102
+VALUE	SUI-role			camiantService		104
+
+END-VENDOR	Camiant
+ALIAS		Camiant					Vendor-Specific.Camiant

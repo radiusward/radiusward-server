@@ -1,0 +1,17 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 2683874beff24ee1086e3aa123090a4a79159832 $
+#
+#	 Cisco Building Broadband Service Manager Dictionary
+#
+#	http://www.cisco.com/univercd/cc/td/doc/product/access/acs_soft/csacs4nt/csnt30/user/ad.htm
+#
+#	$Id: 2683874beff24ee1086e3aa123090a4a79159832 $
+#
+VENDOR		Cisco-BBSM			5263
+
+BEGIN-VENDOR	Cisco-BBSM
+ATTRIBUTE	Bandwidth				1	uint32
+END-VENDOR  Cisco-BBSM
+ALIAS		Cisco-BBSM				Vendor-Specific.Cisco-BBSM

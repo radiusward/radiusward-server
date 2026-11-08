@@ -1,0 +1,32 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: 81d79911924c95680a611da1b697680ff9028643 $
+##############################################################################
+#
+#	Efficient IP VSA's
+#
+#	$Id: 81d79911924c95680a611da1b697680ff9028643 $
+#
+##############################################################################
+
+VENDOR		EfficientIP			2440
+
+BEGIN-VENDOR	EfficientIP
+
+ATTRIBUTE	Version					1	uint32
+ATTRIBUTE	Service-Class				2	uint32
+ATTRIBUTE	Identity-Type				3	uint32
+ATTRIBUTE	First-Name				16	string
+ATTRIBUTE	Last-Name				17	string
+ATTRIBUTE	Pseudonym				18	string
+ATTRIBUTE	IP-Host					19	string
+ATTRIBUTE	Email					20	string
+ATTRIBUTE	First-Login-Path			32	string
+ATTRIBUTE	Maintainer-Group			33	string
+ATTRIBUTE	Groups					34	string
+ATTRIBUTE	Admin-Group				35	string
+ATTRIBUTE	Extra-Blob				64	string
+
+END-VENDOR	EfficientIP
+ALIAS		EfficientIP				Vendor-Specific.EfficientIP

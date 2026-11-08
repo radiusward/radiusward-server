@@ -1,0 +1,25 @@
+# Juniper MX PPPoE interim update with IPv6 counters (ERX vendor attributes).
+# SYNTHETIC: built from the Junos subscriber management RADIUS attribute documentation, not a capture.
+identifier: 61
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 4294967361
+  User-Name: sub-2001@isp.example
+  NAS-IP-Address: 192.0.2.40
+  Acct-Session-Time: 600
+  Acct-Input-Octets: 30000000
+  Acct-Output-Octets: 400000000
+  Event-Timestamp: 1780000600
+  Unisphere.Virtual-Router-Name: default:default
+  Unisphere.Acct-Request-Reason: Periodic
+  Unisphere.IPv6-Acct-Input-Octets: 5000000
+  Unisphere.IPv6-Acct-Output-Octets: 90000000
+  Unisphere.Service-Session: residential-100m
+packet: 043d00ad0119fb7547a10fbbfa52d2da7e2daeee2806000000032c0c3432393439363733363101167375622d32303031406973702e6578616d706c650406c00002282e06000002582a0601c9c3802b0617d7840037066a18a7581a170000130a011164656661756c743a64656661756c741a0c0000130ad206000000021a0c0000130a9706004c4b401a0c0000130a9806055d4a801a180000130a53127265736964656e7469616c2d3130306d
+expect:
+  statusType: 3
+  sessionTime: 600
+  erxAcctRequestReason: 2
+  erxIpv6InputOctets: 5000000
+  erxIpv6OutputOctets: 90000000
+  erxServiceSession: residential-100m

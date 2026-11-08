@@ -1,0 +1,34 @@
+# -*- text -*-
+# Copyright (C) 2023 The FreeRADIUS Server project and contributors
+# This work is licensed under CC-BY version 4.0 https://creativecommons.org/licenses/by/4.0
+# Version $Id: dba14beff4a94a205f88fdbe7ff46f53ad36b9ad $
+#
+#	Avaya P330 dictionary file
+#	$Id: dba14beff4a94a205f88fdbe7ff46f53ad36b9ad $
+#
+#	http://support.avaya.com/elmodocs2/p330/P330/Configuring%20FreeRadius.pdf
+#
+
+VENDOR		Avaya-Cajun-p330		2167
+BEGIN-VENDOR	Avaya-Cajun-p330
+
+ATTRIBUTE	Cajun-Service-Type			1	uint32
+
+VALUE	Cajun-Service-Type		Cajun-Read-Only-User	1
+VALUE	Cajun-Service-Type		Cajun-Read-Write-User	2
+VALUE	Cajun-Service-Type		Cajun-Admin-User	3
+
+ATTRIBUTE	StaticVlan-Type				12	string
+ATTRIBUTE	PortPriority-Type			13	uint32
+
+VALUE	PortPriority-Type		Type-0			0
+VALUE	PortPriority-Type		Type-1			1
+VALUE	PortPriority-Type		Type-2			2
+VALUE	PortPriority-Type		Type-3			3
+VALUE	PortPriority-Type		Type-4			4
+VALUE	PortPriority-Type		Type-5			5
+VALUE	PortPriority-Type		Type-6			6
+VALUE	PortPriority-Type		Type-7			7
+
+END-VENDOR	Avaya-Cajun-p330
+ALIAS		Avaya-Cajun-p330			Vendor-Specific.Avaya-Cajun-p330
