@@ -4,8 +4,8 @@ Thanks for helping. This guide is the single source of truth for how the project
 rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
 [docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
 
-Current state: **Phase 2** (container image, compose, Linux fault-injection tests) is done; Phase 3
-(export to Postgres) is next — see the [roadmap](docs/plans/roadmap.md).
+Current state: **Phase 3** (export to PostgreSQL, sink plug-ins, log purge, metrics) is done; Phase 3b (more
+sinks) and Phase 4 (Kubernetes) are next — see the [roadmap](docs/plans/roadmap.md).
 
 ## Setup
 
@@ -43,7 +43,10 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `protocol` | SBE schema and generated codecs (gateway ↔ cluster, snapshots) |
 | `common` | Config (properties + env), profiles, management HTTP server, non-blocking Log4j2 |
 | `cluster-service` | `AccountingService` + deterministic `AccountingStateMachine`, `SessionStore`, snapshots |
-| `cluster-node` | Launches a member (media driver, archive, consensus module, service) |
+| `cluster-node` | Launches a member (media driver, archive, consensus module, service, exporter, log purge) |
+| `export-api` | Sink plug-in API, canonical attribute JSON, `SqlMigrations` |
+| `exporter` | Committed-log reader, state-machine replica, lease, batching, plug-in loading |
+| `sinks/postgres`, `sinks/file` | Built-in sinks |
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
 | `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster`, `DevCluster` |
@@ -67,6 +70,9 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
   clock, no iteration over hash-ordered collections that affects output.
 - **ACK boundary:** an Accounting-Response is sent only after the cluster reports the command committed.
   There is no Accounting-Reject; on failure stay silent.
+- **Sinks** implement insert-if-absent events and update-only-if-newer sessions and contain no RADIUS logic
+  ([writing-a-sink.md](docs/sinks/writing-a-sink.md)); tests that need Docker skip locally and fail in CI
+  (`-Dradiusward.require.docker=true`).
 - **Dependencies:** plain JDBC, never Hibernate/an ORM; plain NIO `DatagramChannel`, never Netty.
   The Maven enforcer bans both. Discuss any new runtime dependency before adding it.
 - **Logging (Phase 1+):** Log4j2 async loggers; never log per packet on the hot path, never block the

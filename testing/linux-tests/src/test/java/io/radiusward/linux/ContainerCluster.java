@@ -52,26 +52,46 @@ final class ContainerCluster implements AutoCloseable {
     private static final Pattern STRING_FIELD = Pattern.compile("\"(\\w+)\":\"([^\"]*)\"");
 
     /** What differs between tests. */
-    record Options(int fileSyncLevel, boolean lazyFs, long nodeMemoryMib, long gatewayMemoryMib, long dataTmpfsMib) {
+    record Options(
+            int fileSyncLevel,
+            boolean lazyFs,
+            long nodeMemoryMib,
+            long gatewayMemoryMib,
+            long dataTmpfsMib,
+            boolean postgres,
+            Map<String, String> nodeEnv) {
         static Options defaults() {
-            return new Options(2, false, 1024, 384, 0);
+            return new Options(2, false, 1024, 384, 0, false, Map.of());
         }
 
         Options fileSyncLevel(int level) {
-            return new Options(level, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib);
+            return new Options(level, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv);
         }
 
         Options lazyFs(boolean on) {
-            return new Options(fileSyncLevel, on, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib);
+            return new Options(fileSyncLevel, on, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv);
         }
 
         /** Data directory on a tmpfs of this size (0: the image volume), to run out of disk space. */
         Options dataTmpfsMib(long mib) {
-            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, mib);
+            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, mib, postgres, nodeEnv);
         }
 
         Options memoryMib(long node, long gateway) {
-            return new Options(fileSyncLevel, lazyFs, node, gateway, dataTmpfsMib);
+            return new Options(fileSyncLevel, lazyFs, node, gateway, dataTmpfsMib, postgres, nodeEnv);
+        }
+
+        /** PostgreSQL at the compose address with the compose sink {@code pg} enabled on the members. */
+        Options postgres(boolean on) {
+            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, on, nodeEnv);
+        }
+
+        /** An extra environment variable for every member, e.g. {@code RADIUSWARD_SINK_PG_MAX_LAG=30s}. */
+        Options env(String name, String value) {
+            Map<String, String> env = new LinkedHashMap<>(nodeEnv);
+            env.put(name, value);
+            return new Options(
+                    fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, Map.copyOf(env));
         }
     }
 
@@ -85,6 +105,9 @@ final class ContainerCluster implements AutoCloseable {
     private final List<Member> nodes = new ArrayList<>();
     private final List<Member> gateways = new ArrayList<>();
     private final GenericContainer<?> tools;
+    private final GenericContainer<?> postgres;
+    static final String POSTGRES_IP = "172.28.0.40";
+    static final String JDBC_URL = "jdbc:postgresql://" + POSTGRES_IP + ":5432/radius";
 
     ContainerCluster(String testName, Options options) {
         this.testName = testName;
@@ -98,6 +121,15 @@ final class ContainerCluster implements AutoCloseable {
                 .withNetwork(network)
                 .withCreateContainerCmdModifier(cmd ->
                         cmd.withIpv4Address(TOOLS_IP).withHostName("tools").withEntrypoint("sleep", "infinity"));
+        postgres = options.postgres()
+                ? new GenericContainer<>(DockerImageName.parse("postgres:17-alpine"))
+                        .withNetwork(network)
+                        .withEnv("POSTGRES_DB", "radius")
+                        .withEnv("POSTGRES_USER", "radiusward")
+                        .withEnv("POSTGRES_PASSWORD", "radiusward")
+                        .withCreateContainerCmdModifier(
+                                cmd -> cmd.withIpv4Address(POSTGRES_IP).withHostName("postgres"))
+                : null;
         for (int i = 0; i < 3; i++) {
             nodes.add(new Member("node-" + i, "172.28.0.1" + i, node(i)));
         }
@@ -115,7 +147,8 @@ final class ContainerCluster implements AutoCloseable {
                 .withEnv("RADIUSWARD_ARCHIVE_FILE_SYNC_LEVEL", Integer.toString(options.fileSyncLevel()))
                 .withEnv("RADIUSWARD_TEST_LAZYFS", options.lazyFs() ? "1" : "0")
                 // the compose configuration exports to its PostgreSQL; tests that want an exporter set it themselves
-                .withEnv("RADIUSWARD_EXPORT_SINKS", "")
+                .withEnv("RADIUSWARD_EXPORT_SINKS", options.postgres() ? "pg" : "")
+                .withEnv(options.nodeEnv())
                 // a small tmpfs data directory needs a matching warning threshold (default 1 GiB)
                 .withEnv(
                         "RADIUSWARD_CLUSTER_DISK_MIN_FREE",
@@ -182,6 +215,10 @@ final class ContainerCluster implements AutoCloseable {
     ContainerCluster start() {
         try {
             tools.start();
+            if (postgres != null) {
+                postgres.start();
+                awaitPostgres(Duration.ofSeconds(60));
+            }
             nodes.parallelStream().forEach(n -> n.container().start());
             awaitReady(nodes, Duration.ofSeconds(60));
             gateways.parallelStream().forEach(g -> g.container().start());
@@ -191,6 +228,120 @@ final class ContainerCluster implements AutoCloseable {
             close();
             throw e;
         }
+    }
+
+    // ---- PostgreSQL (Options.postgres) -----------------------------------------------------------
+
+    /** Stops the database container (connections refused) without removing it. */
+    void stopPostgres() {
+        docker.stopContainerCmd(postgres.getContainerId()).withTimeout(5).exec();
+    }
+
+    void startPostgres() {
+        docker.startContainerCmd(postgres.getContainerId()).exec();
+        awaitPostgres(Duration.ofSeconds(60));
+    }
+
+    private void awaitPostgres(Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (exec(postgres, "pg_isready", "-U", "radiusward", "-d", "radius").getExitCode() != 0) {
+            if (System.nanoTime() > deadline) {
+                throw new IllegalStateException("PostgreSQL not ready after " + timeout);
+            }
+            sleep(250);
+        }
+    }
+
+    /** One value from {@code psql -tA}. */
+    String psql(String sql) {
+        ExecResult r = exec(postgres, "psql", "-U", "radiusward", "-d", "radius", "-tAc", sql);
+        if (r.getExitCode() != 0) {
+            throw new IllegalStateException(sql + ": " + r.getStderr());
+        }
+        return r.getStdout().trim();
+    }
+
+    /** A sink row of {@code radiusward admin sinks}. */
+    record SinkRow(String name, long checkpoint, long lagBytes, int owner, long epoch, boolean detached) {}
+
+    Map<String, SinkRow> sinks() {
+        ExecResult r = radiusward("admin", "sinks", "--members", MEMBERS, "--egress-host", TOOLS_IP);
+        Map<String, SinkRow> rows = new LinkedHashMap<>();
+        for (String line : r.getStdout().split("\n")) {
+            String[] f = line.trim().split("\\s+");
+            if (f.length >= 8 && !f[0].equals("sink") && f[1].matches("\\d+")) {
+                rows.put(
+                        f[0],
+                        new SinkRow(
+                                f[0],
+                                Long.parseLong(f[1]),
+                                Long.parseLong(f[2]),
+                                Integer.parseInt(f[3]),
+                                Long.parseLong(f[4]),
+                                Boolean.parseBoolean(f[6])));
+            }
+        }
+        return rows;
+    }
+
+    /** Waits until sink {@code name} has written everything ({@code lag_bytes} 0). */
+    void awaitExportCaughtUp(String name, Duration timeout) {
+        awaitExportLagBelow(name, 1, timeout);
+    }
+
+    /** Waits until sink {@code name} is less than {@code bytes} behind (under continuous load it is rarely 0). */
+    void awaitExportLagBelow(String name, long bytes, Duration timeout) {
+        long deadline = System.nanoTime() + timeout.toNanos();
+        while (System.nanoTime() < deadline) {
+            SinkRow row = sinks().get(name);
+            if (row != null && row.lagBytes() < bytes) {
+                return;
+            }
+            sleep(1_000);
+        }
+        throw new IllegalStateException("sink " + name + " did not catch up: " + sinks());
+    }
+
+    /** {@code radiusward admin verify-export} against the database and the cluster. */
+    ExecResult verifyExport(String ackLog) {
+        ExecResult r = radiusward(
+                "admin",
+                "verify-export",
+                "--jdbc-url",
+                JDBC_URL,
+                "--jdbc-user",
+                "radiusward",
+                "--jdbc-password",
+                "radiusward",
+                "--ack-log",
+                ackLog,
+                "--nas-id",
+                Integer.toString(NAS_ID),
+                "--members",
+                MEMBERS,
+                "--egress-host",
+                TOOLS_IP);
+        System.out.println(r.getStdout() + r.getStderr());
+        return r;
+    }
+
+    /** {@code /metrics} of a member or gateway. */
+    String metrics(Member m) {
+        return radiusward("probe", "http://" + m.ip() + ":9090/metrics").getStdout();
+    }
+
+    /** Sum of one metric family's samples in a {@code /metrics} text. */
+    static double metric(String metrics, String family) {
+        double sum = 0;
+        for (String line : metrics.split("\n")) {
+            if (line.startsWith(family + "{") || line.startsWith(family + " ")) {
+                String v = line.substring(line.lastIndexOf(' ') + 1);
+                if (!v.equals("NaN")) {
+                    sum += Double.parseDouble(v);
+                }
+            }
+        }
+        return sum;
     }
 
     List<Member> nodes() {
@@ -389,6 +540,11 @@ final class ContainerCluster implements AutoCloseable {
 
     /** {@code radclient load} against both gateways with an acknowledgement log in the tools container. */
     LoadResult load(int nas, int sessions, int rate, Duration duration, String ackLog) {
+        return load(nas, sessions, rate, duration, ackLog, 0);
+    }
+
+    /** As above, numbering sessions from {@code firstSession} (distinct sessions for consecutive loads). */
+    LoadResult load(int nas, int sessions, int rate, Duration duration, String ackLog, int firstSession) {
         ExecResult r = radiusward(
                 "radclient",
                 "load",
@@ -407,6 +563,8 @@ final class ContainerCluster implements AutoCloseable {
                 "--interim",
                 "5s",
                 "--retry-other-server",
+                "--first-session",
+                Integer.toString(firstSession),
                 "--ack-log",
                 ackLog);
         System.out.println(r.getStdout());
@@ -477,6 +635,9 @@ final class ContainerCluster implements AutoCloseable {
         }
         all.forEach(m -> m.container().stop());
         tools.stop();
+        if (postgres != null) {
+            postgres.stop();
+        }
         network.close();
     }
 }

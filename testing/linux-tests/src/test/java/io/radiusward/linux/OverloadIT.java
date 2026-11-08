@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.Container.ExecResult;
 
 /**
- * Small profile at its limits (ADR 0004): members limited to 1 GiB and one CPU, gateways to 384 MiB, 2M sessions
+ * Small profile at its limits (ADR 0004), with the exporter and its state-machine replica exporting to PostgreSQL: members limited to 1 GiB and one CPU, gateways to 384 MiB, 2M sessions
  * (the profile's maximum), 8 generators offering 48k requests/s for 2 minutes. Measured on an 8-CPU Colima VM:
  * ~32k/s served, so the gateways must shed load (pending table full; the NAS retries). Nothing may be
  * OOM-killed, unreclaimable memory stays below the limit, every event is acknowledged eventually and the
@@ -31,7 +31,8 @@ class OverloadIT {
 
     @Test
     void smallProfileShedsLoadWithoutRunningOutOfMemory() {
-        try (ContainerCluster cluster = new ContainerCluster("overload", ContainerCluster.Options.defaults())) {
+        try (ContainerCluster cluster = new ContainerCluster(
+                "overload", ContainerCluster.Options.defaults().postgres(true))) {
             cluster.start();
             List<ContainerCluster.Member> all = new ArrayList<>(cluster.nodes());
             all.addAll(cluster.gateways());

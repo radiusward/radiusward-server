@@ -8,6 +8,7 @@ iptables; [docker/Dockerfile.test](docker/Dockerfile.test)) and the configuratio
 scripts/linux-tests.sh                    # builds jar + images, runs everything (~15 min)
 scripts/linux-tests.sh PowerLossIT        # one class
 SKIP_BUILD=1 scripts/linux-tests.sh ...   # reuse the images
+LINUX_TESTS_ARGS="-Dradiusward.outage.minutes=3 -Dradiusward.purge.minutes=8" scripts/linux-tests.sh   # shorter
 ```
 
 | Test | Scenario | Proves |
@@ -15,9 +16,15 @@ SKIP_BUILD=1 scripts/linux-tests.sh ...   # reuse the images
 | `PowerLossIT` | data on LazyFS; all three members lose power under load | fsync level 2: every acknowledged event survives; level 0 (control) loses them |
 | `PartitionIT` | leader cut off from both followers (iptables) | minority never acknowledges; old leader rejoins as follower; nothing lost |
 | `DiskFullIT` | leader's data directory (tmpfs) filled under load | not ready below `cluster.disk.min.free`; full disk stops the member; replacement catches up; nothing lost |
-| `OverloadIT` | 2M sessions, 48k requests/s offered, 1 GiB members, 384 MiB gateways | no OOM kill, memory below the limits, gateways shed load, consistent afterwards |
+| `OverloadIT` | 2M sessions, 48k requests/s offered, 1 GiB members (exporting to PostgreSQL), 384 MiB gateways | no OOM kill, memory below the limits, gateways shed load, consistent afterwards |
 | `FailoverTimingIT` | leader `kill -9` at ~2k requests/s | 0 retransmissions, worst ACK < 3 s |
-| `ComposeSmokeIT` | the shipped `deploy/compose` stack | healthy, both gateways acknowledge |
+| `ComposeSmokeIT` | the shipped `deploy/compose` stack | healthy, both gateways acknowledge, `/metrics` |
+| `MonitoringConfigIT` | `promtool` on `deploy/monitoring` | alert rules and scrape config valid |
+| `PostgresOutageIT` | PostgreSQL down under load (`radiusward.outage.minutes`, default 30) | ACKs continue, backlog drains, every acknowledged session in the database |
+| `ExportLagBlockIT` | required sink, `maxLag` 30 s, PostgreSQL down | `EXPORT_LAG` stops ACKs, they resume after catch-up, nothing acknowledged missing |
+| `DetachIT` | optional sink, `maxLag` 20 s | detached without blocking ACKs, re-attaches, the lease stays put |
+| `ExportThroughputIT` | backlog drain per storage variant | faster than intake; rows/s and bytes per row |
+| `PurgeIT` | steady load (`radiusward.purge.minutes`, default 60), snapshots every minute | archive bounded, nothing acknowledged missing |
 
 `ContainerCluster` is the harness: static addresses, `kill`, `restart`, `powerLoss`, `isolate`/`heal`,
 `memory` (cgroup), `state`, `load`, `verifyAcks`. Clients run in a tools container inside the network.

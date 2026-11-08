@@ -23,8 +23,10 @@ import org.apache.logging.log4j.Logger;
  * log, writes batches and renews the lease with each new checkpoint. A fenced write, a refused renewal or no
  * successful renewal for a lease timeout sends it back to standby.
  *
- * <p>Empty batches (the log moved only through entries without rows, such as checkpoints) are written only on
- * the renewal tick; otherwise every checkpoint would cause the next one.
+ * <p>The lease is renewed by its own thread, independent of the sink: a database that hangs on connect or write
+ * must not let the lease expire (another member would only rebuild its replica for the same failure). Empty
+ * batches (the log moved only through entries without rows, such as checkpoints) are written only on a timer;
+ * otherwise every checkpoint would cause the next one.
  */
 final class SinkRunner implements Runnable {
 
@@ -37,6 +39,7 @@ final class SinkRunner implements Runnable {
     private final ExporterContext exporter;
     private final int streamBase;
     private final LeaseClient lease;
+    private final LeaseClient renewalLease;
     private final SinkStatus status;
     private volatile boolean running = true;
 
@@ -47,14 +50,17 @@ final class SinkRunner implements Runnable {
     private BatchBuilder builder;
     private Batch pending;
     private boolean sinkOpen;
-    private boolean owner;
-    private long epoch;
-    private long durablePosition;
-    private long lastEventTime;
+    private volatile boolean owner;
+    private volatile long epoch;
+    private volatile long durablePosition;
+    private volatile long lastEventTime;
     private long batchStartedNs;
     private long nextRenewNs;
-    private long lastRenewedNs;
+    private volatile long lastRenewedNs;
     private long backoffMs = 100;
+    private long nextFlushNs;
+    private volatile boolean leaseLost;
+    private volatile LeaseClient.Ack pendingResync;
 
     SinkRunner(SinkConfig config, AccountingSink sink, SinkContext context, ExporterContext exporter, int streamBase) {
         this.config = config;
@@ -63,6 +69,7 @@ final class SinkRunner implements Runnable {
         this.exporter = exporter;
         this.streamBase = streamBase;
         this.lease = new LeaseClient(exporter.aeronDir(), exporter.ingressEndpoints(), exporter.egressHost());
+        this.renewalLease = new LeaseClient(exporter.aeronDir(), exporter.ingressEndpoints(), exporter.egressHost());
         this.status = new SinkStatus(config.name(), config.type());
     }
 
@@ -86,8 +93,24 @@ final class SinkRunner implements Runnable {
             reader = new ClusterLogReader(aeron, archive, exporter.clusterDir(), streamBase);
             builder = new BatchBuilder(
                     config.name(), context.mode() == io.radiusward.export.StorageMode.SESSIONS_AND_EVENTS);
+            Thread renewals = new Thread(this::renewLoop, "exporter-" + config.name() + "-lease");
+            renewals.setDaemon(true);
+            renewals.start();
             while (running) {
                 try {
+                    if (owner && leaseLost) {
+                        LOG.warn("sink {}: lease lost; another member exports it now", config.name());
+                        loseLease();
+                    }
+                    LeaseClient.Ack resync = pendingResync;
+                    if (owner && resync != null) {
+                        LOG.warn(
+                                "sink {}: resync to log position {}; restarting the export there",
+                                config.name(),
+                                resync.checkpoint());
+                        loseLease();
+                        becomeOwner(resync);
+                    }
                     if (!sinkOpen) {
                         sink.open(context);
                         sinkOpen = true;
@@ -116,7 +139,7 @@ final class SinkRunner implements Runnable {
         } finally {
             loseLease();
             closeSink();
-            CloseHelper.quietCloseAll(lease, reader, archive, aeron);
+            CloseHelper.quietCloseAll(lease, renewalLease, reader, archive, aeron);
         }
     }
 
@@ -186,12 +209,11 @@ final class SinkRunner implements Runnable {
             writePending();
             return;
         }
-        if (now >= nextRenewNs) {
+        if (now >= nextFlushNs) {
+            nextFlushNs = now + renewIntervalNs();
             if (builder.rows() == 0 && builder.hasProgress()) {
                 pending = builder.take(epoch); // empty batch: moves the stored position past entries without rows
                 writePending();
-            } else {
-                renew();
             }
             return;
         }
@@ -228,20 +250,34 @@ final class SinkRunner implements Runnable {
             return;
         }
         if (ack.resync() && ack.epoch() != epoch) {
-            LOG.warn(
-                    "sink {}: resync to log position {}; restarting the export there", config.name(), ack.checkpoint());
-            loseLease();
-            try {
-                becomeOwner(ack);
-            } catch (Exception e) {
-                status.error(e.toString());
-                LOG.error("sink {}: restart after resync failed: {}", config.name(), e.toString());
-            }
+            pendingResync = ack; // handled by the export loop
             return;
         }
         epoch = ack.epoch();
         lastRenewedNs = now;
         status.owner(true, epoch, durablePosition);
+    }
+
+    /** Renews the lease every third of its timeout while this member owns the sink, whatever the sink does. */
+    private void renewLoop() {
+        while (running) {
+            if (owner && pendingResync == null && !leaseLost) {
+                LeaseClient.Ack ack = renewalLease.checkpoint(
+                        config, exporter.memberId(), epoch, durablePosition, lastEventTime, ACK_TIMEOUT);
+                if (ack != null && owner) {
+                    status.lease(ack.owner(), ack.epoch(), ack.checkpoint(), ack.detached());
+                    if (ack.result() != LeaseResult.GRANTED) {
+                        leaseLost = true;
+                    } else if (ack.resync() && ack.epoch() != epoch) {
+                        pendingResync = ack;
+                    } else {
+                        epoch = ack.epoch();
+                        lastRenewedNs = System.nanoTime();
+                    }
+                }
+            }
+            sleepMs(renewIntervalNs() / 1_000_000);
+        }
     }
 
     private long renewIntervalNs() {
@@ -253,6 +289,8 @@ final class SinkRunner implements Runnable {
             status.owner(false, epoch, durablePosition);
         }
         owner = false;
+        leaseLost = false;
+        pendingResync = null;
         pending = null;
         replica = null;
         if (reader != null) {

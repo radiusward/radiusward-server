@@ -1,7 +1,7 @@
 # Phase 3 build plan: export to PostgreSQL, sink plug-ins, log purge, metrics
 
-Status: **planned** (not started) · Created: 2026-11-08 · Revised: 2026-11-08 (session-first storage,
-reducer in the exporter) · Builds on: [Phase 2](phase-2.md) · Sink roadmap: [roadmap.md § Sinks](roadmap.md#sinks)
+Status: **done** (2026-11-08) · Created: 2026-11-08 · Revised: 2026-11-08 (session-first storage,
+reducer in the exporter) · Report: [below](#phase-3-report) · Builds on: [Phase 2](phase-2.md) · Sink roadmap: [roadmap.md § Sinks](roadmap.md#sinks)
 
 ## Goal
 
@@ -300,6 +300,26 @@ order). Defaults (`fillfactor`, batch size, write path, history encoding) are ch
 | `ExportThroughputIT` | linux | benchmark matrix of P3.4, catch-up rate > intake |
 | `OverloadIT` (extended) | linux | 2M sessions with the exporter and its replica stay within 1 GiB |
 
+- **Result (2026-11-08):** all green on the Colima VM (outage and purge shortened locally to 3 and 8 minutes;
+  the nightly job runs 30 and 60):
+  - `PostgresOutageIT`: 74,972 events acknowledged during the outage with 0 failures, lag 7 → 14 MB, backlog drained
+    in 49 s, `verify-export` clean.
+  - `ExportLagBlockIT`: after 30 s of lag 40k `EXPORT_LAG` rejections and 5k unanswered requests; after recovery
+    0 failures; every acknowledged session of all three phases in PostgreSQL.
+  - `DetachIT`: detached while PostgreSQL was down, 0 failed ACKs, re-attached, the lease stayed with one member.
+  - `ExportThroughputIT`: backlog drain ~27k events/s (sessions) and ~18.5k events/s (with history), table in
+    [strategy.md](../testing/strategy.md#export-throughput-phase-3).
+  - `PurgeIT`: the largest archive stays at 30–38 MiB while the log grows (snapshots every minute, 4 MiB segments).
+  - `OverloadIT` with the exporter: members ≤ 583 MiB unreclaimable of 1 GiB at 2M sessions (448 MiB without the
+    exporter; the replica costs ~135 MiB at 2M sessions).
+  - Deviations: `ExportIT`/`ExportFailoverIT` as separate e2e process tests were not added — `ExporterIT` and
+    `PostgresExportIT` cover the same in a real three-member cluster, and `demo-failover.sh` in compose;
+    `ReducerReplayTest` is covered by `LogReplicaSpikeIT` (replica digest equals the cluster's on every member)
+    and `BatchBuilderTest`, since cluster and exporter share the same `LogApplier`.
+  - Found and fixed: the lease bounced between members while a database hung (blocking JDBC calls outlived the
+    lease) — renewals now run on their own thread and the PostgreSQL sink connects with a 5 s timeout; Aeron
+    Cluster's default of 10 client sessions was too few with sinks — `cluster.client.sessions.max`, default 256.
+
 ### P3.10: Documentation (size M)
 
 - New ADRs: **0017** exporter (inside the member, lease and epoch, commit-position bound, reducer replica,
@@ -310,6 +330,11 @@ order). Defaults (`fillfactor`, batch size, write path, history encoding) are ch
   from FreeRADIUS SQL) and `docs/sinks/writing-a-sink.md` (SPI, the two primitives, checkpoint styles,
   mappings per target type, driver licensing, packaging for `plugins/`).
 - Updates: configuration, failure matrix (P3 rows), architecture, READMEs, CONTRIBUTING / AGENTS,
+  THIRD-PARTY (pgjdbc).
+- **Result (2026-11-08):** ADR 0017 and 0018 written; ADR 0007 and 0014 amended; accounting contract (export
+  section); new [export.md](../operations/export.md), [writing-a-sink.md](../sinks/writing-a-sink.md),
+  [monitoring.md](../operations/monitoring.md); configuration (export, purge, client sessions), failure matrix
+  (14 P3 rows), architecture, strategy (export tests, throughput), READMEs of every new module, CONTRIBUTING,
   THIRD-PARTY (pgjdbc).
 
 ### P3.11: Review (size S)
@@ -338,3 +363,60 @@ P3.6 metrics and monitoring, P3.7 tools, P3.8 compose, P3.10 docs alongside
 | JSON cost and correctness | residual attributes only, arrays per attribute, explicit binary encoding, no GIN by default; measured |
 | Own migration runner lacks Flyway features | schema is small; Flyway-style SQL files; `export-schema` for DBA-run changes |
 | Database slower than intake during catch-up | measure; larger batches or several writer connections by partition |
+
+## Phase 3 report
+
+Measured on an Apple M4 Pro: in-JVM clusters (JDK 21) and Linux containers in a Colima VM (8 CPU, 12 GiB);
+PostgreSQL 17 in a container on the same VM. Absolute rates are not bare-metal numbers.
+
+### Exit criteria
+
+| # | Criterion | Result |
+|---|---|---|
+| 1 | sessions correct | ✅ `verify-export` equal to the cluster for every acknowledged session (in-JVM 3,000, compose 10,000, all linux export tests) |
+| 2 | history exactly once | ✅ 47,843–47,945 applied events = as many distinct rows across a lease handover; stale events kept, flagged |
+| 3 | outage | ✅ 3 min locally (30 min nightly): ACKs continue, backlog drained in 49 s, nothing lost |
+| 4 | crash and handover | ✅ exporting member stopped under load: lease moves with a new epoch, no gap, no duplicate; stale writers fenced |
+| 5 | lag policy | ✅ `block` stops ACKs with `EXPORT_LAG` and resumes; `detach` never blocks and re-attaches |
+| 6 | disk bounded | ✅ archive 30–38 MiB while the log grows (8 min locally, 60 min nightly); stopped member catches up after a purge |
+| 7 | throughput | ✅ backlog drain ~27k events/s (sessions), ~18.5k events/s (history) — 6–9× the test intake, 2–3× the worst-case reference load |
+| 8 | memory | ✅ 2M sessions under overload with the exporter: members ≤ 583 MiB unreclaimable of 1 GiB |
+| 9 | metrics | ✅ `/metrics` on members and gateways, 10 alert rules (promtool), compose monitoring profile |
+| 10 | docs | ✅ ADR 0017, 0018, export, sinks, monitoring guides, configuration, failure matrix |
+
+### Findings worth knowing
+
+- **Aeron log replay ends at elections.** An election stops and later extends the log recording, which ends a
+  replay that follows it; the reader restarts from its position. Found by the spike's live tail.
+- **Aeron Cluster allows 10 client sessions by default** — not enough once every member runs lease clients;
+  `cluster.client.sessions.max` (256).
+- **Archive segment length is fixed per recording**: changing `archive.segment.length` affects new recordings
+  only (found by CI, where a test changed it after the recording existed).
+- **Lease and sink I/O must be independent**: JDBC calls hanging on a stopped database outlived the lease, which
+  then bounced between members; renewals now run on their own thread.
+- **macOS loopback and wildcard binds**: a load generator bound to `0.0.0.0` lost whole ports of responses to
+  Aeron sockets bound to `127.0.0.1` with address reuse. Test-tool issue; the generator binds loopback now.
+- The PostgreSQL retention query first looked at partitions of every schema — limited to the sink's own schema.
+- With the load generator's attributes the residual JSON is empty; its real cost needs vendor captures.
+- Found in the final regression run: `RADIUSWARD_EXPORT_SINKS=` (empty), documented as "no exporter", was rejected
+  as a missing key and stopped members from starting; an empty list now disables the exporter
+  (`SinkConfigTest`). The admin client also re-sends a query without a reply after 5 s.
+
+### Deviations from the plan
+
+| Plan | What was done | Why |
+|---|---|---|
+| binary `COPY` | text `COPY` | simpler, fast enough (≥18.5k events/s); binary stays an option |
+| zero-copy batch views | records (copies) | bounded by `batch.rows`, simpler for plug-in authors |
+| e2e `ExportIT`, `ExportFailoverIT` | `ExporterIT`, `PostgresExportIT` (in-JVM, three members), `demo-failover.sh` | same scenarios with less machinery |
+| `ReducerReplayTest` | `LogReplicaSpikeIT`, `BatchBuilderTest` | cluster and exporter share `LogApplier`; the digest comparison is the stronger check |
+| slowest-follower bound via the leader | replicated `MemberLogPosition` reports | deterministic on every member; a silent member holds the floor |
+| full benchmark matrix | storage variants only | GIN / expression indexes and a payload table matter only for attribute-heavy history — Phase 3b |
+
+### Open items
+
+- Real vendor captures (residual JSON cost, vendor event-key rules).
+- Phase 3b: generic JDBC sink with dialects (MySQL/MariaDB, SQL Server, Oracle, Db2, Firebird, SQLite), Kafka sink;
+  remaining benchmark variants.
+- Phase 4: Helm chart, Kubernetes, dashboards per deployment; the exporter as a sidecar if isolation is needed.
+- First release tag (`v0.2.0-rc.1` or a Phase 3 tag) when the maintainer decides.

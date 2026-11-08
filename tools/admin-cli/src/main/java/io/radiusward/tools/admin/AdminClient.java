@@ -148,19 +148,32 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkResyncEncoder.BLOCK_LENGTH);
     }
 
+    /**
+     * Sends a request and waits for its reply. Requests are read-only or idempotent, so one without a reply after
+     * 5 s is sent again (the cluster gives up an egress reply under back pressure, or the leader changed).
+     */
     private Object request(long id, int length) {
         reply = null;
         long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
-        while (cluster.offer(buffer, 0, length) < 0) {
-            cluster.pollEgress();
-            check(deadline);
+        while (true) {
+            while (cluster.offer(buffer, 0, length) < 0) {
+                cluster.pollEgress();
+                check(deadline);
+            }
+            long resendAt = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+            while (reply == null || replyCorrelation != id) {
+                if (cluster.pollEgress() == 0) {
+                    java.util.concurrent.locks.LockSupport.parkNanos(20_000);
+                }
+                check(deadline);
+                if (System.nanoTime() > resendAt) {
+                    break;
+                }
+            }
+            if (reply != null && replyCorrelation == id) {
+                return reply;
+            }
         }
-        while (reply == null || replyCorrelation != id) {
-            cluster.pollEgress();
-            check(deadline);
-            Thread.onSpinWait();
-        }
-        return reply;
     }
 
     private static void check(long deadline) {

@@ -144,6 +144,7 @@ public final class LocalCluster implements AutoCloseable {
                 snapshotInterval,
                 2,
                 0,
+                256,
                 AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions()),
                 Duration.ofSeconds(60),
                 export.apply(id),

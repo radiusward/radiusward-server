@@ -136,6 +136,8 @@ public final class ClusterNode implements AutoCloseable {
                 .leaderHeartbeatTimeoutNs(config.leaderHeartbeatTimeout().toNanos())
                 .electionTimeoutNs(config.electionTimeout().toNanos())
                 .sessionTimeoutNs(config.sessionTimeout().toNanos())
+                // gateways, two lease clients per sink and a position reporter per member, admin tools
+                .maxConcurrentSessions(config.maxClientSessions())
                 .errorHandler(errorHandler);
 
         AccountingService service = new AccountingService(

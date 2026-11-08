@@ -33,6 +33,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.leader.heartbeat.timeout` | `1500ms` | leader failure detection; with the election timeout a crashed leader is replaced in ~2.2 s, below a 3 s NAS timeout ([ADR 0011](adr/0011-gateway-pipeline.md)) |
 | `cluster.election.timeout` | `500ms` | how long a candidate waits for votes |
 | `cluster.session.timeout` | `10s` | client session timeout |
+| `cluster.client.sessions.max` | `256` | concurrent cluster client sessions: every gateway, two per sink on every member, one position reporter per member, admin tools |
 | `archive.file.sync.level` | `2` | `0` page cache, `1` fsync data, `2` fsync data + metadata; the archive catalog and the cluster's recording log and node state use the same level. Below `2` a power loss can lose acknowledged events or stop members from starting (`PowerLossIT`) |
 | `archive.segment.length` | `128m` | archive segment file size, a power of two of at least the term length; the log is purged in whole segments. **Fixed per recording**: a change only affects recordings created afterwards |
 | `log.purge.enabled` / `log.purge.dry.run` | `true` / `false` | purge the log below what nobody needs ([ADR 0014](adr/0014-log-purge.md)); dry run only logs |
@@ -63,6 +64,31 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `dictionary.dir` | `/etc/radiusward/dictionary.d` | operator dictionaries, loaded after the bundled set if the directory exists |
 | `debug.enabled` | `false` | allows `debug.*` keys; never in production |
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
+
+## Export
+
+Cluster members; every member gets the same keys ([export.md](operations/export.md)).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `export.sinks` | — (none) | comma-separated sink names; empty disables the exporter |
+| `export.lease.timeout` | `10s` | how long a sink's lease lasts without renewal (renewed every third of it) |
+| `export.plugins.dir` | `/opt/radiusward/plugins` | jars with further sink types |
+| `sink.<name>.type` | — (required) | `postgres`, `file`, or a plug-in's type |
+| `sink.<name>.required` | `true` | a required sink holds the log and can block ACKs |
+| `sink.<name>.max.lag` | `4h` | lag limit by time (from the first unexported entry) |
+| `sink.<name>.max.lag.bytes` | `0` (off) | lag limit by log bytes |
+| `sink.<name>.on.max.lag` | `block` if required, else `detach` | `block`: stop acknowledging new accounting; `detach`: release the log, alert |
+| `sink.<name>.batch.rows` / `batch.linger` | `5000` / `200ms` | batch size and wait |
+| `sink.<name>.mode` | `sessions` | `sessions` (one row per session) or `sessions+events` (plus history) |
+
+PostgreSQL (`type=postgres`): `url` (required), `user`, `password`, `attributes` (`json` \| `raw` \| `none`,
+default `json`), `schema.manage` (`auto` \| `validate` \| `none`), `events.retention` (default `90d`, `0` keeps
+all), `sessions.retention` (closed sessions, default `0`: keep), `radacct.view` (`false`),
+`connect.timeout.seconds` (`5`), `socket.timeout.seconds` (`120`). Plug-in settings are read from the files
+(environment variables override keys that are present there).
+
+File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 
 ## NAS clients (gateway)
 

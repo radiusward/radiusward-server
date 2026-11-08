@@ -49,7 +49,7 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
  │ leader    │ log  │ follower  │ log  │ follower  │   each: media driver, archive (fsync),
  │           │      │           │      │           │   consensus module, AccountingService
  └─────┬─────┘      └───────────┘      └───────────┘
-       │ archive replay of the committed log (on a follower)
+       │ local replay of the committed log (member holding the lease)
        ▼
  ┌───────────┐   per-sink cursor, batching, retry
  │ exporter  │──▶ Postgres (COPY + ON CONFLICT DO NOTHING)
@@ -90,16 +90,21 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
 - Logical event key excludes `Acct-Delay-Time` and the RADIUS Identifier; per-vendor
   `EventKeyStrategy` (Cisco, Juniper, MikroTik, Huawei, Meraki, Ruckus first).
 
-### Exporter and sinks (Phase 3)
+### Exporter and sinks (implemented in Phase 3)
 
-- Tails the committed cluster log through an Archive replay — the log already is the durable journal,
-  so no backlog is held in cluster memory.
-- Sinks are plugins (`AccountingSink` via `ServiceLoader`), several active at once, each with its own
-  reader thread, cursor, batching and retry. At-least-once delivery + idempotent sinks (unique `event_id`).
-- Postgres sink: plain JDBC, binary `COPY` into a staging table + `INSERT ... ON CONFLICT DO NOTHING`,
-  time-partitioned tables, one writer connection.
-- Lag policy per sink: `required: true` → `onMaxLag: block` (stop ACKing new accounting),
-  otherwise `detach` (release the log, alert). Prometheus lag metrics with early alerts.
+- Runs **inside every member** ([ADR 0017](adr/0017-exporter.md)); one member exports each sink, chosen by a
+  lease with an epoch in the replicated state. It replays the member's own log up to the **commit position**
+  (never entries an election could truncate) and runs the cluster's **state machine as reducer**, so sinks get
+  exactly what the cluster applied plus reconciled session snapshots — no RADIUS logic in any sink.
+- Sinks are plug-ins (`AccountingSink` via `ServiceLoader`, several active at once), each with its own thread,
+  checkpoint, lease and lag. Every sink implements insert-if-absent events and update-only-if-newer sessions.
+- PostgreSQL ([ADR 0018](adr/0018-storage-model.md)): `accounting_session` (one row per session, like FreeRADIUS
+  `radacct`, plus a `radacct` view), optional `accounting_event` history; `COPY` into staging and `ON CONFLICT`
+  in one transaction per batch with an epoch-fenced checkpoint.
+- Lag policy per sink: `required` + `maxLag` (default 4 h) → `block` (`EXPORT_LAG`, no new ACKs) or `detach`.
+- **Log purge** on every member after snapshots, below the second-latest snapshot, the slowest required sink and
+  the slowest member ([ADR 0014](adr/0014-log-purge.md)).
+- Metrics on `/metrics` ([monitoring.md](operations/monitoring.md)); operations in [export.md](operations/export.md).
 
 ## Threading model
 
@@ -108,7 +113,7 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
 | UdpAgent | socket, packet codec instances, response cache | block, allocate per packet, talk to Aeron |
 | ClusterClientAgent | Aeron cluster client, pending-request map | touch the socket |
 | Cluster service | session table, dedup state | I/O, wall clock, randomness |
-| Exporter sink threads | one sink each | write to the cluster except checkpoints |
+| Exporter sink threads (one per sink, plus a lease thread) | one sink, its replica and log reader | write to the cluster except checkpoints and leases |
 
 Idle strategies: backoff parking at most 100 µs in the small and standard profiles (gateway; Aeron's backoff
 in the members), busy-spin only in the large profile ([measurements](testing/strategy.md#latency-in-containers-phase-2)).
@@ -144,7 +149,9 @@ member.
 - **Phase 2 (done):** one container image `ghcr.io/radiusward/radiusward-server` with subcommands
   `cluster-node | gateway | radclient | admin | probe`, non-root, multi-arch; compose stack with static
   addresses ([ADR 0015](adr/0015-container-image.md), [docker.md](operations/docker.md)); fault-injection
-  tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)). The exporter joins the image in Phase 3.
+  tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)).
+- **Phase 3 (done):** the exporter runs in the member process; compose adds PostgreSQL and an optional
+  Prometheus + Grafana profile.
 - **Phase 4:** Helm chart — cluster as a StatefulSet with a headless Service and one PVC (~100 GB) per
   node, `/dev/shm` as `emptyDir: Memory`, anti-affinity, `PodDisruptionBudget maxUnavailable: 1`;
   gateways behind a UDP LoadBalancer with `externalTrafficPolicy: Local` so the NAS source IP is kept.

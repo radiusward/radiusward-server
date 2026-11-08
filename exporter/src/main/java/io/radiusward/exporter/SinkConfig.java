@@ -31,7 +31,12 @@ public record SinkConfig(
 
     public static List<SinkConfig> from(Config config) {
         List<SinkConfig> sinks = new ArrayList<>();
-        for (String name : config.list("export.sinks", List.of())) {
+        String names = config.raw("export.sinks");
+        if (names == null || names.isBlank()) {
+            return sinks; // unset or empty (RADIUSWARD_EXPORT_SINKS=): no exporter
+        }
+        for (String name : names.split(",")) {
+            name = name.trim();
             if (name.isBlank()) {
                 continue;
             }

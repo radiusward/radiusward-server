@@ -92,6 +92,9 @@ public final class PostgresSink implements AccountingSink {
             props.setProperty("password", context.settings().get("password"));
         }
         props.setProperty("ApplicationName", "radiusward-exporter-" + context.name());
+        // fail fast when the database is unreachable (the exporter retries with backoff); settings in the URL win
+        props.setProperty("connectTimeout", context.setting("connect.timeout.seconds", "5"));
+        props.setProperty("socketTimeout", context.setting("socket.timeout.seconds", "120"));
         connection = DriverManager.getConnection(context.required("url"), props);
         SqlMigrations.Manage manage = SqlMigrations.Manage.parse(context.setting("schema.manage", "auto"));
         SqlMigrations.apply(

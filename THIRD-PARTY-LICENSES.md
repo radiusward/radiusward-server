@@ -14,6 +14,7 @@
 | [Aeron](https://github.com/aeron-io/aeron) (client, driver, archive, cluster) | Apache-2.0 |
 | [Apache Log4j 2](https://logging.apache.org/log4j/2.x/) (api, core) | Apache-2.0 |
 | [LMAX Disruptor](https://github.com/LMAX-Exchange/disruptor) 4.x (used by Log4j2 async loggers) | Apache-2.0 |
+| [PostgreSQL JDBC driver (pgjdbc)](https://jdbc.postgresql.org/) (PostgreSQL sink) | BSD-2-Clause |
 
 ## Container image
 
@@ -32,7 +33,8 @@ SBOM). radiusward runs on it unmodified.
 | aaa4j-radius | Apache-2.0 | reference implementation for differential tests |
 | SBE (sbe-tool) | Apache-2.0 | code generation for the protocol module; generated code ships, the tool does not |
 | JMH | GPL-2.0 with Classpath Exception | benchmarks module only (`-Pbench`), never shipped |
-| Testcontainers (with docker-java) | MIT (Apache-2.0) | `testing/linux-tests` only |
+| Testcontainers (with docker-java, PostgreSQL module) | MIT (Apache-2.0) | `testing/linux-tests`, PostgreSQL tests |
+| PostgreSQL, Prometheus, Grafana container images | PostgreSQL License, Apache-2.0, AGPL-3.0 | referenced by the compose file and tests, pulled by the user, not distributed |
 | [LazyFS](https://github.com/dsrhaslab/lazyfs) | MIT | built from source into the test image `radiusward-test` (`testing/linux-tests/docker`, with a small `statfs` patch), never published |
 | spdlog, toml11 | MIT | LazyFS build dependencies, test image only |
 | Spotless, palantir-java-format, JaCoCo, Maven plugins | Apache-2.0 / EPL-2.0 | build tooling |

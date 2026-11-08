@@ -65,6 +65,23 @@ twice; downstream sinks are idempotent by `event_id` as a second line of defence
 
 Implemented by `AccountingResponses` in `radius-codec`.
 
+## Export to databases (Phase 3)
+
+Sinks are fed asynchronously from the committed log ([ADR 0017](adr/0017-exporter.md),
+[ADR 0018](adr/0018-storage-model.md)):
+
+- **What reaches a sink** is what the cluster applied: applied events (and stale ones, flagged, in the history),
+  and every session as the cluster holds it after each change — including sessions closed by Accounting-On/Off
+  or the idle timeout. Duplicates and rejected events are never exported.
+- **Delivery** is at least once from the exporter's point of view and exactly once in the database: events are
+  inserted only if absent (`event_id`), sessions updated only if newer (`projection_version`), and the sink's
+  checkpoint is fenced by the exporter's lease epoch, so a replaced exporter cannot write.
+- **Delay:** normally milliseconds to seconds. While a sink is down the log on disk is the buffer and ACKs
+  continue; a `required` sink more than `maxLag` behind (default 4 h) stops new ACKs (`EXPORT_LAG`, the NAS
+  retries) until it catches up; an optional sink is detached instead (the log is no longer held for it; a gap is
+  repaired with `radiusward admin resync` while the log still holds the position).
+- **Check it:** `radiusward admin verify-export` compares an acknowledgement log with the database and the cluster.
+
 ## Failure model
 
 Tolerated without losing acknowledged records: one cluster node lost (crash, power loss, disk loss),

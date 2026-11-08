@@ -32,6 +32,7 @@ public record ClusterNodeConfig(
         Duration snapshotInterval,
         int fileSyncLevel,
         long diskMinFree,
+        int maxClientSessions,
         AccountingStateMachine.Settings serviceSettings,
         Duration sweepInterval,
         ExportConfig export,
@@ -86,6 +87,7 @@ public record ClusterNodeConfig(
                 syncLevel,
                 // below this the member reports not ready: a full disk ends in SIGBUS on a mapped file
                 config.bytes("cluster.disk.min.free", 1L << 30),
+                config.integer("cluster.client.sessions.max", 256),
                 settings,
                 config.duration("service.sweep.interval", Duration.ofSeconds(60)),
                 ExportConfig.from(config),

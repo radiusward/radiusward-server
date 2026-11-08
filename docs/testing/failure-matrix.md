@@ -64,7 +64,17 @@ Status: ✅ covered · 🔜 planned (phase).
 
 | Case | Expected behaviour | Test | Status |
 |---|---|---|---|
-| Postgres down | backlog grows on disk, replay after recovery, no duplicates | `PostgresSinkIT` (Testcontainers) | 🔜 P3 |
-| required sink over `maxLag` | stop ACKing (`block`) | `LagPolicyIT` | 🔜 P3 |
-| optional sink over `maxLag` | detach + alert, others continue | `LagPolicyIT` | 🔜 P3 |
-| exporter crash mid-batch | resumes from checkpoint, idempotent | `ExporterRestartIT` | 🔜 P3 |
+| PostgreSQL down under load (30 min nightly) | ACKs continue, lag grows, backlog drains afterwards, every acknowledged session in the database | linux `PostgresOutageIT` | ✅ |
+| required sink over `maxLag` | new accounting not acknowledged (`EXPORT_LAG`), ACKs resume after catch-up, nothing acknowledged missing | linux `ExportLagBlockIT`, `ThreeNodeClusterIT`, `LogApplierTest` | ✅ |
+| optional sink over `maxLag` | detached, ACKs never stop, re-attaches after catch-up, the lease stays put | linux `DetachIT`, `ExportStateTest` | ✅ |
+| exporting member stopped under load | lease moves with a new epoch, no gap, no duplicate | `ExporterIT`, `PostgresExportIT` | ✅ |
+| stale exporter writes after a handover | refused by the epoch fence, batch rolled back | `PostgresSinkTest.anOlderEpochIsFenced`, `FileSinkTest` | ✅ |
+| connection lost mid-batch | nothing partial visible, resumes from the stored position | `PostgresSinkTest.aBrokenConnectionLeavesNothingBehind` | ✅ |
+| same batch written twice / out of order | no change; sessions only move forward | `PostgresSinkTest` | ✅ |
+| out-of-order Interims, Accounting-On/Off | session rows equal the cluster's sessions | `BatchBuilderTest`, `PostgresExportIT`, `admin verify-export` | ✅ |
+| exporter reads during an election | never past the commit position; restarts the replay when the recording is extended | `LogReplicaSpikeIT` | ✅ |
+| re-export a range | `admin resync`; idempotent, same rows | `PostgresExportIT`, `ExportStateTest` | ✅ |
+| three members migrate the schema at once | migrated once; `validate` refuses a changed or missing schema; `none` runs no DDL | `PostgresSinkTest` | ✅ |
+| log grows without bound | purged below second-latest snapshot / slowest required sink / slowest member; a stopped member still catches up | `LogPurgeIT`, linux `PurgeIT` | ✅ |
+| backlog drain rate | faster than intake for every storage variant | linux `ExportThroughputIT` | ✅ |
+| 2M sessions with the exporter and its replica | members stay within 1 GiB | linux `OverloadIT` | ✅ |

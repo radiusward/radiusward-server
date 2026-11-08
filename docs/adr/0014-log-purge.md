@@ -1,6 +1,6 @@
 # ADR 0014: Log purge (spike result)
 
-Status: Accepted (2026-11-08) — implementation in Phase 3
+Status: Accepted (2026-11-08). Implemented in Phase 3 (`LogPurger`).
 
 ## Findings (Aeron 1.54.0)
 - Open-source Aeron Cluster never deletes log data; `ClusterTool` has `snapshot` but no purge command.
@@ -41,6 +41,15 @@ rounded down to the archive segment boundary. Keeping the second-latest snapshot
 slack if the latest is corrupt. This mirrors the Data Retention Regulator's `RetainEnoughDataForRecoveryPolicy`
 (N = 2) and adds what only radiusward knows: the export checkpoints. Operators with an Aeron Premium licence
 may run the regulator instead, as long as its policy also retains data above the slowest export checkpoint.
+
+## Implementation (Phase 3)
+- `LogPurger` on every member's scheduler (`log.purge.interval`, default 1 min; `log.purge.dry.run`), purging in
+  whole archive segments (`archive.segment.length`, default 128 MiB — fixed per recording when it is created).
+- "Slowest follower" is replicated: every member reports its own log position (`MemberLogPosition`); all members
+  derive the same floor, and a member that stops reporting holds it, so its log is never purged out from under
+  it. Snapshot recordings older than the second-latest snapshot are deleted too.
+- Tested: `LogPurgeIT` (purge, catch-up of a member that missed a purge), `PurgeIT` (disk bounded under steady load
+  with PostgreSQL attached). Metrics `radiusward_log_start_bytes`, `radiusward_log_purge_floor_bytes`.
 
 ## Consequences
 - Phase 1–2: the log grows without bound (~15 GB/h/node at worst-case load); local dev clears `.local/`.

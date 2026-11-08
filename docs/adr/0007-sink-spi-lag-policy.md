@@ -1,6 +1,6 @@
 # ADR 0007: Pluggable sinks, log-tailing exporter, lag policy
 
-Status: Accepted (2026-11-07)
+Status: Accepted (2026-11-07). Implemented in Phase 3: see ADR 0017 (exporter) and ADR 0018 (storage model).
 
 ## Context
 Records must reach a database (Postgres first) and possibly Kafka, ClickHouse or files, fast and
@@ -20,6 +20,12 @@ database outage.
 - **Lag policy per sink:** `required`, `maxLag` (size or duration), `onMaxLag`. Default `block` (stop
   ACKing new accounting) for `required: true`, `detach` (release the log, alert, manual resync)
   otherwise. Prometheus lag metrics with early alerts.
+
+## Phase 3 refinements
+- The exporter runs inside every member with a replicated lease and epoch, reads only committed log and runs the
+  state machine as reducer (ADR 0017); PostgreSQL write path and tables in ADR 0018.
+- `COPY` uses the text format (binary deferred, no measured need); batches are copies, bounded by `batch.rows`.
+- The "bounded in-state backlog" fallback was not needed: the log-tailing spike succeeded.
 
 ## Consequences
 - Exporter memory stays flat during long outages; disk (log retention) is the buffer — PVCs ~100 GB.

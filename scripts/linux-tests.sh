@@ -8,6 +8,8 @@
 #   scripts/linux-tests.sh                       all tests (~15 min)
 #   scripts/linux-tests.sh PowerLossIT           one test class (comma-separated list works too)
 #   SKIP_BUILD=1 scripts/linux-tests.sh ...      reuse the images
+#   LINUX_TESTS_ARGS="-Dradiusward.outage.minutes=3 -Dradiusward.purge.minutes=8" scripts/linux-tests.sh
+#                                                shorter runs than the nightly defaults (30 and 60 minutes)
 #
 # Needs Docker with privileged containers and /dev/fuse: Linux, or Colima on macOS (docs/operations/docker.md).
 # A running deploy/compose stack uses the same subnet; stop it first.
@@ -27,6 +29,8 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
 fi
 
 args=(-B -Plinux verify -pl testing/linux-tests)
+# shellcheck disable=SC2206
+args+=(${LINUX_TESTS_ARGS:-})
 if [[ $# -gt 0 ]]; then
     args+=("-Dit.test=$1")
 fi

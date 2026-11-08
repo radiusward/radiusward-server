@@ -7,9 +7,10 @@ of a three-node cluster** (fsync on), so an acknowledged accounting record survi
 single node. Duplicate and retransmitted requests — including retries that arrive through another
 gateway after a failover — are recognised and answered without being counted twice.
 
-> **Status:** Phase 2 complete — container image and compose stack; durability proven on Linux with
+> **Status:** Phase 3 complete — export to PostgreSQL (sessions like FreeRADIUS `radacct`, optional history),
+> sink plug-in API, log purge, Prometheus metrics. Phase 2: container image — container image and compose stack; durability proven on Linux with
 > simulated power loss of all members, partitions, full disks and overload (2M sessions in 1 GiB per member);
-> a crashed leader is replaced in ~2.2 s without NAS retransmissions. Export to Postgres follows in Phase 3.
+> a crashed leader is replaced in ~2.2 s without NAS retransmissions.
 > See the [roadmap](docs/plans/roadmap.md).
 
 ## Architecture in short
@@ -25,7 +26,8 @@ gateway after a failover — are recognised and answered without being counted t
 - **Gateways** (stateless, NIO): own the UDP socket, validate and authenticate packets, extract the
   hot attributes without allocating, forward to the cluster, reply after commit.
 - **Cluster** (Aeron Cluster, 3 nodes): replicated, fsynced log; per-session deduplication; snapshots.
-- **Exporter** (Phase 3): tails the committed log into pluggable sinks (Postgres first, plain JDBC).
+- **Exporter** (inside every member): tails the committed log into pluggable sinks — PostgreSQL and JSON files
+  built in, more on the [roadmap](docs/plans/roadmap.md#sinks).
 
 Details: [docs/architecture.md](docs/architecture.md) · what an ACK guarantees:
 [docs/accounting-contract.md](docs/accounting-contract.md) · decisions: [docs/adr](docs/adr).
@@ -71,6 +73,10 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 | [`cluster-service`](cluster-service/README.md) | deterministic accounting state machine (dedup, sessions, snapshots) |
 | [`cluster-node`](cluster-node/README.md) | launches a cluster member |
 | [`gateway`](gateway/README.md) | RADIUS UDP gateway |
+| [`export-api`](export-api/README.md) | sink plug-in API, canonical attribute encoding, migration runner |
+| [`exporter`](exporter/README.md) | exports the committed log to sinks (lease, state-machine reducer) |
+| [`sinks/postgres`](sinks/postgres/README.md) | PostgreSQL sink |
+| [`sinks/file`](sinks/file/README.md) | JSON-lines sink |
 | [`distribution`](distribution/README.md) | the runnable `radiusward.jar` |
 | [`radius-dictionary`](radius-dictionary/README.md) | FreeRADIUS-format dictionary parser and attribute tree |
 | [`radius-dictionary-freeradius`](radius-dictionary-freeradius/README.md) | Bundled FreeRADIUS dictionaries (CC BY 4.0) |

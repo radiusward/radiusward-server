@@ -18,6 +18,7 @@
 | Cluster (in-JVM) | `ThreeNodeClusterIT`, `LocalClusterIT` | `./mvnw verify` | real Aeron Cluster members and gateways in one JVM: commit, failover, snapshot, restart, load |
 | End-to-end | `testing/e2e-tests` | `./mvnw -Pe2e verify` | separate JVMs from `radiusward.jar`, real `kill -9`: the 8 scenarios in [failure-matrix.md](failure-matrix.md) |
 | Fault injection (Linux) | `testing/linux-tests` | `./mvnw -Plinux verify` / `scripts/linux-tests.sh`, nightly CI | shipped image + compose config in containers: power loss of all members (LazyFS, with a no-fsync negative control), partition, full disk, overload at the memory limits, failover timing, compose smoke ([ADR 0016](../adr/0016-fault-injection-tests.md)) |
+| Export | `ExporterIT`, `PostgresExportIT`, `LogPurgeIT`, `LogReplicaSpikeIT` (in-JVM cluster), `PostgresSinkTest` (Testcontainers; skipped without Docker, required in CI) | `./mvnw verify` | lease handover without gap or duplicate, exactly-once rows, admin tools, purge |
 | Logging | `NonBlockingLoggingIT` | `./mvnw verify` | async, garbage-free, never blocks on a full ring |
 | Benchmarks | `testing/benchmarks`, `-Pbench` | manual | throughput baselines |
 
@@ -77,6 +78,25 @@ request sent → verified Accounting-Response. Idle CPU: gateway container 5 s a
 - Throughput: ~32k requests/s served with all members at one CPU each (`OverloadIT`); a single `radclient
   load` process tops out around 8k/s, so use several (`--first-session`).
 - p99 is dominated by scheduling jitter of one-CPU containers on a shared VM, not by radiusward's code path.
+
+## Export throughput (Phase 3)
+
+`ExportThroughputIT`: compose-like containers (members 1 CPU / 1 GiB), PostgreSQL 17 in a container on the same
+Colima VM; a backlog of ~75k events (15k sessions, 20 s at 3k/s) built with PostgreSQL down, then drained.
+
+| Variant | Drain rate | Rows | Bytes per event row | Bytes per session row |
+|---|---|---|---|---|
+| `sessions` (default) | ~27k events/s | 15,000 sessions | — | ~750 B |
+| `sessions+events`, residual JSON | ~18.8k events/s | + 74,884 events | ~300 B | ~740 B |
+| `sessions+events`, raw attribute bytes | ~18.6k events/s | + 74,884 events | ~380 B | ~740 B |
+| `sessions+events`, typed columns only | ~18.5k events/s | + 74,883 events | ~300 B | ~740 B |
+
+- Every variant drains 6–9× faster than this intake, and far faster than the reference load (8.3k/s worst case).
+- The load generator only sends attributes that have typed columns, so the residual JSON is empty here and costs
+  nothing; its real cost needs vendor captures (P2.8). Raw bytes add ~80 B per event.
+- Session rows include index and dead-tuple overhead from updates (every session was updated ~5 times).
+- Not yet measured: GIN and expression indexes, a separate payload table, binary `COPY` — left for Phase 3b,
+  they matter only for attribute-heavy history.
 
 ## Benchmark baseline (Phase 0)
 

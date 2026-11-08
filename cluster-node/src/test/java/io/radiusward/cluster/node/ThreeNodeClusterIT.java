@@ -78,6 +78,7 @@ class ThreeNodeClusterIT {
                 Duration.ZERO,
                 2,
                 id == 2 ? Long.MAX_VALUE / 2 : 1, // node 2 never has enough disk space: reports not ready
+                256,
                 AccountingStateMachine.Settings.defaults(1000),
                 Duration.ofSeconds(60),
                 ExportConfig.NONE,
