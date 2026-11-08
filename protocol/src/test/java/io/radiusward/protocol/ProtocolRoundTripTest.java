@@ -195,9 +195,9 @@ class ProtocolRoundTripTest {
                 .isEqualTo(1);
     }
 
-    /** A v1 decoder must read a message written by a later schema version (fields are only appended). */
+    /** A decoder must read a message written by a later schema version (fields are only appended). */
     @Test
-    void v1DecoderReadsV2Message() {
+    void decoderReadsMessageOfALaterVersion() {
         io.radiusward.protocol.v2test.MessageHeaderEncoder v2Header =
                 new io.radiusward.protocol.v2test.MessageHeaderEncoder();
         io.radiusward.protocol.v2test.AccountingCommandEncoder v2 =
@@ -212,7 +212,7 @@ class ProtocolRoundTripTest {
         v2.putRawAttributes(RAW, 0, RAW.length);
 
         headerDecoder.wrap(buffer, 0);
-        assertThat(headerDecoder.version()).isEqualTo(2);
+        assertThat(headerDecoder.version()).isEqualTo(3);
         AccountingCommandDecoder v1 = new AccountingCommandDecoder().wrapAndApplyHeader(buffer, 0, headerDecoder);
         assertThat(v1.correlationId()).isEqualTo(99L);
         assertThat(v1.nasId()).isEqualTo(3);

@@ -13,9 +13,11 @@ import io.aeron.cluster.service.Cluster;
 import io.aeron.cluster.service.ClusteredService;
 import io.aeron.logbuffer.FragmentHandler;
 import io.aeron.logbuffer.Header;
-import io.radiusward.protocol.AccountingCommandDecoder;
 import io.radiusward.protocol.AccountingCommittedEncoder;
 import io.radiusward.protocol.AccountingRejectedEncoder;
+import io.radiusward.protocol.ExportCheckpointAckEncoder;
+import io.radiusward.protocol.ExportCheckpointDecoder;
+import io.radiusward.protocol.LeaseResult;
 import io.radiusward.protocol.MessageHeaderDecoder;
 import io.radiusward.protocol.MessageHeaderEncoder;
 import io.radiusward.protocol.Outcome;
@@ -41,25 +43,23 @@ public final class AccountingService implements ClusteredService {
 
     private static final Logger LOG = LogManager.getLogger(AccountingService.class);
 
-    /** Correlation id of the housekeeping timer (rescheduled with the same id, so never duplicated). */
-    static final long SWEEP_TIMER_ID = 1;
-
     private static final int MAX_EGRESS_ATTEMPTS = 3;
 
     private final AccountingStateMachine machine;
+    private final LogApplier applier;
     private final long sweepIntervalMs;
     private final ServiceStats stats = new ServiceStats();
     private final SnapshotCodec snapshotCodec = new SnapshotCodec();
 
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final MessageHeaderEncoder headerEncoder = new MessageHeaderEncoder();
-    private final AccountingCommandDecoder commandDecoder = new AccountingCommandDecoder();
     private final SessionQueryDecoder sessionQueryDecoder = new SessionQueryDecoder();
     private final StateQueryDecoder stateQueryDecoder = new StateQueryDecoder();
     private final AccountingCommittedEncoder committedEncoder = new AccountingCommittedEncoder();
     private final AccountingRejectedEncoder rejectedEncoder = new AccountingRejectedEncoder();
     private final SessionReportEncoder sessionReportEncoder = new SessionReportEncoder();
     private final StateReportEncoder stateReportEncoder = new StateReportEncoder();
+    private final ExportCheckpointAckEncoder checkpointAckEncoder = new ExportCheckpointAckEncoder();
     private final UnsafeBuffer egressBuffer = new UnsafeBuffer(new byte[256]);
 
     private Cluster cluster;
@@ -67,6 +67,7 @@ public final class AccountingService implements ClusteredService {
 
     public AccountingService(AccountingStateMachine.Settings settings, long sweepIntervalMs) {
         this.machine = new AccountingStateMachine(settings);
+        this.applier = new LogApplier(machine);
         this.sweepIntervalMs = sweepIntervalMs;
     }
 
@@ -128,7 +129,13 @@ public final class AccountingService implements ClusteredService {
             return; // not ours; ignoring is deterministic
         }
         switch (headerDecoder.templateId()) {
-            case AccountingCommandDecoder.TEMPLATE_ID -> onCommand(session, timestamp, buffer, offset, header);
+            case io.radiusward.protocol.AccountingCommandDecoder.TEMPLATE_ID ->
+                onCommand(session, timestamp, buffer, offset, header);
+            case ExportCheckpointDecoder.TEMPLATE_ID -> onCheckpoint(session, timestamp, buffer, offset, header);
+            case io.radiusward.protocol.MemberLogPositionDecoder.TEMPLATE_ID -> {
+                applier.apply(buffer, offset, header.position(), timestamp);
+                stats.purgeInputs(machine.export());
+            }
             case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);
             case SessionQueryDecoder.TEMPLATE_ID -> onSessionQuery(session, buffer, offset);
             default -> {}
@@ -136,29 +143,11 @@ public final class AccountingService implements ClusteredService {
     }
 
     private void onCommand(ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
-        commandDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-        int flags = 0;
-        if (commandDecoder.flags().sessionTimePresent()) {
-            flags |= AccountingStateMachine.FLAG_SESSION_TIME;
+        int outcome = applier.apply(buffer, offset, header.position(), timestamp);
+        if (applier.claimSweepTimer()) {
+            scheduleSweep(timestamp);
         }
-        if (commandDecoder.flags().eventTimestampPresent()) {
-            flags |= AccountingStateMachine.FLAG_EVENT_TIMESTAMP;
-        }
-        int outcome = machine.apply(
-                commandDecoder.sessionKeyHi(),
-                commandDecoder.sessionKeyLo(),
-                commandDecoder.exactKeyHi(),
-                commandDecoder.exactKeyLo(),
-                commandDecoder.nasId(),
-                (int) commandDecoder.statusType(),
-                flags,
-                commandDecoder.sessionTime(),
-                commandDecoder.eventTimestamp(),
-                commandDecoder.inputOctets(),
-                commandDecoder.outputOctets(),
-                timestamp);
-        ensureSweepTimer(timestamp);
-        long correlationId = commandDecoder.correlationId();
+        long correlationId = applier.command().correlationId();
         if (session != null) {
             if (Outcomes.acknowledged(outcome)) {
                 committedEncoder
@@ -176,11 +165,38 @@ public final class AccountingService implements ClusteredService {
                 rejectedEncoder
                         .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
                         .correlationId(correlationId)
-                        .reason(RejectReason.CAPACITY);
+                        .reason(
+                                outcome == Outcomes.REJECTED_EXPORT_LAG
+                                        ? RejectReason.EXPORT_LAG
+                                        : RejectReason.CAPACITY);
                 reply(session, MessageHeaderEncoder.ENCODED_LENGTH + rejectedEncoder.encodedLength());
             }
         }
         publishStats(header.position());
+    }
+
+    private void onCheckpoint(ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
+        applier.apply(buffer, offset, header.position(), timestamp);
+        ExportState export = machine.export();
+        int slot = applier.sinkSlot();
+        checkpointAckEncoder
+                .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                .correlationId(applier.checkpoint().correlationId())
+                .result(
+                        switch (applier.leaseResult()) {
+                            case ExportState.GRANTED -> LeaseResult.GRANTED;
+                            case ExportState.NOT_OWNER -> LeaseResult.NOT_OWNER;
+                            default -> LeaseResult.FULL;
+                        })
+                .owner(slot < 0 ? -1 : export.owner(slot))
+                .epoch(slot < 0 ? 0 : export.epoch(slot))
+                .checkpoint(slot < 0 ? 0 : export.checkpoint(slot))
+                .detached((short) (slot >= 0 && export.detached(slot) ? 1 : 0));
+        if (session != null) {
+            reply(session, MessageHeaderEncoder.ENCODED_LENGTH + checkpointAckEncoder.encodedLength());
+        }
+        // no publishStats: the published position is that of the last accounting entry, so lag on /state
+        // counts accounting not yet exported, not the checkpoints themselves
     }
 
     private void onStateQuery(ClientSession session, DirectBuffer buffer, int offset) {
@@ -247,23 +263,15 @@ public final class AccountingService implements ClusteredService {
         stats.recordEgressDropped();
     }
 
-    private void ensureSweepTimer(long now) {
-        if (!machine.timerScheduled()) {
-            scheduleSweep(now);
-            machine.timerScheduled(true);
-        }
-    }
-
     private void scheduleSweep(long now) {
-        while (!cluster.scheduleTimer(SWEEP_TIMER_ID, now + sweepIntervalMs)) {
+        while (!cluster.scheduleTimer(LogApplier.SWEEP_TIMER_ID, now + sweepIntervalMs)) {
             idleStrategy.idle();
         }
     }
 
     @Override
     public void onTimerEvent(long correlationId, long timestamp) {
-        if (correlationId == SWEEP_TIMER_ID) {
-            machine.sweep(timestamp);
+        if (applier.onTimer(correlationId, timestamp)) {
             scheduleSweep(timestamp);
             publishStats(stats.lastPosition());
         }
@@ -314,6 +322,7 @@ public final class AccountingService implements ClusteredService {
                 machine.store().stoppedCount(),
                 machine.digest(),
                 position);
+        stats.purgeInputs(machine.export());
     }
 
     /** For tests in this package. */

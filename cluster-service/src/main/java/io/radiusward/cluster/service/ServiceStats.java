@@ -28,12 +28,47 @@ public final class ServiceStats {
     private static final int MEMBER = 12;
     private static final int STARTED = 13;
 
-    private final AtomicLongArray values = new AtomicLongArray(14);
+    private static final int EXPORT_FLOOR = 14;
+
+    private final AtomicLongArray values = new AtomicLongArray(15);
+    /** Log position each member reported for itself; -1 = never reported (indexed by member id). */
+    private final AtomicLongArray memberPositions = new AtomicLongArray(ExportState.MAX_MEMBERS);
+
     private final AtomicReference<String> role = new AtomicReference<>("UNKNOWN");
 
     public ServiceStats() {
         values.set(LEADER, -1);
         values.set(MEMBER, -1);
+        values.set(EXPORT_FLOOR, Long.MAX_VALUE);
+        for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
+            memberPositions.set(m, -1);
+        }
+    }
+
+    /** Purge inputs from the replicated state (ADR 0014), published by the service thread. */
+    void purgeInputs(ExportState export) {
+        values.setRelease(EXPORT_FLOOR, export.slowestRequiredCheckpoint());
+        for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
+            memberPositions.setRelease(m, export.memberReported(m) ? export.memberPosition(m) : -1);
+        }
+    }
+
+    /** Lowest checkpoint of the sinks that hold the log, {@code Long.MAX_VALUE} without such sinks. */
+    public long exportFloor() {
+        return values.getAcquire(EXPORT_FLOOR);
+    }
+
+    /** Lowest log position reported by members {@code 0 .. memberCount-1}; 0 while one has never reported. */
+    public long memberFloor(int memberCount) {
+        long min = Long.MAX_VALUE;
+        for (int m = 0; m < memberCount; m++) {
+            long p = memberPositions.getAcquire(m);
+            if (p < 0) {
+                return 0;
+            }
+            min = Math.min(min, p);
+        }
+        return min == Long.MAX_VALUE ? 0 : min;
     }
 
     void update(

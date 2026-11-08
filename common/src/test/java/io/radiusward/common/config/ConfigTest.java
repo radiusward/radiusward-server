@@ -113,6 +113,16 @@ class ConfigTest {
     }
 
     @Test
+    void subsetResolvesNestedKeysAndOverrides() {
+        Config config = Config.of(
+                java.util.Map.of("sink.pg.url", "jdbc:x", "sink.pg.batch.rows", "10", "sink.file.dir", "/d"),
+                java.util.Map.of("RADIUSWARD_SINK_PG_URL", "jdbc:env"));
+        assertThat(config.subset("sink.pg"))
+                .containsExactly(java.util.Map.entry("batch.rows", "10"), java.util.Map.entry("url", "jdbc:env"));
+        assertThat(config.subset("nothing")).isEmpty();
+    }
+
+    @Test
     void profiles() {
         assertThat(Profile.SMALL.termLengthParam()).isEqualTo("term-length=2m");
         assertThat(Profile.STANDARD.ipcTermLengthParam()).isEqualTo("term-length=8m");

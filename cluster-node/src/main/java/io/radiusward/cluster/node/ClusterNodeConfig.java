@@ -8,6 +8,7 @@ import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.exporter.ExportConfig;
 import java.io.File;
 import java.time.Duration;
 import java.util.List;
@@ -32,7 +33,9 @@ public record ClusterNodeConfig(
         int fileSyncLevel,
         long diskMinFree,
         AccountingStateMachine.Settings serviceSettings,
-        Duration sweepInterval) {
+        Duration sweepInterval,
+        ExportConfig export,
+        LogPurgeConfig purge) {
 
     public static final int INGRESS_OFFSET = 0;
     public static final int CONSENSUS_OFFSET = 1;
@@ -84,7 +87,9 @@ public record ClusterNodeConfig(
                 // below this the member reports not ready: a full disk ends in SIGBUS on a mapped file
                 config.bytes("cluster.disk.min.free", 1L << 30),
                 settings,
-                config.duration("service.sweep.interval", Duration.ofSeconds(60)));
+                config.duration("service.sweep.interval", Duration.ofSeconds(60)),
+                ExportConfig.from(config),
+                LogPurgeConfig.from(config));
     }
 
     public String host() {

@@ -107,6 +107,12 @@ public final class LoadGenerator {
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
     private final ByteBuffer receive = ByteBuffer.allocate(RadiusPacket.MAX_LENGTH);
     private final RadiusPacket responseView = new RadiusPacket();
+    /** Responses received that matched no request in flight (late, duplicate or not authentic). */
+    private long unmatched;
+    /** Sends that found the socket buffer full, and datagrams that could not be sent at all. */
+    private long sendStalls;
+
+    private long sendDropped;
 
     /** One request in flight. */
     private static final class Request {
@@ -126,8 +132,8 @@ public final class LoadGenerator {
         final Request[] inFlight = new Request[IDS_PER_CHANNEL];
         final ArrayDeque<Integer> freeIds = new ArrayDeque<>();
 
-        Port(Selector selector) throws IOException {
-            channel = DatagramChannel.open().bind(new InetSocketAddress(0));
+        Port(Selector selector, java.net.InetAddress local) throws IOException {
+            channel = DatagramChannel.open().bind(new InetSocketAddress(local, 0));
             channel.configureBlocking(false);
             channel.register(selector, SelectionKey.OP_READ, this);
             for (int i = 0; i < IDS_PER_CHANNEL; i++) {
@@ -181,7 +187,7 @@ public final class LoadGenerator {
                     2, (settings.rate() * (int) Math.max(1, settings.timeout().toSeconds())) / 200 + 1);
             List<Port> ports = new ArrayList<>();
             for (int i = 0; i < channels; i++) {
-                ports.add(new Port(selector));
+                ports.add(new Port(selector, localAddress()));
             }
             boolean stopping = false;
             int inFlight = 0;
@@ -263,9 +269,7 @@ public final class LoadGenerator {
                                 }
                                 r.attempts++;
                                 r.deadlineNanos = now + settings.timeout().toNanos();
-                                port.channel.send(
-                                        ByteBuffer.wrap(r.bytes),
-                                        settings.servers().get(r.server));
+                                send(port, r.bytes, settings.servers().get(r.server));
                                 retransmissions++;
                             } else {
                                 port.inFlight[id] = null;
@@ -304,6 +308,13 @@ public final class LoadGenerator {
                 result.p50Micros() / 1000.0,
                 result.p99Micros() / 1000.0,
                 result.maxMicros() / 1000.0);
+        if (sendStalls > 0 || sendDropped > 0) {
+            out.printf("load: socket buffer full %d times, %d datagrams not sent%n", sendStalls, sendDropped);
+        }
+        if (unmatched > 0) {
+            out.printf(
+                    "load: %d responses matched no request in flight (late, duplicate or not authentic)%n", unmatched);
+        }
         return result;
     }
 
@@ -360,7 +371,35 @@ public final class LoadGenerator {
         r.firstSentNanos = now;
         r.attempts = 1;
         r.deadlineNanos = now + settings.timeout().toNanos();
-        port.channel.send(ByteBuffer.wrap(r.bytes), settings.servers().get(r.server));
+        send(port, r.bytes, settings.servers().get(r.server));
+    }
+
+    /**
+     * The address to bind the ports to: loopback when every server is local, otherwise the wildcard. A specific
+     * bind matters on a shared host: other programs binding {@code 127.0.0.1:0} with address reuse (Aeron does)
+     * can otherwise be given a port this generator holds on the wildcard address and take its responses (seen
+     * in the in-JVM tests: whole ports of 256 requests lost).
+     */
+    private java.net.InetAddress localAddress() {
+        boolean loopback = settings.servers().stream()
+                .allMatch(s -> s.getAddress() != null && s.getAddress().isLoopbackAddress());
+        return loopback ? java.net.InetAddress.getLoopbackAddress() : null;
+    }
+
+    /**
+     * A non-blocking send returns 0 when the socket buffer is momentarily full and the datagram is then not sent
+     * at all; retry briefly instead of losing it, and count what still could not be sent.
+     */
+    private void send(Port port, byte[] bytes, InetSocketAddress server) throws IOException {
+        ByteBuffer datagram = ByteBuffer.wrap(bytes);
+        for (int attempt = 0; attempt < 1000; attempt++) {
+            if (port.channel.send(datagram, server) > 0) {
+                return;
+            }
+            sendStalls++;
+            java.util.concurrent.locks.LockSupport.parkNanos(50_000);
+        }
+        sendDropped++;
     }
 
     private byte[] encode(Request r, int identifier) {
@@ -384,11 +423,13 @@ public final class LoadGenerator {
     private Request matchResponse(Port port, int length) {
         if (responseView.wrap(new UnsafeBuffer(receive.array(), 0, length), 0, length) != DecodeStatus.OK
                 || responseView.code() != RadiusCode.ACCOUNTING_RESPONSE) {
+            unmatched++;
             return null;
         }
         int id = responseView.identifier();
         Request r = port.inFlight[id];
         if (r == null || !authenticator.verifyResponse(responseView, new UnsafeBuffer(r.bytes), 4, settings.secret())) {
+            unmatched++;
             return null;
         }
         port.inFlight[id] = null;

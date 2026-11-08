@@ -29,6 +29,10 @@
         <module>protocol</module>
         <module>common</module>
         <module>cluster-service</module>
+        <module>export-api</module>
+        <module>exporter</module>
+        <module>sinks/file</module>
+        <module>sinks/postgres</module>
         <module>cluster-node</module>
         <module>gateway</module>
         <module>tools/radclient</module>
@@ -53,6 +57,10 @@
         <!-- test -->
         <junit.version>5.14.4</junit.version><!-- aligned with jqwik's JUnit Platform -->
         <assertj.version>3.27.7</assertj.version>
+        <pgjdbc.version>42.7.14</pgjdbc.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <!-- CI sets true: tests that need Docker fail instead of being skipped -->
+        <radiusward.require.docker>false</radiusward.require.docker>
         <jqwik.version>1.10.2</jqwik.version>
         <aaa4j.version>0.4.0</aaa4j.version>
         <jmh.version>1.37</jmh.version>
@@ -123,6 +131,37 @@
                 <groupId>io.radiusward</groupId>
                 <artifactId>cluster-service</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>export-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>exporter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>sink-file</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>sink-postgres</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <!-- JDBC driver for the PostgreSQL sink (BSD-2-Clause) -->
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${pgjdbc.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-postgresql</artifactId>
+                <version>${testcontainers.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
@@ -263,6 +302,9 @@
                     <version>${surefire.version}</version>
                     <configuration>
                         <argLine>@{jacocoArgLine} ${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
+                        <systemPropertyVariables>
+                            <radiusward.require.docker>${radiusward.require.docker}</radiusward.require.docker>
+                        </systemPropertyVariables>
                     </configuration>
                 </plugin>
                 <plugin>
@@ -275,6 +317,7 @@
                         <skipITs>${skipITs}</skipITs>
                         <systemPropertyVariables>
                             <radiusward.interop>${radiusward.interop}</radiusward.interop>
+                            <radiusward.require.docker>${radiusward.require.docker}</radiusward.require.docker>
                         </systemPropertyVariables>
                     </configuration>
                     <executions>

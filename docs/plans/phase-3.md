@@ -146,12 +146,26 @@ gateway ─▶ cluster log (fsync, majority) ─▶ ACK
   outcome records (Aeron service `offer`): memory, log volume, complexity.
 - ✅ **Done when:** 1M committed events read in order, never past the commit position during an election; the
   replica's digest equals the cluster's; decision 3's variant chosen and recorded.
+- **Result (2026-11-08, `LogReplicaSpikeIT`):** on all three members the replica (shared `LogApplier`) ends on
+  the cluster's digest, from the latest snapshot and from position 0, across a leader failover; a reader
+  tailing a follower live through the failover never passed the commit position. Replay + apply runs at
+  0.9–3.6 M commands/s (80k events tested; 1M left to `ExportThroughputIT`). Finding: an election stops and
+  later extends the log recording, which ends a following replay — the reader restarts the replay from its
+  position (`ClusterLogReader.reopens`). The log stayed one recording across terms. **Decision 3: replica
+  variant chosen**; service-written outcome records are not needed.
 
 ### P3.2: Checkpoints, lease, epoch, lag in the replicated state (size M)
 
 - `ExportCheckpoint`, lease with epoch, `EXPORT_LAG`, detach flag; snapshot v2; `block`.
 - ✅ **Done when:** deterministic unit and replay tests, v1 snapshots still load, `ThreeNodeClusterIT` covers a
   lease takeover with a new epoch.
+- **Result (2026-11-08):** protocol and snapshot format version 2 (`ExportCheckpoint`, `ExportCheckpointAck`,
+  `SinkChunk`, `RejectReason.EXPORT_LAG`); `ExportState` in the state machine, applied by the shared
+  `LogApplier`. Lag by time counts from the first entry a sink had not exported after it was last caught up, so
+  idle periods never count (`ExportStateTest.idleTimeIsNotLag`). `ThreeNodeClusterIT`: claim → epoch 1, refusal
+  while valid, takeover after expiry → epoch 2, a required sink over its limit rejects accounting with
+  `EXPORT_LAG` until it checkpoints. Note for upgrades: members must all run schema 2 before an exporter is
+  enabled (an older member would ignore checkpoints and decide differently); recorded for ADR 0017.
 
 ### P3.3: Exporter core, export API, file sink (size L)
 
@@ -160,6 +174,15 @@ gateway ─▶ cluster log (fsync, majority) ─▶ ACK
 - ✅ **Done when:** two sinks run at once from the same log with independent cursors; killing the exporter
   thread or the member resumes without gap or duplicate; the encoding round-trips repeated, binary and
   unknown attributes.
+- **Result (2026-11-08):** modules `export-api` (SPI, `Batch`, `ExportEvent`, `SessionSnapshot`, canonical
+  `Attributes`), `exporter` (`ClusterLogReader`, `StateMachineReplica`, `BatchBuilder`, `LeaseClient`,
+  `SinkRunner`, plug-in loading), `sinks/file`; the state machine reports sessions closed without an event of
+  their own (Accounting-On/Off, idle timeout) so they are exported too. `ExporterIT` (3 members, two file
+  sinks, 2k req/s, exporting member stopped): lease moves within ~2 s, all ~26k applied events exported once,
+  0 duplicate lines across members, all 2,000 sessions equal the replicated state; 3 of 3 repeat runs green.
+  Found: the lease client busy-spun while waiting for acks; it now parks. (A run that lost 256 requests at the
+  time was not caused by it — see P3.5.) Deviation: batches hold copies (records), not zero-copy views —
+  bounded by `batch.rows`, simpler for plug-ins. The migration runner moves to P3.4 with its first user.
 
 ### P3.4: PostgreSQL sink (size L)
 
@@ -185,12 +208,36 @@ heap / TOAST / index sizes, WAL bytes per event, HOT-update ratio and dead tuple
 autovacuum activity, query latency for session history and attribute filters. Traffic: synthetic vendor mix,
 replaced by anonymised captures when available (repeated, long and binary attributes, retransmits, out of
 order). Defaults (`fillfactor`, batch size, write path, history encoding) are chosen from these numbers.
+- **Result so far (2026-11-08):** `sinks/postgres` with the transaction above; COPY in **text** format (binary
+  COPY deferred: text is simpler and fast enough so far — to be compared in the benchmark), migrations through
+  `SqlMigrations`, partitions created ahead and dropped with `DETACH … CONCURRENTLY`, closed-session retention,
+  optional `radacct` view, data errors written row by row with failures to `quarantine`. `PostgresSinkTest`
+  (8 tests, PostgreSQL 17): idempotent rewrite, update-only-if-newer, closures keep known values, epoch
+  fencing, broken connection leaves nothing behind, three members migrate once, `validate`/`none` never run
+  DDL, retention, `radacct` view. Found: the retention query listed partitions of every schema — now limited
+  to the sink's own schema. `PostgresExportIT` (3 members, one PostgreSQL, ~3k req/s, exporting member
+  stopped): lease moved with epoch 2, 47,923 applied events = 47,923 distinct rows, all 3,000 sessions equal
+  the replicated state. The benchmark matrix is still open (moves to `ExportThroughputIT`, P3.9).
 
 ### P3.5: LogPurger (size M)
 
 - Purge after each snapshot as in ADR 0014; dry run; metrics for purged bytes.
 - ✅ **Done when:** disk bounded over hours of load; restart and follower catch-up after a purge; purge never
   passes a required checkpoint.
+- **Result (2026-11-08):** `LogPurger` on every member's scheduler (`log.purge.interval`, default 1 min;
+  `log.purge.dry.run`; `archive.segment.length`, default 128 MiB). The "slowest follower" bound is replicated:
+  every member reports its own log position (`MemberLogPosition`, schema 2), every member derives the same
+  floor, and a member that stops reporting holds it — its log is never purged out from under it. Old snapshot
+  recordings below the second-latest snapshot are deleted too. `LogPurgeIT` (4 MiB segments, 1 s interval):
+  all members purge below 4 MiB after two snapshots (bounded by the second-latest snapshot); with a follower
+  stopped the others purge up to its last reported position (bounded by the slowest member) and it catches up
+  after restarting. Hours-long disk boundedness moves to `PurgeIT` (linux, P3.9). Found while testing: whole load-generator
+  ports (256 requests) lost every response although the gateways answered every datagram (counters matched
+  exactly). Cause: `radclient load` bound its ports to the wildcard address, and Aeron clients in the same host
+  (the new member reporter, the lease client) bind `127.0.0.1:0` with address reuse — macOS may hand them a port
+  the generator already holds, and unicast then goes to the more specific socket. The generator now binds to
+  loopback when its servers are local and counts unmatched and unsendable datagrams. Test-tool issue only: a
+  gateway listens on a fixed port outside the ephemeral range.
 
 ### P3.6: Metrics and monitoring (size M)
 

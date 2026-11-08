@@ -15,10 +15,6 @@
     <name>radiusward :: linux tests</name>
     <description>Fault-injection tests in Linux containers: power loss, partitions, overload (-Plinux)</description>
 
-    <properties>
-        <testcontainers.version>2.0.5</testcontainers.version>
-    </properties>
-
     <dependencies>
         <dependency>
             <groupId>org.testcontainers</groupId>

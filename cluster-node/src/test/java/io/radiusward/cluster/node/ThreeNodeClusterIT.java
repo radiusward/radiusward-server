@@ -13,11 +13,18 @@ import io.aeron.driver.ThreadingMode;
 import io.aeron.logbuffer.Header;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
+import io.radiusward.exporter.ExportConfig;
 import io.radiusward.protocol.AccountingCommandEncoder;
 import io.radiusward.protocol.AccountingCommittedDecoder;
+import io.radiusward.protocol.AccountingRejectedDecoder;
+import io.radiusward.protocol.ExportCheckpointAckDecoder;
+import io.radiusward.protocol.ExportCheckpointEncoder;
+import io.radiusward.protocol.LeaseResult;
 import io.radiusward.protocol.MessageHeaderDecoder;
 import io.radiusward.protocol.MessageHeaderEncoder;
+import io.radiusward.protocol.OnMaxLag;
 import io.radiusward.protocol.Outcome;
+import io.radiusward.protocol.RejectReason;
 import java.io.File;
 import java.net.DatagramSocket;
 import java.nio.file.Path;
@@ -44,6 +51,8 @@ class ThreeNodeClusterIT {
     private MediaDriver clientDriver;
     private AeronCluster client;
     private final Map<Long, Outcome> outcomes = new ConcurrentHashMap<>();
+    private final Map<Long, RejectReason> rejections = new ConcurrentHashMap<>();
+    private final Map<Long, Ack> acks = new ConcurrentHashMap<>();
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[1024]);
     private int basePort;
 
@@ -70,7 +79,9 @@ class ThreeNodeClusterIT {
                 2,
                 id == 2 ? Long.MAX_VALUE / 2 : 1, // node 2 never has enough disk space: reports not ready
                 AccountingStateMachine.Settings.defaults(1000),
-                Duration.ofSeconds(60));
+                Duration.ofSeconds(60),
+                ExportConfig.NONE,
+                LogPurgeConfig.DEFAULTS);
     }
 
     @Test
@@ -123,6 +134,70 @@ class ThreeNodeClusterIT {
             }
         }
         assertThat(newLeader.stateJson()).contains("\"diskFreeBytes\":");
+
+        // export leases and the lag policy, decided by the replicated state (ADR 0017)
+        Ack first = checkpoint(100, "pg", 0, 0, 0, 10_000, 0);
+        assertThat(first.result).isEqualTo(LeaseResult.GRANTED);
+        assertThat(first.owner).isZero();
+        assertThat(first.epoch).isEqualTo(1);
+        assertThat(checkpoint(101, "pg", 1, 0, 0, 10_000, 0).result).isEqualTo(LeaseResult.NOT_OWNER);
+        assertThat(checkpoint(102, "pg", 0, 1, 0, 1, 0).result)
+                .as("renew with a 1 ms lease")
+                .isEqualTo(LeaseResult.GRANTED);
+        Thread.sleep(50);
+        Ack takeover = checkpoint(103, "pg", 1, 0, 0, 10_000, 0);
+        assertThat(takeover.result).isEqualTo(LeaseResult.GRANTED);
+        assertThat(takeover.owner).isEqualTo(1);
+        assertThat(takeover.epoch).as("new epoch on takeover").isEqualTo(2);
+
+        // a required sink far behind (limit 1 byte) blocks new accounting until it checkpoints again
+        assertThat(checkpoint(104, "pg", 1, 2, 0, 10_000, 1).result).isEqualTo(LeaseResult.GRANTED);
+        assertThat(trySend(6, 200, AccountingStateMachine.STATUS_START, 0, Duration.ofSeconds(2)))
+                .as("no ACK while the sink is over its limit")
+                .isNull();
+        assertThat(rejections.get(6L)).isEqualTo(RejectReason.EXPORT_LAG);
+        assertThat(checkpoint(105, "pg", 1, 2, Long.MAX_VALUE / 2, 10_000, 0).result)
+                .isEqualTo(LeaseResult.GRANTED);
+        assertThat(send(7, 200, AccountingStateMachine.STATUS_START, 0)).isEqualTo(Outcome.APPLIED);
+        await(() -> allDigestsEqual(2), "replicas agree after the export commands");
+    }
+
+    private record Ack(LeaseResult result, int owner, long epoch) {}
+
+    private Ack checkpoint(
+            long correlationId, String sink, int member, long epoch, long position, long leaseMs, long maxLagBytes)
+            throws InterruptedException {
+        byte[] name = new byte[32];
+        byte[] ascii = sink.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        System.arraycopy(ascii, 0, name, 0, ascii.length);
+        ExportCheckpointEncoder encoder = new ExportCheckpointEncoder();
+        encoder.wrapAndApplyHeader(buffer, 0, new MessageHeaderEncoder())
+                .correlationId(correlationId)
+                .putSinkName(name, 0)
+                .memberId(member)
+                .epoch(epoch)
+                .position(position)
+                .lastEventTime(0)
+                .leaseTimeoutMs(leaseMs)
+                .required((short) 1)
+                .maxLagBytes(maxLagBytes)
+                .maxLagMs(0)
+                .onMaxLag(OnMaxLag.BLOCK);
+        int length = MessageHeaderEncoder.ENCODED_LENGTH + encoder.encodedLength();
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        boolean sent = false;
+        while (System.nanoTime() < deadline) {
+            if (!sent) {
+                sent = client.offer(buffer, 0, length) > 0;
+            }
+            client.pollEgress();
+            Ack ack = acks.get(correlationId);
+            if (ack != null) {
+                return ack;
+            }
+            Thread.onSpinWait();
+        }
+        throw new AssertionError("no checkpoint ack for " + correlationId);
     }
 
     private void connectClient() {
@@ -140,6 +215,8 @@ class ThreeNodeClusterIT {
     final class Listener implements EgressListener {
         private final MessageHeaderDecoder header = new MessageHeaderDecoder();
         private final AccountingCommittedDecoder committed = new AccountingCommittedDecoder();
+        private final AccountingRejectedDecoder rejected = new AccountingRejectedDecoder();
+        private final ExportCheckpointAckDecoder ack = new ExportCheckpointAckDecoder();
 
         @Override
         public void onMessage(long sessionId, long timestamp, DirectBuffer buf, int offset, int length, Header h) {
@@ -147,6 +224,12 @@ class ThreeNodeClusterIT {
             if (header.templateId() == AccountingCommittedDecoder.TEMPLATE_ID) {
                 committed.wrapAndApplyHeader(buf, offset, header);
                 outcomes.put(committed.correlationId(), committed.outcome());
+            } else if (header.templateId() == AccountingRejectedDecoder.TEMPLATE_ID) {
+                rejected.wrapAndApplyHeader(buf, offset, header);
+                rejections.put(rejected.correlationId(), rejected.reason());
+            } else if (header.templateId() == ExportCheckpointAckDecoder.TEMPLATE_ID) {
+                ack.wrapAndApplyHeader(buf, offset, header);
+                acks.put(ack.correlationId(), new Ack(ack.result(), ack.owner(), ack.epoch()));
             }
         }
     }

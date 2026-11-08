@@ -6,11 +6,15 @@ package io.radiusward.cluster.service;
 
 import io.radiusward.protocol.ExactKeyChunkDecoder;
 import io.radiusward.protocol.ExactKeyChunkEncoder;
+import io.radiusward.protocol.MemberPositionChunkDecoder;
+import io.radiusward.protocol.MemberPositionChunkEncoder;
 import io.radiusward.protocol.MessageHeaderDecoder;
 import io.radiusward.protocol.MessageHeaderEncoder;
 import io.radiusward.protocol.SessionChunkDecoder;
 import io.radiusward.protocol.SessionChunkEncoder;
 import io.radiusward.protocol.SessionStatus;
+import io.radiusward.protocol.SinkChunkDecoder;
+import io.radiusward.protocol.SinkChunkEncoder;
 import io.radiusward.protocol.SnapshotFooterDecoder;
 import io.radiusward.protocol.SnapshotFooterEncoder;
 import io.radiusward.protocol.SnapshotHeaderDecoder;
@@ -44,6 +48,11 @@ public final class SnapshotCodec {
     private final SessionChunkEncoder sessionChunkEncoder = new SessionChunkEncoder();
     private final ExactKeyChunkEncoder exactKeyChunkEncoder = new ExactKeyChunkEncoder();
     private final SnapshotFooterEncoder footerEncoder = new SnapshotFooterEncoder();
+    private final SinkChunkEncoder sinkChunkEncoder = new SinkChunkEncoder();
+    private final SinkChunkDecoder sinkChunkDecoder = new SinkChunkDecoder();
+    private final MemberPositionChunkEncoder memberChunkEncoder = new MemberPositionChunkEncoder();
+    private final MemberPositionChunkDecoder memberChunkDecoder = new MemberPositionChunkDecoder();
+    private final byte[] nameBytes = new byte[ExportState.NAME_LENGTH];
     private final SnapshotHeaderDecoder snapshotHeaderDecoder = new SnapshotHeaderDecoder();
     private final SessionChunkDecoder sessionChunkDecoder = new SessionChunkDecoder();
     private final ExactKeyChunkDecoder exactKeyChunkDecoder = new ExactKeyChunkDecoder();
@@ -53,6 +62,10 @@ public final class SnapshotCodec {
     private long expectedKeys;
     private long loadedSessions;
     private long loadedKeys;
+    private long expectedSinks;
+    private long loadedSinks;
+    private long expectedMembers;
+    private long loadedMembers;
     private boolean complete;
 
     // ---- writing -------------------------------------------------------------------------------
@@ -69,7 +82,10 @@ public final class SnapshotCodec {
                 .stateDigest(machine.digest())
                 .sessionCount(store.size())
                 .exactKeyCount(machine.window().size())
-                .timerScheduled((short) (machine.timerScheduled() ? 1 : 0));
+                .timerScheduled((short) (machine.timerScheduled() ? 1 : 0))
+                .sinkCount(machine.export().count())
+                .lastCommandPosition(machine.export().lastCommandPosition())
+                .memberPositionCount(reportedMembers(machine.export()));
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + snapshotHeaderEncoder.encodedLength());
 
         int slot = 0;
@@ -129,11 +145,69 @@ public final class SnapshotCodec {
             writeKeys(keys, expiries, n[0], sink);
         }
 
+        writeSinks(machine.export(), sink);
+        writeMemberPositions(machine.export(), sink);
+
         footerEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
                 .sessionCount(store.size())
                 .exactKeyCount(machine.window().size());
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + footerEncoder.encodedLength());
+    }
+
+    private static int reportedMembers(ExportState export) {
+        int n = 0;
+        for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
+            if (export.memberReported(m)) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    private void writeMemberPositions(ExportState export, Sink sink) {
+        int n = reportedMembers(export);
+        if (n == 0) {
+            return;
+        }
+        MemberPositionChunkEncoder.MembersEncoder members =
+                memberChunkEncoder.wrapAndApplyHeader(buffer, 0, headerEncoder).membersCount(n);
+        for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
+            if (export.memberReported(m)) {
+                members.next().memberId(m).logPosition(export.memberPosition(m));
+            }
+        }
+        sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + memberChunkEncoder.encodedLength());
+    }
+
+    private void writeSinks(ExportState export, Sink sink) {
+        if (export.count() == 0) {
+            return;
+        }
+        SinkChunkEncoder.SinksEncoder sinks =
+                sinkChunkEncoder.wrapAndApplyHeader(buffer, 0, headerEncoder).sinksCount(export.count());
+        for (int i = 0; i < export.count(); i++) {
+            byte[] name = export.name(i).getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+            java.util.Arrays.fill(nameBytes, (byte) 0);
+            System.arraycopy(name, 0, nameBytes, 0, Math.min(name.length, nameBytes.length));
+            sinks.next()
+                    .putName(nameBytes, 0)
+                    .checkpoint(export.checkpoint(i))
+                    .owner(export.owner(i))
+                    .epoch(export.epoch(i))
+                    .leaseExpiry(export.leaseExpiry(i))
+                    .lastEventTime(export.lastEventTime(i))
+                    .behindSince(export.behindSince(i))
+                    .required((short) (export.required(i) ? 1 : 0))
+                    .maxLagBytes(export.maxLagBytes(i))
+                    .maxLagMs(export.maxLagMs(i))
+                    .onMaxLag(
+                            export.onMaxLag(i) == ExportState.ON_MAX_LAG_DETACH
+                                    ? io.radiusward.protocol.OnMaxLag.DETACH
+                                    : io.radiusward.protocol.OnMaxLag.BLOCK)
+                    .detached((short) (export.detached(i) ? 1 : 0));
+        }
+        sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sinkChunkEncoder.encodedLength());
     }
 
     private void writeKeys(long[] keys, long[] expiries, int count, Sink sink) {
@@ -170,6 +244,11 @@ public final class SnapshotCodec {
                         snapshotHeaderDecoder.timerScheduled() != 0);
                 expectedSessions = snapshotHeaderDecoder.sessionCount();
                 expectedKeys = snapshotHeaderDecoder.exactKeyCount();
+                if (headerDecoder.version() >= 2) {
+                    expectedSinks = snapshotHeaderDecoder.sinkCount();
+                    expectedMembers = snapshotHeaderDecoder.memberPositionCount();
+                    machine.export().restoreLastCommandPosition(snapshotHeaderDecoder.lastCommandPosition());
+                }
             }
             case SessionChunkDecoder.TEMPLATE_ID -> {
                 sessionChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
@@ -198,11 +277,49 @@ public final class SnapshotCodec {
                     loadedKeys++;
                 }
             }
+            case SinkChunkDecoder.TEMPLATE_ID -> {
+                sinkChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                for (SinkChunkDecoder.SinksDecoder s : sinkChunkDecoder.sinks()) {
+                    int nameLength = s.getName(nameBytes, 0);
+                    int end = 0;
+                    while (end < nameLength && nameBytes[end] != 0) {
+                        end++;
+                    }
+                    machine.export()
+                            .restore(
+                                    new String(nameBytes, 0, end, java.nio.charset.StandardCharsets.US_ASCII),
+                                    s.checkpoint(),
+                                    s.owner(),
+                                    s.epoch(),
+                                    s.leaseExpiry(),
+                                    s.lastEventTime(),
+                                    s.behindSince(),
+                                    s.required() != 0,
+                                    s.maxLagBytes(),
+                                    s.maxLagMs(),
+                                    s.onMaxLag() == io.radiusward.protocol.OnMaxLag.DETACH
+                                            ? ExportState.ON_MAX_LAG_DETACH
+                                            : ExportState.ON_MAX_LAG_BLOCK,
+                                    s.detached() != 0);
+                    loadedSinks++;
+                }
+            }
+            case MemberPositionChunkDecoder.TEMPLATE_ID -> {
+                memberChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                for (MemberPositionChunkDecoder.MembersDecoder m : memberChunkDecoder.members()) {
+                    machine.export().memberPosition(m.memberId(), m.logPosition());
+                    loadedMembers++;
+                }
+            }
             case SnapshotFooterDecoder.TEMPLATE_ID -> {
                 footerDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                if (loadedSessions != expectedSessions || loadedKeys != expectedKeys) {
+                if (loadedSessions != expectedSessions
+                        || loadedKeys != expectedKeys
+                        || loadedSinks != expectedSinks
+                        || loadedMembers != expectedMembers) {
                     throw new IllegalStateException("snapshot incomplete: sessions " + loadedSessions + "/"
-                            + expectedSessions + ", keys " + loadedKeys + "/" + expectedKeys);
+                            + expectedSessions + ", keys " + loadedKeys + "/" + expectedKeys + ", sinks "
+                            + loadedSinks + "/" + expectedSinks);
                 }
                 complete = true;
             }

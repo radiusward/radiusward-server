@@ -4,6 +4,7 @@
  */
 package io.radiusward.cluster.node;
 
+import io.aeron.Aeron;
 import io.aeron.archive.Archive;
 import io.aeron.archive.ArchiveThreadingMode;
 import io.aeron.archive.client.AeronArchive;
@@ -19,6 +20,9 @@ import io.radiusward.common.Profile;
 import io.radiusward.common.logging.NonBlockingQueueFullPolicy;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.JsonWriter;
+import io.radiusward.exporter.Exporter;
+import io.radiusward.exporter.ExporterContext;
+import io.radiusward.exporter.SinkStatus;
 import java.io.File;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -42,7 +46,15 @@ public final class ClusterNode implements AutoCloseable {
     private final ClusteredMediaDriver clusteredMediaDriver;
     private final ClusteredServiceContainer container;
     private final ScheduledExecutorService scheduler;
+    /** The archive's local control channel; the exporter replays the log through it. */
+    static final String LOCAL_CONTROL_CHANNEL = "aeron:ipc?term-length=64k";
+
     private volatile boolean terminated;
+    private volatile Exporter exporter;
+    private Aeron purgeAeron;
+    private AeronArchive purgeArchive;
+    private MemberReporter reporter;
+    private volatile LogPurger.Result lastPurge;
     private volatile boolean lowDisk;
 
     private ClusterNode(
@@ -89,7 +101,7 @@ public final class ClusterNode implements AutoCloseable {
                 .archiveId(id)
                 .controlChannel(
                         "aeron:udp?endpoint=" + host + ":" + config.port(id, ClusterNodeConfig.ARCHIVE_CONTROL_OFFSET))
-                .localControlChannel("aeron:ipc?term-length=64k")
+                .localControlChannel(LOCAL_CONTROL_CHANNEL)
                 .replicationChannel("aeron:udp?endpoint=" + host + ":"
                         + config.port(id, ClusterNodeConfig.ARCHIVE_REPLICATION_OFFSET))
                 .archiveClientContext(replicationClient)
@@ -97,6 +109,7 @@ public final class ClusterNode implements AutoCloseable {
                 .threadingMode(profile == Profile.LARGE ? ArchiveThreadingMode.DEDICATED : ArchiveThreadingMode.SHARED)
                 .fileSyncLevel(config.fileSyncLevel())
                 .catalogFileSyncLevel(config.fileSyncLevel())
+                .segmentFileLength(config.purge().segmentLength())
                 .errorHandler(errorHandler);
 
         AeronArchive.Context archiveClient = new AeronArchive.Context()
@@ -194,9 +207,27 @@ public final class ClusterNode implements AutoCloseable {
             return t;
         });
         ClusterNode node = new ClusterNode(config, service, clusteredMediaDriver, container, scheduler);
+        if (config.export().enabled()) {
+            node.exporter = Exporter.start(
+                    config.export().sinks(),
+                    new ExporterContext(
+                            id,
+                            config.aeronDir(),
+                            new File(config.dataDir(), "cluster"),
+                            ClusterNodeConfig.ingressEndpoints(config.members(), config.basePort()),
+                            config.host(),
+                            LOCAL_CONTROL_CHANNEL,
+                            config.serviceSettings(),
+                            config.export().pluginsDir(),
+                            config.export().dictionaryDir()));
+        }
         long interval = config.snapshotInterval().toMillis();
         if (interval > 0) {
             scheduler.scheduleAtFixedRate(node::snapshotIfLeader, interval, interval, TimeUnit.MILLISECONDS);
+        }
+        if (config.purge().enabled()) {
+            long purgeMs = config.purge().interval().toMillis();
+            scheduler.scheduleWithFixedDelay(node::purgeTick, purgeMs, purgeMs, TimeUnit.MILLISECONDS);
         }
         LOG.info(
                 "cluster node {} started on {} (members {}, profile {}, fsync level {})",
@@ -206,6 +237,52 @@ public final class ClusterNode implements AutoCloseable {
                 profile,
                 config.fileSyncLevel());
         return node;
+    }
+
+    /**
+     * Every {@code log.purge.interval}: report how far this member's log reaches, then purge what nobody needs
+     * any more (ADR 0014). Runs on the scheduler thread; failures are logged and retried next time.
+     */
+    void purgeTick() {
+        try {
+            File clusterDir = new File(config.dataDir(), "cluster");
+            if (purgeArchive == null) {
+                purgeAeron = Aeron.connect(new Aeron.Context().aeronDirectoryName(config.aeronDir()));
+                purgeArchive = AeronArchive.connect(new AeronArchive.Context()
+                        .aeron(purgeAeron)
+                        .controlRequestChannel(LOCAL_CONTROL_CHANNEL)
+                        .controlRequestStreamId(AeronArchive.Configuration.localControlStreamId())
+                        .controlResponseChannel(LOCAL_CONTROL_CHANNEL));
+                reporter = new MemberReporter(
+                        config.aeronDir(),
+                        ClusterNodeConfig.ingressEndpoints(config.members(), config.basePort()),
+                        config.host());
+            }
+            long logRecording;
+            try (io.aeron.cluster.RecordingLog recordingLog = new io.aeron.cluster.RecordingLog(clusterDir, false)) {
+                logRecording = recordingLog.findLastTermRecordingId();
+            }
+            if (logRecording >= 0) {
+                long position = purgeArchive.getRecordingPosition(logRecording);
+                if (position == AeronArchive.NULL_POSITION) {
+                    position = purgeArchive.getStopPosition(logRecording);
+                }
+                reporter.report(config.nodeId(), position);
+            }
+            lastPurge = new LogPurger(
+                            clusterDir, config.members().size(), config.purge().dryRun())
+                    .purge(purgeArchive, service.stats());
+        } catch (RuntimeException e) {
+            LOG.warn("cluster node {}: log purge tick failed: {}", config.nodeId(), e.toString());
+            closePurgeClients();
+        }
+    }
+
+    private void closePurgeClients() {
+        CloseHelper.quietCloseAll(reporter, purgeArchive, purgeAeron);
+        reporter = null;
+        purgeArchive = null;
+        purgeAeron = null;
     }
 
     /** Requests a snapshot when this member is the leader; followers take theirs as part of it. */
@@ -277,7 +354,7 @@ public final class ClusterNode implements AutoCloseable {
 
     public String stateJson() {
         ServiceStats s = service.stats();
-        return new JsonWriter()
+        JsonWriter json = new JsonWriter()
                 .field("component", "cluster-node")
                 .field("nodeId", config.nodeId())
                 .field("role", s.role())
@@ -296,8 +373,37 @@ public final class ClusterNode implements AutoCloseable {
                 .field("egressDropped", s.egressDropped())
                 .object("log")
                 .field("dropped", NonBlockingQueueFullPolicy.dropped())
-                .end()
-                .finish();
+                .end();
+        LogPurger.Result purge = lastPurge;
+        if (purge != null) {
+            json.object("logPurge")
+                    .field("floor", purge.floor())
+                    .field("logStart", purge.newStart())
+                    .field("boundedBy", purge.reason())
+                    .end();
+        }
+        Exporter e = exporter;
+        if (e != null) {
+            json.object("export");
+            for (SinkStatus sink : e.status()) {
+                json.object(sink.name())
+                        .field("type", sink.type())
+                        .field("exporting", sink.exporting())
+                        .field("leaseOwner", sink.leaseOwner())
+                        .field("epoch", sink.epoch())
+                        .field("position", sink.position())
+                        .field("clusterCheckpoint", sink.clusterCheckpoint())
+                        .field("lagBytes", Math.max(0, s.lastPosition() - sink.clusterCheckpoint()))
+                        .field("detached", sink.detached())
+                        .field("rows", sink.rows())
+                        .field("batches", sink.batches())
+                        .field("lastBatchMillis", sink.lastBatchNanos() / 1_000_000)
+                        .field("lastError", sink.lastError() == null ? "" : sink.lastError())
+                        .end();
+            }
+            json.end();
+        }
+        return json.finish();
     }
 
     void markTerminated() {
@@ -307,7 +413,19 @@ public final class ClusterNode implements AutoCloseable {
     @Override
     public void close() {
         terminated = true;
-        scheduler.shutdownNow();
+        scheduler.shutdown(); // let a running snapshot request or purge tick finish: Aeron dislikes interrupts
+        try {
+            if (!scheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+                scheduler.shutdownNow();
+            }
+        } catch (InterruptedException interrupted) {
+            scheduler.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
+        closePurgeClients();
+        if (exporter != null) {
+            exporter.close();
+        }
         CloseHelper.closeAll(container, clusteredMediaDriver);
         LOG.info("cluster node {} stopped", config.nodeId());
     }

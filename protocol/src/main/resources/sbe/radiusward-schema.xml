@@ -10,8 +10,8 @@
 <sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
                    package="io.radiusward.protocol"
                    id="7101"
-                   version="1"
-                   semanticVersion="1.0"
+                   version="2"
+                   semanticVersion="2.0"
                    description="radiusward cluster protocol"
                    byteOrder="littleEndian">
     <types>
@@ -42,7 +42,18 @@
         <enum name="RejectReason" encodingType="uint8">
             <validValue name="CAPACITY">0</validValue>
             <validValue name="INVALID">1</validValue>
+            <validValue name="EXPORT_LAG" sinceVersion="2" description="a required sink is more than maxLag behind">2</validValue>
         </enum>
+        <enum name="OnMaxLag" encodingType="uint8" sinceVersion="2">
+            <validValue name="BLOCK" description="stop acknowledging new accounting">0</validValue>
+            <validValue name="DETACH" description="release the log, alert, resync by hand">1</validValue>
+        </enum>
+        <enum name="LeaseResult" encodingType="uint8" sinceVersion="2">
+            <validValue name="GRANTED" description="the sender holds the lease (renewed or taken over)">0</validValue>
+            <validValue name="NOT_OWNER" description="another member holds a valid lease">1</validValue>
+            <validValue name="FULL" description="no room for another sink">2</validValue>
+        </enum>
+        <type name="SinkName" primitiveType="char" length="32" characterEncoding="US-ASCII" sinceVersion="2"/>
         <enum name="SessionStatus" encodingType="uint8">
             <validValue name="UNKNOWN">0</validValue>
             <validValue name="ACTIVE">1</validValue>
@@ -83,6 +94,36 @@
     <sbe:message name="AccountingRejected" id="3" description="Not applied; the gateway stays silent">
         <field name="correlationId" id="1" type="int64"/>
         <field name="reason" id="2" type="RejectReason"/>
+    </sbe:message>
+
+    <!-- exporter -> cluster -> exporter (Phase 3, ADR 0017) -->
+    <sbe:message name="ExportCheckpoint" id="8" sinceVersion="2"
+                 description="Claims or renews a sink's lease and records how far the sink has durably written">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="sinkName" id="2" type="SinkName"/>
+        <field name="memberId" id="3" type="int32"/>
+        <field name="epoch" id="4" type="int64" description="lease epoch the sender believes it holds; 0 to claim"/>
+        <field name="position" id="5" type="int64" description="log position written durably by the sink"/>
+        <field name="lastEventTime" id="6" type="int64" description="cluster time of the entry at position"/>
+        <field name="leaseTimeoutMs" id="7" type="int64"/>
+        <field name="required" id="8" type="uint8"/>
+        <field name="maxLagBytes" id="9" type="int64" description="0 = no limit by size"/>
+        <field name="maxLagMs" id="10" type="int64" description="0 = no limit by time"/>
+        <field name="onMaxLag" id="11" type="OnMaxLag"/>
+    </sbe:message>
+    <sbe:message name="ExportCheckpointAck" id="9" sinceVersion="2">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="result" id="2" type="LeaseResult"/>
+        <field name="owner" id="3" type="int32"/>
+        <field name="epoch" id="4" type="int64"/>
+        <field name="checkpoint" id="5" type="int64"/>
+        <field name="detached" id="6" type="uint8"/>
+    </sbe:message>
+
+    <!-- every member -> cluster: how far its own copy of the log reaches (log purge floor, ADR 0014) -->
+    <sbe:message name="MemberLogPosition" id="10" sinceVersion="2">
+        <field name="memberId" id="1" type="int32"/>
+        <field name="logPosition" id="2" type="int64" description="this member's local log recording position"/>
     </sbe:message>
 
     <!-- admin / tests -->
@@ -127,6 +168,9 @@
         <field name="sessionCount" id="7" type="int64"/>
         <field name="exactKeyCount" id="8" type="int64"/>
         <field name="timerScheduled" id="9" type="uint8"/>
+        <field name="sinkCount" id="10" type="int32" sinceVersion="2"/>
+        <field name="lastCommandPosition" id="11" type="int64" sinceVersion="2"/>
+        <field name="memberPositionCount" id="12" type="int32" sinceVersion="2"/>
     </sbe:message>
     <sbe:message name="SessionChunk" id="21">
         <group name="sessions" id="1" dimensionType="groupSizeEncoding">
@@ -149,6 +193,28 @@
         <group name="keys" id="1" dimensionType="groupSizeEncoding">
             <field name="key" id="1" type="int64"/>
             <field name="expiry" id="2" type="int64"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="SinkChunk" id="24" sinceVersion="2">
+        <group name="sinks" id="1" dimensionType="groupSizeEncoding">
+            <field name="name" id="1" type="SinkName"/>
+            <field name="checkpoint" id="2" type="int64"/>
+            <field name="owner" id="3" type="int32"/>
+            <field name="epoch" id="4" type="int64"/>
+            <field name="leaseExpiry" id="5" type="int64"/>
+            <field name="lastEventTime" id="6" type="int64"/>
+            <field name="behindSince" id="7" type="int64"/>
+            <field name="required" id="8" type="uint8"/>
+            <field name="maxLagBytes" id="9" type="int64"/>
+            <field name="maxLagMs" id="10" type="int64"/>
+            <field name="onMaxLag" id="11" type="OnMaxLag"/>
+            <field name="detached" id="12" type="uint8"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="MemberPositionChunk" id="25" sinceVersion="2">
+        <group name="members" id="1" dimensionType="groupSizeEncoding">
+            <field name="memberId" id="1" type="int32"/>
+            <field name="logPosition" id="2" type="int64"/>
         </group>
     </sbe:message>
     <sbe:message name="SnapshotFooter" id="23">

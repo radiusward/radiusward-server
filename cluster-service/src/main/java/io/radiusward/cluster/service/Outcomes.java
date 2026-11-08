@@ -11,6 +11,8 @@ public final class Outcomes {
     public static final int DUPLICATE = 1;
     public static final int STALE = 2;
     public static final int REJECTED_CAPACITY = 3;
+    /** Not applied: a required sink is more than its {@code maxLag} behind (lag policy {@code block}). */
+    public static final int REJECTED_EXPORT_LAG = 4;
 
     private Outcomes() {}
 

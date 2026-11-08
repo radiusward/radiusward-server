@@ -6,8 +6,10 @@ package io.radiusward.testing;
 
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.node.ClusterNodeConfig;
+import io.radiusward.cluster.node.LogPurgeConfig;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
+import io.radiusward.exporter.ExportConfig;
 import io.radiusward.gateway.Gateway;
 import io.radiusward.gateway.GatewayConfig;
 import io.radiusward.gateway.NasClient;
@@ -39,6 +41,14 @@ public final class LocalCluster implements AutoCloseable {
     private final ClusterNode[] nodes;
     private final List<Gateway> gateways = new ArrayList<>();
     private final Duration snapshotInterval;
+    private java.util.function.IntFunction<ExportConfig> export = id -> ExportConfig.NONE;
+    private LogPurgeConfig purge = LogPurgeConfig.DEFAULTS;
+
+    /** Purge settings for members started from now on (tests use small segments and short intervals). */
+    public LocalCluster purge(LogPurgeConfig purge) {
+        this.purge = purge;
+        return this;
+    }
 
     private LocalCluster(File baseDir, int basePort, int memberCount, Duration snapshotInterval) {
         this.baseDir = baseDir;
@@ -55,7 +65,20 @@ public final class LocalCluster implements AutoCloseable {
 
     public static LocalCluster start(
             File baseDir, int members, int gatewayCount, int basePort, int[] radiusPorts, Duration snapshotInterval) {
+        return start(baseDir, members, gatewayCount, basePort, radiusPorts, snapshotInterval, id -> ExportConfig.NONE);
+    }
+
+    /** As above, with an exporter on every member ({@code export} gives each member's settings). */
+    public static LocalCluster start(
+            File baseDir,
+            int members,
+            int gatewayCount,
+            int basePort,
+            int[] radiusPorts,
+            Duration snapshotInterval,
+            java.util.function.IntFunction<ExportConfig> export) {
         LocalCluster cluster = new LocalCluster(baseDir, basePort, members, snapshotInterval);
+        cluster.export = export;
         try {
             for (int i = 0; i < members; i++) {
                 cluster.startNode(i);
@@ -97,7 +120,9 @@ public final class LocalCluster implements AutoCloseable {
                 2,
                 0,
                 AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions()),
-                Duration.ofSeconds(60));
+                Duration.ofSeconds(60),
+                export.apply(id),
+                purge);
     }
 
     public void startNode(int id) {

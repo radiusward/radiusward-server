@@ -26,7 +26,7 @@ package io.radiusward.cluster.service;
 public final class AccountingStateMachine {
 
     /** Version of the state-machine behaviour, carried in snapshots (ADR 0005). */
-    public static final int STATE_VERSION = 1;
+    public static final int STATE_VERSION = 2; // 2: export sinks (Phase 3)
 
     public static final int STATUS_START = 1;
     public static final int STATUS_STOP = 2;
@@ -56,6 +56,8 @@ public final class AccountingStateMachine {
     private final Settings settings;
     private final SessionStore store = new SessionStore();
     private final ExactKeyWindow window = new ExactKeyWindow();
+    private final ExportState export = new ExportState();
+    private SessionListener sessionListener;
 
     private long applied;
     private long duplicates;
@@ -67,6 +69,22 @@ public final class AccountingStateMachine {
 
     public AccountingStateMachine(Settings settings) {
         this.settings = settings;
+    }
+
+    /**
+     * Sessions closed without an event of their own: by Accounting-On/Off of their NAS, or removed after the idle
+     * timeout (lost Stop). Called while the slot is still valid. Not part of the replicated state; the cluster
+     * passes none, the exporter's replica uses it to export those sessions too.
+     */
+    public interface SessionListener {
+        int CAUSE_NAS_RESTART = 1;
+        int CAUSE_IDLE_TIMEOUT = 2;
+
+        void onSessionClosed(int slot, int cause, long now);
+    }
+
+    public void sessionListener(SessionListener listener) {
+        this.sessionListener = listener;
     }
 
     /**
@@ -198,6 +216,9 @@ public final class AccountingStateMachine {
                 if (store.state(slot) == SessionStore.ACTIVE) {
                     store.state(slot, SessionStore.STOPPED);
                     store.tombstoneUntil(slot, until);
+                    if (sessionListener != null) {
+                        sessionListener.onSessionClosed(slot, SessionListener.CAUSE_NAS_RESTART, now);
+                    }
                 }
             }
         }
@@ -252,6 +273,9 @@ public final class AccountingStateMachine {
                     || (state == SessionStore.ACTIVE && store.lastSeen(slot) <= idleBefore)) {
                 if (state == SessionStore.ACTIVE) {
                     expired++;
+                    if (sessionListener != null) {
+                        sessionListener.onSessionClosed(slot, SessionListener.CAUSE_IDLE_TIMEOUT, now);
+                    }
                 }
                 store.remove(slot);
                 removed++;
@@ -309,6 +333,16 @@ public final class AccountingStateMachine {
 
     public SessionStore store() {
         return store;
+    }
+
+    /** Export checkpoints, leases and lag (ADR 0017). */
+    public ExportState export() {
+        return export;
+    }
+
+    /** Counts an event rejected before it reached {@link #apply} (export lag). */
+    public void countRejected() {
+        rejected++;
     }
 
     public ExactKeyWindow window() {

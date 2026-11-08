@@ -122,6 +122,21 @@ public final class Config {
         return names;
     }
 
+    /**
+     * Every key below {@code prefix} from the files, without the prefix, with its resolved value (environment
+     * overrides applied), e.g. {@code subset("sink.pg")} → {@code {url=..., batch.rows=...}}. Sorted.
+     */
+    public java.util.SortedMap<String, String> subset(String prefix) {
+        String p = prefix.endsWith(".") ? prefix : prefix + ".";
+        java.util.SortedMap<String, String> subset = new java.util.TreeMap<>();
+        for (String key : values.keySet()) {
+            if (key.startsWith(p) && key.length() > p.length()) {
+                subset.put(key.substring(p.length()), string(key));
+            }
+        }
+        return subset;
+    }
+
     // ---- typed access --------------------------------------------------------------------------
 
     public String string(String key) {
