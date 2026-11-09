@@ -208,6 +208,40 @@ class LocalClusterIT {
     }
 
     @Test
+    void interimsInReverseOrderNeverMoveTheSessionBack() throws Exception {
+        start();
+        long started = 1_780_000_000L;
+        int a = cluster.gateway(0).radiusPort();
+        int b = cluster.gateway(1).radiusPort();
+        // the NAS sent Start, 300, 600, 900, 1200, Stop at 1500; they arrive in this order, through both gateways
+        exchange(a, request(1, 3, "s-6", 900, started + 900)); // creates the session
+        exchange(b, request(2, 3, "s-6", 600, started + 600)); // older: stale
+        exchange(a, request(3, 3, "s-6", 300, started + 300)); // older: stale
+        exchange(b, request(4, 1, "s-6", 0, started)); // late Start: merged
+        try (AdminClient admin = cluster.admin()) {
+            AdminClient.Session s = admin.session(sessionKey("s-6")[0], sessionKey("s-6")[1]);
+            assertThat(s.status()).isEqualTo(SessionStatus.ACTIVE);
+            assertThat(s.sessionTime()).as("still the newest interim").isEqualTo(900);
+            assertThat(s.inputOctets()).isEqualTo(900_000);
+        }
+        exchange(a, request(5, 2, "s-6", 1500, started + 1500)); // Stop before the last interim
+        exchange(b, request(6, 3, "s-6", 1200, started + 1200)); // after the Stop: stale
+
+        cluster.awaitConverged();
+        try (AdminClient admin = cluster.admin()) {
+            AdminClient.Session s = admin.session(sessionKey("s-6")[0], sessionKey("s-6")[1]);
+            assertThat(s.status()).isEqualTo(SessionStatus.STOPPED);
+            assertThat(s.statusType()).isEqualTo(2);
+            assertThat(s.sessionTime()).isEqualTo(1500);
+            assertThat(s.inputOctets()).isEqualTo(1_500_000);
+            AdminClient.State state = admin.state();
+            assertThat(state.applied()).as("interim 900, merged start, stop").isEqualTo(3);
+            assertThat(state.stale()).as("interims 600, 300 and 1200").isEqualTo(3);
+            assertThat(state.duplicates()).isZero();
+        }
+    }
+
+    @Test
     void leaderLossDoesNotLoseAcknowledgedEvents() throws Exception {
         start();
         int port = cluster.gateway(0).radiusPort();

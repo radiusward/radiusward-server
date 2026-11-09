@@ -41,7 +41,8 @@ counts are verified on load.
 ## Consequences
 - Deterministic by construction; proven by a replay test, a jqwik property (duplicates never change the
   result) and digest comparison across members in every integration and e2e test.
-- A delayed Start never moves a session back; a jqwik property moves Starts behind their session's later events and
-  checks every session ends as with in-order delivery.
+- A delayed Start never moves a session back; jqwik properties move Starts behind their session's later events and
+  shuffle all events of all sessions, and check every session ends as with in-order delivery (with
+  Event-Timestamps; without them a Start after the Stop still restarts the session, see above).
 - Out-of-order delivery after a failover legitimately turns an older Interim into STALE: its progress is
   already reflected by the newer one.

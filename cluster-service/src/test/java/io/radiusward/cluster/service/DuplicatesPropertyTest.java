@@ -7,6 +7,7 @@ package io.radiusward.cluster.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 import net.jqwik.api.ForAll;
@@ -128,6 +129,30 @@ class DuplicatesPropertyTest {
                     .isEqualTo(a.store().state(sa));
             assertThat(b.store().sessionTime(sb)).isEqualTo(a.store().sessionTime(sa));
             assertThat(b.store().inputOctets(sb)).isEqualTo(a.store().inputOctets(sa));
+        }
+    }
+
+    @Property(tries = 300)
+    void anyArrivalOrderEndsInTheSameSessions(@ForAll @IntRange(min = 1, max = 40) int sessions, @ForAll long seed) {
+        Random random = new Random(seed);
+        List<Event> clean = cleanStream(random, sessions);
+        List<Event> shuffled = new ArrayList<>(clean);
+        // every event of every session in any order: older interims, stops and starts all arrive late
+        Collections.shuffle(shuffled, random);
+        AccountingStateMachine a = runWithTimestamps(clean); // also asserts every event is acknowledged
+        AccountingStateMachine b = runWithTimestamps(shuffled);
+        assertThat(b.store().size()).isEqualTo(a.store().size());
+        assertThat(b.store().activeCount()).isEqualTo(a.store().activeCount());
+        assertThat(b.duplicates()).as("distinct events, nothing is a duplicate").isZero();
+        for (long session = 0; session < sessions; session++) {
+            int sa = a.store().find(session, session * 7);
+            int sb = b.store().find(session, session * 7);
+            assertThat(b.store().state(sb))
+                    .as("state of session %d", session)
+                    .isEqualTo(a.store().state(sa));
+            assertThat(b.store().sessionTime(sb)).isEqualTo(a.store().sessionTime(sa));
+            assertThat(b.store().inputOctets(sb)).isEqualTo(a.store().inputOctets(sa));
+            assertThat(b.store().eventTimestamp(sb)).isEqualTo(a.store().eventTimestamp(sa));
         }
     }
 
