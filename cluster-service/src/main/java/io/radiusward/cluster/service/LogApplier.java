@@ -180,7 +180,6 @@ public final class LogApplier {
         return commandDecoder;
     }
 
-    /** The resync decoded by the last {@link #apply} that returned {@link #RESYNC}. */
     /** The {@code ActivateVersion} decoded by the last {@link #apply} that returned {@link #ACTIVATION}. */
     public io.radiusward.protocol.ActivateVersionDecoder activation() {
         return activateDecoder;
@@ -196,6 +195,7 @@ public final class LogApplier {
         return activatedVersion;
     }
 
+    /** The resync decoded by the last {@link #apply} that returned {@link #RESYNC}. */
     public SinkResyncDecoder resync() {
         return resyncDecoder;
     }

@@ -274,7 +274,6 @@ public final class SessionStore {
         lastSeen[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = seconds;
     }
 
-    /** Cluster time in seconds until which a stopped session is kept, or 0. */
     /** Idle timeout of the session's NAS entry in minutes; 0 = the cluster's default. */
     public int idleMinutes(int slot) {
         return idleMinutes[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
@@ -284,6 +283,7 @@ public final class SessionStore {
         idleMinutes[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = (char) minutes;
     }
 
+    /** Cluster time in seconds until which a stopped session is kept, or 0. */
     public int tombstoneUntil(int slot) {
         return tombstoneUntil[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
     }

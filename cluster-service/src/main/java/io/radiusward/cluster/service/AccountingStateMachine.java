@@ -28,7 +28,6 @@ package io.radiusward.cluster.service;
  */
 public final class AccountingStateMachine {
 
-    /** Version of the state-machine behaviour, carried in snapshots (ADR 0005). */
     /**
      * Newest behaviour this code knows (ADR 0005); the cluster applies {@link StateVersions#active()}. History before
      * the first release (no gate yet): 2 export sinks, 3 late Start merged, 4 old Interim stale, 5 idle timeout per
