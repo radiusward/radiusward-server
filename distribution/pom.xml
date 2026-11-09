@@ -38,6 +38,10 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>verifier-netlogon</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>radclient</artifactId>
         </dependency>
         <dependency>

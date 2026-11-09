@@ -81,7 +81,7 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 | [`stores/file`](stores/file/README.md) | users-file identity store |
 | [`stores/sql`](stores/sql/README.md) | SQL identity store (`radcheck` schema) |
 | [`stores/ldap`](stores/ldap/README.md) | LDAP/Active Directory identity store and bind verifier |
-| [`verifiers/netlogon`](verifiers/netlogon/README.md) | Active Directory over Netlogon, pure Java (in progress) |
+| [`verifiers/netlogon`](verifiers/netlogon/README.md) | Active Directory over Netlogon, pure Java (MS-CHAPv1/v2, PAP) |
 | [`distribution`](distribution/README.md) | the runnable `radiusward.jar` |
 | [`radius-dictionary`](radius-dictionary/README.md) | FreeRADIUS-format dictionary parser and attribute tree |
 | [`radius-dictionary-freeradius`](radius-dictionary-freeradius/README.md) | Bundled FreeRADIUS dictionaries (CC BY 4.0) |

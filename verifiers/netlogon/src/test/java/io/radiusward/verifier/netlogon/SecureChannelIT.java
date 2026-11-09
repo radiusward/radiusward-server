@@ -64,6 +64,14 @@ class SecureChannelIT {
         return new byte[][] {challenge, NtResponse.of(challenge, NetlogonCrypto.ntHash(password))};
     }
 
+    static byte[][] msChap2Unchecked(String user, String password) {
+        try {
+            return msChap2(user, password);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     static NetlogonClient channel() throws Exception {
         NetlogonClient client = new NetlogonClient(SambaAd.mapped(netlogonPort()), TIMEOUT);
         client.authenticate(

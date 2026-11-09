@@ -22,7 +22,7 @@ winbind on a domain-joined host, which would add a native dependency and a domai
   of service-account connections; timeouts and failover between the URLs.
 - **LDAP verifier** (`type = ldap`): PAP by binding as the user; the directory applies its account rules. An empty
   password is never tried (it would be an anonymous bind).
-- **Netlogon verifier** (in progress): a pure-Java MS-NRPC client — DCE/RPC over TCP, the endpoint mapper, the AES
+- **Netlogon verifier** (`type = netlogon`): a pure-Java MS-NRPC client — DCE/RPC over TCP, the endpoint mapper, the AES
   secure channel with a workstation trust account, Netlogon-sealed RPC, `NetrLogonSamLogonEx` network logons for
   MS-CHAPv1/v2 and PAP — instead of Samba's winbind: no native dependency and no domain join on the gateway hosts;
   the machine account is created once by an administrator.
