@@ -80,4 +80,26 @@ class LogApplierTest {
         assertThat(applier.onTimer(99, 1)).isFalse();
         assertThat(applier.onTimer(LogApplier.SWEEP_TIMER_ID, 1)).isTrue();
     }
+
+    @Test
+    void commandFieldsOfProtocolVersionFourReachTheStateMachine() {
+        AccountingCommandEncoder e = new AccountingCommandEncoder()
+                .wrapAndApplyHeader(buffer, 0, header)
+                .correlationId(1)
+                .nasId(0x1234)
+                .sessionKeyHi(9)
+                .sessionKeyLo(9)
+                .exactKeyHi(9)
+                .exactKeyLo(9)
+                .statusType(AccountingStateMachine.STATUS_START)
+                .idleTimeoutMinutes(20);
+        e.flags().clear().deviceUnknown(true);
+        assertThat(applier.apply(buffer, 0, 64, 1_000)).isEqualTo(Outcomes.APPLIED);
+        int slot = machine.store().find(9, 9);
+        assertThat(machine.store().idleMinutes(slot)).isEqualTo(20);
+        assertThat(machine.store().nasId(slot)).as("the device scope").isEqualTo(0x1234);
+        assertThat(machine.store().flags(slot))
+                .as("deviceUnknown is not stored")
+                .isZero();
+    }
 }

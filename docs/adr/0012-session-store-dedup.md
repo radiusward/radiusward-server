@@ -3,8 +3,8 @@
 Status: Accepted (2026-11-08). Details for ADR 0003.
 
 ## Decision
-**Storage.** Sessions are columns of primitive arrays in chunks of 16,384 slots (4 long, 8 int, 3 byte
-columns = 67 bytes) plus an open-addressing `int[]` index on the 128-bit session key (linear probing,
+**Storage.** Sessions are columns of primitive arrays in chunks of 16,384 slots (4 long, 8 int, 3 byte, 1 char
+columns = 69 bytes) plus an open-addressing `int[]` index on the 128-bit session key (linear probing,
 backward-shift delete). No object per session; allocation only for a new chunk or a larger index.
 500k sessions ≈ 38 MB (~77 bytes each), asserted ≤ 45 MB. A per-NAS doubly linked list (prev/next columns)
 supports Accounting-On/Off.
@@ -44,8 +44,12 @@ Event-Timestamp the Interim creates the session as before. A Stop is not limited
 writing them again is idempotent, and refusing it could lose a whole delayed session. A recent Interim for a
 session removed by the idle timeout (alive all along) brings it back.
 
-**Housekeeping** every 60 s (cluster timer): expired tombstones, idle sessions (no event for 2 h) and expired
-exact keys are removed, iterating slots in order. **Capacity**: new sessions beyond `maxSessions` are
+**Housekeeping** every 60 s (cluster timer): expired tombstones, idle sessions and expired exact keys are removed,
+iterating slots in order. **Idle timeout** (state version 5, 2026-11-09): per session, set by its latest applied event
+from `nas.<name>.idle.timeout` (minutes, about 3 interim intervals; the gateway sends it in the command), else
+`service.idle.timeout` (2 h). Acct-Interim-Interval itself is in the Access-Accept, which accounting never sees, so
+the operator configures it per NAS entry. A removed idle session is exported as stopped at its **last event**, not
+at the sweep — a fixed 2 h timeout used to stretch every session with a lost Stop by up to 2 h. **Capacity**: new sessions beyond `maxSessions` are
 rejected (no ACK). **eventId** = log position. **State digest** = running hash over applied changes and
 sweeps; equal on every replica. **Snapshots** stream sessions in chunks of 256 plus the exact keys;
 counts are verified on load.

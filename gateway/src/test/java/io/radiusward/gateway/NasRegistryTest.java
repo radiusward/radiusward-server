@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.common.config.Config;
 import java.net.InetAddress;
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
@@ -140,5 +141,26 @@ class NasRegistryTest {
                         "nas.x.identity",
                         "nas-identifier,nas-identifier"))))
                 .hasMessageContaining("listed twice");
+    }
+
+    @Test
+    void idleTimeoutPerEntry() throws Exception {
+        NasRegistry registry = NasRegistry.from(Config.of(Map.of(
+                "nas.wifi.address", "10.1.0.0/16",
+                "nas.wifi.secret", "s",
+                "nas.wifi.idle.timeout", "15m",
+                "nas.bng.address", "10.2.0.1",
+                "nas.bng.secret", "s")));
+        assertThat(registry.lookup(InetAddress.getByName("10.1.2.3")).idleTimeoutMinutes())
+                .isEqualTo(15);
+        assertThat(registry.lookup(InetAddress.getByName("10.2.0.1")).idleTimeoutMinutes())
+                .as("the cluster default")
+                .isZero();
+        for (String bad : List.of("90s", "30s", "0m", "65536m")) {
+            assertThatThrownBy(() -> NasRegistry.from(Config.of(
+                            Map.of("nas.x.address", "10.0.0.1", "nas.x.secret", "s", "nas.x.idle.timeout", bad))))
+                    .as(bad)
+                    .hasMessageContaining("nas.x.idle.timeout");
+        }
     }
 }

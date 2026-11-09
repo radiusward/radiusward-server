@@ -7,7 +7,7 @@ package io.radiusward.cluster.service;
 import org.agrona.collections.Int2IntHashMap;
 
 /**
- * Accounting sessions stored as columns of primitive arrays (ADR 0012): no object per session, ~73 bytes per
+ * Accounting sessions stored as columns of primitive arrays (ADR 0012): no object per session, ~75 bytes per
  * session plus a 4 byte open-addressing index slot, allocation only when a new chunk or a larger index is
  * needed.
  *
@@ -50,6 +50,7 @@ public final class SessionStore {
     private final byte[][] state = new byte[MAX_CHUNKS][];
     private final byte[][] statusType = new byte[MAX_CHUNKS][];
     private final byte[][] flags = new byte[MAX_CHUNKS][];
+    private final char[][] idleMinutes = new char[MAX_CHUNKS][];
 
     private int chunks;
     private int highWater; // slots ever handed out
@@ -108,6 +109,7 @@ public final class SessionStore {
         startKey[c][o] = 0;
         lastSeen[c][o] = 0;
         tombstoneUntil[c][o] = 0;
+        idleMinutes[c][o] = 0;
         linkNas(slot, nas);
 
         int i = bucket(hi);
@@ -184,7 +186,7 @@ public final class SessionStore {
 
     /** Bytes held by the store's arrays (columns of allocated chunks + index). */
     public long footprintBytes() {
-        long perSlot = 4L * 8 + 8L * 4 + 3; // 4 long, 8 int, 3 byte columns
+        long perSlot = 4L * 8 + 8L * 4 + 3 + 2; // 4 long, 8 int, 3 byte, 1 char columns
         return chunks * (long) CHUNK_SIZE * perSlot + index.length * 4L + freeSlots.length * 4L;
     }
 
@@ -273,6 +275,15 @@ public final class SessionStore {
     }
 
     /** Cluster time in seconds until which a stopped session is kept, or 0. */
+    /** Idle timeout of the session's NAS entry in minutes; 0 = the cluster's default. */
+    public int idleMinutes(int slot) {
+        return idleMinutes[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+    }
+
+    public void idleMinutes(int slot, int minutes) {
+        idleMinutes[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = (char) minutes;
+    }
+
     public int tombstoneUntil(int slot) {
         return tombstoneUntil[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
     }
@@ -315,6 +326,7 @@ public final class SessionStore {
         state[c] = new byte[CHUNK_SIZE];
         statusType[c] = new byte[CHUNK_SIZE];
         flags[c] = new byte[CHUNK_SIZE];
+        idleMinutes[c] = new char[CHUNK_SIZE];
     }
 
     private int bucket(long hi) {

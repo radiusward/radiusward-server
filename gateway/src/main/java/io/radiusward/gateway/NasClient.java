@@ -17,6 +17,8 @@ package io.radiusward.gateway;
  * @param messageAuthenticator {@code required}, {@code optional} or {@code off}
  * @param identity attributes telling apart the devices behind this entry (NAT), first present wins; empty: the
  *     source address is the device ({@code source-ip}, the default)
+ * @param idleTimeoutMinutes a session of this entry without an event for this long is closed (lost Stop); about three
+ *     interim intervals. 0: the cluster's {@code service.idle.timeout}
  */
 public record NasClient(
         String name,
@@ -26,7 +28,21 @@ public record NasClient(
         byte[] secret,
         String vendor,
         MessageAuthenticatorPolicy messageAuthenticator,
-        Identity[] identity) {
+        Identity[] identity,
+        int idleTimeoutMinutes) {
+
+    /** Without an idle timeout of its own. */
+    public NasClient(
+            String name,
+            int id,
+            int network,
+            int prefixLength,
+            byte[] secret,
+            String vendor,
+            MessageAuthenticatorPolicy messageAuthenticator,
+            Identity[] identity) {
+        this(name, id, network, prefixLength, secret, vendor, messageAuthenticator, identity, 0);
+    }
 
     /** A NAS identified by its source address alone. */
     public NasClient(

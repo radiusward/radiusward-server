@@ -122,7 +122,8 @@ public final class SnapshotCodec {
                             .startKey(store.startKey(slot))
                             .lastSeen(store.lastSeen(slot))
                             .tombstoneUntil(store.tombstoneUntil(slot))
-                            .flags((short) (store.flags(slot) & 0xFF));
+                            .flags((short) (store.flags(slot) & 0xFF))
+                            .idleTimeoutMinutes(store.idleMinutes(slot));
                     written++;
                 }
                 slot++;
@@ -267,7 +268,8 @@ public final class SnapshotCodec {
                             s.outputOctets(),
                             s.startKey(),
                             s.lastSeen(),
-                            s.tombstoneUntil());
+                            s.tombstoneUntil(),
+                            sessionChunkDecoder.actingVersion() >= 4 ? s.idleTimeoutMinutes() : 0);
                     loadedSessions++;
                 }
             }

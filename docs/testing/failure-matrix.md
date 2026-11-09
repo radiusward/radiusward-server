@@ -50,7 +50,7 @@ Status: ✅ covered · 🔜 planned (phase).
 | Accounting-On/Off from one device behind NAT | only that device's sessions stopped; without its identity none | e2e `DevicesBehindNatIT`, `LocalClusterIT`, `AccountingStateMachineTest` | ✅ |
 | Devices behind NAT reuse Acct-Session-Ids | separate sessions per device (`identity`) | `LocalClusterIT` (50 APs, 10 ids), `UdpAgentTest`, `EventKeysTest` | ✅ |
 | session capacity reached | new sessions rejected (no ACK), Stops still applied | `AccountingStateMachineTest.capacity` | ✅ |
-| lost Stop | session removed after the idle timeout | `AccountingStateMachineTest.sweep…` | ✅ |
+| lost Stop | session removed after the idle timeout (per NAS entry or default); exported stop time = last event | `AccountingStateMachineTest`, `SnapshotAndReplayTest`, `BatchBuilderTest` | ✅ |
 | duplicates in any position | never change the result | `DuplicatesPropertyTest` (jqwik) | ✅ |
 | pending table or ring full | packet dropped, counted; NAS retransmits | `UdpAgentTest.fullPendingTableDrops` | ✅ |
 | logging ring full | log events dropped and counted, caller never blocks | `NonBlockingLoggingIT` | ✅ |

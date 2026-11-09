@@ -82,7 +82,9 @@ Sinks are fed asynchronously from the committed log ([ADR 0017](adr/0017-exporte
 - **What reaches a sink** is what the cluster applied: applied events (and stale or merged late Starts, flagged, in
   the history),
   and every session as the cluster holds it after each change — including sessions closed by Accounting-On/Off
-  or the idle timeout. Duplicates and rejected events are never exported.
+  or the idle timeout. Duplicates and rejected events are never exported. A session closed by the idle timeout
+  (lost Stop; `nas.<name>.idle.timeout`, default `service.idle.timeout`) ends at its last event, not when it was
+  noticed, so its duration is never inflated by the timeout.
 - **Delivery** is at least once from the exporter's point of view and exactly once in the database: events are
   inserted only if absent (`event_id`), sessions updated only if newer (`projection_version`), and the sink's
   checkpoint is fenced by the exporter's lease epoch, so a replaced exporter cannot write.

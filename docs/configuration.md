@@ -42,7 +42,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `snapshot.interval` | `1h` | automatic snapshot on the leader; `0` disables |
 | `service.max.sessions` | profile (small: 2,000,000) | session capacity; new sessions beyond it are rejected |
 | `service.tombstone` | `1h` | how long a stopped session is kept to recognise retransmitted Stops and late Interims; an Interim for an unknown session with an Event-Timestamp older than this is stale and creates no session |
-| `service.idle.timeout` | `2h` | remove sessions with no event for this long (lost Stop) |
+| `service.idle.timeout` | `2h` | remove sessions with no event for this long (lost Stop), unless their NAS entry sets `nas.<name>.idle.timeout`; the exported stop time is the session's last event |
 | `service.exact.key.window` | `15m` | remember exact keys of events without progress values |
 | `service.sweep.interval` | `60s` | housekeeping timer |
 
@@ -99,6 +99,7 @@ File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 | `nas.<name>.vendor` | `default` | vendor profile |
 | `nas.<name>.message-authenticator` | `optional` | `required` \| `optional` \| `off` |
 | `nas.<name>.id` | FNV-1a hash of the name | identity used in event keys — must be identical on every gateway |
+| `nas.<name>.idle.timeout` | cluster's `service.idle.timeout` | close a session of this NAS without an event for this long (lost Stop): about 3 × the NAS's interim interval, e.g. `15m` for 5-minute interims. Whole minutes, 1m–65535m; the latest event of a session sets it |
 | `nas.<name>.identity` | `source-ip` | devices behind this entry (NAT, cloud Wi-Fi): `nas-identifier`, `called-station-id`, `nas-ip-address`, or a list (first present wins); required for `0.0.0.0/0`. Must be identical on every gateway |
 
 **Devices behind NAT** ([ADR 0019](adr/0019-nas-device-identity.md)). When many access points reach the gateways

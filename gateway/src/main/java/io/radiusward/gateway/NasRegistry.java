@@ -32,6 +32,7 @@ import org.agrona.collections.Int2ObjectHashMap;
  * nas.core.message-authenticator = optional   # required | optional | off
  * nas.core.id      = 1001                # optional, defaults to a hash of the name
  * nas.core.identity = source-ip          # or e.g. nas-identifier, called-station-id (devices behind NAT)
+ * nas.core.idle.timeout = 15m            # close sessions without an event for this long (≈ 3 interims)
  * </pre>
  */
 public final class NasRegistry {
@@ -93,7 +94,8 @@ public final class NasRegistry {
                     secret,
                     config.string(prefix + "vendor", "default").toLowerCase(Locale.ROOT),
                     policy,
-                    identity));
+                    identity,
+                    idleMinutes(prefix, config)));
         }
         if (clients.isEmpty()) {
             throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");
@@ -130,6 +132,19 @@ public final class NasRegistry {
             h *= 0x01000193;
         }
         return h;
+    }
+
+    /** {@code nas.<name>.idle.timeout} in whole minutes, 1 to 65535; 0 when not set (the cluster default). */
+    static int idleMinutes(String prefix, Config config) {
+        if (!config.has(prefix + "idle.timeout")) {
+            return 0;
+        }
+        java.time.Duration d = config.duration(prefix + "idle.timeout", java.time.Duration.ZERO);
+        if (d.toSeconds() % 60 != 0 || d.toMinutes() < 1 || d.toMinutes() > 65_535) {
+            throw new ConfigException(prefix + "idle.timeout: whole minutes from 1m to 65535m (about 3 interim"
+                    + " intervals), got " + d);
+        }
+        return (int) d.toMinutes();
     }
 
     /** {@code source-ip} (empty) or a list of distinct device attributes, first present wins. */

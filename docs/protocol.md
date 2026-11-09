@@ -27,6 +27,7 @@ SBE messages between gateways, the cluster and tools, plus the snapshot format. 
 | `exactKeyHi/Lo` | int64 ×2 | Murmur3-128 of (NAS id, status, session time, event time, octets, presence, [length, device identity], session id) — no Acct-Delay-Time, no Identifier |
 | `nasClientId` | int32 | v3: the configured NAS entry id |
 | `identityFingerprint` | int32 | v3: hash of the entry's `identity` setting (gateways must agree) |
+| `idleTimeoutMinutes` | uint16 | v4: `nas.<name>.idle.timeout` in minutes, 0 = the cluster's `service.idle.timeout` |
 | `nasDevice` | var string | v3: normalised device identity, empty for `source-ip` or when missing (`flags.deviceUnknown`) |
 | `statusType` | uint32 | Acct-Status-Type |
 | `flags` | set | `sessionTimePresent`, `eventTimestampPresent`, `sessionIdPresent` |

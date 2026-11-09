@@ -29,7 +29,8 @@ package io.radiusward.cluster.service;
 public final class AccountingStateMachine {
 
     /** Version of the state-machine behaviour, carried in snapshots (ADR 0005). */
-    public static final int STATE_VERSION = 4; // 2: export sinks; 3: late Start merged; 4: old Interim stale
+    // 2: export sinks; 3: late Start merged; 4: old Interim stale; 5: idle timeout per NAS entry
+    public static final int STATE_VERSION = 5;
 
     public static final int STATUS_START = 1;
     public static final int STATUS_STOP = 2;
@@ -119,6 +120,42 @@ public final class AccountingStateMachine {
             long inputOctets,
             long outputOctets,
             long now) {
+        return apply(
+                sessionHi,
+                sessionLo,
+                exactHi,
+                exactLo,
+                nasId,
+                statusType,
+                flags,
+                sessionTime,
+                eventTimestamp,
+                inputOctets,
+                outputOctets,
+                0,
+                now);
+    }
+
+    /**
+     * As above, with the idle timeout of the event's NAS entry.
+     *
+     * @param idleMinutes remove the session after this many minutes without an event ({@code nas.<name>.idle.timeout});
+     *     0 = {@link Settings#idleTimeoutMs()}. The latest applied event of the session sets it.
+     */
+    public int apply(
+            long sessionHi,
+            long sessionLo,
+            long exactHi,
+            long exactLo,
+            int nasId,
+            int statusType,
+            int flags,
+            long sessionTime,
+            long eventTimestamp,
+            long inputOctets,
+            long outputOctets,
+            int idleMinutes,
+            long now) {
         created = false;
         int outcome = switch (statusType) {
             case STATUS_START -> start(sessionHi, sessionLo, exactHi, exactLo, nasId, flags, eventTimestamp, now);
@@ -139,12 +176,13 @@ public final class AccountingStateMachine {
             default -> exactOnly(exactHi, exactLo, now);
         };
         if (outcome == Outcomes.APPLIED || outcome == Outcomes.MERGED) {
-            int slot = outcome == Outcomes.MERGED
-                    ? -1 // a late Start keeps the session's progress
-                    : statusType == STATUS_START || statusType == STATUS_INTERIM || statusType == STATUS_STOP
-                            ? store.find(sessionHi, sessionLo)
-                            : -1;
+            int slot = statusType == STATUS_START || statusType == STATUS_INTERIM || statusType == STATUS_STOP
+                    ? store.find(sessionHi, sessionLo)
+                    : -1;
             if (slot >= 0) {
+                store.idleMinutes(slot, idleMinutes);
+            }
+            if (slot >= 0 && outcome == Outcomes.APPLIED) { // a late Start (MERGED) keeps the session's progress
                 store.statusType(slot, statusType);
                 store.flags(slot, (byte) (flags & STORED_FLAGS));
                 store.sessionTime(slot, sessionTime);
@@ -335,8 +373,10 @@ public final class AccountingStateMachine {
         int removed = 0;
         for (int slot = 0, end = store.highWater(); slot < end; slot++) {
             byte state = store.state(slot);
+            int idle = store.idleMinutes(slot);
+            int before = idle == 0 ? idleBefore : nowSeconds - idle * 60; // per NAS entry, else the default
             if ((state == SessionStore.STOPPED && store.tombstoneUntil(slot) <= nowSeconds)
-                    || (state == SessionStore.ACTIVE && store.lastSeen(slot) <= idleBefore)) {
+                    || (state == SessionStore.ACTIVE && store.lastSeen(slot) <= before)) {
                 if (state == SessionStore.ACTIVE) {
                     expired++;
                     if (sessionListener != null) {
@@ -371,7 +411,41 @@ public final class AccountingStateMachine {
             int startKey,
             int lastSeen,
             int tombstoneUntil) {
+        restoreSession(
+                hi,
+                lo,
+                nasId,
+                state,
+                statusType,
+                flags,
+                sessionTime,
+                eventTimestamp,
+                inputOctets,
+                outputOctets,
+                startKey,
+                lastSeen,
+                tombstoneUntil,
+                0);
+    }
+
+    /** Restores one session from a snapshot, with its NAS entry's idle timeout (minutes, 0 = default). */
+    public void restoreSession(
+            long hi,
+            long lo,
+            int nasId,
+            byte state,
+            int statusType,
+            int flags,
+            long sessionTime,
+            long eventTimestamp,
+            long inputOctets,
+            long outputOctets,
+            int startKey,
+            int lastSeen,
+            int tombstoneUntil,
+            int idleMinutes) {
         int slot = store.insert(hi, lo, nasId, state);
+        store.idleMinutes(slot, idleMinutes);
         store.statusType(slot, statusType);
         store.flags(slot, (byte) flags);
         store.sessionTime(slot, sessionTime);

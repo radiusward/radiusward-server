@@ -10,8 +10,8 @@
 <sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
                    package="io.radiusward.protocol"
                    id="7101"
-                   version="3"
-                   semanticVersion="3.0"
+                   version="4"
+                   semanticVersion="4.0"
                    description="radiusward cluster protocol"
                    byteOrder="littleEndian">
     <types>
@@ -87,6 +87,8 @@
                description="the configured NAS entry; nasId is its device scope (equal unless identity is set)"/>
         <field name="identityFingerprint" id="17" type="int32" sinceVersion="3"
                description="hash of the entry's identity setting; equal on every gateway"/>
+        <field name="idleTimeoutMinutes" id="19" type="uint16" sinceVersion="4"
+               description="nas.&lt;name&gt;.idle.timeout: remove the session after this long without an event; 0 = the cluster's service.idle.timeout"/>
         <data name="sessionId" id="14" type="varStringEncoding"/>
         <data name="rawAttributes" id="15" type="varDataEncoding" description="attribute section of the request, for export"/>
         <data name="nasDevice" id="18" type="varStringEncoding" sinceVersion="3"
@@ -221,6 +223,7 @@
             <field name="lastSeen" id="11" type="int32"/>
             <field name="tombstoneUntil" id="12" type="int32"/>
             <field name="flags" id="13" type="uint8"/>
+            <field name="idleTimeoutMinutes" id="14" type="uint16" sinceVersion="4" description="0 = the cluster default"/>
         </group>
     </sbe:message>
     <sbe:message name="ExactKeyChunk" id="22">

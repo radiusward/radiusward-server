@@ -187,6 +187,9 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
         SessionStore store = replica.machine().store();
         UUID key = new UUID(store.keyHi(slot), store.keyLo(slot));
         boolean hasTime = (store.flags(slot) & AccountingStateMachine.FLAG_SESSION_TIME) != 0;
+        // a lost Stop: the session ended with its last event, not when the sweep noticed (up to the idle timeout
+        // later); after Accounting-On/Off the NAS restart is the end
+        long ended = cause == CAUSE_NAS_RESTART ? now : store.lastSeen(slot) * 1000L;
         put(new SessionSnapshot(
                 key,
                 position,
@@ -200,9 +203,9 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
                 hasTime ? store.sessionTime(slot) : null,
                 store.inputOctets(slot),
                 store.outputOctets(slot),
-                now,
+                ended,
                 null,
-                now,
+                ended,
                 null));
     }
 

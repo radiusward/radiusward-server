@@ -121,6 +121,7 @@ public final class LogApplier {
                     commandDecoder.eventTimestamp(),
                     commandDecoder.inputOctets(),
                     commandDecoder.outputOctets(),
+                    commandDecoder.actingVersion() >= 4 ? commandDecoder.idleTimeoutMinutes() : 0,
                     timestamp);
         }
         export.commandProcessed(position);

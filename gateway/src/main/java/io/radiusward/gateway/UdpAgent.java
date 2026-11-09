@@ -297,7 +297,8 @@ final class UdpAgent implements Agent {
                 .inputOctets(inputOctets)
                 .outputOctets(outputOctets)
                 .nasClientId(nas.id())
-                .identityFingerprint(nas.identityFingerprint());
+                .identityFingerprint(nas.identityFingerprint())
+                .idleTimeoutMinutes(nas.idleTimeoutMinutes());
         commandEncoder
                 .flags()
                 .clear()

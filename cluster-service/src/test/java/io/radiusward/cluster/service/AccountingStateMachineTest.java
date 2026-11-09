@@ -396,6 +396,36 @@ class AccountingStateMachineTest {
     }
 
     @Test
+    void idleTimeoutOfTheNasEntryClosesLostStopsSooner() {
+        long t = 1_000_000;
+        // a 15-minute entry (interim every 5 min) and one with the cluster default of 2 h
+        sm.apply(1, 1, 11, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, t);
+        sm.apply(2, 2, 21, 0, NAS + 1, STATUS_START, 0, 0, 0, 0, 0, 0, t);
+        sm.apply(1, 1, 12, 300, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 300, 0, 9, 0, 15, t + 300_000);
+        assertThat(sm.sweep(t + 300_000 + 15 * 60_000 - 1_000)).as("not yet").isZero();
+        assertThat(sm.sweep(t + 300_000 + 15 * 60_000)).isEqualTo(1);
+        assertThat(sm.store().find(1, 1))
+                .as("lost Stop, 15 min after its last event")
+                .isEqualTo(-1);
+        assertThat(sm.store().find(2, 2)).isNotNegative();
+        assertThat(sm.sweep(t + 7_200_000)).as("default").isEqualTo(1);
+        assertThat(sm.expired()).isEqualTo(2);
+    }
+
+    @Test
+    void theLatestEventSetsTheIdleTimeout() {
+        sm.apply(3, 3, 31, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, 0);
+        // the gateways were reconfigured to 60 minutes; a stale event does not change it
+        sm.apply(3, 3, 32, 60, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 1, 0, 60, 60_000);
+        sm.apply(3, 3, 33, 30, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 30, 0, 1, 0, 5, 61_000);
+        assertThat(sm.store().idleMinutes(sm.store().find(3, 3))).isEqualTo(60);
+        sm.apply(3, 3, 34, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 30, 62_000);
+        assertThat(sm.store().idleMinutes(sm.store().find(3, 3)))
+                .as("a merged late Start sets it too")
+                .isEqualTo(30);
+    }
+
+    @Test
     void digestChangesOnlyWithState() {
         long d0 = sm.digest();
         event(1, STATUS_START, 0, 0, 1000);

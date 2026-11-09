@@ -126,6 +126,19 @@ class SnapshotAndReplayTest {
     }
 
     @Test
+    void idleTimeoutPerNasEntrySurvivesASnapshot() {
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000));
+        sm.apply(1, 1, 11, 0, 5, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 15, 1_000);
+        sm.apply(2, 2, 21, 0, 5, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 0, 1_000);
+        AccountingStateMachine restored = restore(snapshot(sm));
+        assertThat(restored.store().idleMinutes(restored.store().find(1, 1))).isEqualTo(15);
+        assertThat(restored.store().idleMinutes(restored.store().find(2, 2))).isZero();
+        assertThat(restored.sweep(1_000 + 15 * 60_000))
+                .as("only the 15-minute session")
+                .isEqualTo(1);
+    }
+
+    @Test
     void identicalStreamsGiveIdenticalDigests() {
         List<DuplicatesPropertyTest.Event> events = DuplicatesPropertyTest.cleanStream(new Random(11), 3_000);
         assertThat(DuplicatesPropertyTest.run(events).digest())

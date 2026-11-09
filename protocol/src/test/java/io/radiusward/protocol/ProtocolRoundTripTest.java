@@ -33,7 +33,8 @@ class ProtocolRoundTripTest {
                 .inputOctets(13_958_643_712L)
                 .outputOctets(1L)
                 .nasClientId(1000)
-                .identityFingerprint(-7);
+                .identityFingerprint(-7)
+                .idleTimeoutMinutes(15);
         encoder.flags()
                 .clear()
                 .sessionTimePresent(true)
@@ -74,6 +75,7 @@ class ProtocolRoundTripTest {
         assertThat(raw).containsExactly(RAW);
         assertThat(d.nasClientId()).isEqualTo(1000);
         assertThat(d.identityFingerprint()).isEqualTo(-7);
+        assertThat(d.idleTimeoutMinutes()).isEqualTo(15);
         assertThat(d.flags().deviceUnknown()).isFalse();
         assertThat(d.nasDevice()).isEqualTo("ap-17");
         assertThat(MessageHeaderDecoder.ENCODED_LENGTH + d.encodedLength()).isEqualTo(length);
@@ -220,7 +222,7 @@ class ProtocolRoundTripTest {
         v2.putRawAttributes(RAW, 0, RAW.length);
 
         headerDecoder.wrap(buffer, 0);
-        assertThat(headerDecoder.version()).isEqualTo(4);
+        assertThat(headerDecoder.version()).isEqualTo(5);
         AccountingCommandDecoder v1 = new AccountingCommandDecoder().wrapAndApplyHeader(buffer, 0, headerDecoder);
         assertThat(v1.correlationId()).isEqualTo(99L);
         assertThat(v1.nasId()).isEqualTo(3);

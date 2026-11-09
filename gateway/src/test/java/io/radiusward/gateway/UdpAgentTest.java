@@ -59,7 +59,8 @@ class UdpAgentTest {
             long inputOctets,
             int nasClientId,
             String nasDevice,
-            boolean deviceUnknown) {}
+            boolean deviceUnknown,
+            int idleTimeoutMinutes) {}
 
     private final long[] clock = {1_000_000_000L};
     private final GatewayStats stats = new GatewayStats();
@@ -155,7 +156,8 @@ class UdpAgentTest {
                     d.inputOctets(),
                     d.nasClientId(),
                     nasDevice(d),
-                    d.flags().deviceUnknown()));
+                    d.flags().deviceUnknown(),
+                    d.idleTimeoutMinutes()));
         });
         return commands;
     }
@@ -568,6 +570,27 @@ class UdpAgentTest {
     }
 
     @Test
+    void theEntrysIdleTimeoutTravelsWithEveryCommand() throws Exception {
+        start(
+                config(Duration.ZERO, 1024),
+                NasRegistry.of(List.of(new NasClient(
+                        "wifi",
+                        1001,
+                        0x7F000001,
+                        32,
+                        SECRET,
+                        "default",
+                        NasClient.MessageAuthenticatorPolicy.OPTIONAL,
+                        new NasClient.Identity[0],
+                        15))));
+        send(deviceRequest(1, 1, "s", null, null));
+        assertThat(commands())
+                .singleElement()
+                .extracting(Command::idleTimeoutMinutes)
+                .isEqualTo(15);
+    }
+
+    @Test
     void sourceIpEntriesCarryNoDevice() throws Exception {
         start();
         send(deviceRequest(1, 1, "s", "ap-1", "aa-bb-cc-dd-ee-ff"));
@@ -576,6 +599,7 @@ class UdpAgentTest {
         assertThat(c.nasClientId()).isEqualTo(1001);
         assertThat(c.nasDevice()).isEmpty();
         assertThat(c.deviceUnknown()).isFalse();
+        assertThat(c.idleTimeoutMinutes()).as("the cluster default").isZero();
     }
 
     static NasRegistry natRegistry(NasClient.Identity... identity) {

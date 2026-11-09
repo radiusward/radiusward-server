@@ -296,4 +296,21 @@ class BatchBuilderTest {
             assertThat(s.nasDevice()).as("kept by the sink").isNull();
         });
     }
+
+    @Test
+    void lostStopEndsTheSessionAtItsLastEventNotAtTheSweep() {
+        BatchBuilder builder = new BatchBuilder("pg", false);
+        StateMachineReplica replica = replica(builder, 0);
+        command(replica, 1, AccountingStateMachine.STATUS_START, 0, 1_780_000_000L, 1_780_000_000_000L);
+        command(replica, 1, AccountingStateMachine.STATUS_INTERIM, 300, 1_780_000_300L, 1_780_000_300_000L);
+        builder.take(1);
+        // the Stop never arrives; the default idle timeout (2 h) removes the session at the next sweep
+        long sweep = 1_780_000_300_000L + 7_200_000L + 42_000L;
+        assertThat(replica.machine().sweep(sweep)).isEqualTo(1);
+        SessionSnapshot s = session(builder.take(1), 1);
+        assertThat(s.closeCause()).isEqualTo(SessionSnapshot.CloseCause.IDLE_TIMEOUT);
+        assertThat(s.stoppedAt()).as("the last event, not the sweep").isEqualTo(1_780_000_300_000L);
+        assertThat(s.lastReceivedAt()).isEqualTo(1_780_000_300_000L);
+        assertThat(s.sessionTime()).isEqualTo(300);
+    }
 }
