@@ -54,6 +54,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `stores/file`, `stores/sql`, `stores/ldap` | Built-in identity stores (users file; JDBC `radcheck` schema; LDAP/Active Directory with a bind verifier) |
 | `verifiers/netlogon` | Credential verifier for Active Directory over Netlogon, pure Java (MS-CHAPv1/v2, PAP) |
 | `testing/samba-ad` | Samba AD domain controller image for the LDAP and Netlogon tests |
+| `testing/eapol-test` | wpa_supplicant's `eapol_test` image for the EAP interop test (`EapolTestIT`) |
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
 | `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster`, `DevCluster` |

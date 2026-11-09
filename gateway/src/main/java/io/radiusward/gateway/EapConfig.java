@@ -20,6 +20,7 @@ import java.util.Locale;
  * @param maxRounds round trips a conversation may take
  * @param tls the TLS side ({@code auth.eap.tls.*}), {@code null} without a certificate
  * @param peapInner the inner EAP types PEAP offers, first preferred ({@code auth.eap.peap.inner})
+ * @param peapBinding PEAP crypto-binding ({@code auth.eap.peap.crypto.binding}, ADR 0032)
  */
 record EapConfig(
         List<String> methods,
@@ -27,10 +28,11 @@ record EapConfig(
         int conversations,
         int maxRounds,
         EapTlsConfig tls,
-        List<Integer> peapInner) {
+        List<Integer> peapInner,
+        Peap.Binding peapBinding) {
 
     EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
-        this(methods, timeout, conversations, maxRounds, tls, List.of(Peap.MS_CHAP_V2));
+        this(methods, timeout, conversations, maxRounds, tls, List.of(Peap.MS_CHAP_V2), Peap.Binding.OPTIONAL);
     }
 
     static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls");
@@ -71,13 +73,22 @@ record EapConfig(
         if (inner.contains(EapTls.TYPE) && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException("auth.eap.peap.inner: tls needs auth.eap.tls.ca, the CAs of client certificates");
         }
+        String binding =
+                config.string("auth.eap.peap.crypto.binding", "optional").trim();
+        Peap.Binding peapBinding;
+        try {
+            peapBinding = Peap.Binding.valueOf(binding.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigException("auth.eap.peap.crypto.binding: off, optional or required, got " + binding, e);
+        }
         return new EapConfig(
                 List.copyOf(methods),
                 config.duration("auth.eap.timeout", Duration.ofSeconds(30)),
                 conversations,
                 200, // a TLS handshake in small fragments takes many rounds
                 tls,
-                inner);
+                inner,
+                peapBinding);
     }
 
     /** The EAP type number of a method name. */
@@ -91,12 +102,16 @@ record EapConfig(
         };
     }
 
-    /** A fresh method object for a conversation, or {@code null} for an unknown type. */
-    EapMethod create(int type) {
+    /**
+     * A fresh method object for a conversation, or {@code null} for an unknown type.
+     *
+     * @param identity the peer's EAP identity
+     */
+    EapMethod create(int type, String identity) {
         return switch (type) {
             case EapPacket.TYPE_MD5 -> new EapMd5();
-            case EapTls.TYPE -> tls == null ? null : new EapTls(tls);
-            case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner);
+            case EapTls.TYPE -> tls == null ? null : new EapTls(tls, identity);
+            case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner, peapBinding);
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls);
             default -> null;
         };
@@ -107,6 +122,10 @@ record EapConfig(
      * {@code require.user}), and tunnels, whose outer identity is often anonymous and whose inner one is checked.
      */
     boolean outerOptional(int type) {
-        return (type == EapTls.TYPE && tls != null && !tls.requireUser()) || type == Peap.TYPE || type == Ttls.TYPE;
+        return (type == EapTls.TYPE
+                        && tls != null
+                        && (!tls.requireUser() || tls.identity() == CertificateIdentity.Check.CERTIFICATE))
+                || type == Peap.TYPE
+                || type == Ttls.TYPE;
     }
 }

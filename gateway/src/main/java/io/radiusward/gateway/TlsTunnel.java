@@ -78,7 +78,7 @@ abstract class TlsTunnel implements EapMethod {
 
     @Override
     public Step start(int identifier, Credentials credentials) {
-        engine = config.context().createSSLEngine();
+        engine = config.context().current().createSSLEngine();
         engine.setUseClientMode(false);
         engine.setNeedClientAuth(clientCertificate());
         engine.setEnabledProtocols(config.versions().toArray(String[]::new));
@@ -283,6 +283,16 @@ abstract class TlsTunnel implements EapMethod {
                 : session.exportKeyingMaterialData(keyLabel(), null, 128);
         msk = Arrays.copyOf(material, 64);
         finished = true;
+    }
+
+    /** The client's certificate, if it presented a valid one. */
+    final java.security.cert.X509Certificate peerCertificate() {
+        try {
+            java.security.cert.Certificate[] chain = engine.getSession().getPeerCertificates();
+            return chain.length > 0 && chain[0] instanceof java.security.cert.X509Certificate x ? x : null;
+        } catch (javax.net.ssl.SSLPeerUnverifiedException e) {
+            return null;
+        }
     }
 
     /** The client's certificate subject, if it presented one. */

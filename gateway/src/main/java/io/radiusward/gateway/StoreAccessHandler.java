@@ -504,7 +504,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 });
         EapMethod.Step step;
         if (c.method == null) {
-            c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)));
+            c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)), c.identity);
             step = c.method.start(eap.identifier() + 1, credentials);
         } else if (eap.identifier() != c.identifier) {
             return DROP; // a response to an earlier request
@@ -514,7 +514,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 int type = t & 0xFF;
                 if (type != c.method.type()
                         && stores.eap().methods().stream().anyMatch(m -> EapConfig.type(m) == type)) {
-                    offered = stores.eap().create(type);
+                    offered = stores.eap().create(type, c.identity);
                     break;
                 }
             }
@@ -1163,6 +1163,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 "radiusward_gateway_access_reply_items_filtered_total",
                 "Vendor attributes left out of Access-Accepts because the NAS entry is of another vendor");
         new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "gateway", gateway, "nas", nas));
+        EapTlsConfig tls = stores.eap().tls();
+        if (tls != null) {
+            w.counter(
+                    "radiusward_gateway_eap_tls_reloads_total",
+                    "Changes of the EAP TLS certificate, key, CA or CRL files: loaded, or failed (previous kept)");
+            w.sample(tls.context().reloads(), "gateway", gateway, "result", "loaded");
+            w.sample(tls.context().reloadFailures(), "gateway", gateway, "result", "failed");
+        }
         if (!stores.verifiers().isEmpty()) {
             w.counter(
                     "radiusward_gateway_verifier_events_total",

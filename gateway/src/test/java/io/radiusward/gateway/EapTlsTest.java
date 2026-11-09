@@ -71,12 +71,14 @@ class EapTlsTest {
             Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
             Map<String, String> storeVerifiers,
             List<Integer> peapInner) {
-        EapTlsConfig tls = new EapTlsConfig(
-                EapTlsConfig.context(pki.serverPem, pki.serverKey, pki.caPem),
-                List.of("TLSv1.2", "TLSv1.3"),
-                fragmentSize,
-                maxMessage,
-                requireUser);
+        EapTlsConfig tls = tlsConfig != null
+                ? tlsConfig
+                : new EapTlsConfig(
+                        EapTlsConfig.context(pki.serverPem, pki.serverKey, pki.caPem),
+                        List.of("TLSv1.2", "TLSv1.3"),
+                        fragmentSize,
+                        maxMessage,
+                        requireUser);
         Map<String, IdentityStore> stores = new LinkedHashMap<>();
         stores.put("main", store);
         AuthStores auth = new AuthStores(
@@ -91,7 +93,7 @@ class EapTlsTest {
                 mschap,
                 verifiers,
                 storeVerifiers,
-                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls, peapInner));
+                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls, peapInner, binding));
         return new StoreAccessHandler(auth, StoreAccessHandlerTest.DICTIONARY, System::currentTimeMillis);
     }
 
@@ -103,6 +105,8 @@ class EapTlsTest {
     }
 
     private byte[] lastRequest;
+    private Peap.Binding binding = Peap.Binding.OPTIONAL;
+    private EapTlsConfig tlsConfig;
 
     private RadiusPacket reply() {
         int length = context.replyAttributesLength();
@@ -248,6 +252,210 @@ class EapTlsTest {
                 .isEqualTo(AccessHandler.REJECT);
     }
 
+    // ---- identity and certificate, revocation, reload (ADR 0033) --------------------------------
+
+    private StoreAccessHandler tlsWith(TlsCredentials credentials, CertificateIdentity.Check identity) {
+        tlsConfig = new EapTlsConfig(credentials, List.of("TLSv1.2", "TLSv1.3"), 1024, 65_536, false, identity);
+        return handler(1024, false, 65_536);
+    }
+
+    private int tls(StoreAccessHandler h, String identity, TestPki.Issued certificate) throws Exception {
+        return converse(h, identity, new EapTlsClient(TestPki.clientContext(certificate, pki.ca), "TLSv1.3", 1024));
+    }
+
+    @Test
+    void theIdentityMustNameTheCertificate() throws Exception {
+        StoreAccessHandler h = handler(1024, false, 65_536);
+        TestPki.Issued laptop = pki.client("laptop-1");
+        assertThat(tls(h, "laptop-1", laptop)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(tls(h, "laptop-2", laptop))
+                .as("another device's identity with this certificate")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(tls(h, "anonymous", laptop)).isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void theCertificateNamesTheUserOrAnyCertificateWillDo() throws Exception {
+        store.user("alice@corp.test", List.of(), List.of(new AttributeItem("Filter-Id", "=", "staff")));
+        TestPki.Issued alice = pki.client("Alice Smith", TestPki.upn("alice@corp.test"));
+        StoreAccessHandler byCertificate = tlsWith(
+                EapTlsConfig.context(pki.serverPem, pki.serverKey, pki.caPem), CertificateIdentity.Check.CERTIFICATE);
+        assertThat(tls(byCertificate, "anonymous@corp.test", alice)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(reply().findAttribute(11))
+                .as("alice's reply items, found by the UPN")
+                .isPositive();
+
+        StoreAccessHandler any =
+                tlsWith(EapTlsConfig.context(pki.serverPem, pki.serverKey, pki.caPem), CertificateIdentity.Check.ANY);
+        assertThat(tls(any, "whoever", pki.client("laptop-9"))).isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    private TlsCredentials revocation(
+            List<Path> crls, TlsCredentials.Revocation revocation, java.net.URI ocsp, boolean softFail) {
+        return new TlsCredentials(
+                pki.serverPem, pki.serverKey, pki.caPem, crls, revocation, ocsp, softFail, Duration.ZERO);
+    }
+
+    @Test
+    void revokedCertificatesFailAgainstACrl() throws Exception {
+        TestPki.Issued good = pki.client("good-1");
+        TestPki.Issued revoked = pki.client("stolen-1");
+        Path crl = pki.crl(dir.resolve("corp.crl"), revoked);
+        StoreAccessHandler h = tlsWith(
+                revocation(List.of(crl), TlsCredentials.Revocation.CRL, null, false), CertificateIdentity.Check.MATCH);
+        assertThat(tls(h, "good-1", good)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(tls(h, "stolen-1", revoked)).isEqualTo(AccessHandler.REJECT);
+
+        Path foreign = other.crl(dir.resolve("other.crl"));
+        StoreAccessHandler noCrl = tlsWith(
+                revocation(List.of(foreign), TlsCredentials.Revocation.CRL, null, false),
+                CertificateIdentity.Check.MATCH);
+        assertThat(tls(noCrl, "good-1", good))
+                .as("no CRL of its issuer: unknown status fails")
+                .isEqualTo(AccessHandler.REJECT);
+        StoreAccessHandler soft = tlsWith(
+                revocation(List.of(foreign), TlsCredentials.Revocation.CRL, null, true),
+                CertificateIdentity.Check.MATCH);
+        assertThat(tls(soft, "good-1", good))
+                .as("soft fail: unknown status passes")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void revokedCertificatesFailAgainstAnOcspResponder() throws Exception {
+        TestPki.Issued good = pki.client("good-2");
+        TestPki.Issued revoked = pki.client("stolen-2");
+        com.sun.net.httpserver.HttpServer responder =
+                pki.ocspResponder(java.util.Set.of(revoked.certificate().getSerialNumber()));
+        try {
+            java.net.URI url = java.net.URI.create(
+                    "http://127.0.0.1:" + responder.getAddress().getPort() + "/");
+            StoreAccessHandler h = tlsWith(
+                    revocation(List.of(), TlsCredentials.Revocation.OCSP, url, false), CertificateIdentity.Check.MATCH);
+            int before = pki.ocspRequests.get();
+            assertThat(tls(h, "good-2", good)).isEqualTo(AccessHandler.ACCEPT);
+            assertThat(pki.ocspRequests.get()).as("the responder was asked").isGreaterThan(before);
+            assertThat(tls(h, "stolen-2", revoked)).isEqualTo(AccessHandler.REJECT);
+        } finally {
+            responder.stop(0);
+        }
+        java.net.URI down = java.net.URI.create("http://127.0.0.1:9/");
+        StoreAccessHandler hard = tlsWith(
+                revocation(List.of(), TlsCredentials.Revocation.OCSP, down, false), CertificateIdentity.Check.MATCH);
+        assertThat(tls(hard, "good-2", good)).as("responder unreachable").isEqualTo(AccessHandler.REJECT);
+        StoreAccessHandler soft = tlsWith(
+                revocation(List.of(), TlsCredentials.Revocation.OCSP, down, true), CertificateIdentity.Check.MATCH);
+        assertThat(tls(soft, "good-2", good))
+                .as("responder unreachable, soft fail")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void certificatesAreReloadedWhenTheirFilesChange() throws Exception {
+        Path chain = dir.resolve("reload.pem");
+        Path key = dir.resolve("reload.key");
+        java.nio.file.Files.copy(pki.serverPem, chain, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        java.nio.file.Files.copy(pki.serverKey, key, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        TlsCredentials credentials = new TlsCredentials(
+                chain, key, pki.caPem, List.of(), TlsCredentials.Revocation.NONE, null, false, Duration.ofMillis(1));
+        javax.net.ssl.SSLContext first = credentials.current();
+
+        TestPki renewed = new TestPki(dir, "renewed");
+        java.nio.file.Files.copy(renewed.serverPem, chain, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        touch(chain, 10_000);
+        Thread.sleep(5);
+        assertThat(credentials.current())
+                .as("a new certificate without its key")
+                .isSameAs(first);
+        assertThat(credentials.reloadFailures()).isEqualTo(1);
+
+        java.nio.file.Files.copy(renewed.serverKey, key, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        touch(key, 20_000);
+        Thread.sleep(5);
+        javax.net.ssl.SSLContext second = credentials.current();
+        assertThat(second).isNotSameAs(first);
+        assertThat(credentials.reloads()).isEqualTo(1);
+
+        StoreAccessHandler h = tlsWith(credentials, CertificateIdentity.Check.MATCH);
+        EapTlsClient trustsRenewed =
+                new EapTlsClient(TestPki.clientContext(pki.client("laptop-3"), renewed.ca), "TLSv1.3", 1024);
+        assertThat(converse(h, "laptop-3", trustsRenewed))
+                .as("the renewed server certificate is served")
+                .isEqualTo(AccessHandler.ACCEPT);
+        var metrics = new io.radiusward.common.management.PrometheusWriter();
+        h.writeMetrics(metrics, "1");
+        assertThat(metrics.finish())
+                .contains("radiusward_gateway_eap_tls_reloads_total{gateway=\"1\",result=\"loaded\"} 1")
+                .contains("radiusward_gateway_eap_tls_reloads_total{gateway=\"1\",result=\"failed\"} 1");
+    }
+
+    private static void touch(Path file, long plusMillis) throws Exception {
+        java.nio.file.Files.setLastModifiedTime(
+                file, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() + plusMillis));
+    }
+
+    @Test
+    void mismatchedKeysAndMissingRevocationDataAreConfigErrors() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new TlsCredentials(
+                        pki.serverPem,
+                        other.serverKey,
+                        pki.caPem,
+                        List.of(),
+                        TlsCredentials.Revocation.NONE,
+                        null,
+                        false,
+                        Duration.ZERO))
+                .hasMessageContaining("is not the key of the certificate");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> revocation(List.of(), TlsCredentials.Revocation.CRL, null, false))
+                .hasMessageContaining("auth.eap.tls.crl");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new TlsCredentials(
+                        pki.serverPem,
+                        pki.serverKey,
+                        null,
+                        List.of(),
+                        TlsCredentials.Revocation.OCSP,
+                        null,
+                        false,
+                        Duration.ZERO))
+                .hasMessageContaining("auth.eap.tls.ca");
+    }
+
+    @Test
+    void configurationKeys() {
+        Map<String, String> base = Map.of(
+                "auth.eap.methods", "tls, peap",
+                "auth.eap.tls.certificate", pki.serverPem.toString(),
+                "auth.eap.tls.key", pki.serverKey.toString(),
+                "auth.eap.tls.ca", pki.caPem.toString());
+        EapConfig defaults = EapConfig.from(io.radiusward.common.config.Config.of(base));
+        assertThat(defaults.tls().identity()).isEqualTo(CertificateIdentity.Check.MATCH);
+        assertThat(defaults.peapBinding()).isEqualTo(Peap.Binding.OPTIONAL);
+
+        Map<String, String> custom = new java.util.HashMap<>(base);
+        custom.put("auth.eap.tls.identity", "certificate");
+        custom.put("auth.eap.peap.crypto.binding", "Required");
+        custom.put("auth.eap.tls.revocation", "ocsp");
+        custom.put("auth.eap.tls.ocsp.url", "http://127.0.0.1:9/");
+        custom.put("auth.eap.tls.reload", "0s");
+        EapConfig set = EapConfig.from(io.radiusward.common.config.Config.of(custom));
+        assertThat(set.tls().identity()).isEqualTo(CertificateIdentity.Check.CERTIFICATE);
+        assertThat(set.peapBinding()).isEqualTo(Peap.Binding.REQUIRED);
+        assertThat(set.outerOptional(EapTls.TYPE)).isTrue();
+
+        for (String[] wrong : new String[][] {
+            {"auth.eap.tls.identity", "cn"},
+            {"auth.eap.peap.crypto.binding", "maybe"},
+            {"auth.eap.tls.revocation", "both"}
+        }) {
+            Map<String, String> bad = new java.util.HashMap<>(base);
+            bad.put(wrong[0], wrong[1]);
+            org.assertj.core.api.Assertions.assertThatThrownBy(
+                            () -> EapConfig.from(io.radiusward.common.config.Config.of(bad)))
+                    .hasMessageContaining(wrong[0]);
+        }
+    }
+
     // ---- PEAPv0 / EAP-MSCHAPv2 (ADR 0029) --------------------------------------------------------
 
     private StoreAccessHandler peap() {
@@ -278,6 +486,32 @@ class EapTlsTest {
                 .as("the server proved it knew the password (S=)")
                 .isTrue();
         assertThat(reply().findAttribute(11)).as("the inner user's reply items").isPositive();
+        assertKeys(client, Peap.TYPE);
+    }
+
+    @Test
+    void peapCryptoBindingRequiredOrBroken() throws Exception {
+        store.user(
+                "alice",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Alice-Pw")))),
+                List.of());
+        binding = Peap.Binding.REQUIRED;
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.3", new PeapPeer("alice", "Alice-Pw")), Peap.TYPE))
+                .as("required, but the peer does not answer the Crypto-Binding TLV")
+                .isEqualTo(AccessHandler.REJECT);
+        binding = Peap.Binding.OPTIONAL;
+        PeapPeer broken = new PeapPeer("alice", "Alice-Pw");
+        broken.echoBinding = true;
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.2", broken), Peap.TYPE))
+                .as("a Crypto-Binding TLV that does not verify fails even when optional")
+                .isEqualTo(AccessHandler.REJECT);
+        binding = Peap.Binding.OFF;
+        PeapPeer plain = new PeapPeer("alice", "Alice-Pw");
+        plain.echoBinding = true;
+        EapTlsClient client = peapClient("TLSv1.2", plain);
+        assertThat(converse(peap(), "anonymous", client, Peap.TYPE))
+                .as("off: none sent, the tunnel's keys")
+                .isEqualTo(AccessHandler.ACCEPT);
         assertKeys(client, Peap.TYPE);
     }
 

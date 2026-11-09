@@ -20,7 +20,9 @@ import java.util.Locale;
  *
  * <p>Inner steps: Identity request → identity; MS-CHAPv2 Challenge → Response, checked; Success request → Success
  * response; Result TLV success → the peer's Result TLV → EAP-Success. A wrong credential: MS-CHAPv2 Failure request →
- * the peer's Failure response → Result TLV failure → EAP-Failure.
+ * the peer's Failure response → Result TLV failure → EAP-Failure. With crypto-binding (ADR 0032) a Crypto-Binding TLV
+ * goes with the successful Result TLV; a peer that checked it answers with its own, and the keys then come from the
+ * compound session key.
  */
 final class Peap extends TlsTunnel {
 
@@ -35,6 +37,16 @@ final class Peap extends TlsTunnel {
     private static final int OP_FAILURE = 4;
     private static final byte[] SERVER_NAME = "radiusward".getBytes(StandardCharsets.US_ASCII);
     private static final SecureRandom RANDOM = new SecureRandom();
+
+    /** Crypto-binding ({@code auth.eap.peap.crypto.binding}). */
+    enum Binding {
+        /** Not sent. */
+        OFF,
+        /** Sent; a peer may answer without one (it does not support it), but a wrong one fails. */
+        OPTIONAL,
+        /** Sent, and the peer must answer it. */
+        REQUIRED
+    }
 
     private enum State {
         HANDSHAKE,
@@ -59,15 +71,24 @@ final class Peap extends TlsTunnel {
     private int innerType;
     private boolean innerBegun;
     private EapTls innerTls;
+    private final Binding binding;
+    private byte[] isk = new byte[32]; // the inner method's key; zeros for GTC
+    private PeapCryptoBinding cryptoBinding;
+    private final byte[] nonce = new byte[32];
+    private byte[] sessionKey;
 
     Peap(EapTlsConfig config) {
-        this(config, java.util.List.of(MS_CHAP_V2));
+        this(config, java.util.List.of(MS_CHAP_V2), Binding.OPTIONAL);
     }
 
-    /** @param innerTypes the inner EAP types offered, first preferred */
-    Peap(EapTlsConfig config, java.util.List<Integer> innerTypes) {
+    /**
+     * @param innerTypes the inner EAP types offered, first preferred
+     * @param binding whether crypto-binding is sent and required
+     */
+    Peap(EapTlsConfig config, java.util.List<Integer> innerTypes, Binding binding) {
         super(config);
         this.innerTypes = java.util.List.copyOf(innerTypes);
+        this.binding = binding;
     }
 
     @Override
@@ -126,7 +147,7 @@ final class Peap extends TlsTunnel {
                         ? result(true)
                         : Step.FAILED;
             case FAILURE -> result(false);
-            case RESULT_OK -> resultAnswered(data) ? Step.succeeded(msk()) : Step.FAILED;
+            case RESULT_OK -> resultAnswered(data) ? Step.succeeded(sessionKey) : Step.FAILED;
             default -> Step.FAILED;
         };
     }
@@ -154,7 +175,7 @@ final class Peap extends TlsTunnel {
             return sendApplication(request);
         }
         if (type == EapTls.TYPE) {
-            innerTls = new EapTls(config);
+            innerTls = new EapTls(config, identity);
             Step first = innerTls.start(0, null);
             return first.done() ? Step.FAILED : sendApplication(prefixed(EapTls.TYPE, first.request()));
         }
@@ -217,7 +238,9 @@ final class Peap extends TlsTunnel {
         if (!step.success()) {
             return result(false);
         }
-        authenticated = identity; // the inner certificate authenticated the inner identity
+        // the inner certificate authenticated the inner identity, or names the user itself (identity = certificate)
+        authenticated = innerTls.innerIdentity() != null ? innerTls.innerIdentity() : identity;
+        isk = Arrays.copyOf(step.msk(), 32);
         return result(true);
     }
 
@@ -272,45 +295,87 @@ final class Peap extends TlsTunnel {
             return sendApplication(msChap(OP_FAILURE, failure.getBytes(StandardCharsets.US_ASCII)));
         }
         authenticated = identity;
+        isk = PeapCryptoBinding.msChapV2Isk(checked.ntHashHash(), ntResponse);
         state = State.SUCCESS;
         String success = MsChap.authenticatorResponseFromKey(checked.ntHashHash(), ntResponse, challengeHash)
                 + " M=Authentication succeeded";
         return sendApplication(msChap(OP_SUCCESS, success.getBytes(StandardCharsets.US_ASCII)));
     }
 
-    /** Result TLV (MS-PEAP §2.2.8.1): with the EAP header, type 33, mandatory TLV 3, value 1 success / 2 failure. */
+    /**
+     * Result TLV (MS-PEAP §2.2.8.1): with the EAP header, type 33, mandatory TLV 3, value 1 success / 2 failure; on
+     * success also the Crypto-Binding TLV unless it is off.
+     */
     private Step result(boolean success) {
         state = success ? State.RESULT_OK : State.RESULT_FAILED;
         if (!success) {
             authenticated = null;
         }
         innerId = (innerId + 1) & 0xFF;
-        byte[] p = {
-            EapPacket.REQUEST,
-            (byte) innerId,
-            0,
-            11,
-            (byte) TLV,
-            (byte) 0x80,
-            0x03,
-            0x00,
-            0x02,
-            0x00,
-            (byte) (success ? 1 : 2)
-        };
+        byte[] bound = null;
+        sessionKey = msk();
+        if (success && binding != Binding.OFF) {
+            RANDOM.nextBytes(nonce);
+            nonce[31] &= (byte) 0xFE; // the last bit is the peer's (MS-PEAP)
+            cryptoBinding = new PeapCryptoBinding(msk(), isk);
+            bound = cryptoBinding.request(nonce);
+        }
+        int length = 11 + (bound == null ? 0 : bound.length);
+        byte[] p = new byte[length];
+        p[0] = EapPacket.REQUEST;
+        p[1] = (byte) innerId;
+        p[2] = (byte) (length >>> 8);
+        p[3] = (byte) length;
+        p[4] = (byte) TLV;
+        p[5] = (byte) 0x80;
+        p[6] = 0x03;
+        p[8] = 0x02;
+        p[10] = (byte) (success ? 1 : 2);
+        if (bound != null) {
+            System.arraycopy(bound, 0, p, 11, bound.length);
+        }
         return sendApplication(p);
     }
 
-    /** The peer's Result TLV, success. */
+    /**
+     * The peer's Result TLV, success, and its Crypto-Binding TLV checked: then the MSK comes from the compound session
+     * key. Without one, the tunnel's MSK, unless binding is required.
+     */
     private boolean resultAnswered(byte[] data) {
         EapPacket p = EapPacket.parse(data);
-        return p != null
-                && p.code() == EapPacket.RESPONSE
-                && p.type() == TLV
-                && p.data().length >= 6
-                && (p.data()[0] & 0x3F) == 0x00
-                && p.data()[1] == 0x03
-                && p.data()[5] == 0x01;
+        if (p == null || p.code() != EapPacket.RESPONSE || p.type() != TLV) {
+            return false;
+        }
+        byte[] tlvs = p.data();
+        boolean resultOk = false;
+        byte[] peerBinding = null;
+        for (int at = 0; at + 4 <= tlvs.length; ) {
+            int type = ((tlvs[at] & 0x3F) << 8) | (tlvs[at + 1] & 0xFF);
+            int length = ((tlvs[at + 2] & 0xFF) << 8) | (tlvs[at + 3] & 0xFF);
+            if (at + 4 + length > tlvs.length) {
+                return false;
+            }
+            if (type == 3 && length == 2) {
+                resultOk = tlvs[at + 4] == 0 && tlvs[at + 5] == 1;
+            } else if (type == PeapCryptoBinding.TLV_TYPE) {
+                peerBinding = Arrays.copyOfRange(tlvs, at, at + 4 + length);
+            }
+            at += 4 + length;
+        }
+        if (!resultOk) {
+            return false;
+        }
+        if (cryptoBinding == null) {
+            return true;
+        }
+        if (peerBinding == null) {
+            return binding != Binding.REQUIRED;
+        }
+        if (!cryptoBinding.verifies(peerBinding, nonce)) {
+            return false;
+        }
+        sessionKey = cryptoBinding.msk();
+        return true;
     }
 
     /** An inner EAP-MSCHAPv2 message without the EAP header: type, opcode, id, MS-length, body. */

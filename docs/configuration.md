@@ -103,7 +103,14 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.tls.fragment.size` | `1024` | largest TLS payload per EAP message (64–3000) |
 | `auth.eap.tls.max.message` | `65536` | largest TLS message a peer may send in fragments |
 | `auth.eap.tls.require.user` | `false` | `true`: an EAP-TLS peer must also exist in an identity store; otherwise a valid certificate is enough |
+| `auth.eap.tls.identity` | `match` | how a client certificate relates to the EAP identity: `match` (the identity must be its common name, an e-mail, DNS or UPN alternative name; `host/<name>` for Windows machines), `certificate` (the identity is ignored, the certificate's name is the user authorized), `any` (any valid certificate; only for stores without per-user rules) ([ADR 0033](adr/0033-client-certificates.md)) |
+| `auth.eap.tls.revocation` | `none` | revocation check of client certificates: `none`, `crl` (from `auth.eap.tls.crl`; every issuer of the chain needs its CRL), `ocsp` (the certificate's responder or `auth.eap.tls.ocsp.url`; CRLs as fallback) |
+| `auth.eap.tls.crl` | — | CRL files (PEM or DER), comma-separated; reloaded on change like the certificates |
+| `auth.eap.tls.ocsp.url` / `auth.eap.tls.ocsp.timeout` | — / `2s` | an OCSP responder for every certificate instead of the certificate's own; connect and read timeout (unless set as JDK system properties) |
+| `auth.eap.tls.revocation.soft.fail` | `false` | `true`: an unknown status (no CRL of the issuer, responder unreachable) passes; a revoked certificate still fails |
+| `auth.eap.tls.reload` | `60s` | how often the certificate, key, CA and CRL files are checked for changes; a change that does not load keeps the previous ones; `0s` = never |
 | `auth.eap.peap.inner` | `mschapv2` | inner methods PEAP offers, first preferred: `mschapv2`, `gtc` (a password checked like PAP), `tls` (a client certificate; needs `auth.eap.tls.ca`) ([ADR 0031](adr/0031-peap-inner-methods.md)) |
+| `auth.eap.peap.crypto.binding` | `optional` | PEAP crypto-binding: `optional` (sent; a peer without support may answer without it, a wrong one fails), `required`, `off`; with a verified binding the keys come from the compound session key ([ADR 0032](adr/0032-peap-crypto-binding.md)) |
 | `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |

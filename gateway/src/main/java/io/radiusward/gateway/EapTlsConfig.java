@@ -7,36 +7,44 @@ package io.radiusward.gateway;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import java.io.IOException;
-import java.io.InputStream;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.KeyFactory;
-import java.security.KeyStore;
 import java.security.PrivateKey;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateFactory;
 import java.security.spec.PKCS8EncodedKeySpec;
+import java.time.Duration;
+import java.util.Arrays;
 import java.util.Base64;
-import java.util.Collection;
 import java.util.List;
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManagerFactory;
+import java.util.Locale;
 
 /**
- * The TLS side of EAP-TLS, PEAP and TTLS ({@code auth.eap.tls.*}, ADR 0028): the server's certificate chain and key
- * (PEM), the CAs that client certificates must chain to, the TLS versions, the EAP fragment size.
+ * The TLS side of EAP-TLS, PEAP and TTLS ({@code auth.eap.tls.*}, ADR 0028, 0033): the server's certificate chain and
+ * key (PEM), the CAs that client certificates must chain to, their revocation check, the TLS versions, the EAP
+ * fragment size, how a client certificate relates to the EAP identity.
  *
- * @param context the JDK TLS context built from them
+ * @param context the server's TLS material, reloaded when its files change
  * @param versions enabled TLS versions ({@code auth.eap.tls.versions}, default TLS 1.2 and 1.3)
  * @param fragmentSize largest TLS payload per EAP message ({@code auth.eap.tls.fragment.size}, RFC 5216 §2.1.5)
  * @param maxMessage largest TLS message a peer may send in fragments ({@code auth.eap.tls.max.message})
  * @param requireUser whether an EAP-TLS user must exist in an identity store; by default a valid client certificate
  *     is enough ({@code auth.eap.tls.require.user})
+ * @param identity how the EAP identity must relate to the client certificate ({@code auth.eap.tls.identity})
  */
-record EapTlsConfig(SSLContext context, List<String> versions, int fragmentSize, int maxMessage, boolean requireUser) {
+record EapTlsConfig(
+        TlsCredentials context,
+        List<String> versions,
+        int fragmentSize,
+        int maxMessage,
+        boolean requireUser,
+        CertificateIdentity.Check identity) {
+
+    EapTlsConfig(TlsCredentials context, List<String> versions, int fragmentSize, int maxMessage, boolean requireUser) {
+        this(context, versions, fragmentSize, maxMessage, requireUser, CertificateIdentity.Check.MATCH);
+    }
 
     /** {@code null} when no certificate is configured. */
     static EapTlsConfig from(Config config) {
@@ -57,47 +65,69 @@ record EapTlsConfig(SSLContext context, List<String> versions, int fragmentSize,
         if (fragment < 64 || fragment > 3000) {
             throw new ConfigException("auth.eap.tls.fragment.size: 64 to 3000, got " + fragment);
         }
+        TlsCredentials.Revocation revocation = choice(
+                TlsCredentials.Revocation.class,
+                "auth.eap.tls.revocation",
+                config.string("auth.eap.tls.revocation", "none"));
+        String ocspUrl = config.string("auth.eap.tls.ocsp.url", "");
+        Duration ocspTimeout = config.duration("auth.eap.tls.ocsp.timeout", Duration.ofSeconds(2));
+        if (revocation == TlsCredentials.Revocation.OCSP) {
+            ocspTimeouts(ocspTimeout);
+        }
+        TlsCredentials credentials = new TlsCredentials(
+                chain,
+                key,
+                ca.isBlank() ? null : Path.of(ca),
+                config.list("auth.eap.tls.crl", List.of()).stream()
+                        .map(String::trim)
+                        .filter(f -> !f.isEmpty())
+                        .map(Path::of)
+                        .toList(),
+                revocation,
+                ocspUrl.isBlank() ? null : URI.create(ocspUrl.trim()),
+                config.bool("auth.eap.tls.revocation.soft.fail", false),
+                config.duration("auth.eap.tls.reload", Duration.ofSeconds(60)));
         return new EapTlsConfig(
-                context(chain, key, ca.isBlank() ? null : Path.of(ca)),
+                credentials,
                 List.copyOf(versions),
                 fragment,
                 config.integer("auth.eap.tls.max.message", 65_536),
-                config.bool("auth.eap.tls.require.user", false));
+                config.bool("auth.eap.tls.require.user", false),
+                choice(
+                        CertificateIdentity.Check.class,
+                        "auth.eap.tls.identity",
+                        config.string("auth.eap.tls.identity", "match")));
     }
 
-    static SSLContext context(Path chainFile, Path keyFile, Path caFile) {
+    /** A context from these files, without revocation checks or reloading (tests, tools). */
+    static TlsCredentials context(Path chainFile, Path keyFile, Path caFile) {
+        return new TlsCredentials(
+                chainFile, keyFile, caFile, List.of(), TlsCredentials.Revocation.NONE, null, false, Duration.ZERO);
+    }
+
+    private static <E extends Enum<E>> E choice(Class<E> type, String key, String value) {
         try {
-            Certificate[] chain = certificates(chainFile).toArray(Certificate[]::new);
-            if (chain.length == 0) {
-                throw new ConfigException("auth.eap.tls.certificate: no certificate in " + chainFile);
-            }
-            KeyStore keys = KeyStore.getInstance("PKCS12");
-            keys.load(null, null);
-            keys.setKeyEntry("server", privateKey(keyFile), new char[0], chain);
-            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            kmf.init(keys, new char[0]);
-            TrustManagerFactory tmf = null;
-            if (caFile != null) {
-                KeyStore trust = KeyStore.getInstance("PKCS12");
-                trust.load(null, null);
-                int n = 0;
-                for (Certificate c : certificates(caFile)) {
-                    trust.setCertificateEntry("ca-" + n++, c);
-                }
-                tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-                tmf.init(trust);
-            }
-            SSLContext context = SSLContext.getInstance("TLS");
-            context.init(kmf.getKeyManagers(), tmf == null ? null : tmf.getTrustManagers(), null);
-            return context;
-        } catch (IOException | GeneralSecurityException e) {
-            throw new ConfigException("auth.eap.tls: " + e.getMessage(), e);
+            return Enum.valueOf(type, value.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ConfigException(key + ": one of "
+                    + Arrays.stream(type.getEnumConstants())
+                            .map(c -> c.name().toLowerCase(Locale.ROOT))
+                            .toList()
+                    + ", got " + value);
         }
     }
 
-    static Collection<? extends Certificate> certificates(Path pem) throws IOException, GeneralSecurityException {
-        try (InputStream in = Files.newInputStream(pem)) {
-            return CertificateFactory.getInstance("X.509").generateCertificates(in);
+    /**
+     * The JDK's OCSP client reads its timeouts from system properties, once: set them unless the operator did
+     * ({@code -Dcom.sun.security.ocsp.timeout=...}).
+     */
+    private static void ocspTimeouts(Duration timeout) {
+        String millis = timeout.toMillis() + "ms";
+        if (System.getProperty("com.sun.security.ocsp.timeout") == null) {
+            System.setProperty("com.sun.security.ocsp.timeout", millis);
+        }
+        if (System.getProperty("com.sun.security.ocsp.readtimeout") == null) {
+            System.setProperty("com.sun.security.ocsp.readtimeout", millis);
         }
     }
 

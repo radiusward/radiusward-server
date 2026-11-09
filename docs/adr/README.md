@@ -33,5 +33,7 @@
 | [0029](0029-peap.md) | PEAPv0/EAP-MSCHAPv2: shared TLS base, the inner user is authorized, outages keep the conversation | Accepted |
 | [0030](0030-ttls.md) | EAP-TTLS with inner PAP and MS-CHAPv2, implicit challenge | Accepted |
 | [0031](0031-peap-inner-methods.md) | PEAP inner methods: EAP-GTC (like PAP) and EAP-TLS, chosen by Nak | Accepted |
+| [0032](0032-peap-crypto-binding.md) | PEAP crypto-binding (optional by default), `eapol_test` interop for every TLS method | Accepted |
+| [0033](0033-client-certificates.md) | Client certificates: identity must match (or names the user), CRL/OCSP revocation, reload on change | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

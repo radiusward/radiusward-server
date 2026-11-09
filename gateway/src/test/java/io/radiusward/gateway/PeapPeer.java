@@ -21,6 +21,8 @@ final class PeapPeer implements UnaryOperator<byte[]> {
     byte[] ntResponse;
     boolean serverProved;
     boolean failureSeen;
+    /** Echo a Crypto-Binding TLV unchanged (a broken peer) instead of ignoring it. */
+    boolean echoBinding;
 
     private final int wanted;
     private final EapTlsClient innerTls;
@@ -44,8 +46,9 @@ final class PeapPeer implements UnaryOperator<byte[]> {
         }
         EapPacket tlv = EapPacket.parse(in); // a full EAP packet of type 33 first: its code 1 looks like Identity
         if (tlv != null && tlv.code() == EapPacket.REQUEST && tlv.type() == Peap.TLV) {
-            byte[] out = in.clone();
+            byte[] out = echoBinding ? in.clone() : Arrays.copyOf(in, 11); // without crypto-binding support
             out[0] = EapPacket.RESPONSE;
+            out[3] = (byte) out.length;
             return out; // echo the Result TLV with the same status
         }
         int type = in[0] & 0xFF;
