@@ -376,6 +376,7 @@ public final class PostgresSink implements AccountingSink {
                     false);
             col(out, attributeMode.equals("raw") ? "\\x" + HexFormat.of().formatHex(e.rawAttributes()) : null, false);
             col(out, e.nasDevice(), false);
+            col(out, c.acctMultiSessionId(), false);
             out.append('\n');
         }
         return out.toString();
@@ -415,6 +416,7 @@ public final class PostgresSink implements AccountingSink {
             col(out, "0", false);
             col(out, Long.toString(s.projectionVersion()), false);
             col(out, s.nasDevice(), false);
+            col(out, c.acctMultiSessionId(), false);
             out.append('\n');
         }
         return out.toString();
@@ -495,7 +497,8 @@ public final class PostgresSink implements AccountingSink {
                 stopped_at = EXCLUDED.stopped_at,
                 quality_flags = EXCLUDED.quality_flags,
                 projection_version = EXCLUDED.projection_version,
-                nas_device = COALESCE(EXCLUDED.nas_device, accounting_session.nas_device)
+                nas_device = COALESCE(EXCLUDED.nas_device, accounting_session.nas_device),
+                acct_multi_session_id = COALESCE(EXCLUDED.acct_multi_session_id, accounting_session.acct_multi_session_id)
             WHERE accounting_session.projection_version < EXCLUDED.projection_version""";
 
     /** FreeRADIUS {@code radacct} column names over {@code accounting_session} (read-only). */

@@ -17,7 +17,7 @@ The same data has to fit MySQL, SQL Server, Oracle, Db2, Firebird, SQLite, Cassa
 - **Primitives every sink implements:** events insert-if-absent, sessions update-only-if-newer; checkpoint
   *transactional* (with the data, epoch-fenced) or *idempotent replay* (Cassandra, DynamoDB).
 - **Attributes:** typed columns for what reports query (user, framed IP, NAS IP, calling station, terminate cause,
-  counters); the rest as canonical JSON defined once in `export-api` — every attribute an array, binary as
+  counters, Acct-Multi-Session-Id — schema V3, links roaming and multilink sessions); the rest as canonical JSON defined once in `export-api` — every attribute an array, binary as
   base64, unknown attributes by number, a format version column, no U+0000; column type per dialect.
 - **Values:** counters as signed 64-bit (`bigint`), overflow flagged; missing values `NULL`, never 0.
 - **PostgreSQL:** one transaction per batch — `COPY` (text format) into temporary staging, `INSERT … ON CONFLICT

@@ -42,6 +42,7 @@ public final class Attributes {
     public static final Set<String> COMMON = Set.of(
             "Acct-Status-Type",
             "Acct-Session-Id",
+            "Acct-Multi-Session-Id",
             "Acct-Session-Time",
             "Acct-Input-Octets",
             "Acct-Output-Octets",
@@ -56,7 +57,11 @@ public final class Attributes {
             "Called-Station-Id",
             "Acct-Terminate-Cause");
 
-    /** Values kept in typed columns; {@code null} when the attribute is absent. */
+    /**
+     * Values kept in typed columns; {@code null} when the attribute is absent.
+     *
+     * @param acctMultiSessionId links the sessions of one client across access points or links (roaming, multilink)
+     */
     public record Common(
             String userName,
             String framedIp,
@@ -64,7 +69,11 @@ public final class Attributes {
             String nasIdentifier,
             String callingStationId,
             String calledStationId,
-            Integer terminateCause) {}
+            Integer terminateCause,
+            String acctMultiSessionId) {
+
+        static final Common NONE = new Common(null, null, null, null, null, null, null, null);
+    }
 
     private final Dictionary dictionary;
     private final VendorFormats formats;
@@ -84,18 +93,18 @@ public final class Attributes {
 
     public Common common(byte[] attributes) {
         if (attributes == null || attributes.length == 0) {
-            return new Common(null, null, null, null, null, null, null);
+            return Common.NONE;
         }
         int length = RadiusPacket.HEADER_LENGTH + attributes.length;
         if (length > RadiusPacket.MAX_LENGTH) {
-            return new Common(null, null, null, null, null, null, null);
+            return Common.NONE;
         }
         packetBuffer.putByte(RadiusPacket.CODE_OFFSET, (byte) 4);
         packetBuffer.putByte(RadiusPacket.IDENTIFIER_OFFSET, (byte) 0);
         packetBuffer.putShort(RadiusPacket.LENGTH_OFFSET, (short) length, java.nio.ByteOrder.BIG_ENDIAN);
         packetBuffer.putBytes(RadiusPacket.HEADER_LENGTH, attributes);
         if (packet.wrap(packetBuffer, 0, length) != io.radiusward.radius.codec.DecodeStatus.OK) {
-            return new Common(null, null, null, null, null, null, null);
+            return Common.NONE;
         }
         extractor.extract(packet, fields);
         return new Common(
@@ -113,7 +122,11 @@ public final class Attributes {
                         AccountingFields.CALLED_STATION_ID,
                         fields.calledStationIdOffset(),
                         fields.calledStationIdLength()),
-                fields.has(AccountingFields.TERMINATE_CAUSE) ? (int) fields.terminateCause() : null);
+                fields.has(AccountingFields.TERMINATE_CAUSE) ? (int) fields.terminateCause() : null,
+                string(
+                        AccountingFields.MULTI_SESSION_ID,
+                        fields.multiSessionIdOffset(),
+                        fields.multiSessionIdLength()));
     }
 
     private String string(int field, int offset, int length) {

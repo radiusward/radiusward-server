@@ -199,6 +199,7 @@ public final class FileSink implements AccountingSink {
         field(out, "nas_ip", c.nasIp());
         field(out, "calling_station_id", c.callingStationId());
         field(out, "terminate_cause", c.terminateCause());
+        field(out, "acct_multi_session_id", c.acctMultiSessionId());
     }
 
     private static void field(StringBuilder out, String name, Object value) {

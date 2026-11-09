@@ -364,7 +364,8 @@ class PostgresSinkTest {
                     + " projection_version) VALUES ('" + SESSION + "', 7, 's1', 1, 0, 3, 60, 600, 1200, now(), 100)");
         }
         try (PostgresSink sink = open(Map.of("radacct.view", "true"))) {
-            assertThat(count("SELECT count(*) FROM schema_version")).isEqualTo(2);
+            assertThat(count("SELECT count(*) FROM schema_version"))
+                    .isEqualTo(PostgresSink.migrations().size());
             SessionSnapshot s = session(200, 120, SessionSnapshot.State.ACTIVE, ALICE, "s1");
             sink.write(batch(1, 100, 200, List.of(event(3, 150, T)), List.of(withDevice(s, 999, "ap-17"))));
             // a closure does not know the device: the stored one stays
@@ -381,6 +382,42 @@ class PostgresSinkTest {
         assertThat(value("SELECT nasidentifier FROM radacct")).isEqualTo("ap-17");
         assertThat(count("SELECT count(*) FROM accounting_event WHERE nas_device IS NULL"))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void roamingSessionsAreLinkedByAcctMultiSessionId() throws Exception {
+        // a client roams from AP 1 to AP 2: two sessions (one per AP), one Acct-Multi-Session-Id
+        byte[] ap1 = {1, 7, 'a', 'l', 'i', 'c', 'e', 50, 9, 'm', 's', '-', '7', 'f', '3', 'a'};
+        try (PostgresSink sink = open(Map.of())) {
+            SessionSnapshot first = session(100, 600, SessionSnapshot.State.STOPPED, ap1, "ap1-s");
+            SessionSnapshot second = new SessionSnapshot(
+                    new UUID(2, 2),
+                    200,
+                    7,
+                    "ap2-s",
+                    SessionSnapshot.State.ACTIVE,
+                    SessionSnapshot.CloseCause.NONE,
+                    3,
+                    60L,
+                    600,
+                    1200,
+                    T + 200,
+                    T,
+                    null,
+                    ap1);
+            sink.write(batch(1, 0, 200, List.of(event(1, 100, T)), List.of(first, second)));
+            // a closure carries no attributes: the stored id stays
+            sink.write(batch(
+                    1,
+                    200,
+                    300,
+                    List.of(),
+                    List.of(withDevice(session(300, 900, SessionSnapshot.State.STOPPED, null, null), 7, null))));
+        }
+        assertThat(count("SELECT count(*) FROM accounting_session WHERE acct_multi_session_id = 'ms-7f3a'"))
+                .isEqualTo(2);
+        assertThat(value("SELECT indexdef FROM pg_indexes WHERE indexname = 'accounting_session_multi'"))
+                .contains("acct_multi_session_id");
     }
 
     private static SessionSnapshot withDevice(SessionSnapshot s, int nasId, String device) {

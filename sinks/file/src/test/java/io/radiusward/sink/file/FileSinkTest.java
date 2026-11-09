@@ -49,7 +49,7 @@ class FileSinkTest {
                 null,
                 10,
                 20,
-                new byte[] {1, 7, 'a', 'l', 'i', 'c', 'e'});
+                new byte[] {1, 7, 'a', 'l', 'i', 'c', 'e', 50, 6, 'm', 's', '-', '1'});
         SessionSnapshot session = new SessionSnapshot(
                 new UUID(1, 1),
                 to,
@@ -96,6 +96,7 @@ class FileSinkTest {
         assertThat(lines().get(0))
                 .startsWith("{\"type\":\"event\",\"event_id\":\"00000000-0000-0001-0000-000000000001\"")
                 .contains("\"user_name\":\"alice\"")
+                .contains("\"acct_multi_session_id\":\"ms-1\"")
                 .contains("\"outcome\":\"applied\"")
                 .contains("\"attributes\":null");
         assertThat(lines().get(1)).startsWith("{\"type\":\"session\"").contains("\"version\":100");

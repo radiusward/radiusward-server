@@ -33,6 +33,7 @@ class AttributesTest {
         encoder.attribute(25, new byte[] {1, 2}); // Class, binary
         encoder.attribute(25, new byte[] {3, 4}); // Class again
         encoder.attribute(49, new byte[] {0, 0, 0, 1}); // Acct-Terminate-Cause = User-Request
+        encoder.attribute(50, "ms-7f3a".getBytes(StandardCharsets.US_ASCII)); // Acct-Multi-Session-Id
         encoder.vendorAttribute(9, 1, "a=1".getBytes(StandardCharsets.US_ASCII)); // Cisco-AVPair
         encoder.vendorAttribute(9, 1, "b=2".getBytes(StandardCharsets.US_ASCII));
         encoder.vendorAttribute(64999, 7, "x".getBytes(StandardCharsets.US_ASCII)); // unknown vendor
@@ -48,6 +49,8 @@ class AttributesTest {
         assertThat(common.nasIp()).isEqualTo("192.0.2.1");
         assertThat(common.terminateCause()).isEqualTo(1);
         assertThat(common.callingStationId()).isNull();
+        assertThat(common.acctMultiSessionId()).isEqualTo("ms-7f3a");
+        assertThat(ATTRIBUTES.json(section(), Attributes.COMMON)).doesNotContain("Acct-Multi-Session-Id");
         assertThat(ATTRIBUTES.common(null).userName()).isNull();
     }
 

@@ -34,7 +34,11 @@ put the plug-in and its driver into `export.plugins.dir` (`/opt/radiusward/plugi
   `radiusward admin export-schema > schema.sql`, apply it, set `schema.manage=validate` (checks the version and
   checksums) or `none`.
 - **Sessions:** `accounting_session` holds open and closed sessions; `close_cause` 1 Stop, 2 NAS restart, 3 idle
-  timeout. Closed sessions are kept forever unless `sessions.retention` is set (e.g. `400d`).
+  timeout (lost Stop; `stopped_at` is then the last event). Closed sessions are kept forever unless
+  `sessions.retention` is set (e.g. `400d`). `nas_id` is the NAS entry, `nas_device` the device behind it when the
+  entry sets `identity`; `acct_multi_session_id` links the sessions of one client across access points or links
+  (roaming, multilink), indexed:
+  `SELECT * FROM accounting_session WHERE acct_multi_session_id = $1 ORDER BY started_at`.
 - **History** (`mode=sessions+events`): `accounting_event`, daily partitions by commit day, dropped after
   `events.retention` (default `90d`). It costs volume — at 500k sessions roughly 100 GB per day with 5-minute
   interims — so enable it only where you need every Interim.
