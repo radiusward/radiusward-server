@@ -7,8 +7,8 @@ A NAS entry is found by the packet's source address; its id was part of the sess
 Accounting-On/Off. Cloud-managed Wi-Fi (Meraki, Aruba Instant, Ruckus, UniFi, Cambium, Aerohive, Open-Mesh) sends
 accounting from every access point, often through one NAT address. One entry then covers many devices: an
 Accounting-On from one AP stopped the sessions of all of them, and two APs numbering sessions alike (`00000001`
-after boot; RFC 2866 asks for uniqueness per NAS only) shared one session. A production system we studied identifies
-the hotspot from attributes for this reason.
+after boot; RFC 2866 asks for uniqueness per NAS only) shared one session. Hotspot platforms commonly identify the
+access point from request attributes for this reason.
 
 ## Decision
 - `nas.<name>.identity` lists request attributes that tell the devices behind an entry apart: `nas-identifier`,

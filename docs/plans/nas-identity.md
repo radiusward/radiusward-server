@@ -23,7 +23,7 @@ One `nas.<name>.address` (a CIDR range, or `0.0.0.0/0`) then covers hundreds of 
    (stale, duplicate, wrong counters).
 3. Exported rows cannot tell the APs apart (`nas_id` is the NAT entry).
 
-The production system we studied identifies the hotspot from attributes (NAS-Identifier, Called-Station-Id,
+Hotspot platforms commonly identify the access point from request attributes (NAS-Identifier, Called-Station-Id,
 Aruba-Location-Id) for exactly this reason.
 
 ## Proposal
