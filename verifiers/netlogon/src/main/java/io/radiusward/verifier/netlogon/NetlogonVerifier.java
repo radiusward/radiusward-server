@@ -21,6 +21,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -57,6 +58,12 @@ final class NetlogonVerifier implements CredentialVerifier {
     private final Semaphore permits;
     private final ArrayBlockingQueue<NetlogonClient> idle;
     private final ConcurrentHashMap<String, Integer> ports = new ConcurrentHashMap<>();
+    private final DomainControllers controllers;
+    private final AtomicLong accepted = new AtomicLong();
+    private final AtomicLong rejected = new AtomicLong();
+    private final AtomicLong unavailable = new AtomicLong();
+    private final AtomicLong channelsOpened = new AtomicLong();
+    private final AtomicLong serverFailures = new AtomicLong();
     private final SecureRandom random = new SecureRandom();
     private volatile boolean closed;
 
@@ -65,6 +72,7 @@ final class NetlogonVerifier implements CredentialVerifier {
         this.machineNtHash = NetlogonCrypto.ntHash(settings.machinePassword());
         this.permits = new Semaphore(settings.connections());
         this.idle = new ArrayBlockingQueue<>(settings.connections());
+        this.controllers = DomainControllers.of(settings);
     }
 
     @Override
@@ -101,9 +109,11 @@ final class NetlogonVerifier implements CredentialVerifier {
                         client.samLogon(settings.serverName(), account[0], account[1], challenge, ntResponse);
                 broken = false;
                 if (logon.status() == 0) {
+                    accepted.incrementAndGet();
                     return Result.accepted(logon.userSessionKey());
                 }
                 if (REJECTIONS.contains(logon.status())) {
+                    rejected.incrementAndGet();
                     return Result.REJECTED;
                 }
                 broken = true; // the channel is no longer good (e.g. the DC was restarted): try a fresh one
@@ -114,6 +124,7 @@ final class NetlogonVerifier implements CredentialVerifier {
                 release(client, broken);
             }
         }
+        unavailable.incrementAndGet();
         throw new StoreUnavailableException(
                 "netlogon verifier " + settings.name() + ": " + (last == null ? "no answer" : last.getMessage()));
     }
@@ -151,6 +162,7 @@ final class NetlogonVerifier implements CredentialVerifier {
             return open();
         } catch (StoreUnavailableException e) {
             permits.release();
+            unavailable.incrementAndGet();
             throw e;
         }
     }
@@ -158,13 +170,18 @@ final class NetlogonVerifier implements CredentialVerifier {
     /** A new secure channel to the first domain controller that accepts the machine account. */
     private NetlogonClient open() throws StoreUnavailableException {
         String reasons = "";
-        for (String server : settings.servers()) {
+        List<String> servers = controllers.current();
+        if (servers.isEmpty()) {
+            reasons = " none known (DNS: _ldap._tcp.dc._msdcs." + settings.dnsDomain() + ")";
+        }
+        for (String server : servers) {
             try {
                 InetSocketAddress netlogon = new InetSocketAddress(server, port(server));
                 NetlogonClient client = new NetlogonClient(netlogon, settings.timeout());
                 try {
                     client.authenticate(
                             settings.serverName(), settings.machineAccount(), settings.machineName(), machineNtHash);
+                    channelsOpened.incrementAndGet();
                     return client;
                 } catch (IOException e) {
                     client.close();
@@ -172,10 +189,12 @@ final class NetlogonVerifier implements CredentialVerifier {
                 }
             } catch (IOException e) {
                 ports.remove(server); // the port may have changed with a restart
+                serverFailures.incrementAndGet();
                 reasons += " " + server + ": " + e.getMessage() + ";";
                 LOG.debug("netlogon verifier {}: {} failed: {}", settings.name(), server, e.getMessage());
             }
         }
+        controllers.failed();
         throw new StoreUnavailableException("netlogon verifier " + settings.name() + ": no domain controller"
                 + " accepted the secure channel:" + reasons);
     }
@@ -219,7 +238,17 @@ final class NetlogonVerifier implements CredentialVerifier {
     }
 
     List<String> servers() {
-        return settings.servers();
+        return controllers.current();
+    }
+
+    @Override
+    public java.util.Map<String, Long> counters() {
+        return java.util.Map.of(
+                "accepted", accepted.get(),
+                "rejected", rejected.get(),
+                "unavailable", unavailable.get(),
+                "channels_opened", channelsOpened.get(),
+                "server_failures", serverFailures.get());
     }
 
     @Override

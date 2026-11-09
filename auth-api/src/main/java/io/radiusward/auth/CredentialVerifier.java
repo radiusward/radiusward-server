@@ -55,6 +55,14 @@ public interface CredentialVerifier extends AutoCloseable {
         return Result.UNSUPPORTED;
     }
 
+    /**
+     * The verifier's own counters for {@code /metrics} (event name → count, e.g. {@code accepted}, {@code
+     * channels_opened}); none by default. Called from the management thread.
+     */
+    default java.util.Map<String, Long> counters() {
+        return java.util.Map.of();
+    }
+
     @Override
     void close();
 }

@@ -152,6 +152,38 @@ class NetlogonVerifierIT {
     }
 
     @Test
+    void failsOverPastADomainControllerThatDoesNotAnswer() throws Exception {
+        Map<String, String> s = settings();
+        s.put("server", "10.255.255.1 " + SambaAd.endpointMapper().getHostString()); // nothing answers at the first
+        s.put("timeout", "500ms");
+        try (CredentialVerifier v = verifier(s)) {
+            assertThat(v.verifyPassword("alice", utf8(ALICE)).accepted()).isTrue();
+            assertThat(v.counters()).containsEntry("server_failures", 1L).containsEntry("accepted", 1L);
+        }
+    }
+
+    @Test
+    void aFrozenDomainControllerMeansNoAnswerUntilItIsBack() throws Exception {
+        Map<String, String> s = settings();
+        s.put("timeout", "800ms");
+        try (CredentialVerifier v = verifier(s)) {
+            assertThat(v.verifyPassword("alice", utf8(ALICE)).accepted()).isTrue();
+            SambaAd.pause();
+            try {
+                assertThatThrownBy(() -> v.verifyPassword("alice", utf8(ALICE)))
+                        .isInstanceOf(StoreUnavailableException.class);
+            } finally {
+                SambaAd.unpause();
+            }
+            assertThat(v.verifyPassword("alice", utf8(ALICE)).accepted())
+                    .as("a fresh channel after the outage")
+                    .isTrue();
+            assertThat(v.counters().get("unavailable")).isEqualTo(1L);
+            assertThat(v.counters().get("channels_opened")).isGreaterThanOrEqualTo(2L);
+        }
+    }
+
+    @Test
     void settingsAreChecked() {
         Map<String, String> s = settings();
         s.put("machine.account", "RADIUSWARD");
@@ -162,5 +194,8 @@ class NetlogonVerifierIT {
         Map<String, String> missing = settings();
         missing.remove("machine.password");
         assertThatThrownBy(() -> verifier(missing)).hasMessageContaining("machine.password");
+        Map<String, String> nowhere = settings();
+        nowhere.remove("server");
+        assertThatThrownBy(() -> verifier(nowhere)).hasMessageContaining("server or dns.domain");
     }
 }

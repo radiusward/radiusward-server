@@ -9,7 +9,8 @@ gateway hosts ([ADR 0025](../../docs/adr/0025-credential-verifiers-and-ldap.md))
 | 2. Secure channel: `NetrServerReqChallenge`, `NetrServerAuthenticate3`, AES session key and credentials | done, tested against Samba AD |
 | 3. Netlogon-signed and sealed RPC, `NetrLogonSamLogonEx` | done, tested against Samba AD |
 | 4. The verifier: MS-CHAPv1/v2 and PAP, user session key for MPPE, channel pool, failover | done, tested against Samba AD, also through a real gateway |
-| 5. DNS discovery of domain controllers, metrics, machine password rotation, `linux-tests` | next |
+| 5. DNS discovery of domain controllers, metrics, failover and outage tests | done |
+| Check against a Windows domain controller | open — tested against Samba AD only |
 
 The gateway authenticates as a workstation trust account that an administrator creates once (a computer object with
 a known password):
@@ -33,7 +34,10 @@ auth.verifier.dc.machine.password = ${env:NETLOGON_MACHINE_PASSWORD}
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `server` | — | domain controllers, tried in order |
+| `server` | — | domain controllers, tried in order; without it they come from DNS |
+| `dns.domain` | — | the domain's DNS name: domain controllers from the SRV records `_ldap._tcp.dc._msdcs.<dns.domain>` (lower priority first, then higher weight), as Windows clients find them |
+| `dns.server` | the system's | a DNS server to ask (`host[:port]`) |
+| `dns.refresh` | `10m` | how often the SRV records are looked up again (also after every domain controller failed) |
 | `domain` | — | NetBIOS domain name, for users given without one |
 | `machine.account` / `machine.password` | — | the workstation trust account |
 | `server.name` | the first server | the name given to the domain controller in calls |
@@ -60,4 +64,15 @@ Details that matter (each found against a real domain controller):
   zero IV), even inside the sealed call.
 - MS-CHAPv2 logons carry `MSV1_0_ALLOW_MSVCHAPV2`, so domain controllers that refuse NTLMv1 (Samba's default
   `ntlmv2-only`, hardened Windows) still accept them when configured to (`mschapv2-and-ntlmv2-only`).
+
+**Machine password.** Domain controllers do not expire computer-account passwords; rotating them is the client's
+choice. All gateways share the machine account, so one gateway rotating it would lock the others out — radiusward
+therefore does not rotate it. Rotate it by hand when your policy asks for it (`Set-ADAccountPassword`, then update the
+secret on every gateway), or give each gateway its own machine account.
+
+**Metrics.** `radiusward_gateway_verifier_events_total{verifier,event}`: `accepted`, `rejected`, `unavailable`,
+`channels_opened`, `server_failures`.
+
+**Outages.** Tested with a domain controller that does not answer (failover to the next one) and one frozen mid-way
+(no answers meanwhile, a fresh channel afterwards, no gateway restart).
 

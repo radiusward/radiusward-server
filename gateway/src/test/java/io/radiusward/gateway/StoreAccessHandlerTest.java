@@ -653,6 +653,11 @@ class StoreAccessHandlerTest {
         }
 
         @Override
+        public java.util.Map<String, Long> counters() {
+            return java.util.Map.of("calls", (long) calls);
+        }
+
+        @Override
         public void close() {}
     }
 
@@ -693,6 +698,11 @@ class StoreAccessHandlerTest {
         assertThat(pap(h, "User", "clientPass"))
                 .as("no answer while the directory is down")
                 .isEqualTo(AccessHandler.DROP);
+        var metrics = new io.radiusward.common.management.PrometheusWriter();
+        h.writeMetrics(metrics, "1");
+        assertThat(metrics.finish())
+                .contains("radiusward_gateway_verifier_events_total{gateway=\"1\",verifier=\"ad\",event=\"calls\"} "
+                        + ad.calls);
     }
 
     @Test

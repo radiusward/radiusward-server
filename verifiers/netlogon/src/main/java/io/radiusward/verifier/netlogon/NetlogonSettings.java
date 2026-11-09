@@ -13,7 +13,9 @@ import java.util.Locale;
 /**
  * Settings of a Netlogon verifier ({@code auth.verifier.<name>.*}).
  *
- * @param servers domain controllers, tried in order ({@code server}, comma or space separated)
+ * @param servers domain controllers, tried in order ({@code server}, comma or space separated); empty = found in DNS
+ * @param dnsDomain the domain's DNS name, whose SRV records name the domain controllers ({@code dns.domain})
+ * @param dnsServer a DNS server to ask instead of the system's ({@code dns.server}, {@code host[:port]})
  * @param domain the NetBIOS domain name ({@code domain}), for users given without one
  * @param machineAccount the workstation trust account ({@code machine.account}, e.g. {@code RADIUSWARD$})
  * @param machinePassword its password ({@code machine.password}, e.g. {@code ${env:NETLOGON_MACHINE_PASSWORD}})
@@ -32,7 +34,10 @@ record NetlogonSettings(
         int netlogonPort,
         boolean stripRealm,
         Duration timeout,
-        int connections) {
+        int connections,
+        String dnsDomain,
+        String dnsServer,
+        Duration dnsRefresh) {
 
     String machineName() {
         return machineAccount.endsWith("$") ? machineAccount.substring(0, machineAccount.length() - 1) : machineAccount;
@@ -40,9 +45,14 @@ record NetlogonSettings(
 
     static NetlogonSettings from(StoreContext context) {
         String prefix = "auth.verifier." + context.name() + ".";
-        List<String> servers = Arrays.stream(context.required("server").split("[,\\s]+"))
+        List<String> servers = Arrays.stream(context.setting("server", "").split("[,\\s]+"))
                 .filter(s -> !s.isEmpty())
                 .toList();
+        String dnsDomain = context.setting("dns.domain", "").trim();
+        if (servers.isEmpty() && dnsDomain.isEmpty()) {
+            throw new IllegalArgumentException(
+                    prefix + "server or dns.domain is required (domain controllers listed, or found in DNS)");
+        }
         String account = context.required("machine.account").trim();
         if (!account.endsWith("$")) {
             throw new IllegalArgumentException(prefix + "machine.account: a computer account ends with $, e.g. "
@@ -62,11 +72,14 @@ record NetlogonSettings(
                 domain,
                 account,
                 context.required("machine.password"),
-                context.setting("server.name", servers.get(0)),
+                context.setting("server.name", servers.isEmpty() ? dnsDomain : servers.get(0)),
                 Integer.parseInt(context.setting("endpoint.mapper.port", "135")),
                 Integer.parseInt(context.setting("netlogon.port", "0")),
                 Boolean.parseBoolean(context.setting("strip.realm", "true")),
                 context.duration("timeout", "2s"),
-                connections);
+                connections,
+                dnsDomain,
+                context.setting("dns.server", "").trim(),
+                context.duration("dns.refresh", "10m"));
     }
 }

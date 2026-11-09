@@ -68,6 +68,21 @@ final class SambaAd {
         return container.getLogs();
     }
 
+    /** Freezes the domain controller (it accepts nothing, answers nothing) until {@link #unpause()}. */
+    static void pause() {
+        DockerClientFactory.instance()
+                .client()
+                .pauseContainerCmd(container.getContainerId())
+                .exec();
+    }
+
+    static void unpause() {
+        DockerClientFactory.instance()
+                .client()
+                .unpauseContainerCmd(container.getContainerId())
+                .exec();
+    }
+
     static String ldapUrl() {
         return "ldap://" + container.getHost() + ":" + container.getMappedPort(389);
     }

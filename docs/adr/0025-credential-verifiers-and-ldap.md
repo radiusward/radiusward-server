@@ -32,5 +32,9 @@ winbind on a domain-joined host, which would add a native dependency and a domai
 - AD sites combine the LDAP store (groups, attributes) with a verifier (LDAP bind for PAP, Netlogon for MS-CHAP).
 - Pure Entra ID (formerly Azure AD) offers neither LDAP passwords nor Netlogon; certificate-based EAP-TLS (5.8) is the
   way there. Entra Domain Services and AD on Azure VMs behave like on-premises AD.
+- Domain controllers come from the `server` list or from DNS SRV records; an unreachable one is skipped, an outage
+  means no answers until a fresh channel works again.
+- The machine password is not rotated by radiusward: domain controllers do not expire it, and gateways share the
+  account. Operators rotate it by hand or give each gateway its own account.
 - The Netlogon client is tested against Samba; a check against a Windows domain controller is still due before it
   is called production-ready.

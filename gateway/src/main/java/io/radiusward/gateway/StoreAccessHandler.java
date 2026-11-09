@@ -837,6 +837,15 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 "radiusward_gateway_access_reply_items_filtered_total",
                 "Vendor attributes left out of Access-Accepts because the NAS entry is of another vendor");
         new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "gateway", gateway, "nas", nas));
+        if (!stores.verifiers().isEmpty()) {
+            w.counter(
+                    "radiusward_gateway_verifier_events_total",
+                    "What credential verifiers did: accepted, rejected, unavailable and their own events");
+            new TreeMap<>(stores.verifiers())
+                    .forEach((name, verifier) -> new TreeMap<>(verifier.counters())
+                            .forEach((event, count) ->
+                                    w.sample(count, "gateway", gateway, "verifier", name, "event", event)));
+        }
     }
 
     private static String string(RadiusPacket request, int type) {
