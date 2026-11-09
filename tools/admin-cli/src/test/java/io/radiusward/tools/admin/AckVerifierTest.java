@@ -183,4 +183,19 @@ class AckVerifierTest {
     private static AdminClient.Session session(SessionStatus status, long sessionTime) {
         return new AdminClient.Session(status, 7, 3, sessionTime, 0, 0, 0);
     }
+
+    @Test
+    void longAckLogsAreStreamedKeepingOneEventPerSession() throws Exception {
+        Path log = dir.resolve("long.csv");
+        try (java.io.BufferedWriter w = Files.newBufferedWriter(log)) {
+            w.write(HEADER + ",nas_identifier\n");
+            for (int i = 0; i < 200_000; i++) { // like an hour of load: many events, few sessions
+                w.write("s-" + (i % 100) + ",3," + (i / 100) + ",1,1,1.0,nas" + (i % 7) + "\n");
+            }
+        }
+        Map<String, AckVerifier.Expected> last = AckVerifier.lastAcknowledged(log);
+        assertThat(last).hasSize(700).containsKey("nas0/s-0");
+        assertThat(last.values()).allMatch(e -> e.sessionTime() >= 1990);
+        assertThat(last).isEqualTo(AckVerifier.lastAcknowledged(Files.readAllLines(log)));
+    }
 }

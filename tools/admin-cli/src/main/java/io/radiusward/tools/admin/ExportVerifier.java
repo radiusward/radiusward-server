@@ -6,8 +6,6 @@ package io.radiusward.tools.admin;
 
 import io.radiusward.gateway.EventKeys;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -36,8 +34,7 @@ public final class ExportVerifier {
     public static AckVerifier.Report verify(
             Path ackLog, int nasId, boolean byDevice, Connection db, AckVerifier.SessionLookup cluster)
             throws IOException, SQLException {
-        Map<String, AckVerifier.Expected> expected =
-                AckVerifier.lastAcknowledged(Files.readAllLines(ackLog, StandardCharsets.UTF_8));
+        Map<String, AckVerifier.Expected> expected = AckVerifier.lastAcknowledged(ackLog);
         EventKeys keys = new EventKeys();
         List<String> problems = new ArrayList<>();
         try (PreparedStatement ps =

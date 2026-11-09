@@ -17,6 +17,7 @@ case "$component:$profile" in
     gateway:standard)      heap=384m ;;
     gateway:large)         heap=768m ;;
     radclient:*)           heap=512m ;;
+    admin:*)               heap=256m ;;   # verifiers keep the last event of every session of an ack log
     *)                     heap=64m ;;    # probe, version, cluster-tool
 esac
 

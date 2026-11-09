@@ -51,6 +51,9 @@ docker compose -f compose.yaml -f compose.large.yaml up -d
 | standard | 2 GiB, 2 CPU | 768 MiB | 1 GiB | 1g / 384m |
 | large | see `compose.large.yaml` | | | 2560m / 768m |
 
+Tools run in the same image with their own heap: `radclient` 512m, `admin` 256m (its verifiers stream an ack log
+and keep one event per session), `probe`/`cluster-tool` 64m; `JAVA_OPTS` overrides it.
+
 Measured with the small profile ([ADR 0004](../adr/0004-memory-budget.md)): 2M sessions at ~32k requests/s
 stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per gateway.
 

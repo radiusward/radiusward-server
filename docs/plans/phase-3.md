@@ -405,6 +405,9 @@ PostgreSQL 17 in a container on the same VM. Absolute rates are not bare-metal n
   a rolled-back transaction stayed in the PostgreSQL sink's partition cache, so later good rows for that day
   failed and went to quarantine — a rollback now clears the cache. The admin client did not notice that the
   cluster had closed its idle session (no keep-alives) and now reconnects.
+- Found by the first nightly `PurgeIT` (60 min of load): `admin verify-export` read the whole ack log (≈2M lines)
+  into a 64 MB heap — the image's default for tools — and ran out of memory before checking anything. The verifiers
+  now stream the log keeping one event per session, and `admin` gets a 256 MB heap in the image.
 
 ### Deviations from the plan
 

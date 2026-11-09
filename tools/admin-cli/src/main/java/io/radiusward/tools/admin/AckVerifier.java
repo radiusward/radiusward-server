@@ -60,21 +60,39 @@ public final class AckVerifier {
     public static Map<String, Expected> lastAcknowledged(List<String> lines) {
         Map<String, Expected> last = new LinkedHashMap<>();
         for (int i = 1; i < lines.size(); i++) {
-            String line = lines.get(i);
-            if (line.isBlank()) {
-                continue;
-            }
-            String[] f = line.split(",");
-            if (!f[3].equals("1")) {
-                continue;
-            }
-            Expected e = new Expected(f[0], Integer.parseInt(f[1]), Long.parseLong(f[2]), f.length > 6 ? f[6] : "");
-            Expected previous = last.get(e.name());
-            if (previous == null || e.sessionTime() >= previous.sessionTime()) {
-                last.put(e.name(), e);
+            add(last, lines.get(i));
+        }
+        return last;
+    }
+
+    /**
+     * As {@link #lastAcknowledged(List)}, streaming the file: memory grows with the sessions, not with the events (a
+     * long load test writes millions of lines).
+     */
+    public static Map<String, Expected> lastAcknowledged(Path ackLog) throws IOException {
+        Map<String, Expected> last = new LinkedHashMap<>();
+        try (java.io.BufferedReader reader = Files.newBufferedReader(ackLog, StandardCharsets.UTF_8)) {
+            reader.readLine(); // header
+            for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+                add(last, line);
             }
         }
         return last;
+    }
+
+    private static void add(Map<String, Expected> last, String line) {
+        if (line.isBlank()) {
+            return;
+        }
+        String[] f = line.split(",");
+        if (!f[3].equals("1")) {
+            return;
+        }
+        Expected e = new Expected(f[0], Integer.parseInt(f[1]), Long.parseLong(f[2]), f.length > 6 ? f[6] : "");
+        Expected previous = last.get(e.name());
+        if (previous == null || e.sessionTime() >= previous.sessionTime()) {
+            last.put(e.name(), e);
+        }
     }
 
     public static Report verify(Path ackLog, int nasId, SessionLookup lookup) throws IOException {
@@ -86,7 +104,7 @@ public final class AckVerifier {
      *     nas-identifier}, ADR 0019): session keys include the log's {@code nas_identifier}
      */
     public static Report verify(Path ackLog, int nasId, boolean byDevice, SessionLookup lookup) throws IOException {
-        Map<String, Expected> expected = lastAcknowledged(Files.readAllLines(ackLog, StandardCharsets.UTF_8));
+        Map<String, Expected> expected = lastAcknowledged(ackLog);
         EventKeys keys = new EventKeys();
         List<String> lost = new ArrayList<>();
         for (Expected e : expected.values()) {
