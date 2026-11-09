@@ -34,6 +34,7 @@ auth.verifier.ad-bind.base.dn = DC=corp,DC=example
 | `bind.dn` / `bind.password` | anonymous | service account for searches |
 | `base.dn` | — | where users and groups are searched |
 | `user.filter` | `(&(objectClass=user)(sAMAccountName={0}))` | `{0}` is the escaped user name |
+| `strip.domain` | `true` | look `DOMAIN\user` and `user@realm` up as `user` (Windows clients send the former); `false` when `user.filter` matches the full `userPrincipalName` |
 | `group.attribute` | `memberOf` | attribute with the user's group DNs |
 | `group.nested` | `false` | groups of groups too (Active Directory's in-chain rule) |
 | `require.groups` | none | comma-separated; outside all of them the user is rejected |

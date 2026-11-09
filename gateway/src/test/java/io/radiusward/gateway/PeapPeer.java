@@ -22,9 +22,19 @@ final class PeapPeer implements UnaryOperator<byte[]> {
     boolean serverProved;
     boolean failureSeen;
 
+    private final int wanted;
+    private final EapTlsClient innerTls;
+
     PeapPeer(String identity, String password) {
+        this(identity, password, Peap.MS_CHAP_V2, null);
+    }
+
+    /** A peer that wants inner method {@code wanted} (Nak to it if offered another); {@code innerTls} for EAP-TLS. */
+    PeapPeer(String identity, String password, int wanted, EapTlsClient innerTls) {
         this.identity = identity;
         this.password = password;
+        this.wanted = wanted;
+        this.innerTls = innerTls;
     }
 
     @Override
@@ -39,6 +49,29 @@ final class PeapPeer implements UnaryOperator<byte[]> {
             return out; // echo the Result TLV with the same status
         }
         int type = in[0] & 0xFF;
+        if (type != EapPacket.TYPE_IDENTITY
+                && type != wanted
+                && (type == Peap.MS_CHAP_V2 && in[1] == 1 || type == Peap.GTC || type == EapTls.TYPE)) {
+            return new byte[] {EapPacket.TYPE_NAK, (byte) wanted}; // the first request of a method it does not want
+        }
+        if (type == Peap.GTC) {
+            byte[] pw = password.getBytes(StandardCharsets.UTF_8);
+            byte[] out = new byte[1 + pw.length];
+            out[0] = (byte) Peap.GTC;
+            System.arraycopy(pw, 0, out, 1, pw.length);
+            return out;
+        }
+        if (type == EapTls.TYPE) {
+            try {
+                byte[] answer = innerTls.answer(Arrays.copyOfRange(in, 1, in.length));
+                byte[] out = new byte[1 + answer.length];
+                out[0] = (byte) EapTls.TYPE;
+                System.arraycopy(answer, 0, out, 1, answer.length);
+                return out;
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
+        }
         if (type == EapPacket.TYPE_IDENTITY) {
             byte[] name = identity.getBytes(StandardCharsets.UTF_8);
             byte[] out = new byte[1 + name.length];

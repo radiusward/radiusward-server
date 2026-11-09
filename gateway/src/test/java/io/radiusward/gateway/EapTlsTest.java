@@ -59,6 +59,18 @@ class EapTlsTest {
             Map<String, Boolean> mschap,
             Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
             Map<String, String> storeVerifiers) {
+        return handler(fragmentSize, requireUser, maxMessage, methods, mschap, verifiers, storeVerifiers, List.of(26));
+    }
+
+    private StoreAccessHandler handler(
+            int fragmentSize,
+            boolean requireUser,
+            int maxMessage,
+            List<String> methods,
+            Map<String, Boolean> mschap,
+            Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
+            Map<String, String> storeVerifiers,
+            List<Integer> peapInner) {
         EapTlsConfig tls = new EapTlsConfig(
                 EapTlsConfig.context(pki.serverPem, pki.serverKey, pki.caPem),
                 List.of("TLSv1.2", "TLSv1.3"),
@@ -79,7 +91,7 @@ class EapTlsTest {
                 mschap,
                 verifiers,
                 storeVerifiers,
-                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls));
+                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls, peapInner));
         return new StoreAccessHandler(auth, StoreAccessHandlerTest.DICTIONARY, System::currentTimeMillis);
     }
 
@@ -431,5 +443,77 @@ class EapTlsTest {
         assertThat(handle(h, lastResponse, lastState))
                 .as("the retransmission repeats the check")
                 .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    // ---- PEAP with inner EAP-GTC and EAP-TLS (ADR 0031) -----------------------------------------------
+
+    private StoreAccessHandler peapWith(
+            List<Integer> inner,
+            Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
+            Map<String, String> storeVerifiers) {
+        return handler(1024, false, 65_536, List.of("peap"), Map.of(), verifiers, storeVerifiers, inner);
+    }
+
+    @Test
+    void peapGtcChosenByNakAndCheckedLikePap() throws Exception {
+        store.user(
+                "frank",
+                List.of(new AttributeItem(
+                        "Crypt-Password",
+                        ":=",
+                        ShaCrypt.crypt("Frank-Pw".getBytes(StandardCharsets.UTF_8), "$6$rounds=1000$s"))),
+                List.of(new AttributeItem("Filter-Id", "=", "otp")));
+        StoreAccessHandler h = peapWith(List.of(Peap.MS_CHAP_V2, Peap.GTC), Map.of(), Map.of());
+        PeapPeer peer = new PeapPeer("frank", "Frank-Pw", Peap.GTC, null);
+        EapTlsClient client = peapClient("TLSv1.3", peer);
+        assertThat(converse(h, "anonymous", client, Peap.TYPE)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(reply().findAttribute(11)).isPositive();
+        assertKeys(client, Peap.TYPE);
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        peapClient("TLSv1.2", new PeapPeer("frank", "nope", Peap.GTC, null)),
+                        Peap.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(converse(
+                        peapWith(List.of(Peap.MS_CHAP_V2), Map.of(), Map.of()),
+                        "anonymous",
+                        peapClient("TLSv1.3", new PeapPeer("frank", "Frank-Pw", Peap.GTC, null)),
+                        Peap.TYPE))
+                .as("GTC is not offered: the Nak finds nothing")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void peapGtcAgainstAPapOnlyDirectory() throws Exception {
+        StoreAccessHandlerTest.FakeVerifier ldap = new StoreAccessHandlerTest.FakeVerifier();
+        store.user("User", List.of(), List.of());
+        StoreAccessHandler h = peapWith(List.of(Peap.GTC), Map.of("ldap", ldap), Map.of("main", "ldap"));
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        peapClient("TLSv1.3", new PeapPeer("User", "clientPass", Peap.GTC, null)),
+                        Peap.TYPE))
+                .as("no NT hash needed: the directory checks the password")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void peapWithAClientCertificateInside() throws Exception {
+        StoreAccessHandler h = peapWith(List.of(EapTls.TYPE), Map.of(), Map.of());
+        EapTlsClient inner = new EapTlsClient(TestPki.clientContext(pki.client("laptop-9"), pki.ca), "TLSv1.2", 1024);
+        EapTlsClient outer = peapClient("TLSv1.3", new PeapPeer("laptop-9", null, EapTls.TYPE, inner));
+        assertThat(converse(h, "anonymous", outer, Peap.TYPE))
+                .as("a valid inner certificate, the user in no store")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertKeys(outer, Peap.TYPE);
+
+        EapTlsClient stranger = new EapTlsClient(TestPki.clientContext(other.client("x"), pki.ca), "TLSv1.3", 1024);
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        peapClient("TLSv1.2", new PeapPeer("x", null, EapTls.TYPE, stranger)),
+                        Peap.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
     }
 }

@@ -27,8 +27,8 @@ final class LdapVerifier implements CredentialVerifier {
 
     @Override
     public Result verifyPassword(String userName, byte[] password) throws StoreUnavailableException {
-        List<Directory.Entry> found =
-                directory.search(settings.userFilter(), new Object[] {userName}, new String[] {"1.1"}, 2);
+        List<Directory.Entry> found = directory.search(
+                settings.userFilter(), new Object[] {settings.lookupName(userName)}, new String[] {"1.1"}, 2);
         if (found.size() != 1) {
             return Result.REJECTED; // unknown or ambiguous: never guess which entry is meant
         }

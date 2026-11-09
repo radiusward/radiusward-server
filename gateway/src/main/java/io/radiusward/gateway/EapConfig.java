@@ -19,8 +19,19 @@ import java.util.Locale;
  * @param conversations conversations held at once; beyond it new ones are not answered
  * @param maxRounds round trips a conversation may take
  * @param tls the TLS side ({@code auth.eap.tls.*}), {@code null} without a certificate
+ * @param peapInner the inner EAP types PEAP offers, first preferred ({@code auth.eap.peap.inner})
  */
-record EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
+record EapConfig(
+        List<String> methods,
+        Duration timeout,
+        int conversations,
+        int maxRounds,
+        EapTlsConfig tls,
+        List<Integer> peapInner) {
+
+    EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
+        this(methods, timeout, conversations, maxRounds, tls, List.of(Peap.MS_CHAP_V2));
+    }
 
     static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls");
 
@@ -47,12 +58,26 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
         if (methods.contains("tls") && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.ca, the CAs of client certificates");
         }
+        List<Integer> inner = config.list("auth.eap.peap.inner", List.of("mschapv2")).stream()
+                .map(m -> switch (m.trim().toLowerCase(Locale.ROOT)) {
+                    case "mschapv2" -> Peap.MS_CHAP_V2;
+                    case "gtc" -> Peap.GTC;
+                    case "tls" -> EapTls.TYPE;
+                    default ->
+                        throw new ConfigException(
+                                "auth.eap.peap.inner: unknown inner method " + m + " (mschapv2, gtc, tls)");
+                })
+                .toList();
+        if (inner.contains(EapTls.TYPE) && config.string("auth.eap.tls.ca", "").isBlank()) {
+            throw new ConfigException("auth.eap.peap.inner: tls needs auth.eap.tls.ca, the CAs of client certificates");
+        }
         return new EapConfig(
                 List.copyOf(methods),
                 config.duration("auth.eap.timeout", Duration.ofSeconds(30)),
                 conversations,
                 200, // a TLS handshake in small fragments takes many rounds
-                tls);
+                tls,
+                inner);
     }
 
     /** The EAP type number of a method name. */
@@ -71,7 +96,7 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
         return switch (type) {
             case EapPacket.TYPE_MD5 -> new EapMd5();
             case EapTls.TYPE -> tls == null ? null : new EapTls(tls);
-            case Peap.TYPE -> tls == null ? null : new Peap(tls);
+            case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner);
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls);
             default -> null;
         };

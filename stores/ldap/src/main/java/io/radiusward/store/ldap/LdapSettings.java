@@ -28,6 +28,7 @@ import java.util.TreeMap;
  * @param policies check and reply items per group, in the order of their ids
  * @param check check items mapped from directory attributes (RADIUS name → LDAP attribute)
  * @param reply reply items mapped from directory attributes
+ * @param stripDomain look up {@code DOMAIN}&#92;{@code user} and {@code user@realm} as {@code user} ({@code strip.domain})
  */
 record LdapSettings(
         String name,
@@ -44,7 +45,19 @@ record LdapSettings(
         Map<String, String> reply,
         Duration timeout,
         int pool,
-        Path tlsCa) {
+        Path tlsCa,
+        boolean stripDomain) {
+
+    /** The name to look up: without a {@code DOMAIN}&#92; prefix or an {@code @realm} suffix when stripping. */
+    String lookupName(String userName) {
+        if (!stripDomain) {
+            return userName;
+        }
+        int slash = userName.lastIndexOf('\\');
+        String name = slash >= 0 ? userName.substring(slash + 1) : userName;
+        int at = name.lastIndexOf('@');
+        return at > 0 ? name.substring(0, at) : name;
+    }
 
     /** {@code policy.<id>.group}, {@code policy.<id>.check}, {@code policy.<id>.reply}. */
     record Policy(String group, List<AttributeItem> check, List<AttributeItem> reply) {}
@@ -121,7 +134,8 @@ record LdapSettings(
                 Map.copyOf(reply),
                 context.duration("timeout", "1500ms"),
                 pool,
-                tlsCa);
+                tlsCa,
+                Boolean.parseBoolean(context.setting("strip.domain", "true")));
     }
 
     /** Group names may contain spaces: only commas separate them. */

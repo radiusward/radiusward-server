@@ -11,9 +11,10 @@ import java.util.HexFormat;
 import java.util.Locale;
 
 /**
- * PEAPv0 with EAP-MSCHAPv2 inside (MS-PEAP, ADR 0029): a TLS tunnel that authenticates only the server, then inside it
- * the real identity and an MS-CHAPv2 exchange, checked by the gateway like MS-CHAPv2 outside (local NT hash, cleartext
- * opt-in, a credential verifier such as Netlogon). Inner EAP messages go without their header (type and data only),
+ * PEAPv0 (MS-PEAP, ADR 0029, 0031): a TLS tunnel that authenticates only the server, then inside it the real identity
+ * and an inner method from {@code auth.eap.peap.inner}: EAP-MSCHAPv2 (checked like MS-CHAPv2 outside: local NT hash,
+ * cleartext opt-in, a credential verifier such as Netlogon), EAP-GTC (a password, checked like PAP) or EAP-TLS (a
+ * client certificate); the peer may Nak to another listed one. Inner EAP messages go without their header (type and data only),
  * except the closing Result TLV, which carries it. Keys come from the tunnel (label {@code client EAP encryption},
  * TLS 1.3: RFC 9427).
  *
@@ -26,6 +27,8 @@ final class Peap extends TlsTunnel {
     static final int TYPE = 25;
     static final int MS_CHAP_V2 = 26;
     static final int TLV = 33;
+    static final int GTC = 6;
+    private static final byte[] GTC_PROMPT = "Password: ".getBytes(StandardCharsets.US_ASCII);
     private static final int OP_CHALLENGE = 1;
     private static final int OP_RESPONSE = 2;
     private static final int OP_SUCCESS = 3;
@@ -51,9 +54,25 @@ final class Peap extends TlsTunnel {
     private String authenticated;
     private byte[] pendingHash; // an inner check that could not be answered, for the retransmission
     private byte[] pendingResponse;
+    private byte[] pendingPassword;
+    private final java.util.List<Integer> innerTypes;
+    private int innerType;
+    private boolean innerBegun;
+    private EapTls innerTls;
 
     Peap(EapTlsConfig config) {
+        this(config, java.util.List.of(MS_CHAP_V2));
+    }
+
+    /** @param innerTypes the inner EAP types offered, first preferred */
+    Peap(EapTlsConfig config, java.util.List<Integer> innerTypes) {
         super(config);
+        this.innerTypes = java.util.List.copyOf(innerTypes);
+    }
+
+    @Override
+    public boolean innerOptional() {
+        return innerType == EapTls.TYPE && !config.requireUser(); // a certificate inside: like EAP-TLS outside
     }
 
     @Override
@@ -101,7 +120,7 @@ final class Peap extends TlsTunnel {
         }
         return switch (state) {
             case IDENTITY -> identity(data);
-            case CHALLENGE -> response(data, credentials);
+            case CHALLENGE -> inner(data, credentials);
             case SUCCESS ->
                 data.length >= 2 && (data[0] & 0xFF) == MS_CHAP_V2 && data[1] == OP_SUCCESS
                         ? result(true)
@@ -120,6 +139,25 @@ final class Peap extends TlsTunnel {
         if (identity.isEmpty()) {
             return Step.FAILED;
         }
+        return startInner(innerTypes.get(0));
+    }
+
+    /** Offers an inner method: its first request. */
+    private Step startInner(int type) {
+        innerType = type;
+        innerBegun = false;
+        state = State.CHALLENGE;
+        if (type == GTC) {
+            byte[] request = new byte[1 + GTC_PROMPT.length];
+            request[0] = GTC;
+            System.arraycopy(GTC_PROMPT, 0, request, 1, GTC_PROMPT.length);
+            return sendApplication(request);
+        }
+        if (type == EapTls.TYPE) {
+            innerTls = new EapTls(config);
+            Step first = innerTls.start(0, null);
+            return first.done() ? Step.FAILED : sendApplication(prefixed(EapTls.TYPE, first.request()));
+        }
         RANDOM.nextBytes(authenticatorChallenge);
         msChapId = RANDOM.nextInt(256);
         state = State.CHALLENGE;
@@ -128,6 +166,66 @@ final class Peap extends TlsTunnel {
         System.arraycopy(authenticatorChallenge, 0, body, 1, 16);
         System.arraycopy(SERVER_NAME, 0, body, 17, SERVER_NAME.length);
         return sendApplication(msChap(OP_CHALLENGE, body));
+    }
+
+    /** A response inside the tunnel to the offered inner method, or a Nak asking for another listed one. */
+    private Step inner(byte[] data, Credentials credentials) {
+        if (!innerBegun && (data[0] & 0xFF) == EapPacket.TYPE_NAK) {
+            for (int i = 1; i < data.length; i++) {
+                int wanted = data[i] & 0xFF;
+                if (wanted != innerType && innerTypes.contains(wanted)) {
+                    return startInner(wanted);
+                }
+            }
+            return result(false); // nothing both sides support
+        }
+        if ((data[0] & 0xFF) != innerType) {
+            return result(false);
+        }
+        innerBegun = true;
+        return switch (innerType) {
+            case GTC -> gtc(Arrays.copyOfRange(data, 1, data.length), credentials);
+            case EapTls.TYPE -> innerTls(Arrays.copyOfRange(data, 1, data.length), credentials);
+            default -> response(data, credentials);
+        };
+    }
+
+    /** EAP-GTC: the response is the password (or a one-time password), checked like PAP. */
+    private Step gtc(byte[] password, Credentials credentials) {
+        if (credentials.inner() == null || password.length == 0) {
+            return result(false);
+        }
+        Inner checked = credentials.inner().password(identity, password);
+        if (checked.code() == AccessHandler.DROP) {
+            pendingPassword = password;
+            return Step.UNAVAILABLE;
+        }
+        pendingPassword = null;
+        if (checked.code() != AccessHandler.ACCEPT) {
+            return result(false);
+        }
+        authenticated = identity;
+        return result(true);
+    }
+
+    /** EAP-TLS inside the tunnel: the inner handshake, header-less ([13] + EAP-TLS data). */
+    private Step innerTls(byte[] data, Credentials credentials) {
+        Step step = innerTls.process(0, data, credentials);
+        if (!step.done()) {
+            return sendApplication(prefixed(EapTls.TYPE, step.request()));
+        }
+        if (!step.success()) {
+            return result(false);
+        }
+        authenticated = identity; // the inner certificate authenticated the inner identity
+        return result(true);
+    }
+
+    private static byte[] prefixed(int type, byte[] data) {
+        byte[] out = new byte[1 + data.length];
+        out[0] = (byte) type;
+        System.arraycopy(data, 0, out, 1, data.length);
+        return out;
     }
 
     private Step response(byte[] data, Credentials credentials) {
@@ -147,6 +245,9 @@ final class Peap extends TlsTunnel {
 
     @Override
     Step onRetry(Credentials credentials) {
+        if (pendingPassword != null) {
+            return gtc(pendingPassword, credentials);
+        }
         return pendingHash == null ? Step.FAILED : check(pendingHash, pendingResponse, credentials);
     }
 

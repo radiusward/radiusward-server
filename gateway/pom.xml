@@ -61,4 +61,21 @@
         </dependency>
     </dependencies>
 
+    <build>
+        <plugins>
+            <!-- the EAP test peers and test PKI, for the Netlogon module's tunnel tests -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>test-jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
 </project>

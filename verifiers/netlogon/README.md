@@ -73,6 +73,9 @@ secret on every gateway), or give each gateway its own machine account.
 **Metrics.** `radiusward_gateway_verifier_events_total{verifier,event}`: `accepted`, `rejected`, `unavailable`,
 `channels_opened`, `server_failures`.
 
+**Tunnels.** PEAP (inner MS-CHAPv2 or GTC) and TTLS (inner MS-CHAPv2 or PAP) use this verifier for their inner
+credential; tested against Samba AD end to end (`TunnelNetlogonIT`).
+
 **Outages.** Tested with a domain controller that does not answer (failover to the next one) and one frozen mid-way
 (no answers meanwhile, a fresh channel afterwards, no gateway restart).
 

@@ -69,7 +69,8 @@ final class LdapStore implements IdentityStore {
 
     @Override
     public Optional<UserRecord> lookup(String userName) throws StoreUnavailableException {
-        List<Directory.Entry> found = directory.search(settings.userFilter(), new Object[] {userName}, attributes, 2);
+        List<Directory.Entry> found =
+                directory.search(settings.userFilter(), new Object[] {settings.lookupName(userName)}, attributes, 2);
         if (found.isEmpty()) {
             return Optional.empty();
         }

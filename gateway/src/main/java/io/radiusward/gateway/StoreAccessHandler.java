@@ -201,7 +201,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             EapConversations.Conversation c = cache(context).eap.conversation;
             String inner = c.method == null ? null : c.method.innerIdentity();
             if (inner != null) { // a tunnel: the inner user is the one authorized (ADR 0029)
-                a = authorize(context, inner, false);
+                a = authorize(context, inner, c.method.innerOptional());
                 if (a.code() != ACCEPT) {
                     return a.code();
                 }

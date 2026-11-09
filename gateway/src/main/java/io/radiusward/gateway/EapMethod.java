@@ -84,4 +84,9 @@ interface EapMethod {
     default String innerIdentity() {
         return null;
     }
+
+    /** Whether the inner identity needs no store entry (a certificate inside the tunnel). */
+    default boolean innerOptional() {
+        return false;
+    }
 }

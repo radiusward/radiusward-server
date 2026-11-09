@@ -95,7 +95,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.store.<name>.verifier` | none | the credential verifier that checks users of this store without a password of their own ([ADR 0025](adr/0025-credential-verifiers-and-ldap.md)) |
 | `auth.verifiers` | none | credential verifiers by name; `Auth-Type := <name>` sends a user to one |
 | `auth.verifier.<name>.type` | — | `ldap` (PAP by binding as the user; settings as the LDAP store's, [stores/ldap](../stores/ldap/README.md)), `netlogon` (MS-CHAPv1/v2 and PAP against Active Directory: `server` or `dns.domain` (+ `dns.server`, `dns.refresh`), `domain`, `machine.account`, `machine.password`, `server.name`, `endpoint.mapper.port`, `netlogon.port`, `strip.realm`, `timeout`, `connections`; [verifiers/netlogon](../verifiers/netlogon/README.md)), or a plug-in's type |
-| `auth.store.<name>.*` for `type = ldap` | | `url`, `tls.ca`, `bind.dn`, `bind.password`, `base.dn`, `user.filter`, `group.attribute`, `group.nested`, `require.groups`, `policy.<id>.group/check/reply`, `check.<attribute>`, `reply.<attribute>`, `timeout`, `pool` ([stores/ldap](../stores/ldap/README.md)) |
+| `auth.store.<name>.*` for `type = ldap` | | `url`, `tls.ca`, `bind.dn`, `bind.password`, `base.dn`, `user.filter`, `strip.domain`, `group.attribute`, `group.nested`, `require.groups`, `policy.<id>.group/check/reply`, `check.<attribute>`, `reply.<attribute>`, `timeout`, `pool` ([stores/ldap](../stores/ldap/README.md)) |
 | `auth.eap.methods` | `md5` | EAP methods offered, in order of preference: `tls`, `peap`, `ttls`, `md5`; a peer may Nak to another listed one ([ADR 0026](adr/0026-eap-framework.md)). EAP-MD5 needs the store's `chap` opt-in |
 | `auth.eap.tls.certificate` / `auth.eap.tls.key` | — | the server's certificate chain and its unencrypted PKCS#8 key, PEM ([ADR 0028](adr/0028-eap-tls.md)) |
 | `auth.eap.tls.ca` | — | CA certificates (PEM) that client certificates must chain to; required for `tls`, not used by `peap` and `ttls` |
@@ -103,6 +103,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.tls.fragment.size` | `1024` | largest TLS payload per EAP message (64–3000) |
 | `auth.eap.tls.max.message` | `65536` | largest TLS message a peer may send in fragments |
 | `auth.eap.tls.require.user` | `false` | `true`: an EAP-TLS peer must also exist in an identity store; otherwise a valid certificate is enough |
+| `auth.eap.peap.inner` | `mschapv2` | inner methods PEAP offers, first preferred: `mschapv2`, `gtc` (a password checked like PAP), `tls` (a client certificate; needs `auth.eap.tls.ca`) ([ADR 0031](adr/0031-peap-inner-methods.md)) |
 | `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |

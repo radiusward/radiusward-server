@@ -95,6 +95,27 @@ class LdapStoreTest {
     }
 
     @Test
+    void domainPrefixesAndRealmsAreStrippedForTheLookup() throws Exception {
+        try (LdapStore store = store(settings())) {
+            assertThat(store.lookup("CORP\\alice")).isPresent();
+            assertThat(store.lookup("alice@corp.test")).isPresent();
+            assertThat(store.lookup("CORP\\alice").orElseThrow().userName())
+                    .as("the name as sent")
+                    .isEqualTo("CORP\\alice");
+        }
+        Map<String, String> exact = settings();
+        exact.put("strip.domain", "false");
+        try (LdapStore store = store(exact)) {
+            assertThat(store.lookup("CORP\\alice")).isEmpty();
+        }
+        try (CredentialVerifier verifier = new LdapVerifierProvider().create(new StoreContext("ad", settings(), 2))) {
+            assertThat(verifier.verifyPassword("CORP\\alice", utf8("Alice-Passw0rd!"))
+                            .accepted())
+                    .isTrue();
+        }
+    }
+
+    @Test
     void nestedGroupsThroughTheInChainRule() throws Exception {
         Map<String, String> s = settings();
         s.put("group.nested", "true");
