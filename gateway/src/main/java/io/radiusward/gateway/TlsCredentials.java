@@ -69,6 +69,7 @@ final class TlsCredentials {
     private final long checkEveryMillis;
     private final AtomicLong reloads = new AtomicLong();
     private final AtomicLong reloadFailures = new AtomicLong();
+    private final AtomicLong resumptions = new AtomicLong();
     private volatile SSLContext context;
     private volatile long nextCheck;
     private long[] stamps;
@@ -199,6 +200,15 @@ final class TlsCredentials {
 
     long reloadFailures() {
         return reloadFailures.get();
+    }
+
+    /** A handshake resumed an earlier session (EAP, ADR 0035). */
+    void resumed() {
+        resumptions.incrementAndGet();
+    }
+
+    long resumptions() {
+        return resumptions.get();
     }
 
     private synchronized void reloadIfChanged() {

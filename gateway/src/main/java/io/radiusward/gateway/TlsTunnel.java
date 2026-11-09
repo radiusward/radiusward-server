@@ -36,6 +36,8 @@ abstract class TlsTunnel implements EapMethod {
     private boolean finished;
     private byte[] msk;
     private byte[] retryData; // a message whose inner check could not be answered: only its retransmission may come
+    private long startedAt; // wall clock: a session created before it was resumed (ADR 0035)
+    private static final String INNER = "radiusward.inner";
 
     TlsTunnel(EapTlsConfig config) {
         this.config = config;
@@ -56,6 +58,20 @@ abstract class TlsTunnel implements EapMethod {
     /** The peer acknowledged our last message after the handshake. */
     abstract Step onAck(Credentials credentials);
 
+    /**
+     * The handshake resumed an earlier session (ADR 0035): application data to send at once instead of
+     * {@link #onFinished}'s, e.g. PEAP's Result TLV for the user remembered with the session; {@code null}: as after a
+     * full handshake.
+     */
+    byte[] onResumed() {
+        return null;
+    }
+
+    /** Whether a resumed handshake is already the success (TTLS skips its inner phase on resumption). */
+    boolean succeedsOnResumption() {
+        return false;
+    }
+
     /** Application data from the peer, decrypted. */
     abstract Step onData(byte[] data, Credentials credentials);
 
@@ -71,6 +87,31 @@ abstract class TlsTunnel implements EapMethod {
         return msk;
     }
 
+    /** Whether this handshake resumed a session of an earlier conversation. */
+    final boolean resumed() {
+        return finished && engine.getSession().getCreationTime() < startedAt;
+    }
+
+    /** The inner user authenticated in the session's first conversation, if it was a tunnel's and succeeded. */
+    final String remembered() {
+        return engine.getSession().getValue(INNER) instanceof String s ? s : null;
+    }
+
+    /** Remembers the inner user with the TLS session, for a resumption to skip the inner method. */
+    final void remember(String inner) {
+        if (inner != null) {
+            engine.getSession().putValue(INNER, inner);
+        }
+    }
+
+    /** A failed conversation's session is not resumed. */
+    private Step settled(Step step) {
+        if (step == Step.FAILED && engine != null) {
+            engine.getSession().invalidate();
+        }
+        return step;
+    }
+
     /** More keying material from the tunnel (TTLS's implicit challenge), without context. */
     final byte[] export(String label, int length) throws SSLException {
         return ((ExtendedSSLSession) engine.getSession()).exportKeyingMaterialData(label, null, length);
@@ -78,6 +119,7 @@ abstract class TlsTunnel implements EapMethod {
 
     @Override
     public Step start(int identifier, Credentials credentials) {
+        startedAt = System.currentTimeMillis();
         engine = config.context().current().createSSLEngine();
         engine.setUseClientMode(false);
         engine.setNeedClientAuth(clientCertificate());
@@ -103,7 +145,7 @@ abstract class TlsTunnel implements EapMethod {
             if (!step.unavailable()) {
                 retryData = null;
             }
-            return step;
+            return settled(step);
         }
         int flags = data[0] & 0xFF;
         int offset = 1;
@@ -125,7 +167,7 @@ abstract class TlsTunnel implements EapMethod {
             }
             outgoing = null; // our last message is through; what comes now answers it
             if (finished && payload == 0) {
-                return onAck(credentials);
+                return settled(onAck(credentials));
             }
         }
         if (incoming.size() + payload > config.maxMessage()) {
@@ -140,12 +182,26 @@ abstract class TlsTunnel implements EapMethod {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream application = new ByteArrayOutputStream();
         boolean wasFinished = finished;
+        boolean peerSpokeLast = false;
         try {
             drive(message, out, application);
             if (!wasFinished && finished) {
-                byte[] first = onFinished(engine.getSession().getProtocol().equals("TLSv1.3"));
+                boolean tls13 = engine.getSession().getProtocol().equals("TLSv1.3");
+                boolean resumed = resumed();
+                if (resumed) {
+                    config.context().resumed();
+                    if (succeedsOnResumption()) {
+                        return Step.succeeded(msk);
+                    }
+                }
+                byte[] first = resumed ? onResumed() : null;
+                if (first == null) {
+                    first = onFinished(tls13);
+                }
                 if (first != null) {
                     wrapApplication(first, out);
+                } else if (!tls13 && out.size() == 0) {
+                    peerSpokeLast = true; // a resumed TLS 1.2 handshake ends with the client's Finished
                 }
             }
         } catch (SSLException e) {
@@ -153,7 +209,7 @@ abstract class TlsTunnel implements EapMethod {
             return Step.FAILED;
         }
         if (finished && application.size() > 0) { // also data sent together with the client's Finished (TLS 1.3)
-            Step step = onData(application.toByteArray(), credentials);
+            Step step = settled(onData(application.toByteArray(), credentials));
             if (step.unavailable()) {
                 retryData = data.clone();
                 return step;
@@ -163,6 +219,9 @@ abstract class TlsTunnel implements EapMethod {
             }
             // handshake records (e.g. a session ticket) and the method's answer go out together
             out.writeBytes(outgoing);
+        }
+        if (peerSpokeLast) {
+            return settled(onAck(credentials)); // as if the client had acknowledged our Finished
         }
         if (out.size() == 0 && finished) {
             return Step.next(new byte[] {0}); // nothing to say after the handshake: the client's turn

@@ -166,6 +166,36 @@ class EapolTestIT {
                 """));
     }
 
+    /** {@code eapol_test -r 1}: a second authentication offers the first one's TLS session (ADR 0035). */
+    @Test
+    void resumption() throws Exception {
+        String laptop = """
+                eap=TLS
+                identity="laptop-1"
+                ca_cert="/work/ca.pem"
+                client_cert="/work/laptop.pem"
+                private_key="/work/laptop.key"
+                phase1="%s"
+                """;
+        for (String tls : List.of(TLS12, TLS13)) {
+            assertResumed(run("resume-tls-" + tls.length(), laptop.formatted(tls), 1));
+            Container.ExecResult peap =
+                    run("resume-peap-" + tls.length(), peap(tls, "auth=MSCHAPV2", "alice", "Alice-Passw0rd!"), 1);
+            assertResumed(peap);
+            assertThat(peap.getStdout())
+                    .as("fast reconnect: one inner MS-CHAPv2 for two authentications")
+                    .containsOnlyOnce("EAP-MSCHAPV2: Received challenge");
+            assertResumed(run("resume-ttls-" + tls.length(), ttls(tls, "auth=PAP", "Alice-Passw0rd!"), 1));
+        }
+    }
+
+    static void assertResumed(Container.ExecResult result) {
+        assertThat(result.getExitCode()).as(result.getStdout()).isZero();
+        assertThat(result.getStdout())
+                .contains("MPPE keys OK: 2  mismatch: 0")
+                .contains("Handshake finished - resumed=1");
+    }
+
     @Test
     void ttls() throws Exception {
         for (String tls : List.of(TLS12, TLS13)) {
@@ -215,6 +245,11 @@ class EapolTestIT {
 
     /** One {@code eapol_test} run with this network block; fragments of 400 bytes from the peer, too. */
     static Container.ExecResult run(String name, String network) throws Exception {
+        return run(name, network, 0);
+    }
+
+    /** @param reauthentications further authentications on the same TLS session (resumption, ADR 0035) */
+    static Container.ExecResult run(String name, String network, int reauthentications) throws Exception {
         String conf = "network={\n    key_mgmt=WPA-EAP\n    fragment_size=400\n" + network.indent(4) + "}\n";
         Path file = Files.writeString(dir.resolve(name + ".conf"), conf, StandardCharsets.UTF_8);
         copy(file, name + ".conf");
@@ -222,7 +257,7 @@ class EapolTestIT {
                 "sh",
                 "-c",
                 "eapol_test -c /work/" + name + ".conf -a \"$(getent hosts host.docker.internal | cut -d' ' -f1)\""
-                        + " -p " + gateway.authPort() + " -s " + SECRET + " -t 20 -r 0");
+                        + " -p " + gateway.authPort() + " -s " + SECRET + " -t 20 -r " + reauthentications);
         Files.createDirectories(LOGS);
         Files.writeString(LOGS.resolve(name + ".log"), result.getStdout() + result.getStderr());
         return result;

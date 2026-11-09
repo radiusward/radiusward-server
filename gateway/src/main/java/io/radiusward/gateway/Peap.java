@@ -76,6 +76,7 @@ final class Peap extends TlsTunnel {
     private PeapCryptoBinding cryptoBinding;
     private final byte[] nonce = new byte[32];
     private byte[] sessionKey;
+    private boolean fastReconnect;
 
     Peap(EapTlsConfig config) {
         this(config, java.util.List.of(MS_CHAP_V2), Binding.OPTIONAL);
@@ -127,6 +128,9 @@ final class Peap extends TlsTunnel {
 
     @Override
     Step onAck(Credentials credentials) {
+        if (state == State.RESULT_OK && resumed()) {
+            return Step.FAILED; // after a fast reconnect the peer must answer the Result TLV
+        }
         if (state != State.HANDSHAKE) {
             return Step.FAILED;
         }
@@ -147,7 +151,13 @@ final class Peap extends TlsTunnel {
                         ? result(true)
                         : Step.FAILED;
             case FAILURE -> result(false);
-            case RESULT_OK -> resultAnswered(data) ? Step.succeeded(sessionKey) : Step.FAILED;
+            case RESULT_OK -> {
+                if (!resultAnswered(data)) {
+                    yield Step.FAILED;
+                }
+                remember(authenticated);
+                yield Step.succeeded(sessionKey);
+            }
             default -> Step.FAILED;
         };
     }
@@ -307,6 +317,25 @@ final class Peap extends TlsTunnel {
      * success also the Crypto-Binding TLV unless it is off.
      */
     private Step result(boolean success) {
+        return sendApplication(resultTlv(success));
+    }
+
+    /**
+     * Fast reconnect (ADR 0035): a resumed session whose first conversation authenticated an inner user skips the inner
+     * method; the user is authorized again after success, like any inner user. Crypto-binding then binds the tunnel key alone.
+     */
+    @Override
+    byte[] onResumed() {
+        String user = remembered();
+        if (user == null) {
+            return null;
+        }
+        authenticated = user;
+        fastReconnect = true;
+        return resultTlv(true);
+    }
+
+    private byte[] resultTlv(boolean success) {
         state = success ? State.RESULT_OK : State.RESULT_FAILED;
         if (!success) {
             authenticated = null;
@@ -317,7 +346,7 @@ final class Peap extends TlsTunnel {
         if (success && binding != Binding.OFF) {
             RANDOM.nextBytes(nonce);
             nonce[31] &= (byte) 0xFE; // the last bit is the peer's (MS-PEAP)
-            cryptoBinding = new PeapCryptoBinding(msk(), isk);
+            cryptoBinding = fastReconnect ? PeapCryptoBinding.fastReconnect(msk()) : new PeapCryptoBinding(msk(), isk);
             bound = cryptoBinding.request(nonce);
         }
         int length = 11 + (bound == null ? 0 : bound.length);
@@ -334,7 +363,7 @@ final class Peap extends TlsTunnel {
         if (bound != null) {
             System.arraycopy(bound, 0, p, 11, bound.length);
         }
-        return sendApplication(p);
+        return p;
     }
 
     /**

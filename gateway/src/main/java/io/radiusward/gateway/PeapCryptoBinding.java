@@ -35,10 +35,20 @@ final class PeapCryptoBinding {
      * @param isk the inner method's key: 32 bytes, zeros for a method without keys
      */
     PeapCryptoBinding(byte[] tunnelKey, byte[] isk) {
-        byte[] imck =
-                prfPlus(Arrays.copyOf(tunnelKey, 40), ascii("Inner Methods Compound Keys"), Arrays.copyOf(isk, 32), 60);
-        ipmk = Arrays.copyOf(imck, 40);
-        cmk = Arrays.copyOfRange(imck, 40, 60);
+        this(prfPlus(Arrays.copyOf(tunnelKey, 40), ascii("Inner Methods Compound Keys"), Arrays.copyOf(isk, 32), 60));
+    }
+
+    private PeapCryptoBinding(byte[] ipmkAndCmk) {
+        ipmk = Arrays.copyOf(ipmkAndCmk, 40);
+        cmk = Arrays.copyOfRange(ipmkAndCmk, 40, 60);
+    }
+
+    /**
+     * Fast reconnect (ADR 0035): no inner method ran, so IPMK and CMK are the tunnel key itself, bytes 0–40 and 40–60
+     * (as wpa_supplicant derives them for a resumed session).
+     */
+    static PeapCryptoBinding fastReconnect(byte[] tunnelKey) {
+        return new PeapCryptoBinding(Arrays.copyOf(tunnelKey, 60));
     }
 
     /** The ISK of EAP-MSCHAPv2: the server's receive key, then its send key (as wpa_supplicant and Windows). */

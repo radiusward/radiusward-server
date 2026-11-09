@@ -86,7 +86,7 @@ class EapTlsTest {
                 List.of("main"),
                 Map.of(),
                 Map.of(),
-                Duration.ofSeconds(5),
+                cacheTtl,
                 1000,
                 12,
                 Map.<String, IntHashSet>of(),
@@ -107,6 +107,7 @@ class EapTlsTest {
     private byte[] lastRequest;
     private Peap.Binding binding = Peap.Binding.OPTIONAL;
     private EapTlsConfig tlsConfig;
+    private Duration cacheTtl = Duration.ofSeconds(5);
 
     private RadiusPacket reply() {
         int length = context.replyAttributesLength();
@@ -513,6 +514,55 @@ class EapTlsTest {
                 .as("off: none sent, the tunnel's keys")
                 .isEqualTo(AccessHandler.ACCEPT);
         assertKeys(client, Peap.TYPE);
+    }
+
+    @Test
+    void resumedTunnelsSkipTheInnerMethodButAreAuthorizedAgain() throws Exception {
+        cacheTtl = Duration.ZERO; // the store's change is seen at once, not after auth.cache.ttl
+        for (String protocol : new String[] {"TLSv1.2", "TLSv1.3"}) {
+            store.user(
+                    "alice",
+                    List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Alice-Pw")))),
+                    List.of(new AttributeItem("Filter-Id", "=", "staff")));
+            StoreAccessHandler h = peap();
+            javax.net.ssl.SSLContext laptop = TestPki.clientContext(null, pki.ca);
+            assertThat(converse(
+                            h,
+                            "anonymous",
+                            new EapTlsClient(laptop, protocol, 1024, new PeapPeer("alice", "Alice-Pw")),
+                            Peap.TYPE))
+                    .isEqualTo(AccessHandler.ACCEPT);
+
+            PeapPeer forgetful = new PeapPeer("alice", "not-asked");
+            EapTlsClient resumed = new EapTlsClient(laptop, protocol, 1024, forgetful);
+            assertThat(converse(h, "anonymous", resumed, Peap.TYPE))
+                    .as(protocol + ": the resumed session's user, no inner method")
+                    .isEqualTo(AccessHandler.ACCEPT);
+            assertThat(forgetful.challengeHash).as("no MS-CHAPv2 exchange").isNull();
+            assertThat(reply().findAttribute(11)).as("alice's reply items").isPositive();
+            assertKeys(resumed, Peap.TYPE);
+
+            store.user("alice", List.of(new AttributeItem("Auth-Type", ":=", "Reject")), List.of());
+            assertThat(converse(h, "anonymous", new EapTlsClient(laptop, protocol, 1024, forgetful), Peap.TYPE))
+                    .as("disabled since: the resumed session's user is authorized again")
+                    .isEqualTo(AccessHandler.REJECT);
+        }
+    }
+
+    @Test
+    void eapTlsResumesAndAFailedSessionDoesNot() throws Exception {
+        StoreAccessHandler h = handler(1024, false, 65_536);
+        for (String protocol : new String[] {"TLSv1.2", "TLSv1.3"}) {
+            javax.net.ssl.SSLContext device = TestPki.clientContext(pki.client("laptop-5"), pki.ca);
+            assertThat(converse(h, "laptop-5", new EapTlsClient(device, protocol, 1024)))
+                    .isEqualTo(AccessHandler.ACCEPT);
+            EapTlsClient again = new EapTlsClient(device, protocol, 1024);
+            assertThat(converse(h, "laptop-5", again)).isEqualTo(AccessHandler.ACCEPT);
+            assertKeys(again);
+        }
+        var metrics = new io.radiusward.common.management.PrometheusWriter();
+        h.writeMetrics(metrics, "1");
+        assertThat(metrics.finish()).contains("radiusward_gateway_eap_tls_resumptions_total{gateway=\"1\"} 2");
     }
 
     @Test

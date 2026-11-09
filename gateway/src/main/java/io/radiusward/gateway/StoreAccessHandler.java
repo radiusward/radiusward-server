@@ -1170,6 +1170,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                     "Changes of the EAP TLS certificate, key, CA or CRL files: loaded, or failed (previous kept)");
             w.sample(tls.context().reloads(), "gateway", gateway, "result", "loaded");
             w.sample(tls.context().reloadFailures(), "gateway", gateway, "result", "failed");
+            w.counter(
+                    "radiusward_gateway_eap_tls_resumptions_total",
+                    "EAP TLS handshakes that resumed an earlier session (PEAP and TTLS skip their inner method)");
+            w.sample(tls.context().resumptions(), "gateway", gateway);
         }
         if (!stores.verifiers().isEmpty()) {
             w.counter(

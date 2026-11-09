@@ -66,8 +66,15 @@ final class Ttls extends TlsTunnel {
     }
 
     @Override
+    boolean succeedsOnResumption() {
+        authenticated = remembered(); // RFC 5281 §8: a resumed session may skip phase 2, as wpa_supplicant does
+        return authenticated != null;
+    }
+
+    @Override
     Step onAck(Credentials credentials) {
         if (successSent) {
+            remember(authenticated);
             return Step.succeeded(msk()); // the client acknowledged MS-CHAP2-Success
         }
         return Step.FAILED; // the client must send its credentials
@@ -146,6 +153,7 @@ final class Ttls extends TlsTunnel {
             return Step.FAILED;
         }
         authenticated = user;
+        remember(user);
         return Step.succeeded(msk());
     }
 

@@ -64,7 +64,13 @@ record EapTlsConfig(
         if (fragment < 64 || fragment > 3000) {
             throw new ConfigException("auth.eap.tls.fragment.size: 64 to 3000, got " + fragment);
         }
-        TlsCredentials credentials = TlsCredentials.from(config, "auth.eap.tls.", chain, key, ca);
+        TlsCredentials credentials = TlsCredentials.from(
+                config,
+                "auth.eap.tls.",
+                chain,
+                key,
+                ca,
+                config.duration("auth.eap.tls.session.timeout", Duration.ofHours(1)));
         return new EapTlsConfig(
                 credentials,
                 List.copyOf(versions),
