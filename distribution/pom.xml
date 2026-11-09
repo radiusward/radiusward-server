@@ -26,6 +26,14 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>store-file</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>store-sql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>radclient</artifactId>
         </dependency>
         <dependency>

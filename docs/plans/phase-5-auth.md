@@ -98,7 +98,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 |---|---|---|---|
 | 5.1 ✅ | Codec | Access-Request view, User-Password decrypt (RFC 2865 §5.2, length 16..128, ×16), CHAP verify (RFC 1994), Access-Accept/Reject/Challenge builder with Message-Authenticator first, attribute templates; zero allocation; RFC vectors | M |
 | 5.2 ✅ | AuthAgent | non-blocking NIO socket 1812, NAS entries (their secret, `access.message-authenticator` default required), reply cache with in-flight marks, bounded slots and worker pool, counters, `/metrics` | M |
-| 5.3 | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option | M |
+| 5.3 ✅ | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option ([ADR 0021](../adr/0021-identity-stores.md)); bcrypt included, argon2 and yescrypt deferred | M |
 | 5.4 | Policy | pure decision, templates per vendor, Class token, reject reasons (generic on the wire) | M |
 | 5.5 | Simultaneous use via the cluster | `AuthReservation` command, state-machine counting with pending reservations, state version 6 (`atLeast(6)`) | M |
 | 5.6 | MS-CHAPv2 (non-EAP) | RFC 2759, NT-Password, MS-CHAP2-Success, RFC 2548 MPPE; RFC 3079 vectors | S |
@@ -131,3 +131,11 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    the EAP type as context (TLS 1.3, RFC 9190 / RFC 9427), `ttls challenge` for TTLS inner challenges. The project
    baseline moves from Java 21 to **Java 25** (the current LTS; the image and release builds already run it) no
    later than work package 5.8.
+4. **Identity stores** (decided 2026-11-09, [ADR 0021](../adr/0021-identity-stores.md)): stores run in the gateway
+   workers; one ordered list `auth.stores` with an optional `nas.<name>.auth.stores`; our own bounded JDBC
+   connection pool. Password formats in our own code, no runtime library: cleartext, SHA-crypt, bcrypt, salted
+   SHA, PBKDF2 (Bouncy Castle only as a test reference). argon2 and yescrypt are deferred until there is demand.
+   When needed, yescrypt (`$y$`, `/etc/shadow` on current Linux) follows the same model: own verification code on
+   JDK SHA-256/HMAC (scrypt core, `pwxform`, libxcrypt's default flags only, other modes rejected), a memory ceiling,
+   and — with no Java reference implementation — committed fixtures generated with libxcrypt in a container plus
+   the reference known-answer vectors. argon2 would use Bouncy Castle as a test reference, like bcrypt.

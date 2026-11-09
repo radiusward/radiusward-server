@@ -62,7 +62,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `gateway.pending.timeout` | `5s` | forget a request with no commit (the next retransmit is submitted again) |
 | `gateway.retransmit.resubmit.after` | `1s` | a retransmit of a request pending longer than this is resubmitted ([ADR 0011](adr/0011-gateway-pipeline.md)) |
 | `gateway.response.cache.ttl` | `30s` | how long committed requests are answered from the cache |
-| `gateway.auth.enabled` | `false` | answer Access-Requests (Phase 5; needs an identity store, coming with work package 5.3 — until then the gateway refuses to start with it) |
+| `gateway.auth.enabled` | `false` | answer Access-Requests (Phase 5); needs `auth.stores` ([below](#identity-stores)) |
 | `gateway.auth.port` | `1812` | RADIUS authentication socket (non-blocking, [ADR 0020](adr/0020-authentication-path.md)) |
 | `gateway.auth.workers` | `4` | threads that decide Access-Requests (they may wait for an identity store; the socket thread never does) |
 | `gateway.auth.pending` | `256` | Access-Requests between the socket and the workers (power of two); beyond it requests are dropped |
@@ -71,6 +71,27 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `debug.enabled` | `false` | allows `debug.*` keys; never in production |
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
 | `debug.state.version.supported` | code's version | pretend the member's release knows another state version, to test upgrades (tests only; requires `debug.enabled=true`) |
+
+## Identity stores
+
+Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.md)).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `auth.stores` | — (required) | store names, asked in this order; the first that knows the user decides |
+| `auth.store.<name>.type` | — | `file`, `sql`, or the type of a plug-in |
+| `auth.store.<name>.chap` | `false` | allow CHAP with this store's `Cleartext-Password` |
+| `auth.store.<name>.path` | — | `file`: the users file |
+| `auth.store.<name>.reload.interval` | `5s` | `file`: how often the file's modification time is checked |
+| `auth.store.<name>.url` / `.user` / `.password` | — / empty / empty | `sql`: JDBC URL and credentials |
+| `auth.store.<name>.pool` | `gateway.auth.workers` | `sql`: maximum connections |
+| `auth.store.<name>.timeout` | `1500ms` | `sql`: wait for a connection, and query timeout; beyond it the store counts as unavailable |
+| `auth.store.<name>.schema` | `radcheck` | `sql`: table layout (only `radcheck` so far) |
+| `auth.store.<name>.table.<table>` | the table's name | `sql`: other names for `radcheck`, `radreply`, `radusergroup`, `radgroupcheck`, `radgroupreply` (`[schema.]name`) |
+| `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-gateway cache of look-ups and successful slow-hash checks |
+| `auth.bcrypt.max.cost` | `14` | highest bcrypt cost verified (4–31); a stored hash above it is rejected rather than tying up a worker (cost 14 ≈ 1 s of CPU) |
+| `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |
+| `nas.<name>.auth.stores` | all of `auth.stores` | the stores asked for this NAS entry, in order |
 
 ## Export
 

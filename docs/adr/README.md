@@ -22,5 +22,6 @@
 | [0018](0018-storage-model.md) | Storage model: session-first, opt-in history, stable identities, portable primitives | Accepted |
 | [0019](0019-nas-device-identity.md) | Devices behind one NAS entry (NAT): device identity in keys and Accounting-On scope | Accepted |
 | [0020](0020-authentication-path.md) | The Access-Request path on the gateway: non-blocking socket agent, bounded workers, reply cache | Accepted |
+| [0021](0021-identity-stores.md) | Identity stores: plug-in SPI in the gateway, ordered stores, outage means no answer, credential formats | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

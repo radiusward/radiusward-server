@@ -92,6 +92,16 @@ class BundledDictionaryTest {
         assertThat(def.number()).isEqualTo(type);
         assertThat(dictionary.vendorAttribute(vendorId, type)).isSameAs(def);
         assertThat(dictionary.find("Vendor-Specific." + attribute)).isSameAs(def);
+        assertThat(dictionary.find(attribute.replace('.', '-')))
+                .as("v3-style name")
+                .isSameAs(def);
+    }
+
+    @Test
+    void v3VendorNamesNeedAKnownAttribute() {
+        assertThat(dictionary.find("cisco-avpair")).isSameAs(dictionary.find("Cisco.AVPair"));
+        assertThat(dictionary.find("Cisco-No-Such-Attribute")).isNull();
+        assertThat(dictionary.find("Cisco-")).isNull();
     }
 
     @Test

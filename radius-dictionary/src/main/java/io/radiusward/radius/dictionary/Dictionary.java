@@ -85,7 +85,7 @@ public final class Dictionary {
      *
      * <p>Accepts a dotted path from the root ({@code Vendor-Specific.Cisco.AVPair}), a path that
      * starts at a root alias ({@code Cisco.AVPair}), or a plain v3-style name ({@code Cisco-AVPair},
-     * {@code Acct-Status-Type}). Names are case-insensitive.
+     * {@code Acct-Status-Type}; a vendor attribute also by vendor name, a hyphen and its v4 name). Names are case-insensitive.
      *
      * @return the attribute, or {@code null}
      */
@@ -94,7 +94,32 @@ public final class Dictionary {
         if (byPath != null) {
             return byPath;
         }
-        return flatNames.get(AttributeDef.key(name));
+        AttributeDef flat = flatNames.get(AttributeDef.key(name));
+        return flat != null ? flat : vendorPrefixed(name);
+    }
+
+    /**
+     * A v3 name of a vendor attribute defined in v4 style: {@code Cisco-AVPair} for {@code Cisco.AVPair}. The longest
+     * vendor name that prefixes {@code name} wins ({@code Alcatel-Lucent-...} before {@code Alcatel-...}).
+     */
+    private AttributeDef vendorPrefixed(String name) {
+        AttributeDef best = null;
+        int bestLength = 0;
+        for (VendorDef vendor : vendorsById.values()) {
+            String prefix = vendor.name();
+            int length = prefix.length();
+            if (length > bestLength
+                    && name.length() > length + 1
+                    && name.charAt(length) == '-'
+                    && name.regionMatches(true, 0, prefix, 0, length)) {
+                AttributeDef def = resolvePath(root, "Vendor-Specific." + prefix + "." + name.substring(length + 1));
+                if (def != null) {
+                    best = def;
+                    bestLength = length;
+                }
+            }
+        }
+        return best;
     }
 
     /** Like {@link #find(String)} but fails with a clear message. */

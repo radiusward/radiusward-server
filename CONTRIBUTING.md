@@ -48,6 +48,8 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `export-api` | Sink plug-in API, canonical attribute JSON, `SqlMigrations` |
 | `exporter` | Committed-log reader, state-machine replica, lease, batching, plug-in loading |
 | `sinks/postgres`, `sinks/file` | Built-in sinks |
+| `auth-api` | Identity store plug-in API (`IdentityStoreProvider`, `IdentityStore`, `UserRecord`) |
+| `stores/file`, `stores/sql` | Built-in identity stores (users file; JDBC `radcheck` schema) |
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
 | `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster`, `DevCluster` |

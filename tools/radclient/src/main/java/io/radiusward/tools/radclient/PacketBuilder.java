@@ -11,12 +11,7 @@ import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.radius.dictionary.AttributeDef;
 import io.radiusward.radius.dictionary.Dictionary;
 import io.radiusward.radius.dictionary.VendorDef;
-import java.net.Inet6Address;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.HexFormat;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /** Builds and signs Accounting-Requests from {@code Name=Value} pairs using the dictionary. */
@@ -76,55 +71,10 @@ final class PacketBuilder {
     }
 
     static byte[] encode(AttributeDef def, String text) {
-        if (text.startsWith("0x")) {
-            return HexFormat.of().parseHex(text.substring(2));
-        }
-        return switch (def.type()) {
-            case UINT8, BOOL -> bytes(number(def, text), 1);
-            case UINT16 -> bytes(number(def, text), 2);
-            case UINT32, DATE, TIME_DELTA, INT32 -> bytes(number(def, text), 4);
-            case UINT64, INT64 -> bytes(number(def, text), 8);
-            case IPV4_ADDR -> address(text, 4);
-            case IPV6_ADDR -> address(text, 16);
-            case STRING -> text.getBytes(StandardCharsets.UTF_8);
-            case OCTETS -> text.getBytes(StandardCharsets.UTF_8);
-            default ->
-                throw new UsageException(
-                        def.path() + ": type " + def.type().dictionaryName() + " needs a 0x... hex value");
-        };
-    }
-
-    private static long number(AttributeDef def, String text) {
-        Long named = def.value(text);
-        if (named != null) {
-            return named;
-        }
         try {
-            return Long.decode(text);
-        } catch (NumberFormatException e) {
-            throw new UsageException(def.path() + ": not a number or known value: " + text);
-        }
-    }
-
-    private static byte[] bytes(long value, int size) {
-        byte[] out = new byte[size];
-        for (int i = size - 1; i >= 0; i--) {
-            out[i] = (byte) value;
-            value >>= 8;
-        }
-        return out;
-    }
-
-    private static byte[] address(String text, int size) {
-        try {
-            InetAddress address = InetAddress.getByName(text);
-            byte[] raw = address.getAddress();
-            if (raw.length != size || (size == 16 && !(address instanceof Inet6Address))) {
-                throw new UsageException("expected an IPv" + (size == 4 ? 4 : 6) + " address: " + text);
-            }
-            return raw;
-        } catch (UnknownHostException e) {
-            throw new UsageException("invalid address " + text);
+            return io.radiusward.radius.codec.AttributeText.encode(def, text);
+        } catch (IllegalArgumentException e) {
+            throw new UsageException(e.getMessage());
         }
     }
 }

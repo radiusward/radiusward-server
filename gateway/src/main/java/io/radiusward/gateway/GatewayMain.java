@@ -28,13 +28,13 @@ public final class GatewayMain {
         GatewayConfig gatewayConfig = GatewayConfig.from(config);
         NasRegistry registry = NasRegistry.from(config);
         AuthConfig auth = AuthConfig.from(config);
-        if (auth.enabled()) {
-            // the Access-Request path exists (Phase 5.2); the identity stores that decide requests come with 5.3
-            throw new io.radiusward.common.config.ConfigException(
-                    "gateway.auth.enabled: no identity store is available yet (Phase 5.3)");
-        }
+        AuthStores stores = auth.enabled() ? AuthStores.from(config, auth.workers()) : null;
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
-                Gateway gateway = Gateway.launch(gatewayConfig, registry);
+                Gateway gateway = Gateway.launchWith(
+                        gatewayConfig,
+                        registry,
+                        auth,
+                        dictionary -> new StoreAccessHandler(stores, dictionary, System::currentTimeMillis));
                 ManagementServer ignored = ManagementServer.start(
                         config,
                         9189 + gatewayConfig.gatewayId(),

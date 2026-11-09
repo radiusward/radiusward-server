@@ -77,6 +77,9 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 | [`exporter`](exporter/README.md) | exports the committed log to sinks (lease, state-machine reducer) |
 | [`sinks/postgres`](sinks/postgres/README.md) | PostgreSQL sink |
 | [`sinks/file`](sinks/file/README.md) | JSON-lines sink |
+| [`auth-api`](auth-api/README.md) | identity store plug-in API |
+| [`stores/file`](stores/file/README.md) | users-file identity store |
+| [`stores/sql`](stores/sql/README.md) | SQL identity store (`radcheck` schema) |
 | [`distribution`](distribution/README.md) | the runnable `radiusward.jar` |
 | [`radius-dictionary`](radius-dictionary/README.md) | FreeRADIUS-format dictionary parser and attribute tree |
 | [`radius-dictionary-freeradius`](radius-dictionary-freeradius/README.md) | Bundled FreeRADIUS dictionaries (CC BY 4.0) |

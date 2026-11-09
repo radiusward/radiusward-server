@@ -18,6 +18,20 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>auth-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>store-file</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>protocol</artifactId>
         </dependency>
         <dependency>

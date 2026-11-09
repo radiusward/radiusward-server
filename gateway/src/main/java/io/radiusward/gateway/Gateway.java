@@ -44,6 +44,7 @@ public final class Gateway implements AutoCloseable {
     private final UdpAgent udpAgent;
     private final AuthAgent authAgent;
     private final AuthStats authStats;
+    private final AccessHandler handler;
     private final AgentRunner[] runners;
 
     private Gateway(
@@ -53,6 +54,7 @@ public final class Gateway implements AutoCloseable {
             UdpAgent udpAgent,
             AuthAgent authAgent,
             AuthStats authStats,
+            AccessHandler handler,
             AgentRunner... runners) {
         this.config = config;
         this.stats = stats;
@@ -60,11 +62,12 @@ public final class Gateway implements AutoCloseable {
         this.udpAgent = udpAgent;
         this.authAgent = authAgent;
         this.authStats = authStats;
+        this.handler = handler;
         this.runners = runners;
     }
 
     public static Gateway launch(GatewayConfig config, NasRegistry registry) {
-        return launch(config, registry, AuthConfig.DISABLED, null);
+        return launchWith(config, registry, AuthConfig.DISABLED, dictionary -> null);
     }
 
     /**
@@ -72,15 +75,28 @@ public final class Gateway implements AutoCloseable {
      * {@code handler} on {@link AuthConfig#workers()} threads.
      */
     public static Gateway launch(GatewayConfig config, NasRegistry registry, AuthConfig auth, AccessHandler handler) {
-        if (auth.enabled() && handler == null) {
-            throw new IllegalArgumentException("authentication enabled without an access handler");
-        }
+        return launchWith(config, registry, auth, dictionary -> handler);
+    }
+
+    /**
+     * As above, with the handler created from the gateway's dictionary (reply attributes are encoded with it); the
+     * handler is closed with the gateway when it is {@link AutoCloseable}.
+     */
+    public static Gateway launchWith(
+            GatewayConfig config,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<Dictionary, AccessHandler> handlerFactory) {
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (config.dictionaryDir() != null) {
             dictionaries.addDirectory(config.dictionaryDir(), ParseMode.LENIENT);
         }
         Dictionary dictionary = dictionaries.load();
         dictionary.warnings().forEach(w -> LOG.warn("dictionary: {}", w));
+        AccessHandler handler = auth.enabled() ? handlerFactory.apply(dictionary) : null;
+        if (auth.enabled() && handler == null) {
+            throw new IllegalArgumentException("authentication enabled without an access handler");
+        }
 
         MediaDriver driver = MediaDriver.launchEmbedded(new MediaDriver.Context()
                 .aeronDirectoryName(config.aeronDir())
@@ -140,7 +156,7 @@ public final class Gateway implements AutoCloseable {
             for (AgentRunner runner : runners) {
                 AgentRunner.startOnThread(runner);
             }
-            Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, runners);
+            Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
             LOG.info(
                     "gateway {} started: {} NAS, cluster {}, {} threads",
                     config.gatewayId(),
@@ -292,6 +308,9 @@ public final class Gateway implements AutoCloseable {
     @Override
     public void close() {
         CloseHelper.closeAll(runners);
+        if (handler instanceof AutoCloseable closeable) {
+            CloseHelper.quietClose(closeable); // identity stores: connections, files
+        }
         CloseHelper.close(driver);
         LOG.info("gateway {} stopped", config.gatewayId());
     }
