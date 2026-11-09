@@ -10,6 +10,8 @@ import io.radiusward.protocol.MemberPositionChunkDecoder;
 import io.radiusward.protocol.MemberPositionChunkEncoder;
 import io.radiusward.protocol.MessageHeaderDecoder;
 import io.radiusward.protocol.MessageHeaderEncoder;
+import io.radiusward.protocol.ReservationChunkDecoder;
+import io.radiusward.protocol.ReservationChunkEncoder;
 import io.radiusward.protocol.SessionChunkDecoder;
 import io.radiusward.protocol.SessionChunkEncoder;
 import io.radiusward.protocol.SessionStatus;
@@ -34,14 +36,29 @@ public final class SnapshotCodec {
 
     static final int KEYS_PER_CHUNK = 1024;
 
+    static final int RESERVATIONS_PER_CHUNK = 512;
+
     /** Receives encoded snapshot messages; must not return until the bytes are written. */
     @FunctionalInterface
     public interface Sink {
         void write(DirectBuffer buffer, int offset, int length);
     }
 
-    private final MutableDirectBuffer buffer =
-            new UnsafeBuffer(new byte[MessageHeaderEncoder.ENCODED_LENGTH + 8 + KEYS_PER_CHUNK * 16 + 64]);
+    /** Large enough for the largest chunk: a group header and its entries, plus room for a message header. */
+    private final MutableDirectBuffer buffer = new UnsafeBuffer(
+            new byte
+                    [MessageHeaderEncoder.ENCODED_LENGTH
+                            + 8
+                            + Math.max(
+                                    KEYS_PER_CHUNK * ExactKeyChunkEncoder.KeysEncoder.sbeBlockLength(),
+                                    Math.max(
+                                            SESSIONS_PER_CHUNK * SessionChunkEncoder.SessionsEncoder.sbeBlockLength(),
+                                            RESERVATIONS_PER_CHUNK
+                                                    * ReservationChunkEncoder.ReservationsEncoder.sbeBlockLength()))
+                            + 64]);
+
+    private final ReservationChunkEncoder reservationChunkEncoder = new ReservationChunkEncoder();
+    private final ReservationChunkDecoder reservationChunkDecoder = new ReservationChunkDecoder();
     private final MessageHeaderEncoder headerEncoder = new MessageHeaderEncoder();
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final SnapshotHeaderEncoder snapshotHeaderEncoder = new SnapshotHeaderEncoder();
@@ -66,6 +83,8 @@ public final class SnapshotCodec {
     private long loadedSinks;
     private long expectedMembers;
     private long loadedMembers;
+    private long expectedReservations;
+    private long loadedReservations;
     private boolean complete;
 
     // ---- writing -------------------------------------------------------------------------------
@@ -87,7 +106,8 @@ public final class SnapshotCodec {
                 .lastCommandPosition(machine.export().lastCommandPosition())
                 .memberPositionCount(reportedMembers(machine.export()))
                 .activeVersion(machine.versions().activeRaw())
-                .clusterSize(machine.versions().clusterSize());
+                .clusterSize(machine.versions().clusterSize())
+                .reservationCount(machine.reservations().size());
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + snapshotHeaderEncoder.encodedLength());
 
         int slot = 0;
@@ -125,7 +145,9 @@ public final class SnapshotCodec {
                             .lastSeen(store.lastSeen(slot))
                             .tombstoneUntil(store.tombstoneUntil(slot))
                             .flags((short) (store.flags(slot) & 0xFF))
-                            .idleTimeoutMinutes(store.idleMinutes(slot));
+                            .idleTimeoutMinutes(store.idleMinutes(slot))
+                            .userKey(store.userKey(slot))
+                            .deviceKey(store.deviceKey(slot));
                     written++;
                 }
                 slot++;
@@ -150,6 +172,7 @@ public final class SnapshotCodec {
 
         writeSinks(machine.export(), sink);
         writeMemberPositions(machine.export(), machine.versions(), sink);
+        writeReservations(machine.reservations(), sink);
 
         footerEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
@@ -218,6 +241,38 @@ public final class SnapshotCodec {
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sinkChunkEncoder.encodedLength());
     }
 
+    /** Only when there are reservations: they exist once state version 6 is active, so older code never sees one. */
+    private void writeReservations(Reservations reservations, Sink sink) {
+        int slot = 0;
+        int end = reservations.highWater();
+        while (slot < end) {
+            int count = 0;
+            for (int s = slot; s < end && count < RESERVATIONS_PER_CHUNK; s++) {
+                if (reservations.used(s)) {
+                    count++;
+                }
+            }
+            if (count == 0) {
+                return;
+            }
+            ReservationChunkEncoder.ReservationsEncoder group = reservationChunkEncoder
+                    .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                    .reservationsCount(count);
+            int written = 0;
+            while (written < count) {
+                if (reservations.used(slot)) {
+                    group.next()
+                            .userKey(reservations.user(slot))
+                            .deviceKey(reservations.device(slot))
+                            .expiry(reservations.expiry(slot));
+                    written++;
+                }
+                slot++;
+            }
+            sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + reservationChunkEncoder.encodedLength());
+        }
+    }
+
     private void writeKeys(long[] keys, long[] expiries, int count, Sink sink) {
         ExactKeyChunkEncoder.KeysEncoder group = exactKeyChunkEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
@@ -260,6 +315,9 @@ public final class SnapshotCodec {
                     expectedMembers = snapshotHeaderDecoder.memberPositionCount();
                     machine.export().restoreLastCommandPosition(snapshotHeaderDecoder.lastCommandPosition());
                 }
+                if (headerDecoder.version() >= 6) {
+                    expectedReservations = snapshotHeaderDecoder.reservationCount();
+                }
             }
             case SessionChunkDecoder.TEMPLATE_ID -> {
                 sessionChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
@@ -279,6 +337,9 @@ public final class SnapshotCodec {
                             s.lastSeen(),
                             s.tombstoneUntil(),
                             sessionChunkDecoder.actingVersion() >= 4 ? s.idleTimeoutMinutes() : 0);
+                    if (sessionChunkDecoder.actingVersion() >= 6) {
+                        machine.restoreUser(s.keyHi(), s.keyLo(), s.userKey(), s.deviceKey());
+                    }
                     loadedSessions++;
                 }
             }
@@ -327,15 +388,24 @@ public final class SnapshotCodec {
                     loadedMembers++;
                 }
             }
+            case ReservationChunkDecoder.TEMPLATE_ID -> {
+                reservationChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                for (ReservationChunkDecoder.ReservationsDecoder r : reservationChunkDecoder.reservations()) {
+                    machine.restoreReservation(r.userKey(), r.deviceKey(), r.expiry());
+                    loadedReservations++;
+                }
+            }
             case SnapshotFooterDecoder.TEMPLATE_ID -> {
                 footerDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
                 if (loadedSessions != expectedSessions
                         || loadedKeys != expectedKeys
                         || loadedSinks != expectedSinks
-                        || loadedMembers != expectedMembers) {
+                        || loadedMembers != expectedMembers
+                        || loadedReservations != expectedReservations) {
                     throw new IllegalStateException("snapshot incomplete: sessions " + loadedSessions + "/"
                             + expectedSessions + ", keys " + loadedKeys + "/" + expectedKeys + ", sinks "
-                            + loadedSinks + "/" + expectedSinks);
+                            + loadedSinks + "/" + expectedSinks + ", reservations " + loadedReservations + "/"
+                            + expectedReservations);
                 }
                 complete = true;
             }

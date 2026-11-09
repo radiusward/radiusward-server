@@ -29,6 +29,11 @@ final class AccessWorker implements Agent {
     private long errors;
 
     AccessWorker(int index, AccessSlots slots, AccessHandler handler, AuthStats stats) {
+        this(index, slots, handler, stats, SessionLimits.NONE);
+    }
+
+    AccessWorker(int index, AccessSlots slots, AccessHandler handler, AuthStats stats, SessionLimits limits) {
+        context.sessionLimits(limits);
         this.index = index;
         this.slots = slots;
         this.handler = handler;

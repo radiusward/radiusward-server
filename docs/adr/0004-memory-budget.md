@@ -25,7 +25,8 @@ primitive collections, streamed snapshots, explicit JVM flags (`-Xmx`, `MaxMetas
 
 ## Consequences
 - Small profile handles ~1–2M concurrent sessions per node; the reference load (500k) uses ~40 MB of
-  session state.
+  session state (~48 MB since state version 6 keeps each session's user and device for simultaneous use,
+  ADR 0023: +16 bytes per session, ~+32 MB at 2M sessions).
 - Measured in Phase 2 (`OverloadIT`: containers limited to 1 GiB / 384 MiB, 2M sessions, 48k requests/s
   offered for 2 min, ~32k/s served): members at most **448 MiB** heap + native + `/dev/shm` (the rest of the
   1 GiB is page cache, reclaimable), gateways at most **321 MiB** of 384 MiB; no OOM kill. The small profile

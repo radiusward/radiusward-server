@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: in progress (2026-11-09); decisions 1–5 taken; 5.1–5.4 done (ADR 0020, 0021, 0022). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: in progress (2026-11-09); decisions 1–6 taken; 5.1–5.5 done (ADR 0020–0023). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -100,7 +100,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.2 ✅ | AuthAgent | non-blocking NIO socket 1812, NAS entries (their secret, `access.message-authenticator` default required), reply cache with in-flight marks, bounded slots and worker pool, counters, `/metrics` | M |
 | 5.3 ✅ | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option ([ADR 0021](../adr/0021-identity-stores.md)); bcrypt included, argon2 and yescrypt deferred | M |
 | 5.4 ✅ | Reply attributes | user and group reply items, vendor filter per NAS entry, reply items checked at load, encoded once, large replies cached ([ADR 0022](../adr/0022-reply-attributes.md)) | S |
-| 5.5 | Simultaneous use via the cluster | `AuthReservation` command, state-machine counting with pending reservations, state version 6 (`atLeast(6)`) | M |
+| 5.5 ✅ | Simultaneous use via the cluster | `AuthReservation` command, distinct devices per user, reservations until the Accounting-Start, same device always let in, state version 6 (`atLeast(6)`) ([ADR 0023](../adr/0023-simultaneous-use.md)) | M |
 | 5.6 | MS-CHAPv2 (non-EAP) | RFC 2759, NT-Password, MS-CHAP2-Success, RFC 2548 MPPE; RFC 3079 vectors | S |
 | 5.7 | EAP framework | state machine, State tokens, conversation table, fragmentation, EAP-MD5 for the plumbing | L |
 | 5.8 | EAP-TLS, PEAP, TTLS | TLS engine + exporter, methods above, certificates, `eapol_test` interop | L |
@@ -143,3 +143,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    NAS vendors — reply items per user and group, a vendor filter per NAS entry. The check items of 5.3 stay as they
    are and are not extended. Deferred until operators ask: vendor-neutral templates, `Login-Time`, binding users to
    NAS entries, the signed Class token, reject reasons in metrics.
+6. **Simultaneous use** (decided 2026-11-09, [ADR 0023](../adr/0023-simultaneous-use.md)): the same device never
+   counts twice; sessions with a lost Stop count until their NAS entry's idle timeout; cluster unreachable → no answer
+   for limited users only; before state version 6 is active the limit is ignored; users matched by User-Name (ASCII
+   case folded) across all NAS entries.

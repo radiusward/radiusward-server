@@ -60,7 +60,9 @@ class UdpAgentTest {
             int nasClientId,
             String nasDevice,
             boolean deviceUnknown,
-            int idleTimeoutMinutes) {}
+            int idleTimeoutMinutes,
+            long userKey,
+            long deviceKey) {}
 
     private final long[] clock = {1_000_000_000L};
     private final GatewayStats stats = new GatewayStats();
@@ -157,7 +159,9 @@ class UdpAgentTest {
                     d.nasClientId(),
                     nasDevice(d),
                     d.flags().deviceUnknown(),
-                    d.idleTimeoutMinutes()));
+                    d.idleTimeoutMinutes(),
+                    d.userKey(),
+                    d.deviceKey()));
         });
         return commands;
     }
@@ -588,6 +592,24 @@ class UdpAgentTest {
                 .singleElement()
                 .extracting(Command::idleTimeoutMinutes)
                 .isEqualTo(15);
+    }
+
+    @Test
+    void commandsCarryTheUserAndDeviceForSimultaneousUse() throws Exception {
+        start();
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
+        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
+        enc.header(RadiusCode.ACCOUNTING_REQUEST, 1).uint32(40, 1).attribute(44, "s-1");
+        enc.attribute(1, "Alice").attribute(31, "aa-bb-cc-dd-ee-ff");
+        int length = enc.finish();
+        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
+        send(java.util.Arrays.copyOf(buffer.byteArray(), length));
+        send(deviceRequest(2, 1, "s-2", null, null));
+        List<Command> commands = commands();
+        assertThat(commands.get(0).userKey()).isEqualTo(UserKeysTest.user("alice"));
+        assertThat(commands.get(0).deviceKey()).isEqualTo(UserKeysTest.device("AA:BB:CC:DD:EE:FF"));
+        assertThat(commands.get(1).userKey()).as("no User-Name").isZero();
+        assertThat(commands.get(1).deviceKey()).isZero();
     }
 
     @Test

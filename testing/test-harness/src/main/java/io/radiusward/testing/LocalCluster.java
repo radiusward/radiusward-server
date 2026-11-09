@@ -10,6 +10,8 @@ import io.radiusward.cluster.node.LogPurgeConfig;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
 import io.radiusward.exporter.ExportConfig;
+import io.radiusward.gateway.AccessHandler;
+import io.radiusward.gateway.AuthConfig;
 import io.radiusward.gateway.Gateway;
 import io.radiusward.gateway.GatewayConfig;
 import io.radiusward.gateway.NasClient;
@@ -174,6 +176,16 @@ public final class LocalCluster implements AutoCloseable {
 
     /** A gateway with its own NAS entries, e.g. {@link #registry(NasClient.Identity...)} for devices behind NAT. */
     public Gateway startGateway(int gatewayId, int radiusPort, NasRegistry registry) {
+        return startGateway(gatewayId, radiusPort, registry, AuthConfig.DISABLED, dictionary -> null);
+    }
+
+    /** A gateway that also answers Access-Requests, with the handler made once the dictionary is loaded. */
+    public Gateway startGateway(
+            int gatewayId,
+            int radiusPort,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler) {
         GatewayConfig config = new GatewayConfig(
                 gatewayId,
                 "127.0.0.1",
@@ -192,7 +204,7 @@ public final class LocalCluster implements AutoCloseable {
                 new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
                 null,
                 Duration.ZERO);
-        Gateway gateway = Gateway.launch(config, registry);
+        Gateway gateway = Gateway.launchWith(config, registry, auth, handler);
         gateways.add(gateway);
         return gateway;
     }

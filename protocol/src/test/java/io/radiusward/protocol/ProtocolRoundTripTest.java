@@ -222,7 +222,7 @@ class ProtocolRoundTripTest {
         v2.putRawAttributes(RAW, 0, RAW.length);
 
         headerDecoder.wrap(buffer, 0);
-        assertThat(headerDecoder.version()).isEqualTo(6);
+        assertThat(headerDecoder.version()).isEqualTo(7);
         AccountingCommandDecoder v1 = new AccountingCommandDecoder().wrapAndApplyHeader(buffer, 0, headerDecoder);
         assertThat(v1.correlationId()).isEqualTo(99L);
         assertThat(v1.nasId()).isEqualTo(3);

@@ -24,5 +24,6 @@
 | [0020](0020-authentication-path.md) | The Access-Request path on the gateway: non-blocking socket agent, bounded workers, reply cache | Accepted |
 | [0021](0021-identity-stores.md) | Identity stores: plug-in SPI in the gateway, ordered stores, outage means no answer, credential formats | Accepted |
 | [0022](0022-reply-attributes.md) | Reply attributes as data, vendor filter per NAS entry, large replies in the reply cache | Accepted |
+| [0023](0023-simultaneous-use.md) | Simultaneous use through the cluster: distinct devices per user, reservations committed before the Accept, state version 6 | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

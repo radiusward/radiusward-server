@@ -34,7 +34,7 @@ the NAS must never become Accept because of it.
 - **Check items** are conditions: `Auth-Type := Reject/Accept`, `Expiration` (an unparseable date fails closed),
   comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`, `=~`, `!~`) against request attributes. A group applies when its
   check items match; its reply items add to the user's (`+=` always, `=`/`:=` only if the user did not set the
-  attribute). `Simultaneous-Use` is ignored until work package 5.5 and logged once.
+  attribute). `Simultaneous-Use` is applied through the cluster after the credentials (ADR 0023).
 - **Caching**: look-ups (including "unknown user") are cached per worker for `auth.cache.ttl` (5 s), so a
   reconnect storm costs at most one look-up per user and worker (ADR 0022: per-worker Agrona maps); successful slow-hash verifications (PBKDF2, SHA-crypt) are cached
   under the user plus a salted digest of the presented password, never the password itself.

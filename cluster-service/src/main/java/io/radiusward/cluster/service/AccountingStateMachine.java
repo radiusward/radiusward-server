@@ -24,16 +24,28 @@ package io.radiusward.cluster.service;
  *   <tr><td>Accounting-On/Off</td><td>exact-key window; when APPLIED all active sessions of the NAS (the device
  *       scope, ADR 0019) stop — none when the device is unknown</td></tr>
  *   <tr><td>other</td><td>exact-key window</td></tr>
+ *   <tr><td>AuthReservation (v6)</td><td>see {@link #reserve}</td></tr>
  * </table>
+ *
+ * <p>From state version 6 an applied event also records the session's user and device (simultaneous use, ADR 0023);
+ * a session newly online for its user ends a reservation the user held.
  */
 public final class AccountingStateMachine {
 
     /**
      * Newest behaviour this code knows (ADR 0005); the cluster applies {@link StateVersions#active()}. History before
      * the first release (no gate yet): 2 export sinks, 3 late Start merged, 4 old Interim stale, 5 idle timeout per
-     * NAS entry = {@link StateVersions#BASELINE}. From 6 on, new rules check {@link #atLeast(int)}.
+     * NAS entry = {@link StateVersions#BASELINE}. From 6 on, new rules check {@link #atLeast(int)}: 6 users and
+     * devices of sessions, {@code AuthReservation} (simultaneous use).
      */
-    public static final int STATE_VERSION = 5;
+    public static final int STATE_VERSION = 6;
+
+    /** {@link #reserve} results, matching the protocol's {@code ReservationResult}. */
+    public static final int RESERVATION_GRANTED = 0;
+
+    public static final int RESERVATION_DENIED = 1;
+    public static final int RESERVATION_UNSUPPORTED = 2;
+    public static final int RESERVATION_CAPACITY = 3;
 
     public static final int STATUS_START = 1;
     public static final int STATUS_STOP = 2;
@@ -63,9 +75,23 @@ public final class AccountingStateMachine {
      * @param exactKeyWindowMs how long exact keys are remembered
      * @param supportedVersion newest state version this code applies ({@link #STATE_VERSION}; lower or higher only in
      *     tests of upgrades, {@code debug.state.version.supported})
+     * @param maxReservations reservations held at once; beyond it a request is answered {@code CAPACITY}. Like
+     *     {@code maxSessions}, equal on every member.
      */
     public record Settings(
-            int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs, int supportedVersion) {
+            int maxSessions,
+            long tombstoneMs,
+            long idleTimeoutMs,
+            long exactKeyWindowMs,
+            int supportedVersion,
+            int maxReservations) {
+
+        public static final int DEFAULT_MAX_RESERVATIONS = 65_536;
+
+        public Settings(
+                int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs, int supportedVersion) {
+            this(maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, supportedVersion, DEFAULT_MAX_RESERVATIONS);
+        }
 
         public Settings(int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs) {
             this(maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, STATE_VERSION);
@@ -81,6 +107,7 @@ public final class AccountingStateMachine {
     private final ExactKeyWindow window = new ExactKeyWindow();
     private final ExportState export = new ExportState();
     private final StateVersions versions;
+    private final Reservations reservations;
     private SessionListener sessionListener;
 
     private long applied;
@@ -100,6 +127,7 @@ public final class AccountingStateMachine {
     public AccountingStateMachine(Settings settings, int supportedVersion) {
         this.settings = settings;
         this.versions = new StateVersions(supportedVersion);
+        this.reservations = new Reservations(settings.maxReservations());
     }
 
     /** Whether behaviour introduced in state version {@code version} applies at this log position. */
@@ -209,6 +237,47 @@ public final class AccountingStateMachine {
             long outputOctets,
             int idleMinutes,
             long now) {
+        return apply(
+                sessionHi,
+                sessionLo,
+                exactHi,
+                exactLo,
+                nasId,
+                statusType,
+                flags,
+                sessionTime,
+                eventTimestamp,
+                inputOctets,
+                outputOctets,
+                idleMinutes,
+                0,
+                0,
+                now);
+    }
+
+    /**
+     * As above, with the user and device of the event (protocol version 6). They are recorded only from state version
+     * 6 on ({@link #atLeast(int)}); before that they are ignored, as by older code.
+     *
+     * @param userKey hash of the User-Name, 0 = none
+     * @param deviceKey the Calling-Station-Id as a key, 0 = none
+     */
+    public int apply(
+            long sessionHi,
+            long sessionLo,
+            long exactHi,
+            long exactLo,
+            int nasId,
+            int statusType,
+            int flags,
+            long sessionTime,
+            long eventTimestamp,
+            long inputOctets,
+            long outputOctets,
+            int idleMinutes,
+            long userKey,
+            long deviceKey,
+            long now) {
         created = false;
         int outcome = switch (statusType) {
             case STATUS_START -> start(sessionHi, sessionLo, exactHi, exactLo, nasId, flags, eventTimestamp, now);
@@ -243,6 +312,12 @@ public final class AccountingStateMachine {
                 store.inputOctets(slot, inputOctets);
                 store.outputOctets(slot, outputOctets);
                 store.lastSeen(slot, seconds(now));
+            }
+            if (slot >= 0 && userKey != 0 && atLeast(6)) {
+                if (store.user(slot, userKey, deviceKey)) {
+                    reservations.consume(userKey, deviceKey, now); // the device came online: its place is taken
+                }
+                digest = mix(digest, 0x05e7_0001L, userKey, deviceKey, store.state(slot));
             }
             applied++;
             digest = mix(
@@ -415,6 +490,42 @@ public final class AccountingStateMachine {
     }
 
     /**
+     * Whether the user may bring another device online ({@code AuthReservation}, state version 6). Devices count once
+     * however many sessions they have; a session without a device counts on its own.
+     *
+     * <ul>
+     *   <li>before state version 6 is active → {@link #RESERVATION_UNSUPPORTED}, nothing changes
+     *   <li>the device is already online, or holds a live reservation (then extended) → {@link #RESERVATION_GRANTED}
+     *   <li>devices online plus other live reservations reach {@code maxDevices} → {@link #RESERVATION_DENIED}
+     *   <li>otherwise a reservation until {@code now + ttlMs} → {@link #RESERVATION_GRANTED}, or
+     *       {@link #RESERVATION_CAPACITY} if none fits
+     * </ul>
+     *
+     * @param ttlMs how long the reservation waits for the device's Accounting-Start; from the log entry, so equal on
+     *     every member
+     */
+    public int reserve(long userKey, long deviceKey, int maxDevices, long ttlMs, long now) {
+        if (!atLeast(6)) {
+            return RESERVATION_UNSUPPORTED;
+        }
+        int result;
+        long expiry = now + ttlMs;
+        if (userKey == 0) {
+            result = RESERVATION_DENIED; // no user to count against
+        } else if (store.online(userKey, deviceKey)) {
+            result = RESERVATION_GRANTED; // the same device again (reconnect, roaming)
+        } else if (deviceKey != 0 && reservations.refresh(userKey, deviceKey, expiry, now)) {
+            result = RESERVATION_GRANTED; // a retransmission or a second attempt of the same device
+        } else if (store.devicesOnline(userKey) + reservations.live(userKey, now, store) >= maxDevices) {
+            result = RESERVATION_DENIED;
+        } else {
+            result = reservations.add(userKey, deviceKey, expiry) ? RESERVATION_GRANTED : RESERVATION_CAPACITY;
+        }
+        digest = mix(digest, 0x05e7_0002L, userKey, deviceKey, ((long) maxDevices << 8) | result);
+        return result;
+    }
+
+    /**
      * Housekeeping, run from a cluster timer: removes stopped sessions whose tombstone expired, idle active
      * sessions, and expired exact keys. Iterates slots in order, so it is deterministic.
      *
@@ -443,6 +554,10 @@ public final class AccountingStateMachine {
         window.evict(now);
         if (removed > 0) {
             digest = mix(digest, removed, now, 0, 0);
+        }
+        int ended = reservations.sweep(now);
+        if (ended > 0) {
+            digest = mix(digest, 0x05e7_0003L, ended, now, 0);
         }
         return removed;
     }
@@ -508,6 +623,23 @@ public final class AccountingStateMachine {
         store.startKey(slot, startKey);
         store.lastSeen(slot, lastSeen);
         store.tombstoneUntil(slot, tombstoneUntil);
+    }
+
+    /** Sets a restored session's user and device (snapshot version 6). */
+    public void restoreUser(long hi, long lo, long userKey, long deviceKey) {
+        int slot = store.find(hi, lo);
+        if (slot >= 0 && userKey != 0) {
+            store.user(slot, userKey, deviceKey);
+        }
+    }
+
+    public void restoreReservation(long userKey, long deviceKey, long expiry) {
+        reservations.restore(userKey, deviceKey, expiry);
+    }
+
+    /** Places held for devices granted under a simultaneous-use limit (state version 6). */
+    public Reservations reservations() {
+        return reservations;
     }
 
     public void restoreExactKey(long key, long expiry) {

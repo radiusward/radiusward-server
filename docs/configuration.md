@@ -42,6 +42,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.disk.min.free` | `1g` | below this free space in the data directory the member reports not ready (`/ready`, with the reason) and logs a warning; a full disk stops the member. `0` disables |
 | `snapshot.interval` | `1h` | automatic snapshot on the leader; `0` disables |
 | `service.max.sessions` | profile (small: 2,000,000) | session capacity; new sessions beyond it are rejected |
+| `service.auth.reservations.max` | `65536` | simultaneous-use reservations held at once (state version 6, [ADR 0023](adr/0023-simultaneous-use.md)); beyond it limited users get no answer. Same on every member |
 | `service.tombstone` | `1h` | how long a stopped session is kept to recognise retransmitted Stops and late Interims; an Interim for an unknown session with an Event-Timestamp older than this is stale and creates no session |
 | `service.idle.timeout` | `2h` | remove sessions with no event for this long (lost Stop), unless their NAS entry sets `nas.<name>.idle.timeout`; the exported stop time is the session's last event |
 | `service.exact.key.window` | `15m` | remember exact keys of events without progress values |
@@ -67,6 +68,8 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `gateway.auth.workers` | `4` | threads that decide Access-Requests (they may wait for an identity store; the socket thread never does) |
 | `gateway.auth.pending` | `256` | Access-Requests between the socket and the workers (power of two); beyond it requests are dropped |
 | `gateway.auth.reply.cache.entries` / `gateway.auth.reply.cache.ttl` | `4096` / `10s` | replies kept to answer retransmissions (RFC 5080) |
+| `gateway.auth.reservation.timeout` | `1s` | how long a worker waits for the cluster's answer for a user with `Simultaneous-Use`; without one the request is not answered ([ADR 0023](adr/0023-simultaneous-use.md)) |
+| `gateway.auth.reservation.ttl` | `60s` | how long a granted place waits for the device's Accounting-Start (1s–65535s) |
 | `dictionary.dir` | `/etc/radiusward/dictionary.d` | operator dictionaries, loaded after the bundled set if the directory exists |
 | `debug.enabled` | `false` | allows `debug.*` keys; never in production |
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |

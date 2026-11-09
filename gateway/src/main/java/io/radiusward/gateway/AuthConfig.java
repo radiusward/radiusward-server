@@ -19,9 +19,19 @@ import java.time.Duration;
  * @param replyCacheEntries replies kept to answer retransmissions (RFC 5080); each up to
  *     {@link ReplyCache#MAX_REPLY} bytes
  * @param replyCacheTtl how long a reply is kept
+ * @param reservationTimeout how long a worker waits for the cluster's answer to a simultaneous-use reservation;
+ *     without one the request is not answered (ADR 0023)
+ * @param reservationTtl how long a granted reservation waits for the device's Accounting-Start
  */
 public record AuthConfig(
-        boolean enabled, int port, int workers, int pending, int replyCacheEntries, Duration replyCacheTtl) {
+        boolean enabled,
+        int port,
+        int workers,
+        int pending,
+        int replyCacheEntries,
+        Duration replyCacheTtl,
+        Duration reservationTimeout,
+        Duration reservationTtl) {
 
     public static final AuthConfig DISABLED = new AuthConfig(false, 1812, 4, 256, 4096, Duration.ofSeconds(10));
 
@@ -41,6 +51,25 @@ public record AuthConfig(
         if (port < 0 || port > 65_535) {
             throw new ConfigException("gateway.auth.port: 0 to 65535, got " + port);
         }
+        if (reservationTimeout.isNegative() || reservationTimeout.isZero()) {
+            throw new ConfigException("gateway.auth.reservation.timeout: must be positive");
+        }
+        if (reservationTtl.toSeconds() < 1 || reservationTtl.toSeconds() > 65_535) {
+            throw new ConfigException("gateway.auth.reservation.ttl: 1s to 65535s, got " + reservationTtl);
+        }
+    }
+
+    public AuthConfig(
+            boolean enabled, int port, int workers, int pending, int replyCacheEntries, Duration replyCacheTtl) {
+        this(
+                enabled,
+                port,
+                workers,
+                pending,
+                replyCacheEntries,
+                replyCacheTtl,
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(60));
     }
 
     public static AuthConfig from(Config config) {
@@ -50,6 +79,8 @@ public record AuthConfig(
                 config.integer("gateway.auth.workers", 4),
                 config.integer("gateway.auth.pending", 256),
                 config.integer("gateway.auth.reply.cache.entries", 4096),
-                config.duration("gateway.auth.reply.cache.ttl", Duration.ofSeconds(10)));
+                config.duration("gateway.auth.reply.cache.ttl", Duration.ofSeconds(10)),
+                config.duration("gateway.auth.reservation.timeout", Duration.ofSeconds(1)),
+                config.duration("gateway.auth.reservation.ttl", Duration.ofSeconds(60)));
     }
 }

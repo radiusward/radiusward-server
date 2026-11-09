@@ -118,7 +118,12 @@ public final class Gateway implements AutoCloseable {
                     .egressChannel("aeron:udp?endpoint=" + config.egressHost() + ":0")
                     .messageTimeoutNs(Duration.ofSeconds(5).toNanos())
                     .errorHandler(t -> LOG.warn("cluster client: {}", t.getMessage()));
-            ClusterClientAgent client = new ClusterClientAgent(clusterContext, toCluster, fromCluster, stats);
+            ClusterReservations reservations = auth.enabled()
+                    ? new ClusterReservations(
+                            auth.workers(), config.gatewayId(), auth.reservationTimeout(), auth.reservationTtl())
+                    : null;
+            ClusterClientAgent client =
+                    new ClusterClientAgent(clusterContext, toCluster, fromCluster, stats, reservations);
             AuthStats authStats = new AuthStats();
             AuthAgent authAgent = null;
             java.util.List<AgentRunner> runnerList = new java.util.ArrayList<>();
@@ -134,7 +139,7 @@ public final class Gateway implements AutoCloseable {
                             new org.agrona.concurrent.BackoffIdleStrategy(10, 20, 1_000, 1_000_000),
                             Gateway::error,
                             null,
-                            new AccessWorker(w, slots, handler, authStats)));
+                            new AccessWorker(w, slots, handler, authStats, reservations.forWorker(w))));
                 }
             }
             if (config.dedicatedThreads()) {
@@ -168,6 +173,16 @@ public final class Gateway implements AutoCloseable {
             CloseHelper.quietClose(driver);
             throw e;
         }
+    }
+
+    /**
+     * The access handler of a gateway with identity stores ({@code auth.stores}, ADR 0021): what {@code gateway} runs
+     * with {@code gateway.auth.enabled=true}.
+     */
+    public static java.util.function.Function<Dictionary, AccessHandler> storeHandler(
+            io.radiusward.common.config.Config config, AuthConfig auth) {
+        return dictionary -> new StoreAccessHandler(
+                AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
     }
 
     static String ingressEndpoints(GatewayConfig config) {

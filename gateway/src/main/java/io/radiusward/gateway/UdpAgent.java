@@ -298,7 +298,18 @@ final class UdpAgent implements Agent {
                 .outputOctets(outputOctets)
                 .nasClientId(nas.id())
                 .identityFingerprint(nas.identityFingerprint())
-                .idleTimeoutMinutes(nas.idleTimeoutMinutes());
+                .idleTimeoutMinutes(nas.idleTimeoutMinutes())
+                .userKey(
+                        fields.has(AccountingFields.USER_NAME)
+                                ? UserKeys.user(fields.buffer(), fields.userNameOffset(), fields.userNameLength())
+                                : 0)
+                .deviceKey(
+                        fields.has(AccountingFields.CALLING_STATION_ID)
+                                ? UserKeys.device(
+                                        fields.buffer(),
+                                        fields.callingStationIdOffset(),
+                                        fields.callingStationIdLength())
+                                : 0);
         commandEncoder
                 .flags()
                 .clear()

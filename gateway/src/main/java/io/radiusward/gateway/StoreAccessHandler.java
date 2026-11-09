@@ -55,6 +55,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private static final Logger LOG = LogManager.getLogger(StoreAccessHandler.class);
     private static final int USER_NAME = 1;
+    private static final int CALLING_STATION_ID = 31;
     private static final Set<String> COMPARISONS = Set.of("==", "!=", "=~", "!~", "<", ">", "<=", ">=");
     private static final DateTimeFormatter[] DATES = {
         DateTimeFormatter.ofPattern("MMM d yyyy HH:mm:ss", Locale.ENGLISH),
@@ -138,6 +139,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (authType == null) {
             return REJECT;
         }
+        String limit = simultaneousUse(found.user().check());
         for (UserRecord.Group group : found.user().groups()) {
             List<AttributeItem> groupPasswords = new ArrayList<>();
             String groupAuthType = checks(group.check(), request, groupPasswords);
@@ -150,6 +152,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             if (authType.isEmpty()) {
                 authType = groupAuthType;
             }
+            if (limit == null) {
+                limit = simultaneousUse(group.check()); // the user's own limit wins, then the first group's
+            }
             passwords.addAll(groupPasswords);
             merge(reply, group.reply());
         }
@@ -158,6 +163,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         if (!authType.equalsIgnoreCase("Accept") && !authenticate(context, method, found, userName, passwords)) {
             return REJECT;
+        }
+        if (limit != null) {
+            int decision = limit(context, request, found.store(), limit);
+            if (decision != ACCEPT) {
+                return decision;
+            }
         }
         encode(cache(context).encoded, reply, context.reply(), context.nas().name());
         return ACCEPT;
@@ -223,8 +234,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                         || !Instant.ofEpochMilli(clockMillis.getAsLong()).isBefore(expires)) {
                     return null;
                 }
-            } else if (name.equalsIgnoreCase("Simultaneous-Use")) {
-                warnOnce("simultaneous-use", "Simultaneous-Use is not enforced yet (Phase 5.5); ignored", null);
+            } else if (name.equalsIgnoreCase(SIMULTANEOUS_USE)) {
+                continue; // applied after authentication, through the cluster (#limit)
             } else if (COMPARISONS.contains(item.op()) && !compare(item, request)) {
                 return null;
             }
@@ -307,6 +318,59 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         } catch (DateTimeParseException e) {
             return null; // fail closed
         }
+    }
+
+    // ---- simultaneous use ----------------------------------------------------------------------
+
+    private static final String SIMULTANEOUS_USE = "Simultaneous-Use";
+
+    private static String simultaneousUse(List<AttributeItem> check) {
+        for (AttributeItem item : check) {
+            if (item.attribute().equalsIgnoreCase(SIMULTANEOUS_USE)) {
+                return item.value();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Applies {@code Simultaneous-Use} after a successful authentication (ADR 0023): the cluster counts the user's
+     * devices online and reserved. Over the limit → Reject; no answer from the cluster → no answer to the NAS; before
+     * the cluster counts users (state version 6) the limit is ignored, as before.
+     */
+    private int limit(AccessContext context, RadiusPacket request, String store, String value) {
+        int maxDevices;
+        try {
+            maxDevices = Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            maxDevices = -1;
+        }
+        if (maxDevices < 0 || maxDevices > 0xFFFF) {
+            warnOnce(
+                    "simultaneous-use:" + store,
+                    "store {}: Simultaneous-Use is not a number from 0 to 65535;" + " such users are rejected",
+                    store);
+            return REJECT;
+        }
+        int at = request.findAttribute(USER_NAME);
+        long user = UserKeys.user(request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
+        int station = request.findAttribute(CALLING_STATION_ID);
+        long device = station < 0
+                ? 0
+                : UserKeys.device(
+                        request.buffer(), station + 2, (request.buffer().getByte(station + 1) & 0xFF) - 2);
+        return switch (context.sessionLimits().reserve(user, device, maxDevices)) {
+            case SessionLimits.GRANTED -> ACCEPT;
+            case SessionLimits.DENIED -> REJECT;
+            case SessionLimits.UNSUPPORTED -> {
+                warnOnce(
+                        "simultaneous-use-unsupported",
+                        "Simultaneous-Use is not applied until the cluster activates state version 6",
+                        null);
+                yield ACCEPT;
+            }
+            default -> DROP;
+        };
     }
 
     // ---- credentials -------------------------------------------------------------------------

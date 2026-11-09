@@ -65,6 +65,8 @@ public final class AccountingService implements ClusteredService {
     private final StateReportEncoder stateReportEncoder = new StateReportEncoder();
     private final io.radiusward.protocol.ActivateVersionResultEncoder activationEncoder =
             new io.radiusward.protocol.ActivateVersionResultEncoder();
+    private final io.radiusward.protocol.AuthReservationResultEncoder reservationEncoder =
+            new io.radiusward.protocol.AuthReservationResultEncoder();
     private boolean holdWarned;
     private final ExportCheckpointAckEncoder checkpointAckEncoder = new ExportCheckpointAckEncoder();
     private final io.radiusward.protocol.SinkQueryDecoder sinkQueryDecoder =
@@ -185,6 +187,28 @@ public final class AccountingService implements ClusteredService {
                         .lowestSupportedVersion(machine.versions().lowestSupported());
                 if (session != null) {
                     reply(session, MessageHeaderEncoder.ENCODED_LENGTH + activationEncoder.encodedLength());
+                }
+            }
+            case io.radiusward.protocol.AuthReservationDecoder.TEMPLATE_ID -> {
+                applier.apply(buffer, offset, header.position(), timestamp);
+                if (applier.claimSweepTimer()) {
+                    scheduleSweep(timestamp); // expired reservations are removed by the sweep
+                }
+                reservationEncoder
+                        .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                        .correlationId(applier.reservation().correlationId())
+                        .result(
+                                switch (applier.reservationResult()) {
+                                    case AccountingStateMachine.RESERVATION_GRANTED ->
+                                        io.radiusward.protocol.ReservationResult.GRANTED;
+                                    case AccountingStateMachine.RESERVATION_DENIED ->
+                                        io.radiusward.protocol.ReservationResult.DENIED;
+                                    case AccountingStateMachine.RESERVATION_UNSUPPORTED ->
+                                        io.radiusward.protocol.ReservationResult.UNSUPPORTED;
+                                    default -> io.radiusward.protocol.ReservationResult.CAPACITY;
+                                });
+                if (session != null) {
+                    reply(session, MessageHeaderEncoder.ENCODED_LENGTH + reservationEncoder.encodedLength());
                 }
             }
             case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);

@@ -376,6 +376,74 @@ class StoreAccessHandlerTest {
         return ids;
     }
 
+    /** Records what the handler asks and answers with {@link #answer}. */
+    static final class FakeLimits implements SessionLimits {
+        int answer = GRANTED;
+        int calls;
+        long user;
+        long device;
+        int maxDevices;
+
+        @Override
+        public int reserve(long userKey, long deviceKey, int maxDevices) {
+            calls++;
+            this.user = userKey;
+            this.device = deviceKey;
+            this.maxDevices = maxDevices;
+            return answer;
+        }
+    }
+
+    @Test
+    void simultaneousUseAsksTheClusterAfterTheCredentials() {
+        UserRecord.Group pair = new UserRecord.Group("pair", List.of(item("Simultaneous-Use", ":=", "2")), List.of());
+        main.user(
+                        "alice",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Simultaneous-Use", ":=", "1")),
+                        List.of(),
+                        pair)
+                .user("bob", List.of(item("Cleartext-Password", ":=", "b")), List.of(), pair)
+                .user("carol", List.of(item("Cleartext-Password", ":=", "c")), List.of())
+                .user(
+                        "dave",
+                        List.of(item("Cleartext-Password", ":=", "d"), item("Simultaneous-Use", ":=", "many")),
+                        List.of());
+        FakeLimits limits = new FakeLimits();
+        context.sessionLimits(limits);
+        StoreAccessHandler h = handler();
+        byte[] station = "AA-BB-CC-DD-EE-FF".getBytes(StandardCharsets.US_ASCII);
+        byte[] callingStationId = new byte[station.length + 2];
+        callingStationId[0] = 31;
+        callingStationId[1] = (byte) callingStationId.length;
+        System.arraycopy(station, 0, callingStationId, 2, station.length);
+
+        assertThat(pap(h, "alice", "a", callingStationId)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(limits.maxDevices)
+                .as("the user's own limit wins over the group's")
+                .isEqualTo(1);
+        assertThat(limits.user).isEqualTo(UserKeysTest.user("ALICE"));
+        assertThat(limits.device).isEqualTo(UserKeysTest.device("aa:bb:cc:dd:ee:ff"));
+
+        assertThat(pap(h, "bob", "b")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(limits.maxDevices).as("from the group").isEqualTo(2);
+        assertThat(limits.device).as("no Calling-Station-Id").isZero();
+
+        int calls = limits.calls;
+        assertThat(pap(h, "alice", "wrong")).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "carol", "c")).as("no limit").isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "dave", "d")).as("an unusable limit fails closed").isEqualTo(AccessHandler.REJECT);
+        assertThat(limits.calls)
+                .as("only after the credentials, only with a limit")
+                .isEqualTo(calls);
+
+        limits.answer = SessionLimits.DENIED;
+        assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.REJECT);
+        limits.answer = SessionLimits.UNAVAILABLE;
+        assertThat(pap(h, "alice", "a")).as("no answer from the cluster").isEqualTo(AccessHandler.DROP);
+        limits.answer = SessionLimits.UNSUPPORTED;
+        assertThat(pap(h, "alice", "a")).as("before state version 6: ignored").isEqualTo(AccessHandler.ACCEPT);
+    }
+
     @Test
     void bcryptAboveTheCostCeilingIsRejectedWithoutHashing() {
         String cost31 = "$2b$31$" + "DCq7YPn5Rq63x1Lad4cll.TV4S6ytwfsfvkgY8jIucDrjc8deX1s.";

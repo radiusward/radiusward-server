@@ -29,16 +29,8 @@ public final class GatewayMain {
         NasRegistry registry = NasRegistry.from(config);
         AuthConfig auth = AuthConfig.from(config);
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
-                Gateway gateway = Gateway.launchWith(
-                        gatewayConfig,
-                        registry,
-                        auth,
-                        dictionary -> auth.enabled()
-                                ? new StoreAccessHandler(
-                                        AuthStores.from(config, auth.workers(), dictionary),
-                                        dictionary,
-                                        System::currentTimeMillis)
-                                : null);
+                Gateway gateway =
+                        Gateway.launchWith(gatewayConfig, registry, auth, Gateway.storeHandler(config, auth));
                 ManagementServer ignored = ManagementServer.start(
                         config,
                         9189 + gatewayConfig.gatewayId(),

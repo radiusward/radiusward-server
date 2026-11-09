@@ -2,7 +2,7 @@
 
 SBE messages between gateways, the cluster and tools, plus the snapshot format. Schema:
 [`protocol/src/main/resources/sbe/radiusward-schema.xml`](../protocol/src/main/resources/sbe/radiusward-schema.xml)
-(schema id 7101, version 1, little endian); Java codecs are generated at build time into
+(schema id 7101, version 6, little endian); Java codecs are generated at build time into
 `io.radiusward.protocol`.
 
 ## Messages
@@ -14,7 +14,14 @@ SBE messages between gateways, the cluster and tools, plus the snapshot format. 
 | 3 | `AccountingRejected` | cluster → gateway | not applied (capacity) — stay silent |
 | 4 / 5 | `SessionQuery` / `SessionReport` | admin → cluster → admin | one session's replicated state |
 | 6 / 7 | `StateQuery` / `StateReport` | admin → cluster → admin | totals and state digest |
+| 8 / 9 | `ExportCheckpoint` / `ExportCheckpointAck` | exporter → cluster → exporter | v2: sink lease and checkpoint (ADR 0017) |
+| 10 | `MemberLogPosition` | member → cluster | v2: log position for purging; v5: supported state version |
+| 11–13 | `SinkQuery`, `SinkReport`, `SinkResync` | admin ↔ cluster | v2: sink status and resync |
+| 14 / 15 | `ActivateVersion` / `ActivateVersionResult` | admin → cluster → admin | v5: state versions (ADR 0005) |
+| 16 / 17 | `AuthReservation` / `AuthReservationResult` | gateway → cluster → gateway | v6: simultaneous use (ADR 0023) |
 | 20–23 | `SnapshotHeader`, `SessionChunk`, `ExactKeyChunk`, `SnapshotFooter` | snapshot | state machine snapshot |
+| 24 / 25 | `SinkChunk`, `MemberPositionChunk` | snapshot | v2: sinks, member positions |
+| 26 | `ReservationChunk` | snapshot | v6: reservations, only when there are any |
 
 ### AccountingCommand
 
@@ -28,6 +35,7 @@ SBE messages between gateways, the cluster and tools, plus the snapshot format. 
 | `nasClientId` | int32 | v3: the configured NAS entry id |
 | `identityFingerprint` | int32 | v3: hash of the entry's `identity` setting (gateways must agree) |
 | `idleTimeoutMinutes` | uint16 | v4: `nas.<name>.idle.timeout` in minutes, 0 = the cluster's `service.idle.timeout` |
+| `userKey`, `deviceKey` | int64 ×2 | v6: User-Name hash (ASCII case folded) and Calling-Station-Id key (a MAC as its 48 bits, else a hash); 0 = absent; recorded from state version 6 on |
 | `nasDevice` | var string | v3: normalised device identity, empty for `source-ip` or when missing (`flags.deviceUnknown`) |
 | `statusType` | uint32 | Acct-Status-Type |
 | `flags` | set | `sessionTimePresent`, `eventTimestampPresent`, `sessionIdPresent` |
@@ -50,6 +58,14 @@ compute keys the dedup state has never seen.
   `MEMBERS_NOT_READY`, `activeVersion`, `lowestSupportedVersion`).
 - `StateReport` appends `activeVersion`, `lowestSupportedVersion`; `SnapshotHeader` appends `activeVersion`,
   `clusterSize`; `MemberPositionChunk` appends `supportedVersion`, `hold`.
+
+### Simultaneous use (v6, ADR 0023)
+
+- `AuthReservation` (`correlationId`, `gatewayId`, `userKey`, `deviceKey`, `maxDevices`, `ttlSeconds`) →
+  `AuthReservationResult` (`correlationId`, `result` `GRANTED` \| `DENIED` \| `UNSUPPORTED` \| `CAPACITY`), sent after
+  the commit. Correlation ids of reservations carry bit 62 and the worker index.
+- `SessionChunk` appends `userKey`, `deviceKey`; `SnapshotHeader` appends `reservationCount`; `ReservationChunk`
+  (`userKey`, `deviceKey`, `expiry`) is written only when reservations exist, so older code never meets it.
 
 ## Versioning rules
 

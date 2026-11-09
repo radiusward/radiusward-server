@@ -139,8 +139,9 @@ class SessionStoreTest {
             store.insert(i * 0x9E3779B97F4A7C15L, i, i % 1000, SessionStore.ACTIVE);
         }
         long bytes = store.footprintBytes();
-        assertThat(bytes).as("bytes for 500k sessions").isLessThanOrEqualTo(45L << 20);
-        assertThat(bytes / 500_000.0).as("bytes per session").isLessThan(90.0);
+        // state version 6 added the user and device of a session (16 bytes, simultaneous use)
+        assertThat(bytes).as("bytes for 500k sessions").isLessThanOrEqualTo(52L << 20);
+        assertThat(bytes / 500_000.0).as("bytes per session").isLessThan(105.0);
         assertThat(store.find(499_999 * 0x9E3779B97F4A7C15L, 499_999)).isGreaterThanOrEqualTo(0);
     }
 }

@@ -41,6 +41,9 @@ final class ClusterClientAgent implements Agent, EgressListener {
     private final RingBuffer toCluster;
     private final RingBuffer fromCluster;
     private final GatewayStats stats;
+    private final ClusterReservations reservations;
+    private final io.radiusward.protocol.AuthReservationResultDecoder reservationResult =
+            new io.radiusward.protocol.AuthReservationResultDecoder();
     private final BufferClaim claim = new BufferClaim();
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final ControlledMessageHandler commandHandler = this::onCommand;
@@ -54,10 +57,21 @@ final class ClusterClientAgent implements Agent, EgressListener {
 
     ClusterClientAgent(
             AeronCluster.Context template, RingBuffer toCluster, RingBuffer fromCluster, GatewayStats stats) {
+        this(template, toCluster, fromCluster, stats, null);
+    }
+
+    /** @param reservations simultaneous-use requests of the access workers, or {@code null} without authentication */
+    ClusterClientAgent(
+            AeronCluster.Context template,
+            RingBuffer toCluster,
+            RingBuffer fromCluster,
+            GatewayStats stats,
+            ClusterReservations reservations) {
         this.template = template.egressListener(this);
         this.toCluster = toCluster;
         this.fromCluster = fromCluster;
         this.stats = stats;
+        this.reservations = reservations;
     }
 
     @Override
@@ -77,6 +91,9 @@ final class ClusterClientAgent implements Agent, EgressListener {
         }
         int work = cluster.pollEgress();
         work += toCluster.controlledRead(commandHandler, 64);
+        if (reservations != null) {
+            work += reservations.requests().controlledRead(commandHandler, 16);
+        }
         if (now - lastSendNs > KEEP_ALIVE_INTERVAL_NS && cluster.sendKeepAlive()) {
             lastSendNs = now;
         }
@@ -132,6 +149,15 @@ final class ClusterClientAgent implements Agent, EgressListener {
             long clusterSessionId, long timestamp, DirectBuffer buffer, int offset, int length, Header header) {
         headerDecoder.wrap(buffer, offset);
         if (headerDecoder.schemaId() != MessageHeaderDecoder.SCHEMA_ID) {
+            return;
+        }
+        if (headerDecoder.templateId() == io.radiusward.protocol.AuthReservationResultDecoder.TEMPLATE_ID) {
+            if (reservations != null) {
+                reservationResult.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                reservations.deliver(
+                        reservationResult.correlationId(),
+                        reservationResult.result().value());
+            }
             return;
         }
         int msgType = switch (headerDecoder.templateId()) {

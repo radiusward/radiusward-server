@@ -24,6 +24,8 @@ entry differently would make replicas diverge or change history.
   refused with `MEMBERS_NOT_READY` or `NOT_NEWER`. Only log content decides, so replays agree.
 - A member whose code is older than the active version stops its service with the reason when it meets it (in the
   log or a snapshot) instead of applying entries with old rules; before activation a rollback stays possible.
+- Version 6 (2026-11-09, ADR 0023) is the first rule change behind the gate: users and devices of sessions and
+  `AuthReservation` for simultaneous use.
 - Proven by `StateVersionsTest`, snapshot and log tests, `LocalClusterIT` and the process-based `RollingUpgradeIT`
   (members upgraded one by one, automatic activation on the last, a rolled-back member stops); the newer release is
   simulated with `debug.state.version.supported`.

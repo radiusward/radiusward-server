@@ -23,6 +23,7 @@ public final class AccessContext {
     private final RadiusPacketEncoder reply = new RadiusPacketEncoder();
     private NasClient nas;
     private Object handlerState;
+    private SessionLimits sessionLimits = SessionLimits.NONE;
 
     AccessContext() {}
 
@@ -65,6 +66,15 @@ public final class AccessContext {
 
     public void handlerState(Object state) {
         this.handlerState = state;
+    }
+
+    /** Simultaneous use: reservations in the cluster, for this worker (ADR 0023). */
+    public SessionLimits sessionLimits() {
+        return sessionLimits;
+    }
+
+    void sessionLimits(SessionLimits limits) {
+        this.sessionLimits = limits;
     }
 
     DirectBuffer replyBuffer() {

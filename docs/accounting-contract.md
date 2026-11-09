@@ -65,6 +65,10 @@ as the session (plus a Stop tombstone window); the exact-key window for events w
 field is bounded (default 15 minutes, configurable). A retransmit older than that window can be applied
 twice; downstream sinks are idempotent by `event_id` as a second line of defence.
 
+From state version 6 the cluster also keeps each session's User-Name and Calling-Station-Id (as keys) to count the
+devices a user has online for `Simultaneous-Use`; an Accounting-Start ends the place reserved for its device at
+authentication ([ADR 0023](adr/0023-simultaneous-use.md)). Acknowledgements do not change.
+
 ## Response content
 
 - Code 5 (Accounting-Response), same Identifier as the request.

@@ -40,6 +40,9 @@ public final class LogApplier {
     /** An {@code ActivateVersion} request; {@link #activationResult()} holds the result. */
     public static final int ACTIVATION = -5;
 
+    /** An {@code AuthReservation}; {@link #reservationResult()} holds the result (state version 6). */
+    public static final int AUTH_RESERVATION = -6;
+
     private final AccountingStateMachine machine;
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final AccountingCommandDecoder commandDecoder = new AccountingCommandDecoder();
@@ -48,6 +51,9 @@ public final class LogApplier {
     private final SinkResyncDecoder resyncDecoder = new SinkResyncDecoder();
     private final io.radiusward.protocol.ActivateVersionDecoder activateDecoder =
             new io.radiusward.protocol.ActivateVersionDecoder();
+    private final io.radiusward.protocol.AuthReservationDecoder reservationDecoder =
+            new io.radiusward.protocol.AuthReservationDecoder();
+    private int reservationResult;
     private int activationResult;
     private int activatedVersion;
     private final byte[] sinkName = new byte[ExportState.NAME_LENGTH];
@@ -107,8 +113,28 @@ public final class LogApplier {
                 activatedVersion = activationResult == StateVersions.ACTIVATED ? activateDecoder.version() : 0;
                 yield ACTIVATION;
             }
+            case io.radiusward.protocol.AuthReservationDecoder.TEMPLATE_ID -> {
+                reservationDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                reservationResult = machine.reserve(
+                        reservationDecoder.userKey(),
+                        reservationDecoder.deviceKey(),
+                        reservationDecoder.maxDevices(),
+                        reservationDecoder.ttlSeconds() * 1000L,
+                        timestamp);
+                yield AUTH_RESERVATION;
+            }
             default -> NOT_A_COMMAND;
         };
+    }
+
+    /** The {@code AuthReservation} decoded by the last {@link #apply} that returned {@link #AUTH_RESERVATION}. */
+    public io.radiusward.protocol.AuthReservationDecoder reservation() {
+        return reservationDecoder;
+    }
+
+    /** {@link AccountingStateMachine#reserve} result of the last {@link #AUTH_RESERVATION}. */
+    public int reservationResult() {
+        return reservationResult;
     }
 
     private int applyCommand(DirectBuffer buffer, int offset, long position, long timestamp) {
@@ -142,6 +168,8 @@ public final class LogApplier {
                     commandDecoder.inputOctets(),
                     commandDecoder.outputOctets(),
                     commandDecoder.actingVersion() >= 4 ? commandDecoder.idleTimeoutMinutes() : 0,
+                    commandDecoder.actingVersion() >= 6 ? commandDecoder.userKey() : 0,
+                    commandDecoder.actingVersion() >= 6 ? commandDecoder.deviceKey() : 0,
                     timestamp);
         }
         export.commandProcessed(position);

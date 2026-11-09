@@ -5,6 +5,7 @@
 package io.radiusward.cluster.service;
 
 import org.agrona.collections.Int2IntHashMap;
+import org.agrona.collections.Long2LongHashMap;
 
 /**
  * Accounting sessions stored as columns of primitive arrays (ADR 0012): no object per session, ~75 bytes per
@@ -14,6 +15,11 @@ import org.agrona.collections.Int2IntHashMap;
  * <p>Slots are allocated in chunks of {@value #CHUNK_SIZE}; freed slots are reused LIFO. A session is
  * identified by its 128 bit key. Every session is also linked into a per-NAS list so Accounting-On/Off can
  * close all sessions of a NAS.
+ *
+ * <p>An active session with a user (state version 6, simultaneous use) is also counted per user: the number of
+ * distinct devices (Calling-Station-Id) the user has online, where every session without a device counts on its
+ * own. The counts follow every state change and are rebuilt when sessions are restored, so they are not part of the
+ * snapshot.
  *
  * <p>Deterministic: the same sequence of calls produces the same slots and the same iteration order, which
  * the replicated state machine relies on. Not thread-safe.
@@ -39,6 +45,8 @@ public final class SessionStore {
     private final long[][] keyLo = new long[MAX_CHUNKS][];
     private final long[][] inputOctets = new long[MAX_CHUNKS][];
     private final long[][] outputOctets = new long[MAX_CHUNKS][];
+    private final long[][] userKey = new long[MAX_CHUNKS][];
+    private final long[][] deviceKey = new long[MAX_CHUNKS][];
     private final int[][] nasId = new int[MAX_CHUNKS][];
     private final int[][] sessionTime = new int[MAX_CHUNKS][];
     private final int[][] eventTimestamp = new int[MAX_CHUNKS][];
@@ -63,6 +71,12 @@ public final class SessionStore {
     private int indexMask;
 
     private final Int2IntHashMap nasHead = new Int2IntHashMap(NONE);
+
+    /** Active sessions per user and device ({@link #pair}); only looked up, never iterated. */
+    private final Long2LongHashMap deviceSessions = new Long2LongHashMap(0);
+
+    /** Distinct devices online per user; only looked up, never iterated. */
+    private final Long2LongHashMap userDevices = new Long2LongHashMap(0);
 
     public SessionStore() {
         index = new int[1 << 10];
@@ -110,6 +124,8 @@ public final class SessionStore {
         lastSeen[c][o] = 0;
         tombstoneUntil[c][o] = 0;
         idleMinutes[c][o] = 0;
+        userKey[c][o] = 0;
+        deviceKey[c][o] = 0;
         linkNas(slot, nas);
 
         int i = bucket(hi);
@@ -132,6 +148,7 @@ public final class SessionStore {
         unlinkNas(slot);
         if (state[c][o] == ACTIVE) {
             activeCount--;
+            untrack(userKey[c][o], deviceKey[c][o]);
         }
         state[c][o] = FREE;
         if (freeCount == freeSlots.length) {
@@ -150,10 +167,99 @@ public final class SessionStore {
         byte old = state[c][o];
         if (old == ACTIVE && newState != ACTIVE) {
             activeCount--;
+            untrack(userKey[c][o], deviceKey[c][o]);
         } else if (old != ACTIVE && newState == ACTIVE) {
             activeCount++;
+            track(userKey[c][o], deviceKey[c][o]);
         }
         state[c][o] = newState;
+    }
+
+    // ---- users (simultaneous use) --------------------------------------------------------------
+
+    /**
+     * Sets the session's user and device.
+     *
+     * @return whether an active session newly counts for this user and device (it did not before)
+     */
+    public boolean user(int slot, long user, long device) {
+        int c = slot >>> CHUNK_SHIFT;
+        int o = slot & CHUNK_MASK;
+        long oldUser = userKey[c][o];
+        long oldDevice = deviceKey[c][o];
+        if (oldUser == user && oldDevice == device) {
+            return false;
+        }
+        boolean active = state[c][o] == ACTIVE;
+        if (active) {
+            untrack(oldUser, oldDevice);
+        }
+        userKey[c][o] = user;
+        deviceKey[c][o] = device;
+        if (active) {
+            track(user, device);
+        }
+        return active && user != 0;
+    }
+
+    public long userKey(int slot) {
+        return userKey[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+    }
+
+    public long deviceKey(int slot) {
+        return deviceKey[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+    }
+
+    /** Distinct devices the user has online (sessions without a device each count once). */
+    public int devicesOnline(long user) {
+        return (int) userDevices.get(user);
+    }
+
+    /** Whether the user has an active session on this device ({@code device != 0}). */
+    public boolean online(long user, long device) {
+        return device != 0 && deviceSessions.get(pair(user, device)) > 0;
+    }
+
+    private void track(long user, long device) {
+        if (user == 0) {
+            return;
+        }
+        if (device != 0) {
+            long key = pair(user, device);
+            long sessions = deviceSessions.get(key);
+            deviceSessions.put(key, sessions + 1);
+            if (sessions > 0) {
+                return; // the device is already online
+            }
+        }
+        userDevices.put(user, userDevices.get(user) + 1);
+    }
+
+    private void untrack(long user, long device) {
+        if (user == 0) {
+            return;
+        }
+        if (device != 0) {
+            long key = pair(user, device);
+            long sessions = deviceSessions.get(key);
+            if (sessions > 1) {
+                deviceSessions.put(key, sessions - 1);
+                return; // the device still has another session
+            }
+            deviceSessions.remove(key);
+        }
+        long devices = userDevices.get(user);
+        if (devices > 1) {
+            userDevices.put(user, devices - 1);
+        } else {
+            userDevices.remove(user);
+        }
+    }
+
+    /** One key for a user's device. */
+    static long pair(long user, long device) {
+        long h = (user ^ Long.rotateLeft(device, 29)) * 0x9E37_79B9_7F4A_7C15L;
+        return h ^ (h >>> 31);
     }
 
     // ---- iteration -----------------------------------------------------------------------------
@@ -186,7 +292,7 @@ public final class SessionStore {
 
     /** Bytes held by the store's arrays (columns of allocated chunks + index). */
     public long footprintBytes() {
-        long perSlot = 4L * 8 + 8L * 4 + 3 + 2; // 4 long, 8 int, 3 byte, 1 char columns
+        long perSlot = 6L * 8 + 8L * 4 + 3 + 2; // 6 long, 8 int, 3 byte, 1 char columns
         return chunks * (long) CHUNK_SIZE * perSlot + index.length * 4L + freeSlots.length * 4L;
     }
 
@@ -315,6 +421,8 @@ public final class SessionStore {
         keyLo[c] = new long[CHUNK_SIZE];
         inputOctets[c] = new long[CHUNK_SIZE];
         outputOctets[c] = new long[CHUNK_SIZE];
+        userKey[c] = new long[CHUNK_SIZE];
+        deviceKey[c] = new long[CHUNK_SIZE];
         nasId[c] = new int[CHUNK_SIZE];
         sessionTime[c] = new int[CHUNK_SIZE];
         eventTimestamp[c] = new int[CHUNK_SIZE];

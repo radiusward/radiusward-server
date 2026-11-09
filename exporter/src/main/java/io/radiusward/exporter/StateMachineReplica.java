@@ -129,6 +129,8 @@ public final class StateMachineReplica implements ClusterLogReader.Listener {
             if (outcomes != null) {
                 outcomes.onCommand(position, timestamp, outcome, applier);
             }
+        } else if (outcome == LogApplier.AUTH_RESERVATION) {
+            applier.claimSweepTimer(); // as the service does after a reservation
         }
     }
 

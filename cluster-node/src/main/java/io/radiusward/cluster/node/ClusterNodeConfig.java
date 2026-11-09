@@ -130,7 +130,9 @@ public record ClusterNodeConfig(
                 config.duration("service.idle.timeout", Duration.ofHours(2)).toMillis(),
                 config.duration("service.exact.key.window", Duration.ofMinutes(15))
                         .toMillis(),
-                supportedStateVersion(config));
+                supportedStateVersion(config),
+                config.integer(
+                        "service.auth.reservations.max", AccountingStateMachine.Settings.DEFAULT_MAX_RESERVATIONS));
         return new ClusterNodeConfig(
                 nodeId,
                 members,

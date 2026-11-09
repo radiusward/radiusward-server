@@ -62,3 +62,10 @@ counts are verified on load.
   Event-Timestamps; without them a Start after the Stop still restarts the session, see above).
 - Out-of-order delivery after a failover legitimately turns an older Interim into STALE: its progress is
   already reflected by the newer one.
+
+**Users and devices** (state version 6, 2026-11-09, ADR 0023): two more columns (user key, device key; +16 bytes per
+session) and two Agrona `Long2LongHashMap`s counting, per user, the active sessions of each device and the distinct
+devices online. They are only looked up, never iterated, and are rebuilt from the sessions when a snapshot is loaded.
+Reservations live beside the store in `Reservations` (columns, a per-user list, a free list); no decision depends on
+slot numbers.
+

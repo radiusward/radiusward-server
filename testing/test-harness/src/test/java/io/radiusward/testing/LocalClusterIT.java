@@ -362,8 +362,11 @@ class LocalClusterIT {
                     Duration.ofSeconds(30),
                     "every member reported its supported version",
                     () -> admin.state().lowestSupportedVersion() == supported);
-            AdminClient.State state = admin.state();
-            assertThat(state.activeVersion()).isEqualTo(io.radiusward.cluster.service.StateVersions.BASELINE);
+            LocalCluster.await(
+                    Duration.ofSeconds(30),
+                    "every member runs it: activated automatically",
+                    () -> admin.state().activeVersion() == supported);
+            assertThat(supported).isGreaterThan(io.radiusward.cluster.service.StateVersions.BASELINE);
             assertThat(admin.activateVersion(supported).result())
                     .as("already active")
                     .isEqualTo(io.radiusward.protocol.ActivationResult.NOT_NEWER);
