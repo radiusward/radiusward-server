@@ -54,8 +54,10 @@ than the last applied one is a duplicate.
 **Start lost or out of order.** An Interim (or Stop) whose Start never arrived creates the session from its own
 values. A Start that arrives after its session's Interim is answered with an Accounting-Response and merged: the
 session keeps its progress, and the Start's Event-Timestamp becomes the session's start time. After the session's
-Stop, a late Start is acknowledged and recorded as stale; it does not reopen the session
-([ADR 0012](adr/0012-session-store-dedup.md)).
+Stop, a late Start is acknowledged and recorded as stale; it does not reopen the session. The same holds for an
+Interim after the Stop — also after the stopped session has been forgotten (`service.tombstone`): an Interim for an
+unknown session whose Event-Timestamp is older than that window is acknowledged and recorded as stale instead of
+creating the session ([ADR 0012](adr/0012-session-store-dedup.md)).
 
 Dedup state is part of the snapshots and survives restarts. Retention: per-session state lives as long
 as the session (plus a Stop tombstone window); the exact-key window for events without a monotonic

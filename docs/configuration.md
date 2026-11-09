@@ -41,7 +41,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.disk.min.free` | `1g` | below this free space in the data directory the member reports not ready (`/ready`, with the reason) and logs a warning; a full disk stops the member. `0` disables |
 | `snapshot.interval` | `1h` | automatic snapshot on the leader; `0` disables |
 | `service.max.sessions` | profile (small: 2,000,000) | session capacity; new sessions beyond it are rejected |
-| `service.tombstone` | `1h` | how long a stopped session is kept to recognise retransmitted Stops |
+| `service.tombstone` | `1h` | how long a stopped session is kept to recognise retransmitted Stops and late Interims; an Interim for an unknown session with an Event-Timestamp older than this is stale and creates no session |
 | `service.idle.timeout` | `2h` | remove sessions with no event for this long (lost Stop) |
 | `service.exact.key.window` | `15m` | remember exact keys of events without progress values |
 | `service.sweep.interval` | `60s` | housekeeping timer |

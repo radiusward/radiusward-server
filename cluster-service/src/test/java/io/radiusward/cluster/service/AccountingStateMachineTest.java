@@ -223,6 +223,74 @@ class AccountingStateMachineTest {
         assertThat(sm.store().inputOctets(slot)).isZero();
     }
 
+    /** Cluster time (ms) when the NAS clock shows {@code eventTimestamp} seconds. */
+    static long at(long eventTimestamp) {
+        return eventTimestamp * 1000;
+    }
+
+    int interim(long session, long sessionTime, long eventTimestamp, long now) {
+        return sm.apply(
+                session,
+                ~session,
+                session * 31 + sessionTime,
+                0,
+                NAS,
+                STATUS_INTERIM,
+                BOTH,
+                sessionTime,
+                eventTimestamp,
+                sessionTime * 10,
+                0,
+                now);
+    }
+
+    @Test
+    void interimAfterTheStoppedSessionWasForgottenIsStaleAndDoesNotReopenIt() {
+        long t = 1_780_000_000L;
+        sm.apply(9, ~9L, 1, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, t, 0, 0, at(t));
+        assertThat(interim(9, 300, t + 300, at(t + 300))).isEqualTo(APPLIED);
+        sm.apply(9, ~9L, 3, 0, NAS, STATUS_STOP, BOTH, 600, t + 600, 6000, 0, at(t + 600));
+        assertThat(interim(9, 300, t + 300, at(t + 601)))
+                .as("while the tombstone exists")
+                .isEqualTo(STALE);
+        assertThat(sm.sweep(at(t + 600) + 3_600_000)).as("tombstone expired").isEqualTo(1);
+
+        // the NAS sends the held-back interim once more, an hour after the Stop
+        assertThat(interim(9, 300, t + 300, at(t + 600) + 3_601_000)).isEqualTo(STALE);
+        assertThat(Outcomes.acknowledged(STALE)).isTrue();
+        assertThat(session(9)).as("not brought back").isEqualTo(-1);
+        assertThat(sm.store().size()).isZero();
+        assertThat(sm.lastCreated()).isFalse();
+    }
+
+    @Test
+    void interimForAnUnknownSessionIsTooOldOnlyBeyondTheTombstoneWindow() {
+        long t = 1_780_000_000L;
+        long now = at(t) + 3_600_000;
+        assertThat(interim(11, 60, t, now))
+                .as("exactly the window: still judged")
+                .isEqualTo(APPLIED);
+        assertThat(interim(12, 60, t - 1, now)).as("one second older").isEqualTo(STALE);
+        assertThat(session(12)).isEqualTo(-1);
+        assertThat(sm.apply(13, ~13L, 1, 0, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 10, 0, now))
+                .as("without an Event-Timestamp nothing is known: created as before")
+                .isEqualTo(APPLIED);
+        assertThat(sm.apply(14, ~14L, 1, 0, NAS, STATUS_STOP, BOTH, 60, t - 7_200, 10, 0, now))
+                .as("an old Stop still records the session's final values")
+                .isEqualTo(APPLIED);
+        assertThat(sm.store().state(sm.store().find(14, ~14L))).isEqualTo(SessionStore.STOPPED);
+    }
+
+    @Test
+    void recentInterimRecreatesASessionRemovedByTheIdleTimeout() {
+        long t = 1_780_000_000L;
+        assertThat(interim(15, 60, t, at(t))).isEqualTo(APPLIED);
+        assertThat(sm.sweep(at(t) + 7_200_000)).as("idle for 2 h").isEqualTo(1);
+        // the session was alive all along (a long interim interval or an outage): a fresh interim brings it back
+        assertThat(interim(15, 7_300, t + 7_240, at(t + 7_240))).isEqualTo(APPLIED);
+        assertThat(sm.store().state(session(15))).isEqualTo(SessionStore.ACTIVE);
+    }
+
     @Test
     void stopDuplicatesAndStopWithoutStart() {
         assertThat(event(4, STATUS_STOP, 100, 10, 1000)).isEqualTo(APPLIED);

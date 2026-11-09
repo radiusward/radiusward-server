@@ -18,7 +18,8 @@ package io.radiusward.cluster.service;
  *       Start (see {@link #isLateStart}) → MERGED for an active session, STALE for a stopped one; otherwise a new
  *       session instance → APPLIED</td></tr>
  *   <tr><td>Interim</td><td>progress equal → DUPLICATE, older → STALE, newer → APPLIED; unknown session →
- *       created implicitly; after Stop → STALE</td></tr>
+ *       created implicitly, unless its Event-Timestamp is older than the tombstone window → STALE; after Stop →
+ *       STALE</td></tr>
  *   <tr><td>Stop</td><td>already stopped → DUPLICATE; otherwise APPLIED, kept as a tombstone</td></tr>
  *   <tr><td>Accounting-On/Off</td><td>exact-key window; when APPLIED all active sessions of the NAS stop</td></tr>
  *   <tr><td>other</td><td>exact-key window</td></tr>
@@ -27,7 +28,7 @@ package io.radiusward.cluster.service;
 public final class AccountingStateMachine {
 
     /** Version of the state-machine behaviour, carried in snapshots (ADR 0005). */
-    public static final int STATE_VERSION = 3; // 2: export sinks (Phase 3); 3: late Start merged
+    public static final int STATE_VERSION = 4; // 2: export sinks; 3: late Start merged; 4: old Interim stale
 
     public static final int STATUS_START = 1;
     public static final int STATUS_STOP = 2;
@@ -113,7 +114,16 @@ public final class AccountingStateMachine {
         int outcome = switch (statusType) {
             case STATUS_START -> start(sessionHi, sessionLo, exactHi, exactLo, nasId, flags, eventTimestamp, now);
             case STATUS_INTERIM ->
-                interim(sessionHi, sessionLo, nasId, flags, sessionTime, eventTimestamp, inputOctets, outputOctets);
+                interim(
+                        sessionHi,
+                        sessionLo,
+                        nasId,
+                        flags,
+                        sessionTime,
+                        eventTimestamp,
+                        inputOctets,
+                        outputOctets,
+                        now);
             case STATUS_STOP -> stop(sessionHi, sessionLo, nasId, now);
             case STATUS_ACCOUNTING_ON, STATUS_ACCOUNTING_OFF -> nasRestart(exactHi, exactLo, nasId, now);
             default -> exactOnly(exactHi, exactLo, now);
@@ -189,9 +199,14 @@ public final class AccountingStateMachine {
             long sessionTime,
             long eventTimestamp,
             long inputOctets,
-            long outputOctets) {
+            long outputOctets,
+            long now) {
         int slot = store.find(hi, lo);
         if (slot < 0) {
+            if (olderThanTombstones(flags, eventTimestamp, now)) {
+                // the session may have stopped and been forgotten since: never bring it back from an old Interim
+                return Outcomes.STALE;
+            }
             if (store.size() >= settings.maxSessions()) {
                 return Outcomes.REJECTED_CAPACITY;
             }
@@ -249,6 +264,15 @@ public final class AccountingStateMachine {
         }
         window.add(key, now + settings.exactKeyWindowMs());
         return Outcomes.APPLIED;
+    }
+
+    /**
+     * Whether an event's Event-Timestamp (seconds) lies further back than the tombstone window before the cluster
+     * time {@code now}: a session it belonged to may have stopped and been removed with its tombstone since, so the
+     * event cannot be judged. Without an Event-Timestamp nothing is known and it is not old.
+     */
+    private boolean olderThanTombstones(int flags, long eventTimestamp, long now) {
+        return (flags & FLAG_EVENT_TIMESTAMP) != 0 && eventTimestamp * 1000 < now - settings.tombstoneMs();
     }
 
     /**

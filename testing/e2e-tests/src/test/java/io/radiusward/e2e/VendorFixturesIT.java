@@ -21,8 +21,14 @@ class VendorFixturesIT extends E2eTestBase {
     void allFixtures() throws Exception {
         List<Path> fixtures;
         try (Stream<Path> walk = Files.walk(Path.of("../../radius-codec/src/test/resources/fixtures"))) {
-            fixtures =
-                    walk.filter(p -> p.toString().endsWith(".fixture")).sorted().toList();
+            fixtures = walk.filter(p -> p.toString().endsWith(".fixture"))
+                    // per vendor in the order a NAS sends them: the timestamps are fixed and old, so an Interim
+                    // before its Start would be too old to create the session
+                    .sorted(java.util.Comparator.comparing(
+                                    (Path p) -> p.getParent().toString())
+                            .thenComparing(p -> List.of("start.fixture", "interim.fixture", "stop.fixture")
+                                    .indexOf(p.getFileName().toString())))
+                    .toList();
         }
         for (Path fixture : fixtures) {
             for (String line : Files.readAllLines(fixture)) {

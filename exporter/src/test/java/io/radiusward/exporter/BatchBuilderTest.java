@@ -244,4 +244,15 @@ class BatchBuilderTest {
         assertThat(session(batch, 2).closeCause()).isEqualTo(SessionSnapshot.CloseCause.NAS_RESTART);
         assertThat(session(batch, 2).startedAt()).isEqualTo(1_780_000_000_000L);
     }
+
+    @Test
+    void interimOlderThanTheTombstoneWindowIsHistoryOnly() {
+        BatchBuilder builder = new BatchBuilder("pg", true);
+        StateMachineReplica replica = replica(builder, 0);
+        // committed two hours after the NAS stamped it; the default tombstone window is one hour
+        command(replica, 1, AccountingStateMachine.STATUS_INTERIM, 300, 1_780_000_300L, 1_780_007_500_000L);
+        Batch batch = builder.take(1);
+        assertThat(batch.events()).extracting(ExportEvent::outcome).containsExactly(ExportEvent.EventOutcome.STALE);
+        assertThat(batch.sessions()).as("no session is created or reopened").isEmpty();
+    }
 }

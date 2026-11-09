@@ -127,8 +127,14 @@ class LocalClusterIT {
         int port = cluster.gateway(0).radiusPort();
         List<Path> fixtures;
         try (Stream<Path> walk = Files.walk(Path.of("../../radius-codec/src/test/resources/fixtures"))) {
-            fixtures =
-                    walk.filter(p -> p.toString().endsWith(".fixture")).sorted().toList();
+            fixtures = walk.filter(p -> p.toString().endsWith(".fixture"))
+                    // per vendor in the order a NAS sends them: the timestamps are fixed and old, so an Interim
+                    // before its Start would be too old to create the session
+                    .sorted(java.util.Comparator.comparing(
+                                    (Path p) -> p.getParent().toString())
+                            .thenComparing(p -> List.of("start.fixture", "interim.fixture", "stop.fixture")
+                                    .indexOf(p.getFileName().toString())))
+                    .toList();
         }
         for (Path fixture : fixtures) {
             for (String line : Files.readAllLines(fixture)) {
@@ -171,7 +177,7 @@ class LocalClusterIT {
     @Test
     void sessionWithoutStartAndLateStartAreAcknowledgedAndKeepTheProgress() throws Exception {
         start();
-        long started = 1_780_000_000L;
+        long started = System.currentTimeMillis() / 1000 - 1_800; // sessions that began half an hour ago
         // the Start is lost on the way (or delayed): the first interim creates the session
         exchange(cluster.gateway(0).radiusPort(), request(1, 3, "s-4", 300, started + 300));
         // the delayed Start arrives after the interim, through the other gateway: acknowledged, merged
@@ -210,7 +216,7 @@ class LocalClusterIT {
     @Test
     void interimsInReverseOrderNeverMoveTheSessionBack() throws Exception {
         start();
-        long started = 1_780_000_000L;
+        long started = System.currentTimeMillis() / 1000 - 1_800;
         int a = cluster.gateway(0).radiusPort();
         int b = cluster.gateway(1).radiusPort();
         // the NAS sent Start, 300, 600, 900, 1200, Stop at 1500; they arrive in this order, through both gateways
@@ -238,6 +244,30 @@ class LocalClusterIT {
             assertThat(state.applied()).as("interim 900, merged start, stop").isEqualTo(3);
             assertThat(state.stale()).as("interims 600, 300 and 1200").isEqualTo(3);
             assertThat(state.duplicates()).isZero();
+        }
+    }
+
+    @Test
+    void interimOlderThanTheTombstoneWindowDoesNotCreateASession() throws Exception {
+        start();
+        long now = System.currentTimeMillis() / 1000;
+        // an Interim held back by the NAS for 2 h (tombstone window 1 h): its session may have been stopped and
+        // forgotten meanwhile, so it must not come back as an active session
+        exchange(cluster.gateway(0).radiusPort(), request(1, 3, "s-7", 600, now - 7_200));
+        // a recent Interim whose Start was lost still creates its session
+        exchange(cluster.gateway(1).radiusPort(), request(2, 3, "s-8", 600, now - 60));
+
+        cluster.awaitConverged();
+        try (AdminClient admin = cluster.admin()) {
+            assertThat(admin.session(sessionKey("s-7")[0], sessionKey("s-7")[1]).status())
+                    .as("acknowledged, kept as stale history only")
+                    .isEqualTo(SessionStatus.UNKNOWN);
+            assertThat(admin.session(sessionKey("s-8")[0], sessionKey("s-8")[1]).status())
+                    .isEqualTo(SessionStatus.ACTIVE);
+            AdminClient.State state = admin.state();
+            assertThat(state.applied()).isEqualTo(1);
+            assertThat(state.stale()).isEqualTo(1);
+            assertThat(state.active()).isEqualTo(1);
         }
     }
 

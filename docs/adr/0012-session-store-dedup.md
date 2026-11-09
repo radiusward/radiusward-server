@@ -14,7 +14,7 @@ supports Accounting-On/Off.
 | Event | Rule |
 |---|---|
 | Start | same start key as stored → DUPLICATE; a **late Start** (below) → MERGED for an active session, STALE for a stopped one; otherwise a new session instance → APPLIED |
-| Interim | progress (session time, then event timestamp, then total octets) equal → DUPLICATE, older → STALE, newer → APPLIED; unknown session → created implicitly; after Stop → STALE |
+| Interim | progress (session time, then event timestamp, then total octets) equal → DUPLICATE, older → STALE, newer → APPLIED; unknown session → created implicitly, unless its Event-Timestamp is older than the tombstone window → STALE; after Stop → STALE |
 | Stop | already stopped → DUPLICATE; else APPLIED + tombstone (1 h); never rejected for capacity |
 | Accounting-On/Off | exact-key window (15 min); when APPLIED, every active session of the NAS stops |
 | other status types | exact-key window |
@@ -31,6 +31,18 @@ last-seen time; progress, counters and status stay as the Interim left them. For
 does not reopen it. A Start newer than the session's last event is still a new instance of the session id (NAS
 rebooted without Accounting-On). Without Event-Timestamps a Start for a *stopped* session cannot be told from a new
 instance and starts it over, as before. MERGED counts as applied and changes the digest.
+
+**Interim older than the tombstone window** (state version 4, 2026-11-09). A stopped session is remembered for
+`service.tombstone` (1 h); an Interim arriving within that time is STALE. Later, the session is gone and an Interim
+for it would recreate an active session — in a sink it would reopen the stopped row with older counters until the
+idle timeout closed it again. So an Interim for an unknown session whose Event-Timestamp is older than the cluster
+time minus the tombstone window is STALE (acknowledged, kept in the history, no session). Deterministic: cluster
+time and log data only. Accepted costs: a genuine session whose Start was lost *and* whose first Interim arrives
+more than the window late stays out of the session state (it is in the history); a NAS clock more than the window
+behind makes every Start-less session's Interims stale (sessions with a Start are unaffected); without an
+Event-Timestamp the Interim creates the session as before. A Stop is not limited: it carries the final values,
+writing them again is idempotent, and refusing it could lose a whole delayed session. A recent Interim for a
+session removed by the idle timeout (alive all along) brings it back.
 
 **Housekeeping** every 60 s (cluster timer): expired tombstones, idle sessions (no event for 2 h) and expired
 exact keys are removed, iterating slots in order. **Capacity**: new sessions beyond `maxSessions` are
