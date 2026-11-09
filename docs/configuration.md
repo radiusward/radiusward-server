@@ -91,9 +91,11 @@ client certificates required. A connection belongs to the NAS entry of its sourc
 | `radsec.connections` | `256` | connections at once; more are closed right after accepting |
 | `radsec.handshake.timeout` | `10s` | a connection that has not finished its TLS handshake by then is closed |
 | `radsec.idle.timeout` | `0s` (never) | close a connection without traffic for this long (TCP keep-alive is on regardless) |
+| `radsec.session.timeout` | `1h` | how long a TLS session may be resumed on reconnect; also how long a revoked certificate may keep resuming. Sessions are kept per gateway: the gateway sets `-Djdk.tls.server.enableSessionTicketExtension=false` unless given, because the JDK does not check the age of stateless tickets |
 | `nas.<name>.radsec` | `false` | this NAS entry may connect over RadSec |
 | `nas.<name>.radsec.secret` | `radsec` | the shared secret inside TLS (RFC 6614 §2.3) |
 | `nas.<name>.radsec.identity` | — | a name the client certificate must carry (common name, DNS, e-mail or UPN); unset: any certificate of `radsec.ca` |
+| `nas.<name>.address` omitted | | with `radsec = true` and `radsec.identity`: the entry is identified by its certificate alone, from any address (NAT, changing addresses), and never reached over UDP; a connection whose address has no RadSec entry is matched against these by name |
 
 ```properties
 radsec.enabled     = true

@@ -18,6 +18,7 @@ import java.nio.channels.SocketChannel;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLongArray;
@@ -51,6 +52,7 @@ final class RadsecAgent implements Agent {
         CONNECTIONS_ACCEPTED,
         CONNECTIONS_REFUSED,
         HANDSHAKES_FAILED,
+        HANDSHAKES_RESUMED,
         NAS_REFUSED,
         REQUESTS,
         MALFORMED,
@@ -68,6 +70,7 @@ final class RadsecAgent implements Agent {
     private final Map<String, Integer> clientIndex;
     private final boolean auth;
     private final UdpAgent.NanoClock clock;
+    private final List<NasClient> certificateOnly;
     private final Connection[] connections;
     private final int[] generations;
     private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
@@ -99,6 +102,11 @@ final class RadsecAgent implements Agent {
         this.clientIndex = Map.copyOf(clientIndex);
         this.auth = auth;
         this.clock = clock;
+        this.certificateOnly = registry.clients().stream()
+                .filter(NasClient::certificateOnly)
+                .filter(n -> config.clients().containsKey(n.name()))
+                .sorted(java.util.Comparator.comparing(NasClient::name))
+                .toList();
         this.connections = new Connection[config.connections()];
         this.generations = new int[config.connections()];
     }
@@ -111,6 +119,7 @@ final class RadsecAgent implements Agent {
         final SSLEngine engine;
         final InetSocketAddress remote;
         final long openedAt;
+        final long acceptedAt = System.currentTimeMillis(); // to compare with the TLS session's creation time
         SelectionKey key;
         ByteBuffer netIn;
         final ByteBuffer appIn;
@@ -340,6 +349,17 @@ final class RadsecAgent implements Agent {
         NasClient nas = registry.lookup(c.remote.getAddress());
         Integer index = nas == null ? null : clientIndex.get(nas.name());
         RadsecConfig.Client client = index == null ? null : config.clients().get(nas.name());
+        if (client == null && certificate != null) { // no entry for the address allows RadSec: by certificate alone
+            for (NasClient candidate : certificateOnly) {
+                if (CertificateIdentity.matches(
+                        certificate, config.clients().get(candidate.name()).identity())) {
+                    nas = candidate;
+                    index = clientIndex.get(candidate.name());
+                    client = config.clients().get(candidate.name());
+                    break;
+                }
+            }
+        }
         if (certificate == null
                 || client == null
                 || (client.identity() != null && !CertificateIdentity.matches(certificate, client.identity()))) {
@@ -356,6 +376,9 @@ final class RadsecAgent implements Agent {
             throw new Refused();
         }
         c.nas = index;
+        if (c.engine.getSession().getCreationTime() < c.acceptedAt) {
+            increment(Counter.HANDSHAKES_RESUMED); // a session from an earlier connection
+        }
         LOG.info("RadSec connection from {} for NAS {}", c.remote, nas.name());
     }
 

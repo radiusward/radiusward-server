@@ -35,6 +35,9 @@ import org.agrona.collections.Int2ObjectHashMap;
  * nas.core.idle.timeout = 15m            # close sessions without an event for this long (≈ 3 interims)
  * nas.core.access.message-authenticator = required   # on Access-Requests (default required: BlastRADIUS)
  * </pre>
+ *
+ * An entry without {@code address} but with {@code radsec = true} and {@code radsec.identity} is identified by its
+ * RadSec client certificate alone (NAT, changing addresses); it is kept out of the address lookup.
  */
 public final class NasRegistry {
 
@@ -50,6 +53,9 @@ public final class NasRegistry {
             if (other != null) {
                 throw new ConfigException("nas." + c.name() + ".id: id " + c.id() + " already used by nas." + other
                         + "; set nas.<name>.id explicitly");
+            }
+            if (c.certificateOnly()) {
+                continue; // found by certificate, never by address
             }
             if (c.prefixLength() == 32) {
                 if (exact.put(c.network(), c) != null) {
@@ -71,11 +77,20 @@ public final class NasRegistry {
         List<NasClient> clients = new ArrayList<>();
         for (String name : config.names("nas")) {
             String prefix = "nas." + name + ".";
-            String address = config.string(prefix + "address");
+            String address = config.string(prefix + "address", "").trim();
+            boolean byCertificate = address.isEmpty();
+            if (byCertificate
+                    && (!config.bool(prefix + "radsec", false)
+                            || config.string(prefix + "radsec.identity", "").isBlank())) {
+                throw new ConfigException(prefix + "address: required, unless the entry is identified by its RadSec"
+                        + " certificate (" + prefix + "radsec = true and " + prefix + "radsec.identity)");
+            }
             int slash = address.indexOf('/');
-            int prefixLength = slash < 0 ? 32 : parsePrefix(prefix, address.substring(slash + 1));
-            int network = ipv4(prefix + "address", slash < 0 ? address : address.substring(0, slash));
-            byte[] secret = config.string(prefix + "secret").getBytes(StandardCharsets.UTF_8);
+            int prefixLength = byCertificate ? -1 : slash < 0 ? 32 : parsePrefix(prefix, address.substring(slash + 1));
+            int network =
+                    byCertificate ? 0 : ipv4(prefix + "address", slash < 0 ? address : address.substring(0, slash));
+            byte[] secret = (byCertificate ? config.string(prefix + "secret", "") : config.string(prefix + "secret"))
+                    .getBytes(StandardCharsets.UTF_8);
             NasClient.MessageAuthenticatorPolicy policy = config.enumValue(
                     prefix + "message-authenticator",
                     NasClient.MessageAuthenticatorPolicy.class,

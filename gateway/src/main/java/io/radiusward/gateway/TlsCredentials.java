@@ -58,6 +58,7 @@ final class TlsCredentials {
     }
 
     private final String prefix;
+    private final Duration sessionTimeout; // null: the JDK's default
     private final Path chain;
     private final Path key;
     private final Path ca;
@@ -85,7 +86,7 @@ final class TlsCredentials {
             URI ocspResponder,
             boolean softFail,
             Duration reload) {
-        this("auth.eap.tls.", chain, key, ca, crls, revocation, ocspResponder, softFail, reload);
+        this("auth.eap.tls.", chain, key, ca, crls, revocation, ocspResponder, softFail, reload, null);
     }
 
     /** @param prefix the configuration keys these come from, for messages ({@code auth.eap.tls.}, {@code radsec.}) */
@@ -98,7 +99,9 @@ final class TlsCredentials {
             Revocation revocation,
             URI ocspResponder,
             boolean softFail,
-            Duration reload) {
+            Duration reload,
+            Duration sessionTimeout) {
+        this.sessionTimeout = sessionTimeout;
         this.prefix = prefix;
         this.chain = chain;
         this.key = key;
@@ -126,6 +129,11 @@ final class TlsCredentials {
      * @param ca the client CAs file, empty when none
      */
     static TlsCredentials from(Config config, String prefix, Path chain, Path key, String ca) {
+        return from(config, prefix, chain, key, ca, null);
+    }
+
+    /** @param sessionTimeout how long a TLS session may be resumed; {@code null}: the JDK's default */
+    static TlsCredentials from(Config config, String prefix, Path chain, Path key, String ca, Duration sessionTimeout) {
         Revocation revocation = EapTlsConfig.choice(
                 Revocation.class, prefix + "revocation", config.string(prefix + "revocation", "none"));
         String ocspUrl = config.string(prefix + "ocsp.url", "");
@@ -145,7 +153,8 @@ final class TlsCredentials {
                 revocation,
                 ocspUrl.isBlank() ? null : URI.create(ocspUrl.trim()),
                 config.bool(prefix + "revocation.soft.fail", false),
-                config.duration(prefix + "reload", Duration.ofSeconds(60)));
+                config.duration(prefix + "reload", Duration.ofSeconds(60)),
+                sessionTimeout);
     }
 
     /**
@@ -159,6 +168,20 @@ final class TlsCredentials {
         }
         if (System.getProperty("com.sun.security.ocsp.readtimeout") == null) {
             System.setProperty("com.sun.security.ocsp.readtimeout", millis);
+        }
+    }
+
+    static final String STATELESS_TICKETS = "jdk.tls.server.enableSessionTicketExtension";
+
+    /**
+     * Keeps resumable TLS sessions in the server's cache instead of stateless tickets (ADR 0034): the JDK resumes a
+     * stateless ticket without checking the session's age, the cache honours the session timeout, so a certificate
+     * is checked again (revocation) at least that often. Must run before the first TLS class is loaded; the
+     * operator's own setting wins.
+     */
+    static void statefulSessions() {
+        if (System.getProperty(STATELESS_TICKETS) == null) {
+            System.setProperty(STATELESS_TICKETS, "false");
         }
     }
 
@@ -236,6 +259,11 @@ final class TlsCredentials {
             kmf.init(keys, new char[0]);
             SSLContext ssl = SSLContext.getInstance("TLS");
             ssl.init(kmf.getKeyManagers(), ca == null ? null : trust().getTrustManagers(), null);
+            if (sessionTimeout != null) {
+                // the JDK reads 0 as "no limit": resumption off is a session that expires at once
+                ssl.getServerSessionContext()
+                        .setSessionTimeout((int) Math.max(1, Math.min(Integer.MAX_VALUE, sessionTimeout.toSeconds())));
+            }
             return ssl;
         } catch (IOException | GeneralSecurityException e) {
             throw new ConfigException(prefix + "certificate: " + e.getMessage(), e);

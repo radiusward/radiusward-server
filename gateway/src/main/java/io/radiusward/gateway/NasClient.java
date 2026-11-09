@@ -131,6 +131,14 @@ public record NasClient(
         return prefixLength == 0 ? 0 : -1 << (32 - prefixLength);
     }
 
+    /**
+     * An entry without an address, identified over RadSec by its client certificate alone (ADR 0034): never matched
+     * by a source address, so never reached over UDP.
+     */
+    public boolean certificateOnly() {
+        return prefixLength < 0;
+    }
+
     public boolean matches(int address) {
         return (address & mask()) == (network & mask());
     }

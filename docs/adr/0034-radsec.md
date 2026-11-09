@@ -52,13 +52,25 @@ already decide every packet without blocking. What RadSec adds is a TLS transpor
   `radclient` and wpa_supplicant's `eapol_test` speak UDP to it: PAP, PEAP and TTLS. The MS-MPPE keys are encrypted
   with the RadSec secret, re-encrypted by radsecproxy, and must still match the peer's MSK.
 
+## Additions (work package 5.10)
+- **A NAS by its certificate alone**: an entry without `address` but with `radsec = true` and `radsec.identity` is
+  kept out of the address lookup, so it is never reached over UDP. A RadSec connection whose address matches no
+  entry that allows RadSec is bound to the first such entry, by name, whose identity the certificate carries. This
+  is for NAS behind NAT or with changing addresses. Its keys come from the entry as usual, and `identity` still
+  tells apart the devices behind it.
+- **Resumption**: reconnects resume their TLS session (TLS 1.2 session IDs, TLS 1.3 PSK) within
+  `radsec.session.timeout` (default 1 h). A resumed session is not checked against revocation again, so the timeout
+  bounds how long a revoked certificate keeps working.
+  - The JDK resumes its default stateless tickets without checking the session's age. The gateway therefore sets
+    `jdk.tls.server.enableSessionTicketExtension=false` at start, unless set otherwise. Sessions then live in the
+    server's cache, which honours the timeout.
+  - Consequence: resumption works within one gateway. A reconnect to another gateway gets a full handshake.
+  - `radiusward_gateway_radsec_total{result="handshakes_resumed"}` counts resumed handshakes.
+
 ## Consequences
 - NAS can reach gateways across untrusted networks without a VPN. Their identity is a certificate, not only an
   address and a secret.
 - The gateway's UDP behaviour is unchanged: RadSec is off unless `radsec.enabled`, and its requests take the same
   decision and commit paths.
-- Not covered:
-  - DTLS (RFC 7360).
-  - Dynamic peer discovery (RFC 7585).
-  - Identifying a NAS by certificate alone, regardless of its address.
-  - The gateway as a RadSec client (it does not proxy).
+- Not covered: DTLS (RFC 7360, planned as 5.14), dynamic peer discovery (RFC 7585) and the gateway as a RadSec
+  client (planned with proxying as 5.13).

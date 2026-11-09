@@ -177,4 +177,20 @@ class NasRegistryTest {
         assertThat(registry.lookup(InetAddress.getByName("10.0.0.2")).accessMessageAuthenticator())
                 .isEqualTo(NasClient.MessageAuthenticatorPolicy.OPTIONAL);
     }
+
+    @Test
+    void entriesIdentifiedByTheirRadsecCertificateHaveNoAddress() {
+        NasRegistry registry = NasRegistry.from(io.radiusward.common.config.Config.of(java.util.Map.of(
+                "nas.roaming.radsec", "true",
+                "nas.roaming.radsec.identity", "wlc.roaming.test",
+                "nas.core.address", "10.0.0.1",
+                "nas.core.secret", "s")));
+        org.assertj.core.api.Assertions.assertThat(registry.clients())
+                .filteredOn(NasClient::certificateOnly)
+                .extracting(NasClient::name)
+                .containsExactly("roaming");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> NasRegistry.from(
+                        io.radiusward.common.config.Config.of(java.util.Map.of("nas.x.radsec", "true"))))
+                .hasMessageContaining("nas.x.address: required");
+    }
 }

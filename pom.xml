@@ -90,7 +90,8 @@
         <palantir-java-format.version>2.103.0</palantir-java-format.version>
 
         <!-- Agrona 2.x / Aeron need access to jdk.internal.misc.Unsafe; every JVM we start must pass this -->
-        <radiusward.jvm.args>--add-exports java.base/jdk.internal.misc=ALL-UNNAMED</radiusward.jvm.args>
+        <!-- stateful TLS sessions, as the gateway sets them (ADR 0034): resumption limited by the session timeout -->
+        <radiusward.jvm.args>--add-exports java.base/jdk.internal.misc=ALL-UNNAMED -Djdk.tls.server.enableSessionTicketExtension=false</radiusward.jvm.args>
 
         <!-- set by jacoco:prepare-agent; empty default keeps surefire working when JaCoCo is skipped -->
         <jacocoArgLine/>

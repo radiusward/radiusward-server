@@ -22,6 +22,7 @@ public final class GatewayMain {
 
     @SuppressWarnings("try") // the management server only has to stay open until shutdown
     public static void main(String[] args) {
+        TlsCredentials.statefulSessions(); // before anything loads the JDK's TLS classes
         Config config = Config.load(
                 ConfigArgs.files(args, "gateway --config <file.properties> [--config ...]"), System.getenv());
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));

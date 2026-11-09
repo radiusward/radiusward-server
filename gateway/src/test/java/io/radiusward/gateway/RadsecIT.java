@@ -194,6 +194,79 @@ class RadsecIT {
     }
 
     @Test
+    void aNasIdentifiedByItsCertificateAlone() throws Exception {
+        NasClient roaming = new NasClient(
+                "roaming",
+                3003,
+                0,
+                -1,
+                new byte[0],
+                "default",
+                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
+                new NasClient.Identity[0],
+                0,
+                NasClient.MessageAuthenticatorPolicy.REQUIRED);
+        NasRegistry registry = NasRegistry.of(java.util.List.of(roaming));
+        assertThat(registry.lookup(java.net.InetAddress.getLoopbackAddress()))
+                .as("never found by address")
+                .isNull();
+        int port = start(
+                Map.of(
+                        "nas.local.radsec",
+                        "false",
+                        "nas.roaming.radsec",
+                        "true",
+                        "nas.roaming.radsec.identity",
+                        "wlc.roaming.test"),
+                registry);
+        try (RadsecClient client = connect(port, "wlc.roaming.test", "TLSv1.3")) {
+            byte[] good = AuthAgentTest.accessRequest(1, "arctangent", true, false, RADSEC);
+            client.send(good);
+            AuthAgentTest.assertSignedReplyTo(client.receive(), good, RadiusCode.ACCESS_ACCEPT, RADSEC);
+        }
+        try (RadsecClient other = connect(port, "wlc.elsewhere.test", "TLSv1.3")) {
+            other.send(AuthAgentTest.accessRequest(1, "arctangent", true, false, RADSEC));
+            assertThat(other.closedByServer()).isTrue();
+        }
+    }
+
+    @Test
+    void reconnectsResumeTheirTlsSession() throws Exception {
+        int port = start(Map.of());
+        for (String protocol : new String[] {"TLSv1.2", "TLSv1.3"}) {
+            javax.net.ssl.SSLContext context = TestPki.clientContext(pki.client("nas-1"), pki.ca);
+            long before = gateway.radsecAgent().get(RadsecAgent.Counter.HANDSHAKES_RESUMED);
+            for (int i = 0; i < 3; i++) {
+                try (RadsecClient client = new RadsecClient(port, context, protocol)) {
+                    byte[] good = AuthAgentTest.accessRequest(i, "arctangent", true, false, RADSEC);
+                    client.send(good);
+                    assertThat(client.receive()[0]).isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
+                }
+                Thread.sleep(20); // the session's creation time must be older than the next accept
+            }
+            assertThat(gateway.radsecAgent().get(RadsecAgent.Counter.HANDSHAKES_RESUMED) - before)
+                    .as(protocol + ": the second and third connection resumed")
+                    .isEqualTo(2);
+        }
+    }
+
+    @Test
+    void expiredSessionsAreNotResumed() throws Exception {
+        int port = start(Map.of("radsec.session.timeout", "1s"));
+        javax.net.ssl.SSLContext context = TestPki.clientContext(pki.client("nas-1"), pki.ca);
+        for (int i = 0; i < 2; i++) {
+            try (RadsecClient client = new RadsecClient(port, context, "TLSv1.2")) {
+                client.send(AuthAgentTest.accessRequest(i, "arctangent", true, false, RADSEC));
+                assertThat(client.receive()[0]).isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
+            }
+            Thread.sleep(2_100);
+        }
+        assertThat(gateway.radsecAgent().get(RadsecAgent.Counter.HANDSHAKES_RESUMED))
+                .as("the certificate is checked again after radsec.session.timeout")
+                .isZero();
+    }
+
+    @Test
     void malformedPacketsCloseTheConnectionOthersAreIgnored() throws Exception {
         int port = start(Map.of());
         try (RadsecClient client = connect(port, "nas-1", "TLSv1.3")) {
