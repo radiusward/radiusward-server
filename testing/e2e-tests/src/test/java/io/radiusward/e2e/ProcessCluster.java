@@ -8,8 +8,6 @@ import io.radiusward.testing.LocalCluster;
 import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
 import java.io.IOException;
-import java.net.DatagramSocket;
-import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -51,11 +49,14 @@ final class ProcessCluster implements AutoCloseable {
                     "radiusward.jar not found at " + jar.toAbsolutePath() + "; build with -Pe2e");
         }
         this.basePort = LocalCluster.freePortBase(3);
+        // fixed ports below the ephemeral range: an ephemeral one checked free here can be reused by another
+        // process's client socket before the member or gateway binds it
+        java.util.Set<Integer> used = new java.util.HashSet<>();
         for (String name : List.of("node-0", "node-1", "node-2", "gateway-a", "gateway-b")) {
-            managementPorts.put(name, freeTcpPort());
+            managementPorts.put(name, freePort(used));
         }
-        radiusPorts.put("gateway-a", freeUdpPort());
-        radiusPorts.put("gateway-b", freeUdpPort());
+        radiusPorts.put("gateway-a", freePort(used));
+        radiusPorts.put("gateway-b", freePort(used));
         writeConfig();
     }
 
@@ -219,21 +220,47 @@ final class ProcessCluster implements AutoCloseable {
     }
 
     void awaitReady(String name) {
-        LocalCluster.await(
-                Duration.ofSeconds(60), name + " ready (log " + dir.resolve(name + ".log") + ")", () -> ready(name));
+        try {
+            LocalCluster.await(Duration.ofSeconds(60), name + " ready", () -> {
+                if (!running(name)) {
+                    throw new AssertionError(
+                            name + " exited with " + processes.get(name).exitValue());
+                }
+                return ready(name);
+            });
+        } catch (AssertionError e) {
+            throw new AssertionError(e.getMessage() + "\n" + logTail(name), e); // the temp dir is gone in CI
+        }
+    }
+
+    /** The last lines of a process log, for failure messages. */
+    String logTail(String name) {
+        Path log = dir.resolve(name + ".log");
+        try {
+            List<String> lines = Files.readAllLines(log);
+            return "--- last lines of " + log + " ---\n"
+                    + String.join("\n", lines.subList(Math.max(0, lines.size() - 60), lines.size()));
+        } catch (IOException e) {
+            return "(no log " + log + ": " + e + ")";
+        }
     }
 
     String awaitLeader() {
         String[] leader = new String[1];
-        LocalCluster.await(Duration.ofSeconds(60), "leader", () -> {
-            for (String n : List.of("node-0", "node-1", "node-2")) {
-                if (running(n) && "LEADER".equals(field(state(n), "role"))) {
-                    leader[0] = n;
-                    return true;
+        try {
+            LocalCluster.await(Duration.ofSeconds(60), "leader", () -> {
+                for (String n : List.of("node-0", "node-1", "node-2")) {
+                    if (running(n) && "LEADER".equals(field(state(n), "role"))) {
+                        leader[0] = n;
+                        return true;
+                    }
                 }
-            }
-            return false;
-        });
+                return false;
+            });
+        } catch (AssertionError e) {
+            throw new AssertionError(
+                    e.getMessage() + "\n" + logTail("node-0") + "\n" + logTail("node-1") + "\n" + logTail("node-2"), e);
+        }
         return leader[0];
     }
 
@@ -274,15 +301,12 @@ final class ProcessCluster implements AutoCloseable {
         return dir;
     }
 
-    private static int freeTcpPort() throws IOException {
-        try (ServerSocket s = new ServerSocket(0)) {
-            return s.getLocalPort();
-        }
-    }
-
-    private static int freeUdpPort() throws IOException {
-        try (DatagramSocket s = new DatagramSocket(0)) {
-            return s.getLocalPort();
+    private static int freePort(java.util.Set<Integer> used) {
+        while (true) {
+            int port = LocalCluster.freePort();
+            if (used.add(port)) {
+                return port;
+            }
         }
     }
 

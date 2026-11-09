@@ -273,15 +273,33 @@ public final class LocalCluster implements AutoCloseable {
         }
     }
 
-    /** A base port where every member's 6 UDP ports are free. */
+    /**
+     * A base port where every member's 6 UDP ports are free, below the ephemeral port ranges (Linux from 32768,
+     * macOS from 49152): a port checked free there can still be taken by a client's ephemeral socket (an Aeron
+     * egress or archive response channel) before the member binds it.
+     */
     public static int freePortBase(int members) {
         for (int attempt = 0; attempt < 100; attempt++) {
-            int base = 20_000 + (int) (Math.random() * 400) * 100;
+            int base = 20_000 + (int) (Math.random() * 120) * 100; // highest port 32_205
             if (allFree(base, members)) {
                 return base;
             }
         }
         throw new IllegalStateException("no free port range");
+    }
+
+    /** A single port free for TCP and UDP, 10000–19999: below the ephemeral ranges and the cluster ports. */
+    public static int freePort() {
+        for (int attempt = 0; attempt < 200; attempt++) {
+            int port = 10_000 + (int) (Math.random() * 10_000);
+            try (java.net.ServerSocket tcp = new java.net.ServerSocket(port);
+                    DatagramSocket udp = new DatagramSocket(port)) {
+                return port;
+            } catch (Exception e) {
+                // taken, try another
+            }
+        }
+        throw new IllegalStateException("no free port");
     }
 
     private static boolean allFree(int base, int members) {

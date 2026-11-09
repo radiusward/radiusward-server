@@ -7,6 +7,11 @@ free ports, real `kill -9`). Only built with the `e2e` profile:
 ./mvnw -Pe2e verify
 ```
 
+Ports are chosen below the ephemeral ranges (cluster 20000–32205, management and RADIUS 10000–19999): a port
+taken from the ephemeral range and checked free could be reused by another process's client socket before the
+member binds it. A member that does not become ready or a missing leader fails with the last lines of the process
+logs in the message, since the temp directory is not kept in CI.
+
 | Test | Scenario |
 |---|---|
 | `AckAfterCommitIT` | no ACK without a majority; after recovery the retransmit is acknowledged and applied once |

@@ -338,7 +338,7 @@ class ThreeNodeClusterIT {
     /** A base port where all 3 × 6 UDP ports are currently free. */
     static int freePortBase() {
         for (int attempt = 0; attempt < 50; attempt++) {
-            int base = 20_000 + (int) (Math.random() * 400) * 100;
+            int base = 20_000 + (int) (Math.random() * 120) * 100; // below the ephemeral port ranges
             if (allFree(base)) {
                 return base;
             }
