@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: in progress (2026-11-09); decisions 1 and 2 taken; 5.1 done. Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: in progress (2026-11-09); decisions 1–3 taken; 5.1 and 5.2 done (ADR 0020). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -83,7 +83,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
   one gateway; on gateway loss a conversation restarts (the supplicant retries). TLS engine state is not replicated.
 - **TLS**: TLS 1.2 and 1.3, server certificate + chain from files with reload on change, client-certificate
   validation for EAP-TLS (trust store, revocation via CRL/OCSP, EKU/SAN policy). Keys via the RFC 5705 exporter —
-  **decision below** (JDK API vs Bouncy Castle). MSK per RFC 5216 / RFC 9427 (TLS 1.3) / PEAP / RFC 5281 labels.
+  the JDK 25 exporter (decision 3). MSK per RFC 5216 / RFC 9427 (TLS 1.3) / PEAP / RFC 5281 labels.
 - **Fragmentation** RFC 5216: fragment size from Framed-MTU minus overhead (cap configurable), L bit with the total on
   the first fragment, reassembly of client fragments up to 64 KiB, ACKs, refuse larger totals.
 - **Methods**, in order: EAP-TLS, PEAPv0/EAP-MSCHAPv2 (Result TLV success/failure, cryptobinding), EAP-TTLS/PAP and
@@ -97,7 +97,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | # | Package | Contents | Size |
 |---|---|---|---|
 | 5.1 ✅ | Codec | Access-Request view, User-Password decrypt (RFC 2865 §5.2, length 16..128, ×16), CHAP verify (RFC 1994), Access-Accept/Reject/Challenge builder with Message-Authenticator first, attribute templates; zero allocation; RFC vectors | M |
-| 5.2 | AuthAgent | socket 1812, NAS entries with `auth.secret`/policy, required Message-Authenticator, response cache, bounded worker pool, counters, `/metrics` | M |
+| 5.2 ✅ | AuthAgent | non-blocking NIO socket 1812, NAS entries (their secret, `access.message-authenticator` default required), reply cache with in-flight marks, bounded slots and worker pool, counters, `/metrics` | M |
 | 5.3 | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option | M |
 | 5.4 | Policy | pure decision, templates per vendor, Class token, reject reasons (generic on the wire) | M |
 | 5.5 | Simultaneous use via the cluster | `AuthReservation` command, state-machine counting with pending reservations, state version 6 (`atLeast(6)`) | M |
@@ -124,5 +124,10 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    plus `file` for tests and small sites; `rest` and `ldap` later.
 2. **CHAP and cleartext** (decided 2026-11-09): per-store opt-in. Stores hold salted hashes by default (PAP only);
    CHAP works only where the operator enables cleartext for that store; MS-CHAP uses NT hashes.
-3. **TLS stack for EAP** (open, decided when 5.8 starts): the JDK's RFC 5705 exporter (Java 25 at runtime for EAP;
-   to be verified) or Bouncy Castle TLS (Java 21, MIT-licensed dependency).
+3. **TLS stack for EAP** (decided 2026-11-09): the JDK's own JSSE with the keying-material exporter added in Java 25
+   (`ExtendedSSLSession.exportKeyingMaterialKey/Data`, JDK-8341346; RFC 5705 for TLS ≤ 1.2, RFC 8446 for 1.3) — no
+   Bouncy Castle dependency, no reflection into JDK internals, TLS fixes with the JDK's security updates. MSKs:
+   `client EAP encryption` / `ttls keying material` without context (TLS 1.2), `EXPORTER_EAP_TLS_Key_Material` with
+   the EAP type as context (TLS 1.3, RFC 9190 / RFC 9427), `ttls challenge` for TTLS inner challenges. The project
+   baseline moves from Java 21 to **Java 25** (the current LTS; the image and release builds already run it) no
+   later than work package 5.8.
