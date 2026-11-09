@@ -5,6 +5,7 @@
 package io.radiusward.auth;
 
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * What a store is created with.
@@ -13,11 +14,19 @@ import java.util.Map;
  * @param settings its settings without the prefix
  * @param workers the gateway's worker threads ({@code gateway.auth.workers}): a store's connection pool rarely needs
  *     more
+ * @param replyCheck what is wrong with a reply item (unknown attribute, value that cannot be encoded), or
+ *     {@code null} if it can be sent; a store that reads all users up front (a file) reports problems at load time
  */
-public record StoreContext(String name, Map<String, String> settings, int workers) {
+public record StoreContext(
+        String name, Map<String, String> settings, int workers, Function<AttributeItem, String> replyCheck) {
 
     public StoreContext {
         settings = Map.copyOf(settings);
+    }
+
+    /** Without a reply check: every item is accepted (it is checked again when a reply is built). */
+    public StoreContext(String name, Map<String, String> settings, int workers) {
+        this(name, settings, workers, item -> null);
     }
 
     public String setting(String key, String fallback) {

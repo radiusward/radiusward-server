@@ -16,8 +16,8 @@ import org.junit.jupiter.api.Test;
 
 class ReplyCacheTest {
 
-    private final UnsafeBuffer reply = new UnsafeBuffer(new byte[2048]);
-    private final UnsafeBuffer out = new UnsafeBuffer(new byte[2048]);
+    private final UnsafeBuffer reply = new UnsafeBuffer(new byte[8192]);
+    private final UnsafeBuffer out = new UnsafeBuffer(new byte[8192]);
 
     @Test
     void inFlightThenCachedUntilExpiry() {
@@ -49,10 +49,32 @@ class ReplyCacheTest {
     }
 
     @Test
-    void largeRepliesAndUnansweredRequestsOnlyClearTheMark() {
+    void largeRepliesUpToTheRadiusMaximumAreKeptInTheirOwnRing() {
+        ReplyCache cache = new ReplyCache(16);
+        reply.setMemory(0, ReplyCache.MAX_LARGE_REPLY, (byte) 7);
+        cache.put(1, reply, 0, ReplyCache.MAX_LARGE_REPLY, Long.MAX_VALUE);
+        int entry = cache.lookup(1, 0);
+        assertThat(entry).isNotNegative();
+        assertThat(cache.copy(entry, out, 0)).isEqualTo(ReplyCache.MAX_LARGE_REPLY);
+        assertThat(out.getByte(ReplyCache.MAX_LARGE_REPLY - 1)).isEqualTo((byte) 7);
+        for (long key = 2; key <= 16; key++) {
+            cache.put(key, reply, 0, 20, Long.MAX_VALUE); // small replies do not push large ones out
+        }
+        assertThat(cache.lookup(1, 0)).isNotNegative();
+        for (long key = 100; key < 116; key++) {
+            cache.put(key, reply, 0, ReplyCache.MAX_REPLY + 1, Long.MAX_VALUE);
+        }
+        assertThat(cache.lookup(1, 0)).as("the oldest large reply replaced").isEqualTo(ReplyCache.MISSING);
+        assertThat(cache.lookup(115, 0)).isNotNegative();
+        assertThat(cache.lookup(16, 0)).isNotNegative();
+        assertThat(cache.size()).isEqualTo(31);
+    }
+
+    @Test
+    void oversizedRepliesAndUnansweredRequestsOnlyClearTheMark() {
         ReplyCache cache = new ReplyCache(16);
         cache.markInFlight(1);
-        cache.put(1, reply, 0, ReplyCache.MAX_REPLY + 1, Long.MAX_VALUE);
+        cache.put(1, reply, 0, ReplyCache.MAX_LARGE_REPLY + 1, Long.MAX_VALUE);
         assertThat(cache.lookup(1, 0)).isEqualTo(ReplyCache.MISSING);
         cache.markInFlight(2);
         cache.clearInFlight(2);

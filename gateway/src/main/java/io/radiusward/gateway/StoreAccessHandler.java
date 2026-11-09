@@ -8,6 +8,7 @@ import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.IdentityStore;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
+import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.AttributeText;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -30,10 +31,15 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.TreeMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import org.agrona.collections.IntHashSet;
+import org.agrona.collections.Object2LongHashMap;
+import org.agrona.collections.Object2ObjectHashMap;
+import org.agrona.collections.ObjectHashSet;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -64,14 +70,35 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
     private final long ttlMillis;
-    private final ConcurrentHashMap<String, Cached> users = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Long> verified = new ConcurrentHashMap<>();
-    private final Set<String> warned = ConcurrentHashMap.newKeySet();
+    private final ObjectHashSet<String> warned = new ObjectHashSet<>();
+    /** Per NAS entry with a vendor filter; filled at construction, only read afterwards. */
+    private final Object2ObjectHashMap<String, AtomicLong> filtered = new Object2ObjectHashMap<>();
+
     private final byte[] verifierSalt = new byte[16];
 
     private record Cached(Optional<UserRecord> user, long expires) {}
 
     private record Found(String store, UserRecord user) {}
+
+    /**
+     * The caches of one worker, kept in its {@link AccessContext#handlerState()}: only that worker's thread touches
+     * them, so they are plain Agrona maps without locks. A user's look-up is cached per worker (at most one look-up
+     * per worker and TTL); each map is bounded by {@code auth.cache.max}.
+     */
+    private static final class WorkerCache {
+        final Object2ObjectHashMap<String, Cached> users = new Object2ObjectHashMap<>();
+        final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
+        final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
+    }
+
+    private static WorkerCache cache(AccessContext context) {
+        if (context.handlerState() instanceof WorkerCache cache) {
+            return cache;
+        }
+        WorkerCache cache = new WorkerCache();
+        context.handlerState(cache);
+        return cache;
+    }
 
     StoreAccessHandler(AuthStores stores, Dictionary dictionary, LongSupplier clockMillis) {
         this.stores = stores;
@@ -79,6 +106,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.clockMillis = clockMillis;
         this.ttlMillis = stores.cacheTtl().toMillis();
         new java.security.SecureRandom().nextBytes(verifierSalt);
+        stores.replyVendors().keySet().forEach(nas -> filtered.put(nas, new AtomicLong()));
     }
 
     @Override
@@ -95,7 +123,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         Found found;
         try {
-            found = find(context.nas().name(), userName);
+            found = find(cache(context), context.nas().name(), userName);
         } catch (StoreUnavailableException e) {
             warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
             return DROP;
@@ -131,13 +159,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (!authType.equalsIgnoreCase("Accept") && !authenticate(context, method, found, userName, passwords)) {
             return REJECT;
         }
-        encode(reply, context.reply());
+        encode(cache(context).encoded, reply, context.reply(), context.nas().name());
         return ACCEPT;
     }
 
     // ---- look-up -------------------------------------------------------------------------------
 
-    private Found find(String nas, String userName) throws StoreUnavailableException {
+    private Found find(WorkerCache cache, String nas, String userName) throws StoreUnavailableException {
+        Object2ObjectHashMap<String, Cached> users = cache.users;
         StoreUnavailableException unavailable = null;
         long now = clockMillis.getAsLong();
         for (String name : stores.storesFor(nas)) {
@@ -284,6 +313,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private boolean authenticate(
             AccessContext context, int method, Found found, String userName, List<AttributeItem> passwords) {
+        Object2LongHashMap<String> verified = cache(context).verified;
         if (method == AccessRequests.METHOD_CHAP) {
             if (!stores.chap().getOrDefault(found.store(), false)) {
                 warnOnce(
@@ -324,8 +354,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 boolean slow = PasswordCheck.isSlow(p.attribute(), p.value());
                 String key = slow ? verifiedKey(userName, p.value(), password) : null;
                 long now = clockMillis.getAsLong();
-                Long until = key == null ? null : verified.get(key);
-                if (until != null && until - now > 0) {
+                long until = key == null ? Long.MIN_VALUE : verified.getValue(key);
+                if (until != Long.MIN_VALUE && until - now > 0) {
                     return true;
                 }
                 if (PasswordCheck.verify(p.attribute(), p.value(), password)) {
@@ -377,37 +407,68 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
     }
 
-    private void encode(List<AttributeItem> reply, RadiusPacketEncoder out) {
+    /**
+     * Writes the reply items a NAS entry may receive: standard attributes always, vendor attributes only of its vendors
+     * ({@link AuthStores#replyVendors()}). Each distinct item is encoded once and kept.
+     */
+    private void encode(
+            Object2ObjectHashMap<AttributeItem, Encoded> encoded,
+            List<AttributeItem> reply,
+            RadiusPacketEncoder out,
+            String nas) {
+        IntHashSet vendors = stores.replyVendors().get(nas);
         for (AttributeItem item : reply) {
-            AttributeDef def = dictionary.find(item.attribute());
-            if (def == null) {
-                warnOnce(
-                        "reply:" + item.attribute(),
-                        "reply item {} is not in the dictionary: not sent",
-                        item.attribute());
-                continue;
+            Encoded e = encoded.get(item);
+            if (e == null) {
+                e = encode(item);
+                if (encoded.size() >= stores.cacheMax()) {
+                    encoded.clear();
+                }
+                encoded.put(item, e);
             }
-            byte[] value;
-            try {
-                value = AttributeText.encode(def, item.value());
-            } catch (IllegalArgumentException e) {
-                warnOnce(
-                        "reply-value:" + item.attribute(),
-                        "reply item {}: {}; not sent",
-                        item.attribute(),
-                        e.getMessage());
-                continue;
+            if (e.value() == null) {
+                continue; // not encodable: warned when first seen
             }
-            if (value.length > RadiusPacketEncoder.MAX_VALUE_LENGTH - (def.vendorId() == 0 ? 0 : 6)) {
-                warnOnce("reply-long:" + item.attribute(), "reply item {} is too long: not sent", item.attribute());
-                continue;
-            }
-            if (def.vendorId() == 0) {
-                out.attribute(def.number(), value);
+            if (e.vendorId() == 0) {
+                out.attribute(e.number(), e.value());
+            } else if (vendors == null || vendors.contains(e.vendorId())) {
+                out.vendorAttribute(e.vendorId(), e.number(), e.value());
             } else {
-                out.vendorAttribute(def.vendorId(), def.number(), value);
+                filtered.get(nas).incrementAndGet(); // present: the entry has a vendor set
             }
         }
+    }
+
+    /** One reply item, encoded; {@code value == null} if it cannot be sent. */
+    private record Encoded(int vendorId, int number, byte[] value) {}
+
+    private Encoded encode(AttributeItem item) {
+        String problem = AuthStores.replyProblem(dictionary, item);
+        if (problem != null) {
+            warnOnce("reply:" + item.attribute(), "{}: not sent", problem);
+            return new Encoded(0, 0, null);
+        }
+        AttributeDef def = dictionary.find(item.attribute());
+        byte[] value = AttributeText.encode(def, item.value());
+        if (value.length > RadiusPacketEncoder.MAX_VALUE_LENGTH - (def.vendorId() == 0 ? 0 : 6)) {
+            warnOnce("reply-long:" + item.attribute(), "reply item {} is too long: not sent", item.attribute());
+            return new Encoded(0, 0, null);
+        }
+        return new Encoded(def.vendorId(), def.number(), value);
+    }
+
+    /** Vendor attributes left out of replies because the NAS entry is of another vendor, per NAS entry. */
+    long filtered(String nas) {
+        AtomicLong count = filtered.get(nas);
+        return count == null ? 0 : count.get();
+    }
+
+    @Override
+    public void writeMetrics(PrometheusWriter w, String gateway) {
+        w.counter(
+                "radiusward_gateway_access_reply_items_filtered_total",
+                "Vendor attributes left out of Access-Accepts because the NAS entry is of another vendor");
+        new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "gateway", gateway, "nas", nas));
     }
 
     private static String string(RadiusPacket request, int type) {
@@ -419,14 +480,20 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 .getStringWithoutLengthUtf8(at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
     }
 
+    private boolean firstWarning(String key) {
+        synchronized (warned) { // rare: only for problems that are logged once
+            return warned.add(key);
+        }
+    }
+
     private void warnOnce(String key, String message, Object detail) {
-        if (warned.add(key)) {
+        if (firstWarning(key)) {
             LOG.warn(message, detail);
         }
     }
 
     private void warnOnce(String key, String message, Object a, Object b) {
-        if (warned.add(key)) {
+        if (firstWarning(key)) {
             LOG.warn(message, a, b);
         }
     }

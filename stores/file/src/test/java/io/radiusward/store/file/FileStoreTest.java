@@ -96,4 +96,26 @@ class FileStoreTest {
                 .hasMessageContaining("auth.store.local.path is required");
         assertThat(new FileStoreProvider().type()).isEqualTo("file");
     }
+
+    @Test
+    void replyItemsAreCheckedAtLoadAndReload() throws Exception {
+        Path file = dir.resolve("checked");
+        Files.writeString(file, "alice Cleartext-Password := \"a\"\n    Session-Timeout = 60\n");
+        StoreContext context = new StoreContext(
+                "local",
+                Map.of("path", file.toString(), "reload.interval", "1ms"),
+                4,
+                item -> item.value().equals("bad") ? "reply item " + item.attribute() + ": bad value" : null);
+        try (IdentityStore store = new FileStoreProvider().create(context)) {
+            Files.writeString(file, "alice Cleartext-Password := \"a\"\n    Session-Timeout = bad\n");
+            Files.setLastModifiedTime(file, FileTime.fromMillis(System.currentTimeMillis() + 5_000));
+            Thread.sleep(5);
+            assertThat(store.lookup("alice").orElseThrow().reply())
+                    .as("the broken reload keeps the previous users")
+                    .containsExactly(new AttributeItem("Session-Timeout", "=", "60"));
+        }
+        assertThatThrownBy(() -> new FileStoreProvider().create(context))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("line 2: reply item Session-Timeout: bad value");
+    }
 }

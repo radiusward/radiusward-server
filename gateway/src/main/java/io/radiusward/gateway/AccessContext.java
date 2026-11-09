@@ -22,6 +22,7 @@ public final class AccessContext {
     private final UnsafeBuffer replyBuffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
     private final RadiusPacketEncoder reply = new RadiusPacketEncoder();
     private NasClient nas;
+    private Object handlerState;
 
     AccessContext() {}
 
@@ -52,6 +53,18 @@ public final class AccessContext {
      */
     public RadiusPacketEncoder reply() {
         return reply;
+    }
+
+    /**
+     * What the handler keeps for this worker (its caches), {@code null} until it sets it. A context is only ever used
+     * by its own worker thread, so this state needs no locking (single writer, like the agents' own tables).
+     */
+    public Object handlerState() {
+        return handlerState;
+    }
+
+    public void handlerState(Object state) {
+        this.handlerState = state;
     }
 
     DirectBuffer replyBuffer() {

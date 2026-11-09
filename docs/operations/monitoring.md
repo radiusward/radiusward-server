@@ -57,6 +57,7 @@ Names carry the unit (`_bytes`, `_seconds`); counters end in `_total`. Members a
 |---|---|---|
 | `radiusward_gateway_access_requests_total{result}` | counter | Access-Requests: `received`, `accepted`, `rejected`, `challenged`, `dropped`, `cache_hits`, `retransmit_in_flight`, `busy`, `message_authenticator_missing`, `message_authenticator_failed`, `handler_errors`, `unknown_nas`, … (with `gateway.auth.enabled`) |
 | `radiusward_gateway_access_in_flight` / `radiusward_gateway_access_reply_cache_entries` | gauge | Access-Requests with the workers; replies kept for retransmissions |
+| `radiusward_gateway_access_reply_items_filtered_total{nas}` | counter | vendor attributes left out of Access-Accepts because the NAS entry is of another vendor (`nas.<name>.reply.vendors`) — expected for mixed-vendor groups; a NAS missing an attribute shows here |
 | `radiusward_gateway_packets_total{result}` | counter | `received`, `committed`, `cache_hits`, `duplicates`, `stale`, `rejected`, `pending_full`, `ring_full`, `resubmitted`, `resubmitted_on_new_leader`, `malformed`, `unknown_nas`, `authenticator_failed`, `identity_missing`, `identity_fallback`, … (all gateway counters) |
 | `radiusward_gateway_pending_requests` | gauge | requests waiting for a commit |
 | `radiusward_gateway_response_cache_entries` | gauge | RFC 5080 response cache size |

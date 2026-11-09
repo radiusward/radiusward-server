@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Parser for the FreeRADIUS users-file format (subset):
@@ -34,6 +35,14 @@ final class UsersFile {
     private UsersFile() {}
 
     static Map<String, UserRecord> parse(List<String> lines) {
+        return parse(lines, item -> null);
+    }
+
+    /**
+     * @param replyCheck the problem with a reply item, or {@code null} (an unknown attribute is an error with its line
+     *     number, not a silently missing reply attribute)
+     */
+    static Map<String, UserRecord> parse(List<String> lines, Function<AttributeItem, String> replyCheck) {
         Map<String, UserRecord> users = new LinkedHashMap<>();
         String user = null;
         List<AttributeItem> check = null;
@@ -62,7 +71,14 @@ final class UsersFile {
                 if (user == null) {
                     throw new IllegalArgumentException("line " + (n + 1) + ": reply item before any user");
                 }
+                int from = reply.size();
                 new Cursor(raw, n + 1).items(reply);
+                for (AttributeItem item : reply.subList(from, reply.size())) {
+                    String problem = replyCheck.apply(item);
+                    if (problem != null) {
+                        throw new IllegalArgumentException("line " + (n + 1) + ": " + problem);
+                    }
+                }
             }
         }
         if (user != null) {

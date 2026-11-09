@@ -13,7 +13,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -86,12 +85,58 @@ class AuthStoresTest {
     }
 
     @Test
+    void replyVendorsFromTheNasVendorOrAnExplicitList() throws Exception {
+        Map<String, String> values = base();
+        values.put("nas.mx.vendor", "Juniper");
+        values.put("nas.mt.vendor", "mikrotik");
+        values.put("nas.mixed.vendor", "mikrotik");
+        values.put("nas.mixed.reply.vendors", "Mikrotik, cisco");
+        values.put("nas.lab.vendor", "default");
+        values.put("nas.open.vendor", "mikrotik");
+        values.put("nas.open.reply.vendors", "all");
+        values.put("nas.plain.reply.vendors", "none");
+        try (AuthStores stores = AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY)) {
+            assertThat(stores.replyVendors().get("mx")).containsExactlyInAnyOrder(2636, 4874);
+            assertThat(stores.replyVendors().get("mt")).containsExactly(14988);
+            assertThat(stores.replyVendors().get("mixed")).containsExactlyInAnyOrder(14988, 9);
+            assertThat(stores.replyVendors().get("plain"))
+                    .as("standard attributes only")
+                    .isEmpty();
+            assertThat(stores.replyVendors()).doesNotContainKeys("lab", "open");
+        }
+        Map<String, String> unknown = base();
+        unknown.put("nas.x.reply.vendors", "no-such-vendor");
+        assertThatThrownBy(() -> AuthStores.from(Config.of(unknown), 1, StoreAccessHandlerTest.DICTIONARY))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("nas.x.reply.vendors: unknown vendor no-such-vendor");
+    }
+
+    @Test
+    void theFileStoreChecksReplyItemsAgainstTheDictionary() throws Exception {
+        Map<String, String> values = base();
+        Files.writeString(
+                dir.resolve("users"),
+                "alice Cleartext-Password := \"a\"\n    Session-Timeout = 60,\n    Mikrotik-Rate-Limit = \"1M\"\n");
+        AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY).close();
+        Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"a\"\n    Sesion-Timeout = 60\n");
+        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("line 2: reply item Sesion-Timeout is not in the dictionary");
+        Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"a\"\n    Session-Timeout = soon\n");
+        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("line 2: reply item Session-Timeout");
+    }
+
+    @Test
     void emptyPluginDirectoryIsFine() throws Exception {
         Files.createDirectories(dir.resolve("plugins"));
         Files.writeString(dir.resolve("plugins/readme.txt"), "not a jar");
         try (AuthStores stores = AuthStores.from(Config.of(base()), 1)) {
             assertThat(stores.stores()).containsOnlyKeys("staff", "guests");
-            assertThat(List.copyOf(stores.stores().keySet())).containsExactly("staff", "guests");
+            assertThat(stores.order())
+                    .as("the order is kept apart from the map")
+                    .containsExactly("staff", "guests");
         }
     }
 }

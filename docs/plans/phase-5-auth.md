@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: in progress (2026-11-09); decisions 1–3 taken; 5.1 and 5.2 done (ADR 0020). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: in progress (2026-11-09); decisions 1–5 taken; 5.1–5.4 done (ADR 0020, 0021, 0022). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -99,7 +99,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.1 ✅ | Codec | Access-Request view, User-Password decrypt (RFC 2865 §5.2, length 16..128, ×16), CHAP verify (RFC 1994), Access-Accept/Reject/Challenge builder with Message-Authenticator first, attribute templates; zero allocation; RFC vectors | M |
 | 5.2 ✅ | AuthAgent | non-blocking NIO socket 1812, NAS entries (their secret, `access.message-authenticator` default required), reply cache with in-flight marks, bounded slots and worker pool, counters, `/metrics` | M |
 | 5.3 ✅ | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option ([ADR 0021](../adr/0021-identity-stores.md)); bcrypt included, argon2 and yescrypt deferred | M |
-| 5.4 | Policy | pure decision, templates per vendor, Class token, reject reasons (generic on the wire) | M |
+| 5.4 ✅ | Reply attributes | user and group reply items, vendor filter per NAS entry, reply items checked at load, encoded once, large replies cached ([ADR 0022](../adr/0022-reply-attributes.md)) | S |
 | 5.5 | Simultaneous use via the cluster | `AuthReservation` command, state-machine counting with pending reservations, state version 6 (`atLeast(6)`) | M |
 | 5.6 | MS-CHAPv2 (non-EAP) | RFC 2759, NT-Password, MS-CHAP2-Success, RFC 2548 MPPE; RFC 3079 vectors | S |
 | 5.7 | EAP framework | state machine, State tokens, conversation table, fragmentation, EAP-MD5 for the plumbing | L |
@@ -139,3 +139,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    JDK SHA-256/HMAC (scrypt core, `pwxform`, libxcrypt's default flags only, other modes rejected), a memory ceiling,
    and — with no Java reference implementation — committed fixtures generated with libxcrypt in a container plus
    the reference known-answer vectors. argon2 would use Bouncy Castle as a test reference, like bcrypt.
+5. **Scope of 5.4** (decided 2026-11-09, [ADR 0022](../adr/0022-reply-attributes.md)): only reply attributes and mixed
+   NAS vendors — reply items per user and group, a vendor filter per NAS entry. The check items of 5.3 stay as they
+   are and are not extended. Deferred until operators ask: vendor-neutral templates, `Login-Time`, binding users to
+   NAS entries, the signed Class token, reject reasons in metrics.

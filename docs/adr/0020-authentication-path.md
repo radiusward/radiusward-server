@@ -24,12 +24,14 @@ property while some decisions wait for I/O.
   pre-boxed slot ids. No free slot or a full queue → the request is dropped (counter `busy`) and the NAS retransmits.
 - **Reply cache** (RFC 5080 §2.2.2): key = source address, port, Identifier, Request Authenticator; a request being
   decided is marked in flight, so retransmissions are dropped instead of decided twice; the reply bytes (≤ 1 KiB)
-  are kept for `gateway.auth.reply.cache.ttl` (10 s) in a fixed ring of `gateway.auth.reply.cache.entries` (4096).
+  are kept for `gateway.auth.reply.cache.ttl` (10 s) in a fixed ring of `gateway.auth.reply.cache.entries` (4096);
+  larger replies, up to 4 KiB, in a second ring a sixteenth that size (ADR 0022).
   A request answered with nothing (store down, handler error) is decided again on its retransmission.
 
 ## Consequences
 - The socket thread allocates nothing per request (the JDK's sender address aside), proven by
   `GatewayAllocationIT`; a slow store costs worker time and, when all slots are busy, drops — never a growing queue.
-- Memory is fixed: about 2 × 4 KiB per slot plus 1 KiB per cache entry (≈ 6 MiB with the defaults).
+- Memory is fixed: about 2 × 4 KiB per slot plus 1 KiB per cache entry and 4 KiB per large
+  entry (≈ 7 MiB with the defaults).
 - Conversations that span several requests (EAP) keep their own state in the EAP layer (5.7); the reply cache only
   covers retransmissions of one request.

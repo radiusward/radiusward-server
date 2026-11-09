@@ -298,6 +298,9 @@ public final class Gateway implements AutoCloseable {
                     .sample(authStats.inFlight(), "gateway", id);
             w.gauge("radiusward_gateway_access_reply_cache_entries", "Replies kept for retransmissions")
                     .sample(authStats.cached(), "gateway", id);
+            if (handler != null) {
+                handler.writeMetrics(w, id);
+            }
         }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());

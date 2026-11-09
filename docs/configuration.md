@@ -88,10 +88,11 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.store.<name>.timeout` | `1500ms` | `sql`: wait for a connection, and query timeout; beyond it the store counts as unavailable |
 | `auth.store.<name>.schema` | `radcheck` | `sql`: table layout (only `radcheck` so far) |
 | `auth.store.<name>.table.<table>` | the table's name | `sql`: other names for `radcheck`, `radreply`, `radusergroup`, `radgroupcheck`, `radgroupreply` (`[schema.]name`) |
-| `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-gateway cache of look-ups and successful slow-hash checks |
+| `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |
 | `auth.bcrypt.max.cost` | `14` | highest bcrypt cost verified (4–31); a stored hash above it is rejected rather than tying up a worker (cost 14 ≈ 1 s of CPU) |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |
 | `nas.<name>.auth.stores` | all of `auth.stores` | the stores asked for this NAS entry, in order |
+| `nas.<name>.reply.vendors` | from `nas.<name>.vendor` | vendors whose attributes this entry's Access-Accepts carry (dictionary vendor names, `all`, `none`); standard attributes are always sent ([ADR 0022](adr/0022-reply-attributes.md)). Without it: the vendor of `nas.<name>.vendor` if it names a dictionary vendor (`juniper` also gets `Unisphere`), else everything |
 
 ## Export
 
@@ -124,7 +125,7 @@ File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 |---|---|---|
 | `nas.<name>.address` | — | IPv4 address or CIDR range of the NAS |
 | `nas.<name>.secret` | — | shared secret; use `${env:...}` |
-| `nas.<name>.vendor` | `default` | vendor profile |
+| `nas.<name>.vendor` | `default` | vendor profile; a dictionary vendor name (`cisco`, `mikrotik`, …) also limits the vendor attributes in Access-Accepts (`reply.vendors`) |
 | `nas.<name>.message-authenticator` | `optional` | `required` \| `optional` \| `off` |
 | `nas.<name>.id` | FNV-1a hash of the name | identity used in event keys — must be identical on every gateway |
 | `nas.<name>.access.message-authenticator` | `required` | Message-Authenticator on Access-Requests: `required` \| `optional` \| `off` (BlastRADIUS, CVE-2024-3596; always required with EAP) |

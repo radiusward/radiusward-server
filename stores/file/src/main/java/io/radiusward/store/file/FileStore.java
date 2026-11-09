@@ -4,6 +4,7 @@
  */
 package io.radiusward.store.file;
 
+import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.IdentityStore;
 import io.radiusward.auth.StoreContext;
 import io.radiusward.auth.StoreUnavailableException;
@@ -15,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -29,6 +31,7 @@ final class FileStore implements IdentityStore {
 
     private final Path path;
     private final long checkEveryNanos;
+    private final Function<AttributeItem, String> replyCheck;
     private volatile Map<String, UserRecord> users;
     private volatile FileTime loaded;
     private volatile long nextCheck;
@@ -36,9 +39,10 @@ final class FileStore implements IdentityStore {
     FileStore(StoreContext context) {
         this.path = Path.of(context.required("path"));
         this.checkEveryNanos = context.duration("reload.interval", "5s").toNanos();
+        this.replyCheck = context.replyCheck();
         try {
             this.loaded = Files.getLastModifiedTime(path);
-            this.users = UsersFile.parse(Files.readAllLines(path, StandardCharsets.UTF_8));
+            this.users = UsersFile.parse(Files.readAllLines(path, StandardCharsets.UTF_8), replyCheck);
         } catch (IOException e) {
             throw new IllegalArgumentException("auth.store." + context.name() + ".path: cannot read " + path, e);
         } catch (IllegalArgumentException e) {
@@ -67,7 +71,8 @@ final class FileStore implements IdentityStore {
             if (modified.equals(loaded)) {
                 return;
             }
-            Map<String, UserRecord> fresh = UsersFile.parse(Files.readAllLines(path, StandardCharsets.UTF_8));
+            Map<String, UserRecord> fresh =
+                    UsersFile.parse(Files.readAllLines(path, StandardCharsets.UTF_8), replyCheck);
             users = fresh;
             loaded = modified;
             LOG.info("identity store: reloaded {} users from {}", fresh.size(), path);

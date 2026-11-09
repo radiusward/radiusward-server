@@ -17,7 +17,7 @@ java -jar distribution/target/radiusward.jar gateway --config config/local/gatew
 | `AuthAgent` | Access-Requests (Phase 5, [ADR 0020](../docs/adr/0020-authentication-path.md)): its own non-blocking NIO socket; validate, NAS lookup, Message-Authenticator (required by default), reply cache, hand-off to the workers, send the replies |
 | `AccessWorker`, `AccessSlots`, `AccessHandler`, `AccessContext` | bounded hand-off to worker threads that decide a request (`AccessHandler`) and build the signed reply |
 | `ReplyCache`, `AuthConfig`, `AuthStats` | RFC 5080 reply cache with in-flight marks; `gateway.auth.*`; counters |
-| `AuthStores`, `StoreAccessHandler` | identity stores from `auth.*` ([ADR 0021](../docs/adr/0021-identity-stores.md)); PAP/CHAP decision: stores in order, check items, groups, reply items, cache |
+| `AuthStores`, `StoreAccessHandler` | identity stores from `auth.*` ([ADR 0021](../docs/adr/0021-identity-stores.md)); PAP/CHAP decision: stores in order, check items, groups, reply items filtered by the NAS entry's vendors ([ADR 0022](../docs/adr/0022-reply-attributes.md)); per-worker Agrona caches |
 | `PasswordCheck`, `ShaCrypt`, `BCrypt` | stored credential formats: cleartext, `$5$`/`$6$` SHA-crypt, `$2a$`/`$2b$`/`$2y$` bcrypt, salted SHA, PBKDF2 |
 | `Gateway`, `GatewayConfig`, `GatewayMain` | wiring, embedded media driver, threading, management |
 

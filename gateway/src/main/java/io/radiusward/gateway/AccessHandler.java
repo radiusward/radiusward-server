@@ -4,6 +4,7 @@
  */
 package io.radiusward.gateway;
 
+import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.RadiusCode;
 
 /**
@@ -25,4 +26,7 @@ public interface AccessHandler {
      *     {@link AccessContext#reply()}
      */
     int handle(AccessContext context);
+
+    /** Adds the handler's own series to {@code /metrics}; none by default. */
+    default void writeMetrics(PrometheusWriter w, String gateway) {}
 }

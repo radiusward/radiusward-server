@@ -16,5 +16,7 @@ guest   Cleartext-Password := "guest", Expiration := "Dec 31 2026"
 - Operators: `:=`, `=`, `+=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `=~`, `!~`, `=*`, `!*`. Values may be quoted
   (`\"`, `\\`, `\n`, `\t`).
 - `DEFAULT` entries, `Fall-Through` and groups are not supported; a user name may appear once.
+- Reply items are checked against the dictionary when the file is loaded: an unknown attribute or a value that
+  cannot be encoded is an error with its line number.
 - Settings: `path` (required), `reload.interval` (default `5s`). The file is re-read when its modification time
   changes; a file with errors is logged with its line number and the previous users stay in use.

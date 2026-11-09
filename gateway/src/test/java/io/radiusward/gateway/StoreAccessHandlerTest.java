@@ -25,6 +25,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.agrona.collections.IntHashSet;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.Test;
 
@@ -66,13 +67,15 @@ class StoreAccessHandlerTest {
     private final MemoryStore main = new MemoryStore();
     private final MemoryStore second = new MemoryStore();
     private final AccessContext context = new AccessContext();
+    private final Map<String, IntHashSet> replyVendors = new HashMap<>();
 
     private StoreAccessHandler handler(Map<String, Boolean> chap, Map<String, List<String>> perNas) {
         Map<String, IdentityStore> stores = new java.util.LinkedHashMap<>();
         stores.put("main", main);
         stores.put("second", second);
         return new StoreAccessHandler(
-                new AuthStores(stores, List.of("main", "second"), perNas, chap, Duration.ofSeconds(5), 1000, 12),
+                new AuthStores(
+                        stores, List.of("main", "second"), perNas, chap, Duration.ofSeconds(5), 1000, 12, replyVendors),
                 DICTIONARY,
                 () -> now[0]);
     }
@@ -272,6 +275,105 @@ class StoreAccessHandlerTest {
         assertThat(pap(h, "alice", "wrong"))
                 .as("a wrong password is never cached as right")
                 .isEqualTo(AccessHandler.REJECT);
+    }
+
+    /**
+     * Workers share the handler but each keeps its own caches (in its context): concurrent decisions stay correct, a
+     * wrong password is never answered from a cache, and the store is asked at most once per worker and user.
+     */
+    @Test
+    void concurrentWorkersDecideCorrectlyWithTheirOwnCaches() throws Exception {
+        int users = 50;
+        String slow = ShaCrypt.crypt("pw".getBytes(StandardCharsets.UTF_8), "$5$rounds=1000$salt");
+        for (int u = 0; u < users; u++) {
+            main.user(
+                    "user" + u,
+                    List.of(item(u % 2 == 0 ? "Cleartext-Password" : "Crypt-Password", ":=", u % 2 == 0 ? "pw" : slow)),
+                    List.of(item("Session-Timeout", "=", Integer.toString(60 + u))));
+        }
+        StoreAccessHandler h = handler();
+        int workers = 4;
+        java.util.concurrent.atomic.AtomicInteger wrongDecisions = new java.util.concurrent.atomic.AtomicInteger();
+        List<Thread> threads = new java.util.ArrayList<>();
+        for (int w = 0; w < workers; w++) {
+            int seed = w;
+            threads.add(Thread.ofPlatform().start(() -> {
+                AccessContext own = new AccessContext();
+                java.util.Random random = new java.util.Random(seed);
+                for (int i = 0; i < 2_000; i++) {
+                    int u = random.nextInt(users);
+                    boolean good = random.nextBoolean();
+                    byte[] request = AccessRequestBuilder.pap("user" + u, good ? "pw" : "wrong");
+                    own.reset(new UnsafeBuffer(request), 0, request.length, nas());
+                    int code = h.handle(own);
+                    if (code != (good ? AccessHandler.ACCEPT : AccessHandler.REJECT)) {
+                        wrongDecisions.incrementAndGet();
+                    }
+                }
+            }));
+        }
+        for (Thread t : threads) {
+            t.join();
+        }
+        assertThat(wrongDecisions).hasValue(0);
+        assertThat(main.lookups.get()).isBetween(users, users * workers);
+    }
+
+    private static NasClient nas() {
+        return AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF)
+                .clients()
+                .iterator()
+                .next();
+    }
+
+    @Test
+    void replyCarriesOnlyTheVendorAttributesOfTheNasEntry() {
+        main.user(
+                "alice",
+                List.of(item("Cleartext-Password", ":=", "a")),
+                List.of(
+                        item("Session-Timeout", "=", "3600"),
+                        item("Mikrotik-Rate-Limit", "=", "10M/20M"),
+                        item("Cisco-AVPair", "+=", "sub-qos-policy-out=20M"),
+                        item("Huawei-Input-Peak-Rate", "=", "10000000"),
+                        item("No-Such-Attribute", "=", "x"),
+                        item("Session-Timeout", "+=", "not a number")));
+        IntHashSet mikrotik = new IntHashSet();
+        mikrotik.add(14988);
+        replyVendors.put("local", mikrotik);
+        StoreAccessHandler h = handler();
+        for (int i = 0; i < 3; i++) {
+            assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+            RadiusPacket reply = reply();
+            assertThat(reply.findAttribute(27)).as("standard attributes always").isPositive();
+            assertThat(vendors(reply))
+                    .as("unknown and unencodable items left out")
+                    .containsExactly(14988);
+        }
+        assertThat(h.filtered("local")).as("Cisco and Huawei, three times").isEqualTo(6);
+        assertThat(h.filtered("other")).isZero();
+        var metrics = new io.radiusward.common.management.PrometheusWriter();
+        h.writeMetrics(metrics, "1");
+        assertThat(metrics.finish())
+                .contains("radiusward_gateway_access_reply_items_filtered_total{gateway=\"1\",nas=\"local\"} 6");
+
+        replyVendors.clear(); // no vendor set for the entry: everything that can be encoded
+        StoreAccessHandler all = handler();
+        assertThat(pap(all, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(vendors(reply())).containsExactly(14988, 9, 2011);
+    }
+
+    /** Vendor ids of the Vendor-Specific attributes, in order. */
+    private static List<Integer> vendors(RadiusPacket p) {
+        List<Integer> ids = new java.util.ArrayList<>();
+        for (int pos = p.attributesOffset(); pos < p.attributesEnd(); ) {
+            int len = p.buffer().getByte(pos + 1) & 0xFF;
+            if ((p.buffer().getByte(pos) & 0xFF) == 26) {
+                ids.add(p.buffer().getInt(pos + 2, java.nio.ByteOrder.BIG_ENDIAN));
+            }
+            pos += len;
+        }
+        return ids;
     }
 
     @Test
