@@ -169,6 +169,11 @@ public final class LocalCluster implements AutoCloseable {
     }
 
     public Gateway startGateway(int gatewayId, int radiusPort) {
+        return startGateway(gatewayId, radiusPort, registry());
+    }
+
+    /** A gateway with its own NAS entries, e.g. {@link #registry(NasClient.Identity...)} for devices behind NAT. */
+    public Gateway startGateway(int gatewayId, int radiusPort, NasRegistry registry) {
         GatewayConfig config = new GatewayConfig(
                 gatewayId,
                 "127.0.0.1",
@@ -187,12 +192,17 @@ public final class LocalCluster implements AutoCloseable {
                 new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
                 null,
                 Duration.ZERO);
-        Gateway gateway = Gateway.launch(config, registry());
+        Gateway gateway = Gateway.launch(config, registry);
         gateways.add(gateway);
         return gateway;
     }
 
     public static NasRegistry registry() {
+        return registry(new NasClient.Identity[0]);
+    }
+
+    /** The local NAS entry (127.0.0.1); with {@code identity}, the devices behind it are told apart (ADR 0019). */
+    public static NasRegistry registry(NasClient.Identity... identity) {
         return NasRegistry.of(List.of(new NasClient(
                 NAS_NAME,
                 NAS_ID,
@@ -200,7 +210,8 @@ public final class LocalCluster implements AutoCloseable {
                 32,
                 SECRET.getBytes(StandardCharsets.US_ASCII),
                 "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL)));
+                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
+                identity)));
     }
 
     public Gateway gateway(int index) {

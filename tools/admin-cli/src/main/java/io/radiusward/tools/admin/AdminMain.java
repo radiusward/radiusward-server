@@ -26,6 +26,9 @@ import java.util.Map;
  * admin export-schema  [--type postgres]
  * admin verify-export  --jdbc-url ... [--jdbc-user u --jdbc-password p] --ack-log acks.csv --nas-id 1001 [--members ...]
  * </pre>
+ *
+ * <p>{@code verify-acks} and {@code verify-export} take {@code --identity nas-identifier} when the NAS entry tells
+ * apart the devices behind it by NAS-Identifier (ADR 0019), like the load generator's simulated NAS.
  */
 public final class AdminMain {
 
@@ -57,6 +60,7 @@ public final class AdminMain {
                 case "export-schema" -> {}
                 default -> throw new IllegalArgumentException("unknown command " + command);
             }
+            byDevice(o);
         } catch (IllegalArgumentException e) {
             err.println("admin: " + e.getMessage());
             err.println(usage());
@@ -112,8 +116,8 @@ public final class AdminMain {
             if (command.equals("state")) {
                 return EXIT_OK;
             }
-            AckVerifier.Report report =
-                    AckVerifier.verify(Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), admin::session);
+            AckVerifier.Report report = AckVerifier.verify(
+                    Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), byDevice(o), admin::session);
             return report(report, out);
         }
     }
@@ -153,10 +157,15 @@ public final class AdminMain {
             if (o.containsKey("members")) {
                 try (AdminClient admin = cluster(o)) {
                     report = ExportVerifier.verify(
-                            Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), db, admin::session);
+                            Path.of(o.get("ack-log")),
+                            Integer.parseInt(o.get("nas-id")),
+                            byDevice(o),
+                            db,
+                            admin::session);
                 }
             } else {
-                report = ExportVerifier.verify(Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), db, null);
+                report = ExportVerifier.verify(
+                        Path.of(o.get("ack-log")), Integer.parseInt(o.get("nas-id")), byDevice(o), db, null);
             }
             return report(report, out);
         }
@@ -167,6 +176,16 @@ public final class AdminMain {
         out.println("sessions=" + report.sessions());
         out.println("lost=" + report.lost().size());
         return report.ok() ? EXIT_OK : EXIT_FAILED;
+    }
+
+    /** {@code --identity}: {@code source-ip} (default) or {@code nas-identifier}. */
+    private static boolean byDevice(Map<String, String> o) {
+        String identity = o.getOrDefault("identity", "source-ip");
+        return switch (identity) {
+            case "source-ip" -> false;
+            case "nas-identifier" -> true;
+            default -> throw new IllegalArgumentException("--identity: expected source-ip or nas-identifier");
+        };
     }
 
     private static void need(Map<String, String> o, String... keys) {
@@ -197,6 +216,7 @@ public final class AdminMain {
                        admin export-schema  [--type postgres]          (full SQL for DBAs, schema.manage=none)
                        admin verify-export  --jdbc-url <url> [--jdbc-user u --jdbc-password p] --ack-log <acks.csv>
                                             --nas-id <id> [--members ...]   (sessions in the database vs. acks/cluster)
+                       verify-acks/verify-export: [--identity nas-identifier] when the NAS entry identifies devices
                 exit: 0 ok, 1 something missing or no answer, 64 usage""";
     }
 }

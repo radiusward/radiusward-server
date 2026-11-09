@@ -37,13 +37,23 @@ class GatewayAllocationIT {
 
     @Test
     void receiveSubmitCommitRespondDoesNotAllocate() throws Exception {
+        measure(UdpAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OPTIONAL), false);
+    }
+
+    /** Devices behind NAT (ADR 0019): identity lookup, MAC normalisation and the longer keys stay allocation-free. */
+    @Test
+    void deviceIdentityDoesNotAllocate() throws Exception {
+        measure(UdpAgentTest.natRegistry(), true);
+    }
+
+    private static void measure(NasRegistry registry, boolean devices) throws Exception {
         long[] clock = {1_000_000_000L};
         GatewayStats stats = new GatewayStats();
         OneToOneRingBuffer toCluster = UdpAgentTest.ring();
         OneToOneRingBuffer fromCluster = UdpAgentTest.ring();
         UdpAgent agent = new UdpAgent(
                 UdpAgentTest.config(Duration.ZERO, 1024),
-                UdpAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OPTIONAL),
+                registry,
                 UdpAgentTest.FORMATS,
                 toCluster,
                 fromCluster,
@@ -54,7 +64,7 @@ class GatewayAllocationIT {
             client.configureBlocking(false);
             client.connect(new InetSocketAddress("127.0.0.1", agent.localPort()));
 
-            ByteBuffer[] packets = buildPackets(2 * PACKETS);
+            ByteBuffer[] packets = buildPackets(2 * PACKETS, devices);
             ByteBuffer response = ByteBuffer.allocateDirect(4096);
             FakeCluster cluster = new FakeCluster(fromCluster);
 
@@ -128,7 +138,7 @@ class GatewayAllocationIT {
     }
 
     /** Distinct signed interim updates (different session time → different event, different authenticator). */
-    private static ByteBuffer[] buildPackets(int n) {
+    private static ByteBuffer[] buildPackets(int n, boolean devices) {
         ByteBuffer[] packets = new ByteBuffer[n];
         UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
         RadiusPacketEncoder encoder = new RadiusPacketEncoder();
@@ -139,6 +149,8 @@ class GatewayAllocationIT {
                     .uint32(40, 3)
                     .attribute(44, "session-" + (i % 1000))
                     .attribute(1, "user@isp.example")
+                    // no NAS-Identifier: the second identity, the MAC in Called-Station-Id, is normalised
+                    .attribute(devices ? 30 : 31, String.format("AA-BB-CC-DD-EE-%02X:Guest", i % 50))
                     .ipv4(4, 0x7F000001L)
                     .uint32(46, i)
                     .uint32(42, i * 10L)

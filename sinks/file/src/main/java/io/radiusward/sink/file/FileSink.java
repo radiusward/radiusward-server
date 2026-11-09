@@ -139,6 +139,7 @@ public final class FileSink implements AccountingSink {
         field(out, "log_position", e.logPosition());
         field(out, "committed_at", Instant.ofEpochMilli(e.commitTime()).toString());
         field(out, "nas_id", e.nasId());
+        field(out, "nas_device", e.nasDevice());
         field(out, "gateway_id", e.gatewayId());
         field(out, "session_key", e.sessionKey() == null ? null : e.sessionKey().toString());
         field(out, "acct_session_id", e.acctSessionId());
@@ -165,6 +166,7 @@ public final class FileSink implements AccountingSink {
                 .append('"');
         field(out, "version", s.projectionVersion());
         field(out, "nas_id", s.nasId());
+        field(out, "nas_device", s.nasDevice());
         field(out, "acct_session_id", s.acctSessionId());
         field(out, "state", s.state().name().toLowerCase(java.util.Locale.ROOT));
         field(out, "close_cause", s.closeCause().name().toLowerCase(java.util.Locale.ROOT));

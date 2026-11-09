@@ -18,6 +18,11 @@ import java.util.UUID;
  *     value then, and replaces it otherwise
  * @param stoppedAt commit time of the change that closed the session, {@code null} while active
  * @param rawAttributes attributes of the event behind the change, {@code null} for closures
+ * @param nasId the configured NAS entry; it never changes for a session (sinks keep the first one). A closure
+ *     without an event of its own (NAS restart, idle timeout) of a device behind NAT carries the device's scope
+ *     instead, since the replicated state keeps only that
+ * @param nasDevice the device behind the NAS entry (ADR 0019), {@code null} when not known to this change: a sink
+ *     keeps its stored value then
  */
 public record SessionSnapshot(
         UUID sessionKey,
@@ -33,7 +38,42 @@ public record SessionSnapshot(
         long lastReceivedAt,
         Long startedAt,
         Long stoppedAt,
-        byte[] rawAttributes) {
+        byte[] rawAttributes,
+        String nasDevice) {
+
+    /** A snapshot without a device identity. */
+    public SessionSnapshot(
+            UUID sessionKey,
+            long projectionVersion,
+            int nasId,
+            String acctSessionId,
+            State state,
+            CloseCause closeCause,
+            int statusType,
+            Long sessionTime,
+            long inputOctets,
+            long outputOctets,
+            long lastReceivedAt,
+            Long startedAt,
+            Long stoppedAt,
+            byte[] rawAttributes) {
+        this(
+                sessionKey,
+                projectionVersion,
+                nasId,
+                acctSessionId,
+                state,
+                closeCause,
+                statusType,
+                sessionTime,
+                inputOctets,
+                outputOctets,
+                lastReceivedAt,
+                startedAt,
+                stoppedAt,
+                rawAttributes,
+                null);
+    }
 
     public enum State {
         ACTIVE,

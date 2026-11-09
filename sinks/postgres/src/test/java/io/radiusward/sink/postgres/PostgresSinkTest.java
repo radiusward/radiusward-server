@@ -344,7 +344,62 @@ class PostgresSinkTest {
         for (CompletableFuture<PostgresSink> f : opening) {
             f.join().close();
         }
-        assertThat(count("SELECT count(*) FROM schema_version")).isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM schema_version"))
+                .isEqualTo(PostgresSink.migrations().size());
+    }
+
+    @Test
+    void schemaVersionOneWithDataIsUpgradedForDevicesBehindNat() throws Exception {
+        try (Connection c = connect(schema);
+                Statement st = c.createStatement()) {
+            io.radiusward.export.SqlMigrations.apply(
+                    c,
+                    PostgresSink.migrations().subList(0, 1),
+                    io.radiusward.export.SqlMigrations.Manage.AUTO,
+                    "SELECT 1",
+                    "SELECT 1");
+            // a session written by a version-1 sink
+            st.execute("INSERT INTO accounting_session (session_key, nas_id, acct_session_id, state, close_cause,"
+                    + " status_type, session_seconds, input_octets, output_octets, last_received_at,"
+                    + " projection_version) VALUES ('" + SESSION + "', 7, 's1', 1, 0, 3, 60, 600, 1200, now(), 100)");
+        }
+        try (PostgresSink sink = open(Map.of("radacct.view", "true"))) {
+            assertThat(count("SELECT count(*) FROM schema_version")).isEqualTo(2);
+            SessionSnapshot s = session(200, 120, SessionSnapshot.State.ACTIVE, ALICE, "s1");
+            sink.write(batch(1, 100, 200, List.of(event(3, 150, T)), List.of(withDevice(s, 999, "ap-17"))));
+            // a closure does not know the device: the stored one stays
+            sink.write(batch(
+                    1,
+                    200,
+                    300,
+                    List.of(),
+                    List.of(withDevice(session(300, 180, SessionSnapshot.State.STOPPED, null, null), 0x5eed, null))));
+        }
+        assertThat(value("SELECT nas_id || ' ' || nas_device || ' ' || session_seconds FROM accounting_session"))
+                .as("nas_id stays the entry the session was first written with")
+                .isEqualTo("7 ap-17 180");
+        assertThat(value("SELECT nasidentifier FROM radacct")).isEqualTo("ap-17");
+        assertThat(count("SELECT count(*) FROM accounting_event WHERE nas_device IS NULL"))
+                .isEqualTo(1);
+    }
+
+    private static SessionSnapshot withDevice(SessionSnapshot s, int nasId, String device) {
+        return new SessionSnapshot(
+                s.sessionKey(),
+                s.projectionVersion(),
+                nasId,
+                s.acctSessionId(),
+                s.state(),
+                s.closeCause(),
+                s.statusType(),
+                s.sessionTime(),
+                s.inputOctets(),
+                s.outputOctets(),
+                s.lastReceivedAt(),
+                s.startedAt(),
+                s.stoppedAt(),
+                s.rawAttributes(),
+                device);
     }
 
     @Test

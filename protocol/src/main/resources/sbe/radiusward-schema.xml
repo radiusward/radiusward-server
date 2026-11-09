@@ -10,8 +10,8 @@
 <sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
                    package="io.radiusward.protocol"
                    id="7101"
-                   version="2"
-                   semanticVersion="2.0"
+                   version="3"
+                   semanticVersion="3.0"
                    description="radiusward cluster protocol"
                    byteOrder="littleEndian">
     <types>
@@ -63,6 +63,8 @@
             <choice name="sessionTimePresent">0</choice>
             <choice name="eventTimestampPresent">1</choice>
             <choice name="sessionIdPresent">2</choice>
+            <choice name="deviceUnknown" sinceVersion="3"
+                    description="the NAS entry identifies devices by attribute, but the request carried none">3</choice>
         </set>
     </types>
 
@@ -81,8 +83,14 @@
         <field name="eventTimestamp" id="11" type="uint32"/>
         <field name="inputOctets" id="12" type="int64" description="64 bit, gigawords combined"/>
         <field name="outputOctets" id="13" type="int64" description="64 bit, gigawords combined"/>
+        <field name="nasClientId" id="16" type="int32" sinceVersion="3"
+               description="the configured NAS entry; nasId is its device scope (equal unless identity is set)"/>
+        <field name="identityFingerprint" id="17" type="int32" sinceVersion="3"
+               description="hash of the entry's identity setting; equal on every gateway"/>
         <data name="sessionId" id="14" type="varStringEncoding"/>
         <data name="rawAttributes" id="15" type="varDataEncoding" description="attribute section of the request, for export"/>
+        <data name="nasDevice" id="18" type="varStringEncoding" sinceVersion="3"
+              description="normalised device identity; empty for identity source-ip or when missing"/>
     </sbe:message>
 
     <!-- cluster -> gateway -->

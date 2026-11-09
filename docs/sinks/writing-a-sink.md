@@ -32,7 +32,9 @@ attributes: `common(raw)` for typed columns, `json(raw, exclude)` for the canoni
 | events | **insert if absent** by `eventId` | after a crash or a lease handover the last batch can be written again |
 | sessions | **update only if newer** by `projectionVersion` | replays and late batches must never move a session back |
 
-Values a session snapshot does not carry (`null`: a closure has no session id or attributes) keep what the store
+`nasId` is the configured NAS entry and `nasDevice` the device behind it when the entry sets `identity`
+([ADR 0019](../adr/0019-nas-device-identity.md)); keep a session's first `nasId`, and its stored `nasDevice` when a
+snapshot carries none. Values a session snapshot does not carry (`null`: a closure has no session id or attributes) keep what the store
 has; a value it carries replaces the stored one. That includes `startedAt`: the Start's Event-Timestamp, or for a
 session first seen by an Interim or Stop that event's time minus its session time, replaced when the late Start
 arrives. Events carry the state machine's outcome: `APPLIED`, `STALE` (older than the session's progress) or

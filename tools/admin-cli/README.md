@@ -22,6 +22,10 @@ radiusward admin verify-export  --jdbc-url jdbc:postgresql://db/radius --jdbc-us
 | `export-schema` | the full SQL of a built-in sink, with its `schema_version` rows, for DBAs (`schema.manage=none`) |
 | `verify-export` | every session of an ack log is in `accounting_session` with at least the acknowledged progress; with `--members` it must equal the replicated session |
 
+`verify-acks` and `verify-export` take `--identity nas-identifier` when the NAS entry identifies the devices behind
+it by NAS-Identifier ([ADR 0019](../../docs/adr/0019-nas-device-identity.md)): the session keys then include the ack
+log's `nas_identifier`.
+
 - `--egress-host` is an address of this machine the members can reach: `localhost` locally, the container
   address inside Docker.
 - Exit codes: `0` ok, `1` something missing or no answer, `64` usage.

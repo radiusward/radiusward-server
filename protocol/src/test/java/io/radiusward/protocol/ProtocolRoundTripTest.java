@@ -31,14 +31,18 @@ class ProtocolRoundTripTest {
                 .sessionTime(300L)
                 .eventTimestamp(1_780_000_000L)
                 .inputOctets(13_958_643_712L)
-                .outputOctets(1L);
+                .outputOctets(1L)
+                .nasClientId(1000)
+                .identityFingerprint(-7);
         encoder.flags()
                 .clear()
                 .sessionTimePresent(true)
                 .eventTimestampPresent(true)
-                .sessionIdPresent(true);
+                .sessionIdPresent(true)
+                .deviceUnknown(false);
         encoder.sessionId("00000A1B");
         encoder.putRawAttributes(RAW, 0, RAW.length);
+        encoder.nasDevice("ap-17");
         return MessageHeaderEncoder.ENCODED_LENGTH + encoder.encodedLength();
     }
 
@@ -68,6 +72,10 @@ class ProtocolRoundTripTest {
         byte[] raw = new byte[d.rawAttributesLength()];
         d.getRawAttributes(raw, 0, raw.length);
         assertThat(raw).containsExactly(RAW);
+        assertThat(d.nasClientId()).isEqualTo(1000);
+        assertThat(d.identityFingerprint()).isEqualTo(-7);
+        assertThat(d.flags().deviceUnknown()).isFalse();
+        assertThat(d.nasDevice()).isEqualTo("ap-17");
         assertThat(MessageHeaderDecoder.ENCODED_LENGTH + d.encodedLength()).isEqualTo(length);
     }
 
@@ -212,7 +220,7 @@ class ProtocolRoundTripTest {
         v2.putRawAttributes(RAW, 0, RAW.length);
 
         headerDecoder.wrap(buffer, 0);
-        assertThat(headerDecoder.version()).isEqualTo(3);
+        assertThat(headerDecoder.version()).isEqualTo(4);
         AccountingCommandDecoder v1 = new AccountingCommandDecoder().wrapAndApplyHeader(buffer, 0, headerDecoder);
         assertThat(v1.correlationId()).isEqualTo(99L);
         assertThat(v1.nasId()).isEqualTo(3);

@@ -30,8 +30,9 @@ public final class ServiceStats {
 
     private static final int EXPORT_FLOOR = 14;
     private static final int EXPORT_LAG_REJECTED = 15;
+    private static final int IDENTITY_MISMATCHES = 16;
 
-    private final AtomicLongArray values = new AtomicLongArray(16);
+    private final AtomicLongArray values = new AtomicLongArray(17);
     /** Log position each member reported for itself; -1 = never reported (indexed by member id). */
     private final AtomicLongArray memberPositions = new AtomicLongArray(ExportState.MAX_MEMBERS);
 
@@ -52,6 +53,18 @@ public final class ServiceStats {
         for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
             memberPositions.setRelease(m, export.memberReported(m) ? export.memberPosition(m) : -1);
         }
+    }
+
+    void recordIdentityMismatch() {
+        values.getAndIncrement(IDENTITY_MISMATCHES);
+    }
+
+    /**
+     * Commands whose NAS entry carried another identity setting than the entry's first command seen by this member
+     * (gateways configured differently, ADR 0019; since start).
+     */
+    public long identityMismatches() {
+        return values.getAcquire(IDENTITY_MISMATCHES);
     }
 
     void recordExportLagRejection() {

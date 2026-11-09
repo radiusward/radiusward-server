@@ -24,7 +24,8 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
 
 ```text
                      NAS devices
-                          │ UDP (source IP identifies the NAS and its shared secret)
+                          │ UDP (source IP identifies the NAS entry and its shared secret;
+                          │      behind NAT an attribute tells the devices apart, ADR 0019)
             ┌─────────────┴─────────────┐
             ▼                           ▼
    ┌─────────────────┐         ┌─────────────────┐
@@ -60,7 +61,7 @@ radiusward replaces the accounting part of a RADIUS server. Authentication and a
 ### Gateway (implemented in Phase 1, failover hardened in Phase 2) — built on `radius-codec`
 
 - **UdpAgent** owns a NIO `DatagramChannel`: receive, validate (`RadiusPacket.wrap`), look up the NAS by
-  source IP, verify the Request Authenticator (and Message-Authenticator if present), extract the hot
+  source IP (and the device behind it by `identity`, [ADR 0019](adr/0019-nas-device-identity.md)), verify the Request Authenticator (and Message-Authenticator if present), extract the hot
   attributes, answer retransmits from the **response cache** (RFC 5080 §2.2.2; key = source address,
   Identifier, Request Authenticator), attach duplicates of in-flight requests instead of resubmitting.
   The same agent sends the Accounting-Response, so replies leave from the socket the NAS sent to.

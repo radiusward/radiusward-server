@@ -316,6 +316,47 @@ class AccountingStateMachineTest {
     }
 
     @Test
+    void accountingOnOfOneDeviceBehindNatLeavesTheOthersAlone() {
+        int apA = 0x1111; // device scopes of two APs behind one NAS entry (ADR 0019)
+        int apB = 0x2222;
+        sm.apply(1, 1, 11, 0, apA, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
+        sm.apply(2, 2, 21, 0, apB, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
+        assertThat(sm.apply(0, 0, 77, 1, apA, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000))
+                .isEqualTo(APPLIED);
+        assertThat(sm.store().state(sm.store().find(1, 1))).isEqualTo(SessionStore.STOPPED);
+        assertThat(sm.store().state(sm.store().find(2, 2))).isEqualTo(SessionStore.ACTIVE);
+    }
+
+    @Test
+    void accountingOnWithoutDeviceIdentityStopsNothing() {
+        int entry = 1001; // the device could not be identified: its scope falls back to the whole entry
+        sm.apply(1, 1, 11, 0, entry, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
+        int flags = FLAG_EVENT_TIMESTAMP | AccountingStateMachine.FLAG_DEVICE_UNKNOWN;
+        assertThat(sm.apply(0, 0, 78, 1, entry, STATUS_ACCOUNTING_ON, flags, 0, 5, 0, 0, 2000))
+                .as("acknowledged")
+                .isEqualTo(APPLIED);
+        assertThat(sm.store().state(sm.store().find(1, 1))).isEqualTo(SessionStore.ACTIVE);
+        assertThat(sm.apply(0, 0, 78, 1, entry, STATUS_ACCOUNTING_ON, flags, 0, 5, 0, 0, 3000))
+                .as("retransmission")
+                .isEqualTo(DUPLICATE);
+        // the flag is not kept with sessions
+        sm.apply(
+                1,
+                1,
+                12,
+                60,
+                entry,
+                STATUS_INTERIM,
+                BOTH | AccountingStateMachine.FLAG_DEVICE_UNKNOWN,
+                60,
+                1_780_000_060L,
+                5,
+                5,
+                4000);
+        assertThat(sm.store().flags(sm.store().find(1, 1))).isEqualTo((byte) BOTH);
+    }
+
+    @Test
     void otherStatusTypesUseTheExactWindow() {
         assertThat(sm.apply(0, 0, 1, 2, NAS, 15, 0, 0, 0, 0, 0, 1000)).isEqualTo(APPLIED);
         assertThat(sm.apply(0, 0, 1, 2, NAS, 15, 0, 0, 0, 0, 0, 2000)).isEqualTo(DUPLICATE);

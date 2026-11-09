@@ -24,11 +24,14 @@ radclient decode <hex|file> --fixture [--anonymise] [--comment "Cisco ASR 1001-X
 # load: sessions over simulated NAS, Start/Interim/Stop, paced, retransmitting, with an ack log
 radclient load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 --nas 10 --sessions 1000 \
                --rate 1000 --duration 60s --interim 10s [--timeout 3s] [--retries 3] [--retry-other-server] \
-               [--no-stop] [--ack-log acks.csv] [--first-session 0]
+               [--no-stop] [--ack-log acks.csv] [--first-session 0] [--shared-session-ids]
 ```
 
 `load` prints sent/acked/failed/retransmissions and p50/p99/max latency; the ack log has one line per event
-(`session_id,status,session_time,acked,attempts,latency_ms`). It retransmits the identical datagram like a
+(`session_id,status,session_time,acked,attempts,latency_ms,nas_identifier`). Each simulated NAS sends its own
+NAS-Identifier (`nas<n>`) from this one address, like access points behind NAT; `--shared-session-ids` makes them
+reuse the same Acct-Session-Ids, which only a NAS entry with `identity = nas-identifier` keeps apart
+([ADR 0019](../../docs/adr/0019-nas-device-identity.md)). It retransmits the identical datagram like a
 NAS, so it exercises the gateways' response caches and the cluster's dedup. `radiusward admin verify-acks`
 checks an ack log against the replicated state. `--sessions` is the total; the request rate is at most
 sessions / interim. Several generators in parallel need distinct `--first-session` values.

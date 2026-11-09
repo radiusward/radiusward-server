@@ -45,7 +45,8 @@ also after a leader failover and through a different gateway.
 A duplicate is answered with an Accounting-Response — the original outcome — and is **not** applied
 or exported a second time.
 
-**Logical event key** (per vendor `EventKeyStrategy`, ADR 0003): NAS identity, `Acct-Session-Id`,
+**Logical event key** (per vendor `EventKeyStrategy`, ADR 0003): NAS identity (the entry, plus the device behind it
+when the entry sets `identity`, [ADR 0019](adr/0019-nas-device-identity.md)), `Acct-Session-Id`,
 `Acct-Status-Type`, and `Acct-Session-Time` or `Event-Timestamp`. It deliberately **excludes**
 `Acct-Delay-Time` (changes on every retransmit, which also changes the authenticator) and the RADIUS
 Identifier (8 bits, reused). Interim updates are deduplicated per session: an interim that is not newer

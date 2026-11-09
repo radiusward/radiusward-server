@@ -21,8 +21,9 @@ import org.agrona.collections.Int2ObjectHashMap;
 
 /**
  * The configured NAS clients, looked up by source address. IPv4 exact matches are allocation-free
- * ({@code Inet4Address.hashCode()} is the address); CIDR ranges are scanned in configuration order. The NAS
- * identity always comes from here, never from attributes in the packet.
+ * ({@code Inet4Address.hashCode()} is the address); CIDR ranges are scanned in configuration order. The entry (and
+ * its secret) always comes from the source address; attributes in the packet only tell apart the devices behind one
+ * entry when {@code identity} is set (ADR 0019).
  *
  * <pre>
  * nas.core.address = 10.255.0.1          # or a CIDR range: 10.0.0.0/24
@@ -30,6 +31,7 @@ import org.agrona.collections.Int2ObjectHashMap;
  * nas.core.vendor  = mikrotik
  * nas.core.message-authenticator = optional   # required | optional | off
  * nas.core.id      = 1001                # optional, defaults to a hash of the name
+ * nas.core.identity = source-ip          # or e.g. nas-identifier, called-station-id (devices behind NAT)
  * </pre>
  */
 public final class NasRegistry {
@@ -77,6 +79,12 @@ public final class NasRegistry {
                     NasClient.MessageAuthenticatorPolicy.class,
                     NasClient.MessageAuthenticatorPolicy.OPTIONAL);
             int id = config.integer(prefix + "id", fnv1a(name));
+            NasClient.Identity[] identity = identity(prefix, config.string(prefix + "identity", "source-ip"));
+            if (prefixLength == 0 && identity.length == 0) {
+                throw new ConfigException(prefix + "address: " + address + " accepts every source address, so the"
+                        + " devices behind it must be told apart: set " + prefix + "identity (e.g. nas-identifier,"
+                        + " called-station-id)");
+            }
             clients.add(new NasClient(
                     name,
                     id,
@@ -84,7 +92,8 @@ public final class NasRegistry {
                     prefixLength,
                     secret,
                     config.string(prefix + "vendor", "default").toLowerCase(Locale.ROOT),
-                    policy));
+                    policy,
+                    identity));
         }
         if (clients.isEmpty()) {
             throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");
@@ -121,6 +130,36 @@ public final class NasRegistry {
             h *= 0x01000193;
         }
         return h;
+    }
+
+    /** {@code source-ip} (empty) or a list of distinct device attributes, first present wins. */
+    static NasClient.Identity[] identity(String prefix, String text) {
+        List<NasClient.Identity> list = new ArrayList<>();
+        String[] parts = text.split(",");
+        for (String part : parts) {
+            String v = part.trim().toLowerCase(Locale.ROOT);
+            if (v.equals("source-ip")) {
+                if (parts.length > 1) {
+                    throw new ConfigException(prefix + "identity: source-ip cannot be combined with attributes");
+                }
+                return new NasClient.Identity[0];
+            }
+            NasClient.Identity match = null;
+            for (NasClient.Identity i : NasClient.Identity.values()) {
+                if (i.configName().equals(v)) {
+                    match = i;
+                }
+            }
+            if (match == null) {
+                throw new ConfigException(prefix + "identity: unknown value \"" + v
+                        + "\"; expected source-ip or a list of nas-identifier, called-station-id, nas-ip-address");
+            }
+            if (list.contains(match)) {
+                throw new ConfigException(prefix + "identity: " + v + " listed twice");
+            }
+            list.add(match);
+        }
+        return list.toArray(NasClient.Identity[]::new);
     }
 
     private static int parsePrefix(String key, String text) {

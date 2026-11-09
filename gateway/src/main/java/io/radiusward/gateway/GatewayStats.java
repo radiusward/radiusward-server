@@ -17,6 +17,13 @@ public final class GatewayStats {
         AUTHENTICATOR_FAILED,
         MESSAGE_AUTHENTICATOR_FAILED,
         MISSING_SESSION_ID,
+        /** the NAS entry identifies devices by attribute, but the request had none of them (ADR 0019) */
+        IDENTITY_MISSING,
+        /**
+         * a later identity attribute of the list was used: if the same device sends the first one on other packets,
+         * its sessions split (ADR 0019)
+         */
+        IDENTITY_FALLBACK,
         CACHE_HITS,
         RETRANSMIT_IN_FLIGHT,
         RESUBMITTED,

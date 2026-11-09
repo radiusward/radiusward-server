@@ -376,6 +376,7 @@ public final class ClusterNode implements AutoCloseable {
                 .field("diskFreeBytes", config.dataDir().getUsableSpace())
                 .field("snapshots", s.snapshots())
                 .field("egressDropped", s.egressDropped())
+                .field("identityMismatches", s.identityMismatches())
                 .object("log")
                 .field("dropped", NonBlockingQueueFullPolicy.dropped())
                 .end();
@@ -433,6 +434,10 @@ public final class ClusterNode implements AutoCloseable {
                         "radiusward_accounting_export_lag_rejections_total",
                         "Accounting not acknowledged because a required sink was over its maxLag")
                 .sample(s.exportLagRejections(), "member", member);
+        w.counter(
+                        "radiusward_nas_identity_mismatches_total",
+                        "Accounting from gateways whose nas.<name>.identity differs from the entry's first one seen")
+                .sample(s.identityMismatches(), "member", member);
         w.gauge("radiusward_sessions", "Sessions in the replicated state")
                 .sample(s.activeSessions(), "member", member, "state", "active")
                 .sample(s.stoppedSessions(), "member", member, "state", "stopped");

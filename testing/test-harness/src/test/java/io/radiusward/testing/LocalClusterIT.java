@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.gateway.EventKeys;
+import io.radiusward.gateway.NasRegistry;
 import io.radiusward.protocol.SessionStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -269,6 +270,76 @@ class LocalClusterIT {
             assertThat(state.stale()).isEqualTo(1);
             assertThat(state.active()).isEqualTo(1);
         }
+    }
+
+    @Test
+    void devicesBehindOneAddressKeepTheirSessionsApart() throws Exception {
+        cluster = LocalCluster.start(dir.toFile(), 3, 0);
+        NasRegistry byDevice = LocalCluster.registry(io.radiusward.gateway.NasClient.Identity.NAS_IDENTIFIER);
+        cluster.startGateway(1, 0, byDevice);
+        cluster.startGateway(2, 0, byDevice);
+        cluster.awaitLeader();
+        cluster.awaitGatewaysConnected();
+        Path ackLog = dir.resolve("acks.csv");
+        // 50 access points behind one address, each numbering its 10 sessions 00000000..00000009
+        LoadGenerator.Result result = new LoadGenerator(
+                        new LoadGenerator.Settings(
+                                List.of(
+                                        new InetSocketAddress(
+                                                "127.0.0.1", cluster.gateway(0).radiusPort()),
+                                        new InetSocketAddress(
+                                                "127.0.0.1", cluster.gateway(1).radiusPort())),
+                                SECRET,
+                                50,
+                                500,
+                                1000,
+                                Duration.ofSeconds(5),
+                                Duration.ofSeconds(2),
+                                Duration.ofSeconds(2),
+                                3,
+                                true,
+                                false,
+                                ackLog,
+                                0,
+                                true),
+                        new PrintStream(System.out))
+                .run();
+        assertThat(result.failed()).isZero();
+        cluster.awaitConverged();
+        try (AdminClient admin = cluster.admin()) {
+            assertThat(admin.state().active())
+                    .as("500 sessions, though only 10 distinct ids")
+                    .isEqualTo(500);
+            assertThat(io.radiusward.tools.admin.AckVerifier.verify(ackLog, LocalCluster.NAS_ID, true, admin::session)
+                            .lost())
+                    .isEmpty();
+        }
+
+        // access point nas3 reboots: only its 10 sessions stop
+        exchange(cluster.gateway(0).radiusPort(), accountingOn(1, "nas3"));
+        // an Accounting-On without NAS-Identifier is acknowledged, but cannot say whose sessions to stop
+        exchange(cluster.gateway(1).radiusPort(), accountingOn(2, null));
+        cluster.awaitConverged();
+        try (AdminClient admin = cluster.admin()) {
+            AdminClient.State state = admin.state();
+            assertThat(state.active()).isEqualTo(490);
+            assertThat(state.stopped()).isEqualTo(10);
+        }
+        assertThat(cluster.gateway(1).stats().get(io.radiusward.gateway.GatewayStats.Counter.IDENTITY_MISSING))
+                .isEqualTo(1);
+        assertThat(cluster.awaitLeader().stats().identityMismatches()).isZero();
+    }
+
+    static byte[] accountingOn(int id, String nasIdentifier) {
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
+        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
+        enc.header(RadiusCode.ACCOUNTING_REQUEST, id).uint32(40, 7).uint32(55, System.currentTimeMillis() / 1000);
+        if (nasIdentifier != null) {
+            enc.attribute(32, nasIdentifier);
+        }
+        int length = enc.finish();
+        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
+        return Arrays.copyOf(buffer.byteArray(), length);
     }
 
     @Test

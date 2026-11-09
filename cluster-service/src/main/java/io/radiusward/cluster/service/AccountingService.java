@@ -49,6 +49,10 @@ public final class AccountingService implements ClusteredService {
     private final LogApplier applier;
     private final long sweepIntervalMs;
     private final ServiceStats stats = new ServiceStats();
+    /** Identity setting per NAS entry as first seen (ADR 0019); not replicated state, only for the mismatch counter. */
+    private final org.agrona.collections.Int2IntHashMap identityByNas =
+            new org.agrona.collections.Int2IntHashMap(Integer.MIN_VALUE);
+
     private final SnapshotCodec snapshotCodec = new SnapshotCodec();
 
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
@@ -161,6 +165,7 @@ public final class AccountingService implements ClusteredService {
         if (outcome == Outcomes.REJECTED_EXPORT_LAG) {
             stats.recordExportLagRejection();
         }
+        checkIdentity(applier.command());
         if (applier.claimSweepTimer()) {
             scheduleSweep(timestamp);
         }
@@ -190,6 +195,28 @@ public final class AccountingService implements ClusteredService {
             }
         }
         publishStats(header.position());
+    }
+
+    /** Counts commands of a NAS entry whose gateway has another identity setting than the first one seen. */
+    private void checkIdentity(io.radiusward.protocol.AccountingCommandDecoder command) {
+        if (command.actingVersion() < 3) {
+            return; // written before device identities existed
+        }
+        int nas = command.nasClientId();
+        int fingerprint = command.identityFingerprint();
+        int known = identityByNas.get(nas);
+        if (known == Integer.MIN_VALUE) {
+            identityByNas.put(nas, fingerprint);
+        } else if (known != fingerprint) {
+            stats.recordIdentityMismatch();
+            if (stats.identityMismatches() == 1) {
+                LOG.warn(
+                        "NAS entry {}: gateways disagree on nas.<name>.identity (gateway {}); sessions of its devices"
+                                + " are split between them — configure every gateway alike",
+                        nas,
+                        command.gatewayId());
+            }
+        }
     }
 
     private void onCheckpoint(ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {

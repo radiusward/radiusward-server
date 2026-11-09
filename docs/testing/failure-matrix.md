@@ -47,6 +47,8 @@ Status: ✅ covered · 🔜 planned (phase).
 | follower killed (-9) and restarted at once | waits for the stale mark file, catches up, same digest | e2e `NodeRestartIT` | ✅ |
 | snapshot + restart of every member | dedup state restored, old events are duplicates | e2e `SnapshotRestoreIT`, `SnapshotAndReplayTest` | ✅ |
 | Accounting-On/Off | all active sessions of the NAS stopped | e2e `AccountingOnOffIT`, `AccountingStateMachineTest` | ✅ |
+| Accounting-On/Off from one device behind NAT | only that device's sessions stopped; without its identity none | e2e `DevicesBehindNatIT`, `LocalClusterIT`, `AccountingStateMachineTest` | ✅ |
+| Devices behind NAT reuse Acct-Session-Ids | separate sessions per device (`identity`) | `LocalClusterIT` (50 APs, 10 ids), `UdpAgentTest`, `EventKeysTest` | ✅ |
 | session capacity reached | new sessions rejected (no ACK), Stops still applied | `AccountingStateMachineTest.capacity` | ✅ |
 | lost Stop | session removed after the idle timeout | `AccountingStateMachineTest.sweep…` | ✅ |
 | duplicates in any position | never change the result | `DuplicatesPropertyTest` (jqwik) | ✅ |

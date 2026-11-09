@@ -66,9 +66,17 @@ final class Nas implements AutoCloseable {
     }
 
     static byte[] request(int id, int status, String sessionId, long sessionTime, int delay) {
+        return request(id, status, sessionId, sessionTime, delay, null);
+    }
+
+    /** A request from a device behind NAT, identified by {@code nasIdentifier} ({@code null}: none). */
+    static byte[] request(int id, int status, String sessionId, long sessionTime, int delay, String nasIdentifier) {
         UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
         RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
         enc.header(RadiusCode.ACCOUNTING_REQUEST, id).uint32(40, status);
+        if (nasIdentifier != null) {
+            enc.attribute(32, nasIdentifier);
+        }
         if (sessionId != null) {
             enc.attribute(44, sessionId);
         }
@@ -89,9 +97,15 @@ final class Nas implements AutoCloseable {
     }
 
     static long[] sessionKey(String sessionId) {
+        return sessionKey(sessionId, "");
+    }
+
+    /** The session key of a device's session when the NAS entry identifies devices by NAS-Identifier. */
+    static long[] sessionKey(String sessionId, String nasIdentifier) {
         EventKeys keys = new EventKeys();
         UnsafeBuffer id = new UnsafeBuffer(sessionId.getBytes(StandardCharsets.US_ASCII));
-        keys.compute(LocalCluster.NAS_ID, 0, 0, 0, 0, 0, 0, id, 0, id.capacity());
+        UnsafeBuffer device = new UnsafeBuffer(nasIdentifier.getBytes(StandardCharsets.US_ASCII));
+        keys.compute(LocalCluster.NAS_ID, device, device.capacity(), 0, 0, 0, 0, 0, 0, id, 0, id.capacity());
         return new long[] {keys.sessionHi(), keys.sessionLo()};
     }
 

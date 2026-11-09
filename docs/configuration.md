@@ -99,3 +99,20 @@ File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 | `nas.<name>.vendor` | `default` | vendor profile |
 | `nas.<name>.message-authenticator` | `optional` | `required` \| `optional` \| `off` |
 | `nas.<name>.id` | FNV-1a hash of the name | identity used in event keys — must be identical on every gateway |
+| `nas.<name>.identity` | `source-ip` | devices behind this entry (NAT, cloud Wi-Fi): `nas-identifier`, `called-station-id`, `nas-ip-address`, or a list (first present wins); required for `0.0.0.0/0`. Must be identical on every gateway |
+
+**Devices behind NAT** ([ADR 0019](adr/0019-nas-device-identity.md)). When many access points reach the gateways
+through one address, set `identity` so their sessions stay apart and an Accounting-On stops only the rebooted
+device's sessions:
+
+```properties
+nas.meraki.address  = 203.0.113.10        # the site's NAT address; one entry per fleet or site
+nas.meraki.secret   = ${env:MERAKI_SECRET}
+nas.meraki.identity = nas-ip-address      # the attribute these devices send in EVERY accounting packet
+nas.meraki.message-authenticator = required
+```
+
+Pick the attribute the devices send in every Start, Interim and Stop: a session whose packets resolve to different
+attributes splits (watch `identity_fallback`). Check with a capture (`radclient decode`). A private NAS-IP-Address
+can repeat across sites — one entry per site address, or NAS-Identifier. Changing `identity` changes session keys:
+active sessions continue as new ones, the old ones end by the idle timeout.

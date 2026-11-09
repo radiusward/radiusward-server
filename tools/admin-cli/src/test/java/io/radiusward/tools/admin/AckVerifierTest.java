@@ -38,8 +38,38 @@ class AckVerifierTest {
                 "nas0-2,3,10,1,1,1.0",
                 "nas0-2,2,10,1,2,1.0",
                 ""));
-        assertThat(last.get("nas0-1")).isEqualTo(new AckVerifier.Expected("nas0-1", 3, 10));
-        assertThat(last.get("nas0-2")).isEqualTo(new AckVerifier.Expected("nas0-2", 2, 10));
+        assertThat(last.get("nas0-1")).isEqualTo(new AckVerifier.Expected("nas0-1", 3, 10, ""));
+        assertThat(last.get("nas0-2")).isEqualTo(new AckVerifier.Expected("nas0-2", 2, 10, ""));
+    }
+
+    @Test
+    void devicesWithTheSameSessionIdAreVerifiedSeparately() throws Exception {
+        Path log = dir.resolve("devices.csv");
+        Files.write(
+                log,
+                List.of(
+                        HEADER + ",nas_identifier",
+                        "00000001,3,30,1,1,1,nas0",
+                        "00000001,3,60,1,1,1,nas1",
+                        "00000001,2,90,1,1,1,nas1"),
+                StandardCharsets.UTF_8);
+        assertThat(AckVerifier.lastAcknowledged(Files.readAllLines(log)))
+                .containsOnlyKeys("nas0/00000001", "nas1/00000001");
+        Map<String, AdminClient.Session> state = new HashMap<>();
+        io.radiusward.gateway.EventKeys keys = new io.radiusward.gateway.EventKeys();
+        AckVerifier.sessionKey(keys, 7, true, new AckVerifier.Expected("00000001", 3, 30, "nas0"));
+        state.put(keys.sessionHi() + ":" + keys.sessionLo(), session(SessionStatus.ACTIVE, 30));
+        AckVerifier.sessionKey(keys, 7, true, new AckVerifier.Expected("00000001", 2, 90, "nas1"));
+        state.put(keys.sessionHi() + ":" + keys.sessionLo(), session(SessionStatus.STOPPED, 90));
+
+        AckVerifier.Report report = AckVerifier.verify(
+                log, 7, true, (hi, lo) -> state.getOrDefault(hi + ":" + lo, session(SessionStatus.UNKNOWN, 0)));
+        assertThat(report.sessions()).isEqualTo(2);
+        assertThat(report.lost()).isEmpty();
+        // read as one NAS (source-ip), the two devices' sessions are not found under the plain keys
+        AckVerifier.Report plain = AckVerifier.verify(
+                log, 7, false, (hi, lo) -> state.getOrDefault(hi + ":" + lo, session(SessionStatus.UNKNOWN, 0)));
+        assertThat(plain.lost()).hasSize(2).allMatch(l -> l.startsWith("nas"));
     }
 
     @Test
@@ -86,6 +116,8 @@ class AckVerifierTest {
         assertThat(AdminMain.run(new String[] {"verify-acks", "--members", "x"}, o, e))
                 .isEqualTo(AdminMain.EXIT_USAGE);
         assertThat(AdminMain.run(new String[] {"state", "--members"}, o, e)).isEqualTo(AdminMain.EXIT_USAGE);
+        assertThat(AdminMain.run(new String[] {"state", "--members", "x", "--identity", "mac"}, o, e))
+                .isEqualTo(AdminMain.EXIT_USAGE);
         assertThat(err.toString(StandardCharsets.UTF_8)).contains("usage: admin state");
     }
 

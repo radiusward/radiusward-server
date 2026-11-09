@@ -36,8 +36,11 @@ import org.agrona.concurrent.UnsafeBuffer;
  * Every event's outcome goes to the ack log, so tests can check that each acknowledged event is in the
  * cluster state.
  *
- * <p>All simulated NAS share this machine's address, so the gateway sees one NAS; session ids are unique
- * ({@code nas<n>-<s>}) and the simulated NAS is reported in {@code NAS-Identifier}.
+ * <p>All simulated NAS share this machine's address, so the gateway sees one NAS entry, like access points behind
+ * NAT; each simulated NAS is reported in {@code NAS-Identifier} ({@code nas<n>}). Session ids are unique
+ * ({@code nas<n>-<s>}), or with {@code sharedSessionIds} repeat across the simulated NAS ({@code %08X} of the
+ * session's number on its NAS), as devices numbering sessions from boot do — only an entry that identifies devices
+ * (ADR 0019) keeps them apart.
  */
 public final class LoadGenerator {
 
@@ -54,7 +57,40 @@ public final class LoadGenerator {
             boolean retryOtherServer,
             boolean stopAtEnd,
             Path ackLog,
-            int firstSession) {
+            int firstSession,
+            boolean sharedSessionIds) {
+
+        /** Unique session ids. */
+        public Settings(
+                List<InetSocketAddress> servers,
+                byte[] secret,
+                int nas,
+                int sessions,
+                int rate,
+                Duration duration,
+                Duration interim,
+                Duration timeout,
+                int retries,
+                boolean retryOtherServer,
+                boolean stopAtEnd,
+                Path ackLog,
+                int firstSession) {
+            this(
+                    servers,
+                    secret,
+                    nas,
+                    sessions,
+                    rate,
+                    duration,
+                    interim,
+                    timeout,
+                    retries,
+                    retryOtherServer,
+                    stopAtEnd,
+                    ackLog,
+                    firstSession,
+                    false);
+        }
 
         /** Sessions numbered from 0. */
         public Settings(
@@ -116,6 +152,7 @@ public final class LoadGenerator {
 
     /** One request in flight. */
     private static final class Request {
+        String device;
         String sessionId;
         int status;
         long sessionTime;
@@ -181,7 +218,7 @@ public final class LoadGenerator {
                         ? null
                         : Files.newBufferedWriter(settings.ackLog(), StandardCharsets.UTF_8)) {
             if (log != null) {
-                log.write("session_id,status,session_time,acked,attempts,latency_ms\n");
+                log.write("session_id,status,session_time,acked,attempts,latency_ms,nas_identifier\n");
             }
             int channels = Math.max(
                     2, (settings.rate() * (int) Math.max(1, settings.timeout().toSeconds())) / 200 + 1);
@@ -340,7 +377,10 @@ public final class LoadGenerator {
         Request r = new Request();
         int session = settings.firstSession() + d.session();
         int nasIndex = session % settings.nas();
-        r.sessionId = "nas" + nasIndex + "-" + session;
+        r.device = "nas" + nasIndex;
+        r.sessionId = settings.sharedSessionIds()
+                ? String.format("%08X", session / settings.nas())
+                : r.device + "-" + session;
         r.status = d.status();
         r.sessionTime = d.sessionTime();
         return r;
@@ -409,7 +449,7 @@ public final class LoadGenerator {
                 .uint32(40, r.status)
                 .attribute(44, r.sessionId)
                 .attribute(1, r.sessionId + "@load.example")
-                .attribute(32, r.sessionId.substring(0, r.sessionId.indexOf('-')))
+                .attribute(32, r.device)
                 .ipv4(4, 0x7F000001L)
                 .uint32(55, 1_780_000_000L + r.sessionTime);
         if (r.status != 1) {
@@ -440,7 +480,7 @@ public final class LoadGenerator {
     private static void record(BufferedWriter log, Request r, boolean acked, long latencyMicros) throws IOException {
         if (log != null) {
             log.write(r.sessionId + "," + r.status + "," + r.sessionTime + "," + (acked ? 1 : 0) + "," + r.attempts
-                    + "," + String.format("%.3f", latencyMicros / 1000.0) + "\n");
+                    + "," + String.format("%.3f", latencyMicros / 1000.0) + "," + r.device + "\n");
         }
     }
 

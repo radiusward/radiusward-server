@@ -38,6 +38,7 @@ final class ProcessCluster implements AutoCloseable {
     private final Map<String, Integer> radiusPorts = new LinkedHashMap<>();
     private final Map<String, Process> processes = new LinkedHashMap<>();
     private final Map<String, String> extraGatewayConfig = new LinkedHashMap<>();
+    private String extraNasConfig = "";
     private final HttpClient http =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
 
@@ -63,6 +64,13 @@ final class ProcessCluster implements AutoCloseable {
     /** Extra properties for one gateway (e.g. debug settings); call before starting it. */
     ProcessCluster gatewayConfig(String gateway, String properties) throws IOException {
         extraGatewayConfig.put(gateway, properties);
+        writeConfig();
+        return this;
+    }
+
+    /** Extra properties for the NAS entry {@code nas.local.*} on every gateway; call before starting them. */
+    ProcessCluster nasConfig(String properties) throws IOException {
+        extraNasConfig = properties;
         writeConfig();
         return this;
     }
@@ -106,11 +114,13 @@ final class ProcessCluster implements AutoCloseable {
                             managementPorts.get(g),
                             extraGatewayConfig.getOrDefault(g, "")));
         }
-        Files.writeString(dir.resolve("nas-clients.properties"), """
+        Files.writeString(
+                dir.resolve("nas-clients.properties"), """
                 nas.local.address=127.0.0.1
                 nas.local.secret=%s
                 nas.local.id=%d
-                """.formatted(SECRET, LocalCluster.NAS_ID));
+                %s
+                """.formatted(SECRET, LocalCluster.NAS_ID, extraNasConfig));
     }
 
     void startAll() throws Exception {

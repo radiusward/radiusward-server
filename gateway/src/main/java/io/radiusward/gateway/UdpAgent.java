@@ -78,6 +78,7 @@ final class UdpAgent implements Agent {
     private final AccountingAttributeExtractor extractor;
     private final AccountingFields fields = new AccountingFields();
     private final EventKeys keys = new EventKeys();
+    private final DeviceIdentity device = new DeviceIdentity();
     private final ResponseCache cache = new ResponseCache();
     private final PendingTable pending;
 
@@ -246,8 +247,18 @@ final class UdpAgent implements Agent {
         long outputOctets = octets64(AccountingFields.OUTPUT_OCTETS, AccountingFields.OUTPUT_GIGAWORDS, false);
         int presence = (fields.has(AccountingFields.SESSION_TIME) ? 1 : 0)
                 | (fields.has(AccountingFields.EVENT_TIMESTAMP) ? 2 : 0);
+        // devices behind one NAS entry (NAT): the identity attribute tells them apart (ADR 0019)
+        int deviceLength = nas.identifiesDevices() ? device.resolve(nas, fields) : 0;
+        boolean deviceUnknown = nas.identifiesDevices() && deviceLength == 0;
+        if (deviceUnknown) {
+            stats.increment(Counter.IDENTITY_MISSING);
+        } else if (deviceLength > 0 && device.fallback()) {
+            stats.increment(Counter.IDENTITY_FALLBACK);
+        }
         keys.compute(
                 nas.id(),
+                device.buffer(),
+                deviceLength,
                 statusType,
                 presence,
                 sessionTime,
@@ -275,7 +286,7 @@ final class UdpAgent implements Agent {
                 .wrapAndApplyHeader(commandBuffer, 0, headerEncoder)
                 .correlationId(correlationId)
                 .gatewayId(config.gatewayId())
-                .nasId(nas.id())
+                .nasId(keys.scope())
                 .sessionKeyHi(keys.sessionHi())
                 .sessionKeyLo(keys.sessionLo())
                 .exactKeyHi(keys.exactHi())
@@ -284,13 +295,16 @@ final class UdpAgent implements Agent {
                 .sessionTime(sessionTime)
                 .eventTimestamp(eventTimestamp)
                 .inputOctets(inputOctets)
-                .outputOctets(outputOctets);
+                .outputOctets(outputOctets)
+                .nasClientId(nas.id())
+                .identityFingerprint(nas.identityFingerprint());
         commandEncoder
                 .flags()
                 .clear()
                 .sessionTimePresent((presence & 1) != 0)
                 .eventTimestampPresent((presence & 2) != 0)
-                .sessionIdPresent(hasSessionId);
+                .sessionIdPresent(hasSessionId)
+                .deviceUnknown(deviceUnknown);
         if (hasSessionId) {
             commandEncoder.putSessionId(fields.buffer(), fields.sessionIdOffset(), fields.sessionIdLength());
         } else {
@@ -298,6 +312,7 @@ final class UdpAgent implements Agent {
         }
         commandEncoder.putRawAttributes(
                 received, packet.attributesOffset(), packet.length() - RadiusPacket.HEADER_LENGTH);
+        commandEncoder.putNasDevice(device.buffer(), 0, deviceLength);
         int commandLength = MessageHeaderEncoder.ENCODED_LENGTH + commandEncoder.encodedLength();
         pending.command(slot, commandBuffer, 0, commandLength);
         if (!toCluster.write(COMMAND_MSG, commandBuffer, 0, commandLength)) {

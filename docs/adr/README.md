@@ -20,5 +20,6 @@
 | [0016](0016-fault-injection-tests.md) | Fault injection and durability tests in Linux containers | Accepted |
 | [0017](0017-exporter.md) | Exporter inside the member: lease, commit-position bound, state-machine reducer | Accepted |
 | [0018](0018-storage-model.md) | Storage model: session-first, opt-in history, stable identities, portable primitives | Accepted |
+| [0019](0019-nas-device-identity.md) | Devices behind one NAS entry (NAT): device identity in keys and Accounting-On scope | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

@@ -22,9 +22,12 @@ SBE messages between gateways, the cluster and tools, plus the snapshot format. 
 |---|---|---|
 | `correlationId` | int64 | gateway pending slot + generation; matches the reply |
 | `gatewayId` | int32 | |
-| `nasId` | int32 | configured NAS identity (never taken from the packet) |
-| `sessionKeyHi/Lo` | int64 ×2 | Murmur3-128 of (nasId, Acct-Session-Id) |
-| `exactKeyHi/Lo` | int64 ×2 | Murmur3-128 of (nasId, status, session time, event time, octets, presence, session id) — no Acct-Delay-Time, no Identifier |
+| `nasId` | int32 | device scope: the configured NAS id, or for an entry with `identity` a 32-bit hash of NAS id and device identity (ADR 0019); the state machine groups sessions and Accounting-On/Off by it |
+| `sessionKeyHi/Lo` | int64 ×2 | Murmur3-128 of (NAS id, [length, device identity], Acct-Session-Id) |
+| `exactKeyHi/Lo` | int64 ×2 | Murmur3-128 of (NAS id, status, session time, event time, octets, presence, [length, device identity], session id) — no Acct-Delay-Time, no Identifier |
+| `nasClientId` | int32 | v3: the configured NAS entry id |
+| `identityFingerprint` | int32 | v3: hash of the entry's `identity` setting (gateways must agree) |
+| `nasDevice` | var string | v3: normalised device identity, empty for `source-ip` or when missing (`flags.deviceUnknown`) |
 | `statusType` | uint32 | Acct-Status-Type |
 | `flags` | set | `sessionTimePresent`, `eventTimestampPresent`, `sessionIdPresent` |
 | `sessionTime`, `eventTimestamp` | uint32 | 0 when absent |

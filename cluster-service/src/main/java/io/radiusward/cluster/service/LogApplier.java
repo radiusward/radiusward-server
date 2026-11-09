@@ -106,6 +106,9 @@ public final class LogApplier {
             if (commandDecoder.flags().eventTimestampPresent()) {
                 flags |= AccountingStateMachine.FLAG_EVENT_TIMESTAMP;
             }
+            if (commandDecoder.flags().deviceUnknown()) {
+                flags |= AccountingStateMachine.FLAG_DEVICE_UNKNOWN;
+            }
             outcome = machine.apply(
                     commandDecoder.sessionKeyHi(),
                     commandDecoder.sessionKeyLo(),

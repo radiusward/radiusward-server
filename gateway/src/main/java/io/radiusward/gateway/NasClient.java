@@ -15,6 +15,8 @@ package io.radiusward.gateway;
  * @param secret shared secret bytes
  * @param vendor vendor profile name (informational in Phase 1)
  * @param messageAuthenticator {@code required}, {@code optional} or {@code off}
+ * @param identity attributes telling apart the devices behind this entry (NAT), first present wins; empty: the
+ *     source address is the device ({@code source-ip}, the default)
  */
 public record NasClient(
         String name,
@@ -23,7 +25,54 @@ public record NasClient(
         int prefixLength,
         byte[] secret,
         String vendor,
-        MessageAuthenticatorPolicy messageAuthenticator) {
+        MessageAuthenticatorPolicy messageAuthenticator,
+        Identity[] identity) {
+
+    /** A NAS identified by its source address alone. */
+    public NasClient(
+            String name,
+            int id,
+            int network,
+            int prefixLength,
+            byte[] secret,
+            String vendor,
+            MessageAuthenticatorPolicy messageAuthenticator) {
+        this(name, id, network, prefixLength, secret, vendor, messageAuthenticator, new Identity[0]);
+    }
+
+    /** A request attribute that identifies a device behind a NAS entry ({@code nas.<name>.identity}). */
+    public enum Identity {
+        /** NAS-Identifier (32), as sent */
+        NAS_IDENTIFIER("nas-identifier"),
+        /** the MAC address in Called-Station-Id (30), normalised; the {@code :SSID} suffix is dropped */
+        CALLED_STATION_ID("called-station-id"),
+        /** NAS-IP-Address (4) */
+        NAS_IP_ADDRESS("nas-ip-address");
+
+        private final String configName;
+
+        Identity(String configName) {
+            this.configName = configName;
+        }
+
+        public String configName() {
+            return configName;
+        }
+    }
+
+    /** Whether devices behind this entry are told apart by attributes. */
+    public boolean identifiesDevices() {
+        return identity.length > 0;
+    }
+
+    /** Hash of the identity setting; gateways must agree on it (the cluster counts mismatches). */
+    public int identityFingerprint() {
+        int h = 17;
+        for (Identity i : identity) {
+            h = h * 31 + i.ordinal() + 1;
+        }
+        return h;
+    }
 
     /** How Message-Authenticator is treated for requests from this NAS. */
     public enum MessageAuthenticatorPolicy {

@@ -85,4 +85,60 @@ class NasRegistryTest {
                         "5"))))
                 .hasMessageContaining("already used");
     }
+
+    @Test
+    void deviceIdentityBehindNat() throws Exception {
+        NasRegistry registry = NasRegistry.from(Config.of(Map.of(
+                "nas.cloud.address", "0.0.0.0/0",
+                "nas.cloud.secret", "s",
+                "nas.cloud.identity", "NAS-Identifier, called-station-id",
+                "nas.core.address", "10.255.0.1",
+                "nas.core.secret", "s")));
+        NasClient core = registry.lookup(InetAddress.getByName("10.255.0.1"));
+        assertThat(core.identifiesDevices()).isFalse();
+        NasClient cloud = registry.lookup(InetAddress.getByName("198.51.100.7"));
+        assertThat(cloud.name()).isEqualTo("cloud");
+        assertThat(cloud.identity())
+                .containsExactly(NasClient.Identity.NAS_IDENTIFIER, NasClient.Identity.CALLED_STATION_ID);
+        assertThat(cloud.identityFingerprint())
+                .isNotEqualTo(core.identityFingerprint())
+                .isNotEqualTo(new NasClient(
+                                "x",
+                                1,
+                                0,
+                                0,
+                                new byte[0],
+                                "default",
+                                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
+                                new NasClient.Identity[] {
+                                    NasClient.Identity.CALLED_STATION_ID, NasClient.Identity.NAS_IDENTIFIER
+                                })
+                        .identityFingerprint());
+    }
+
+    @Test
+    void identityConfigurationErrors() {
+        assertThatThrownBy(() ->
+                        NasRegistry.from(Config.of(Map.of("nas.any.address", "0.0.0.0/0", "nas.any.secret", "s"))))
+                .hasMessageContaining("nas.any.identity");
+        assertThatThrownBy(() -> NasRegistry.from(Config.of(Map.of(
+                        "nas.x.address",
+                        "10.0.0.0/8",
+                        "nas.x.secret",
+                        "s",
+                        "nas.x.identity",
+                        "source-ip, nas-identifier"))))
+                .hasMessageContaining("cannot be combined");
+        assertThatThrownBy(() -> NasRegistry.from(
+                        Config.of(Map.of("nas.x.address", "10.0.0.0/8", "nas.x.secret", "s", "nas.x.identity", "mac"))))
+                .hasMessageContaining("unknown value \"mac\"");
+        assertThatThrownBy(() -> NasRegistry.from(Config.of(Map.of(
+                        "nas.x.address",
+                        "10.0.0.0/8",
+                        "nas.x.secret",
+                        "s",
+                        "nas.x.identity",
+                        "nas-identifier,nas-identifier"))))
+                .hasMessageContaining("listed twice");
+    }
 }

@@ -68,13 +68,18 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
         String acctSessionId = c.sessionId();
         byte[] raw = new byte[c.rawAttributesLength()];
         c.getRawAttributes(raw, 0, raw.length);
+        // protocol v3 (ADR 0019): nasId is the device scope, nasClientId the configured entry
+        boolean v3 = c.actingVersion() >= 3;
+        int nasId = v3 ? c.nasClientId() : c.nasId();
+        String device = v3 ? c.nasDevice() : "";
+        String nasDevice = device.isEmpty() ? null : device;
         Long sessionTime = c.flags().sessionTimePresent() ? c.sessionTime() : null;
         if (keepEvents) {
             events.add(new ExportEvent(
                     new UUID(c.exactKeyHi(), c.exactKeyLo()),
                     position,
                     timestamp,
-                    c.nasId(),
+                    nasId,
                     c.gatewayId(),
                     sessionKey,
                     acctSessionId,
@@ -88,7 +93,8 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
                     c.flags().eventTimestampPresent() ? c.eventTimestamp() : null,
                     c.inputOctets(),
                     c.outputOctets(),
-                    raw));
+                    raw,
+                    nasDevice));
         }
         if (sessionKey == null || (outcome != Outcomes.APPLIED && outcome != Outcomes.MERGED)) {
             return; // stale events do not change the session; NAS-wide events close sessions via the listener
@@ -103,7 +109,7 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
             put(new SessionSnapshot(
                     sessionKey,
                     position,
-                    c.nasId(),
+                    nasId,
                     acctSessionId,
                     SessionSnapshot.State.ACTIVE,
                     SessionSnapshot.CloseCause.NONE,
@@ -114,7 +120,8 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
                     timestamp,
                     c.flags().eventTimestampPresent() ? eventTime : null,
                     null,
-                    raw));
+                    raw,
+                    nasDevice));
             return;
         }
         boolean stop = statusType == AccountingStateMachine.STATUS_STOP;
@@ -129,7 +136,7 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
         put(new SessionSnapshot(
                 sessionKey,
                 position,
-                c.nasId(),
+                nasId,
                 acctSessionId,
                 stopped ? SessionSnapshot.State.STOPPED : SessionSnapshot.State.ACTIVE,
                 stop ? SessionSnapshot.CloseCause.STOP : SessionSnapshot.CloseCause.NONE,
@@ -140,7 +147,8 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
                 timestamp,
                 startedAt,
                 stop ? timestamp : null,
-                raw));
+                raw,
+                nasDevice));
     }
 
     /**
@@ -164,7 +172,8 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
                     s.lastReceivedAt(),
                     previous.startedAt(),
                     s.stoppedAt(),
-                    s.rawAttributes());
+                    s.rawAttributes(),
+                    s.nasDevice());
         }
         sessions.put(s.sessionKey(), s);
     }
@@ -181,7 +190,7 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
         put(new SessionSnapshot(
                 key,
                 position,
-                store.nasId(slot),
+                store.nasId(slot), // for a device behind NAT its scope (ADR 0019)
                 null,
                 SessionSnapshot.State.STOPPED,
                 cause == CAUSE_NAS_RESTART

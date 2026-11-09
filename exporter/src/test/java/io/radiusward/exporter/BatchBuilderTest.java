@@ -28,11 +28,25 @@ class BatchBuilderTest {
     /** {@code eventTimestamp} in seconds, 0 for none. */
     private void command(
             StateMachineReplica replica, long session, int status, long sessionTime, long eventTimestamp, long now) {
+        command(replica, session, status, sessionTime, eventTimestamp, now, 7, "");
+    }
+
+    /** As above from a device behind NAT: {@code scope} is the command's nasId, 7 the configured entry. */
+    private void command(
+            StateMachineReplica replica,
+            long session,
+            int status,
+            long sessionTime,
+            long eventTimestamp,
+            long now,
+            int scope,
+            String device) {
         AccountingCommandEncoder e = new AccountingCommandEncoder()
                 .wrapAndApplyHeader(buffer, 0, new MessageHeaderEncoder())
                 .correlationId(session)
                 .gatewayId(1)
-                .nasId(7)
+                .nasId(scope)
+                .nasClientId(7)
                 .sessionKeyHi(session)
                 .sessionKeyLo(session)
                 .exactKeyHi(session * 31 + status)
@@ -48,6 +62,7 @@ class BatchBuilderTest {
                 .eventTimestampPresent(eventTimestamp != 0);
         e.sessionId("s" + session);
         e.putRawAttributes(new byte[] {1, 3, 'x'}, 0, 3);
+        e.nasDevice(device);
         position += 128;
         replica.onSessionMessage(position, now, buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + e.encodedLength());
     }
@@ -254,5 +269,31 @@ class BatchBuilderTest {
         Batch batch = builder.take(1);
         assertThat(batch.events()).extracting(ExportEvent::outcome).containsExactly(ExportEvent.EventOutcome.STALE);
         assertThat(batch.sessions()).as("no session is created or reopened").isEmpty();
+    }
+
+    @Test
+    void devicesBehindNatAreExportedWithTheEntryAndTheirIdentity() {
+        BatchBuilder builder = new BatchBuilder("pg", true);
+        StateMachineReplica replica = replica(builder, 0);
+        command(replica, 1, AccountingStateMachine.STATUS_START, 0, 1_780_000_000L, 1_000, 0x1111, "ap-1");
+        command(replica, 2, AccountingStateMachine.STATUS_START, 0, 1_780_000_000L, 1_000, 0x2222, "ap-2");
+        command(replica, 3, AccountingStateMachine.STATUS_START, 0, 1_780_000_000L, 1_000, 7, "");
+        Batch batch = builder.take(1);
+        assertThat(batch.events()).extracting(ExportEvent::nasId).containsOnly(7);
+        assertThat(batch.events()).extracting(ExportEvent::nasDevice).containsExactly("ap-1", "ap-2", null);
+        assertThat(session(batch, 1).nasId())
+                .as("the configured entry, not the device scope")
+                .isEqualTo(7);
+        assertThat(session(batch, 1).nasDevice()).isEqualTo("ap-1");
+        assertThat(session(batch, 3).nasDevice()).isNull();
+
+        // ap-1 reboots: only its session closes
+        command(replica, 99, AccountingStateMachine.STATUS_ACCOUNTING_ON, 0, 1_780_000_100L, 100_000, 0x1111, "ap-1");
+        Batch closed = builder.take(1);
+        assertThat(closed.sessions()).singleElement().satisfies(s -> {
+            assertThat(s.sessionKey()).isEqualTo(new UUID(1, 1));
+            assertThat(s.closeCause()).isEqualTo(SessionSnapshot.CloseCause.NAS_RESTART);
+            assertThat(s.nasDevice()).as("kept by the sink").isNull();
+        });
     }
 }

@@ -56,7 +56,10 @@ class UdpAgentTest {
             long exactLo,
             String sessionId,
             long sessionTime,
-            long inputOctets) {}
+            long inputOctets,
+            int nasClientId,
+            String nasDevice,
+            boolean deviceUnknown) {}
 
     private final long[] clock = {1_000_000_000L};
     private final GatewayStats stats = new GatewayStats();
@@ -149,10 +152,17 @@ class UdpAgentTest {
                     d.exactKeyLo(),
                     d.sessionId(),
                     d.sessionTime(),
-                    d.inputOctets()));
-            // rawAttributes are skipped by sessionId() reading order; nothing else needed
+                    d.inputOctets(),
+                    d.nasClientId(),
+                    nasDevice(d),
+                    d.flags().deviceUnknown()));
         });
         return commands;
+    }
+
+    private static String nasDevice(AccountingCommandDecoder d) {
+        d.skipRawAttributes();
+        return d.nasDevice();
     }
 
     void commit(long correlationId, Outcome outcome) throws Exception {
@@ -468,5 +478,168 @@ class UdpAgentTest {
         send(request(2, false, "b", 1));
         assertThat(stats.get(GatewayStats.Counter.PENDING_FULL)).isEqualTo(1);
         assertThat(commands()).hasSize(1);
+    }
+
+    // ---- devices behind one NAS entry (ADR 0019) ------------------------------------------------
+
+    static NasRegistry natRegistry() {
+        return NasRegistry.of(List.of(new NasClient(
+                "cloud",
+                1001,
+                0x7F000000,
+                8,
+                SECRET,
+                "default",
+                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
+                new NasClient.Identity[] {NasClient.Identity.NAS_IDENTIFIER, NasClient.Identity.CALLED_STATION_ID})));
+    }
+
+    /** An Accounting-Request from a device: {@code null} leaves an attribute out. */
+    static byte[] deviceRequest(int identifier, int status, String sessionId, String nasIdentifier, String called) {
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
+        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
+        enc.header(RadiusCode.ACCOUNTING_REQUEST, identifier).uint32(40, status);
+        if (sessionId != null) {
+            enc.attribute(44, sessionId);
+        }
+        if (nasIdentifier != null) {
+            enc.attribute(32, nasIdentifier);
+        }
+        if (called != null) {
+            enc.attribute(30, called);
+        }
+        int length = enc.finish();
+        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
+        return Arrays.copyOf(buffer.byteArray(), length);
+    }
+
+    @Test
+    void devicesBehindOneAddressWithTheSameSessionIdAreSeparateSessions() throws Exception {
+        start(config(Duration.ZERO, 1024), natRegistry());
+        send(deviceRequest(1, 1, "00000001", "ap-1", null));
+        send(deviceRequest(2, 1, "00000001", "ap-2", null));
+        send(deviceRequest(3, 3, "00000001", "ap-1", null));
+        List<Command> c = commands();
+        assertThat(c).hasSize(3);
+        assertThat(c.get(0).sessionHi())
+                .as("other device, same Acct-Session-Id")
+                .isNotEqualTo(c.get(1).sessionHi());
+        assertThat(c.get(2).sessionHi()).as("same device").isEqualTo(c.get(0).sessionHi());
+        assertThat(c.get(2).sessionLo()).isEqualTo(c.get(0).sessionLo());
+        assertThat(c.get(0).nasId())
+                .as("device scope")
+                .isNotEqualTo(c.get(1).nasId())
+                .isNotEqualTo(1001);
+        assertThat(c.get(2).nasId()).isEqualTo(c.get(0).nasId());
+        assertThat(c).allSatisfy(x -> {
+            assertThat(x.nasClientId()).isEqualTo(1001);
+            assertThat(x.deviceUnknown()).isFalse();
+        });
+        assertThat(c).extracting(Command::nasDevice).containsExactly("ap-1", "ap-2", "ap-1");
+        assertThat(stats.get(GatewayStats.Counter.IDENTITY_MISSING)).isZero();
+    }
+
+    @Test
+    void nextIdentityAttributeWhenTheFirstIsMissingOrEmpty() throws Exception {
+        start(config(Duration.ZERO, 1024), natRegistry());
+        // Open-Mesh sends an empty NAS-Identifier; the MAC in Called-Station-Id identifies the AP
+        send(deviceRequest(1, 1, "s", "", "AA-BB-CC-DD-EE-FF:Guest"));
+        send(deviceRequest(2, 3, "s", null, "aa:bb:cc:dd:ee:ff"));
+        List<Command> c = commands();
+        assertThat(c).extracting(Command::nasDevice).containsExactly("aabbccddeeff", "aabbccddeeff");
+        assertThat(c.get(1).sessionHi())
+                .as("one device, however the MAC is written")
+                .isEqualTo(c.get(0).sessionHi());
+        assertThat(c.get(1).nasId()).isEqualTo(c.get(0).nasId());
+    }
+
+    @Test
+    void missingIdentityFallsBackToTheEntryAndIsFlagged() throws Exception {
+        start(config(Duration.ZERO, 1024), natRegistry());
+        send(deviceRequest(1, 3, "s", null, null));
+        send(deviceRequest(2, 7, null, null, null)); // Accounting-On without identity
+        List<Command> c = commands();
+        assertThat(c).hasSize(2).allSatisfy(x -> {
+            assertThat(x.nasId()).as("the entry's own scope").isEqualTo(1001);
+            assertThat(x.deviceUnknown()).isTrue();
+            assertThat(x.nasDevice()).isEmpty();
+        });
+        assertThat(stats.get(GatewayStats.Counter.IDENTITY_MISSING)).isEqualTo(2);
+    }
+
+    @Test
+    void sourceIpEntriesCarryNoDevice() throws Exception {
+        start();
+        send(deviceRequest(1, 1, "s", "ap-1", "aa-bb-cc-dd-ee-ff"));
+        Command c = commands().get(0);
+        assertThat(c.nasId()).isEqualTo(1001);
+        assertThat(c.nasClientId()).isEqualTo(1001);
+        assertThat(c.nasDevice()).isEmpty();
+        assertThat(c.deviceUnknown()).isFalse();
+    }
+
+    static NasRegistry natRegistry(NasClient.Identity... identity) {
+        return NasRegistry.of(List.of(new NasClient(
+                "cloud",
+                1001,
+                0x7F000000,
+                8,
+                SECRET,
+                "default",
+                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
+                identity)));
+    }
+
+    /**
+     * The attribute each vendor fixture sends in every accounting packet (Start, Interim, Stop); RFC 2866 only
+     * requires NAS-IP-Address <em>or</em> NAS-Identifier, and the fixtures differ in which.
+     */
+    static final java.util.Map<String, NasClient.Identity> EVERY_PACKET = java.util.Map.of(
+            "cisco", NasClient.Identity.NAS_IP_ADDRESS,
+            "huawei", NasClient.Identity.NAS_IP_ADDRESS,
+            "juniper", NasClient.Identity.NAS_IDENTIFIER,
+            "juniper-erx", NasClient.Identity.NAS_IP_ADDRESS,
+            "meraki", NasClient.Identity.NAS_IP_ADDRESS,
+            "mikrotik", NasClient.Identity.NAS_IDENTIFIER,
+            "ruckus", NasClient.Identity.NAS_IP_ADDRESS);
+
+    @Test
+    void eachVendorKeepsItsSessionWithTheAttributeItSendsInEveryPacket() throws Exception {
+        for (var vendor : new java.util.TreeMap<>(EVERY_PACKET).entrySet()) {
+            stop();
+            start(config(Duration.ZERO, 4096), natRegistry(vendor.getValue()));
+            for (String event : List.of("start", "interim", "stop")) {
+                send(fixture(vendor.getKey(), event));
+            }
+            List<Command> c = commands();
+            assertThat(c)
+                    .as(vendor.getKey())
+                    .hasSize(3)
+                    .allSatisfy(x -> assertThat(x.deviceUnknown()).isFalse());
+            assertThat(c)
+                    .as("%s: one device, one session", vendor.getKey())
+                    .extracting(Command::sessionHi)
+                    .containsOnly(c.get(0).sessionHi());
+            assertThat(c).extracting(Command::nasDevice).containsOnly(c.get(0).nasDevice());
+        }
+        assertThat(stats.get(GatewayStats.Counter.IDENTITY_MISSING)).isZero();
+        assertThat(stats.get(GatewayStats.Counter.IDENTITY_FALLBACK)).isZero();
+    }
+
+    @Test
+    void anAttributeMissingFromSomePacketsSplitsTheSessionAndIsCounted() throws Exception {
+        // Meraki's BSSID is in the Start's Called-Station-Id only: Interim and Stop fall back to NAS-IP-Address
+        start(
+                config(Duration.ZERO, 4096),
+                natRegistry(NasClient.Identity.CALLED_STATION_ID, NasClient.Identity.NAS_IP_ADDRESS));
+        for (String event : List.of("start", "interim", "stop")) {
+            send(fixture("meraki", event));
+        }
+        List<Command> c = commands();
+        assertThat(c).extracting(Command::nasDevice).containsExactly("e0553d000001", "10.10.0.5", "10.10.0.5");
+        assertThat(c.get(1).sessionHi())
+                .as("split: choose attributes sent in every packet")
+                .isNotEqualTo(c.get(0).sessionHi());
+        assertThat(stats.get(GatewayStats.Counter.IDENTITY_FALLBACK)).isEqualTo(2);
     }
 }

@@ -28,6 +28,7 @@ Names carry the unit (`_bytes`, `_seconds`); counters end in `_total`. Members a
 | `radiusward_cluster_log_position_bytes` | gauge | log position of the last accounting entry applied |
 | `radiusward_accounting_events_total{outcome}` | counter | `applied`, `duplicate`, `stale`, `rejected` |
 | `radiusward_accounting_export_lag_rejections_total` | counter | accounting not acknowledged because a required sink was over its `maxLag` |
+| `radiusward_nas_identity_mismatches_total` | counter | accounting from a gateway whose `nas.<name>.identity` differs from the entry's first one seen — configure every gateway alike ([ADR 0019](../adr/0019-nas-device-identity.md)) |
 | `radiusward_sessions{state}` | gauge | `active`, `stopped` sessions in the replicated state |
 | `radiusward_snapshots_total` | counter | snapshots taken |
 | `radiusward_egress_dropped_total` | counter | replies to gateways given up under back pressure |
@@ -52,7 +53,7 @@ Names carry the unit (`_bytes`, `_seconds`); counters end in `_total`. Members a
 
 | Metric | Type | Meaning |
 |---|---|---|
-| `radiusward_gateway_packets_total{result}` | counter | `received`, `committed`, `cache_hits`, `duplicates`, `stale`, `rejected`, `pending_full`, `ring_full`, `resubmitted`, `resubmitted_on_new_leader`, `malformed`, `unknown_nas`, `authenticator_failed`, … (all gateway counters) |
+| `radiusward_gateway_packets_total{result}` | counter | `received`, `committed`, `cache_hits`, `duplicates`, `stale`, `rejected`, `pending_full`, `ring_full`, `resubmitted`, `resubmitted_on_new_leader`, `malformed`, `unknown_nas`, `authenticator_failed`, `identity_missing`, `identity_fallback`, … (all gateway counters) |
 | `radiusward_gateway_pending_requests` | gauge | requests waiting for a commit |
 | `radiusward_gateway_response_cache_entries` | gauge | RFC 5080 response cache size |
 | `radiusward_gateway_cluster_connected` | gauge | 1 while connected to the cluster |

@@ -1,1 +1,2 @@
 V1__init.sql
+V2__nas_device.sql

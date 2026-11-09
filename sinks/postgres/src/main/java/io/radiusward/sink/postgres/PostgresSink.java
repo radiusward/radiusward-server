@@ -375,6 +375,7 @@ public final class PostgresSink implements AccountingSink {
                     attributeMode.startsWith("json") ? attributes.json(e.rawAttributes(), Attributes.COMMON) : null,
                     false);
             col(out, attributeMode.equals("raw") ? "\\x" + HexFormat.of().formatHex(e.rawAttributes()) : null, false);
+            col(out, e.nasDevice(), false);
             out.append('\n');
         }
         return out.toString();
@@ -413,6 +414,7 @@ public final class PostgresSink implements AccountingSink {
                     false);
             col(out, "0", false);
             col(out, Long.toString(s.projectionVersion()), false);
+            col(out, s.nasDevice(), false);
             out.append('\n');
         }
         return out.toString();
@@ -476,7 +478,6 @@ public final class PostgresSink implements AccountingSink {
     private static final String UPSERT_SESSIONS = """
             INSERT INTO accounting_session SELECT * FROM staging_session
             ON CONFLICT (session_key) DO UPDATE SET
-                nas_id = EXCLUDED.nas_id,
                 acct_session_id = COALESCE(EXCLUDED.acct_session_id, accounting_session.acct_session_id),
                 user_name = COALESCE(EXCLUDED.user_name, accounting_session.user_name),
                 calling_station_id = COALESCE(EXCLUDED.calling_station_id, accounting_session.calling_station_id),
@@ -493,7 +494,8 @@ public final class PostgresSink implements AccountingSink {
                 last_received_at = EXCLUDED.last_received_at,
                 stopped_at = EXCLUDED.stopped_at,
                 quality_flags = EXCLUDED.quality_flags,
-                projection_version = EXCLUDED.projection_version
+                projection_version = EXCLUDED.projection_version,
+                nas_device = COALESCE(EXCLUDED.nas_device, accounting_session.nas_device)
             WHERE accounting_session.projection_version < EXCLUDED.projection_version""";
 
     /** FreeRADIUS {@code radacct} column names over {@code accounting_session} (read-only). */
@@ -512,6 +514,7 @@ public final class PostgresSink implements AccountingSink {
                 calling_station_id AS callingstationid,
                 framed_ip AS framedipaddress,
                 CASE close_cause WHEN 2 THEN 'NAS-Reboot' WHEN 3 THEN 'Session-Timeout'
-                    ELSE terminate_cause::text END AS acctterminatecause
+                    ELSE terminate_cause::text END AS acctterminatecause,
+                nas_device AS nasidentifier
             FROM accounting_session""";
 }

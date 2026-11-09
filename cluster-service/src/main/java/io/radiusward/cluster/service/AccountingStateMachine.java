@@ -21,7 +21,8 @@ package io.radiusward.cluster.service;
  *       created implicitly, unless its Event-Timestamp is older than the tombstone window → STALE; after Stop →
  *       STALE</td></tr>
  *   <tr><td>Stop</td><td>already stopped → DUPLICATE; otherwise APPLIED, kept as a tombstone</td></tr>
- *   <tr><td>Accounting-On/Off</td><td>exact-key window; when APPLIED all active sessions of the NAS stop</td></tr>
+ *   <tr><td>Accounting-On/Off</td><td>exact-key window; when APPLIED all active sessions of the NAS (the device
+ *       scope, ADR 0019) stop — none when the device is unknown</td></tr>
  *   <tr><td>other</td><td>exact-key window</td></tr>
  * </table>
  */
@@ -40,6 +41,14 @@ public final class AccountingStateMachine {
     public static final int FLAG_SESSION_TIME = 1;
 
     public static final int FLAG_EVENT_TIMESTAMP = 2;
+
+    /**
+     * The NAS entry identifies devices by attribute, but this request carried none (ADR 0019): an Accounting-On/Off
+     * then stops no session, since its device is unknown. Not stored with sessions.
+     */
+    public static final int FLAG_DEVICE_UNKNOWN = 4;
+
+    private static final int STORED_FLAGS = FLAG_SESSION_TIME | FLAG_EVENT_TIMESTAMP;
 
     /**
      * Tunables.
@@ -125,7 +134,8 @@ public final class AccountingStateMachine {
                         outputOctets,
                         now);
             case STATUS_STOP -> stop(sessionHi, sessionLo, nasId, now);
-            case STATUS_ACCOUNTING_ON, STATUS_ACCOUNTING_OFF -> nasRestart(exactHi, exactLo, nasId, now);
+            case STATUS_ACCOUNTING_ON, STATUS_ACCOUNTING_OFF ->
+                nasRestart(exactHi, exactLo, nasId, (flags & FLAG_DEVICE_UNKNOWN) == 0, now);
             default -> exactOnly(exactHi, exactLo, now);
         };
         if (outcome == Outcomes.APPLIED || outcome == Outcomes.MERGED) {
@@ -136,7 +146,7 @@ public final class AccountingStateMachine {
                             : -1;
             if (slot >= 0) {
                 store.statusType(slot, statusType);
-                store.flags(slot, (byte) flags);
+                store.flags(slot, (byte) (flags & STORED_FLAGS));
                 store.sessionTime(slot, sessionTime);
                 store.eventTimestamp(slot, eventTimestamp);
                 store.inputOctets(slot, inputOctets);
@@ -240,9 +250,10 @@ public final class AccountingStateMachine {
         return Outcomes.APPLIED;
     }
 
-    private int nasRestart(long exactHi, long exactLo, int nasId, long now) {
+    private int nasRestart(long exactHi, long exactLo, int nasId, boolean deviceKnown, long now) {
         int outcome = exactOnly(exactHi, exactLo, now);
-        if (outcome == Outcomes.APPLIED) {
+        // a device behind NAT without identity: stopping the whole entry would stop every other device's sessions
+        if (outcome == Outcomes.APPLIED && deviceKnown) {
             int until = seconds(now + settings.tombstoneMs());
             for (int slot = store.firstOfNas(nasId); slot >= 0; slot = store.nextOfNas(slot)) {
                 if (store.state(slot) == SessionStore.ACTIVE) {
