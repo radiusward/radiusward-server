@@ -6,7 +6,7 @@ Instructions for coding assistants working in this repository. Humans: see
 ## Build and test
 
 ```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)   # JDK 21; CI also runs 25
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)   # JDK 25 (the baseline since Phase 5.8)
 ./mvnw spotless:apply verify                        # format, build, all tests, coverage
 ```
 

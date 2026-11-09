@@ -10,7 +10,7 @@ deployment, stay small and run without root.
 - **One image** for all components, `ghcr.io/radiusward/radiusward-server`, entrypoint `radiusward`:
   `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool`, `version`.
 - Base `eclipse-temurin:25-jre-noble` (multi-arch, glibc, maintained). The jar is built with JDK 25 for
-  bytecode level 21, so the same jar runs on Java 21 outside the image.
+  bytecode level 25 since Phase 5.8 (ADR 0027); before that it was 21.
 - Runs as **uid/gid 10001** (`radiusward`), no root, no extra capabilities.
 - Layout: `/opt/radiusward/radiusward.jar`, licences next to it; data in the `VOLUME /var/lib/radiusward`;
   Aeron directories in `/dev/shm`; operator dictionaries in `/etc/radiusward/dictionary.d`; configuration

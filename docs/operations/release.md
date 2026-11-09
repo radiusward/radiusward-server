@@ -9,7 +9,7 @@ Workflow: [.github/workflows/release.yml](../../.github/workflows/release.yml).
 | tag `vX.Y.Z` | `:X.Y.Z`, `:X.Y`, `:latest`, GitHub release |
 
 Every image is built for `linux/amd64` and `linux/arm64` with an SBOM and provenance attestation. A release
-runs the full build with JDK 25 (bytecode Java 21), unit and end-to-end tests, then publishes the image and
+runs the full build with JDK 25, unit and end-to-end tests, then publishes the image and
 a GitHub Release with `radiusward.jar` and `radclient.jar`. The fault-injection tests (`linux-tests.yml`) run
 for the same tag in parallel; check them before announcing a release.
 

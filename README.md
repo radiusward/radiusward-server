@@ -46,7 +46,7 @@ Released images: `ghcr.io/radiusward/radiusward-server` ([docs/operations/docker
 
 ## Quickstart without Docker
 
-Requirements: JDK 21+ (CI also tests 25).
+Requirements: JDK 25+.
 
 ```bash
 ./mvnw verify                          # build + unit/integration tests (~1 min)

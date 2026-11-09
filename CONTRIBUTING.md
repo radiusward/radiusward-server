@@ -9,7 +9,9 @@ sinks) and Phase 4 (Kubernetes) are next — see the [roadmap](docs/plans/roadma
 
 ## Setup
 
-- JDK 21 (`export JAVA_HOME=$(/usr/libexec/java_home -v 21)` on macOS). CI also runs Java 25.
+- JDK 25 (`export JAVA_HOME=$(/usr/libexec/java_home -v 25)` on macOS; `brew install --cask temurin@25`). EAP
+  key material needs the TLS exporter API of Java 25 (ADR 0027). Newer JDKs compile it (`--release 25`), but
+  palantir-java-format does not run on JDK 27 yet: format with JDK 25.
 - No Docker needed for `./mvnw verify` and `-Pe2e`. Docker (Linux, or Colima on macOS) only for the image,
   compose and `-Plinux`. Details: [docs/operations/local-dev.md](docs/operations/local-dev.md),
   [docs/operations/docker.md](docs/operations/docker.md).
@@ -105,7 +107,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 
 ## Conventions
 
-- Java 21 language level, `io.radiusward` package root, palantir-java-format.
+- Java 25 language level, `io.radiusward` package root, palantir-java-format.
 - Tests: JUnit 5 + AssertJ; jqwik for property-based fuzzing; `*IT` classes run under Failsafe
   (no JaCoCo agent — allocation measurements).
 - Fixtures: `radius-codec/src/test/resources/fixtures/<vendor>/<event>.fixture` (format in

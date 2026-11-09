@@ -131,7 +131,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    `client EAP encryption` / `ttls keying material` without context (TLS 1.2), `EXPORTER_EAP_TLS_Key_Material` with
    the EAP type as context (TLS 1.3, RFC 9190 / RFC 9427), `ttls challenge` for TTLS inner challenges. The project
    baseline moves from Java 21 to **Java 25** (the current LTS; the image and release builds already run it) no
-   later than work package 5.8.
+   later than work package 5.8 — done in 5.8 milestone 1 ([ADR 0027](../adr/0027-java-25-baseline.md)).
 4. **Identity stores** (decided 2026-11-09, [ADR 0021](../adr/0021-identity-stores.md)): stores run in the gateway
    workers; one ordered list `auth.stores` with an optional `nas.<name>.auth.stores`; our own bounded JDBC
    connection pool. Password formats in our own code, no runtime library: cleartext, SHA-crypt, bcrypt, salted

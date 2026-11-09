@@ -5,8 +5,8 @@ Phase 0–1 run entirely on your machine — no Docker ([ADR 0009](../adr/0009-l
 ## Setup (macOS)
 
 ```bash
-brew install openjdk@21                       # or any JDK 21+; CI also tests 25
-export JAVA_HOME=$(/usr/libexec/java_home -v 21)
+brew install --cask temurin@25              # or any JDK 25+
+export JAVA_HOME=$(/usr/libexec/java_home -v 25)
 ./mvnw verify                                 # first run downloads Maven 3.9.10 via the wrapper
 ```
 
