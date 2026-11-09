@@ -142,9 +142,18 @@ class PostgresExportIT {
             assertThat(count("SELECT count(*) FROM accounting_event WHERE outcome = 1"))
                     .as("every applied event")
                     .isEqualTo(node.stats().applied());
+            // An event is stored once, under its first outcome (insert-if-absent by event id). A gateway resubmits
+            // pending requests to a new leader; one already applied comes back stale (a newer event of its session
+            // was applied meanwhile) and is counted stale again by the cluster, but it is the stored applied row.
+            long resubmitted = 0;
+            for (int g = 0; g < 2; g++) {
+                io.radiusward.gateway.GatewayStats stats = cluster.gateway(g).stats();
+                resubmitted += stats.get(io.radiusward.gateway.GatewayStats.Counter.RESUBMITTED)
+                        + stats.get(io.radiusward.gateway.GatewayStats.Counter.RESUBMITTED_ON_NEW_LEADER);
+            }
             assertThat(count("SELECT count(*) FROM accounting_event WHERE outcome = 2"))
-                    .as("stale events")
-                    .isEqualTo(node.stats().stale());
+                    .as("stale events: each once; only resubmissions of stored events are counted again")
+                    .isBetween(node.stats().stale() - resubmitted, node.stats().stale());
             assertThat(count("SELECT count(*) FROM radacct WHERE acctstoptime IS NOT NULL"))
                     .isEqualTo(count("SELECT count(*) FROM accounting_session"));
 
