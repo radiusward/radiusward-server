@@ -40,6 +40,12 @@ final class EapTlsClient {
     }
 
     private final ByteArrayOutputStream application = new ByteArrayOutputStream();
+    private boolean tunnelStarted;
+
+    /** Keying material of this client's TLS session (TTLS's implicit challenge). */
+    byte[] export(String label, int length) throws Exception {
+        return ((ExtendedSSLSession) engine.getSession()).exportKeyingMaterialData(label, null, length);
+    }
 
     /** The type data answering the server's EAP-TLS request type data. */
     byte[] answer(byte[] request) throws Exception {
@@ -63,8 +69,11 @@ final class EapTlsClient {
         incoming.reset();
         application.reset();
         outgoing = drive(message);
-        if (application.size() > 0 && tunnel != null) {
-            byte[] plain = tunnel.apply(application.toByteArray());
+        boolean established =
+                engine.getHandshakeStatus() == javax.net.ssl.SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING;
+        if (tunnel != null && established && (application.size() > 0 || !tunnelStarted)) {
+            tunnelStarted = true;
+            byte[] plain = tunnel.apply(application.toByteArray()); // empty: the peer may speak first (TTLS)
             if (plain != null) {
                 ByteArrayOutputStream records = new ByteArrayOutputStream();
                 records.write(outgoing);
@@ -150,9 +159,10 @@ final class EapTlsClient {
 
     byte[] msk(int type) throws Exception {
         ExtendedSSLSession session = (ExtendedSSLSession) engine.getSession();
+        String tls12Label = type == Ttls.TYPE ? "ttls keying material" : "client EAP encryption";
         byte[] material = session.getProtocol().equals("TLSv1.3")
                 ? session.exportKeyingMaterialData("EXPORTER_EAP_TLS_Key_Material", new byte[] {(byte) type}, 128)
-                : session.exportKeyingMaterialData("client EAP encryption", null, 128);
+                : session.exportKeyingMaterialData(tls12Label, null, 128);
         return Arrays.copyOf(material, 64);
     }
 }

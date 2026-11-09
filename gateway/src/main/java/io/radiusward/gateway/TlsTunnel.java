@@ -71,6 +71,11 @@ abstract class TlsTunnel implements EapMethod {
         return msk;
     }
 
+    /** More keying material from the tunnel (TTLS's implicit challenge), without context. */
+    final byte[] export(String label, int length) throws SSLException {
+        return ((ExtendedSSLSession) engine.getSession()).exportKeyingMaterialData(label, null, length);
+    }
+
     @Override
     public Step start(int identifier, Credentials credentials) {
         engine = config.context().createSSLEngine();
@@ -147,7 +152,7 @@ abstract class TlsTunnel implements EapMethod {
             LOG.debug("EAP TLS failed: {}", e.getMessage());
             return Step.FAILED;
         }
-        if (wasFinished && application.size() > 0) {
+        if (finished && application.size() > 0) { // also data sent together with the client's Finished (TLS 1.3)
             Step step = onData(application.toByteArray(), credentials);
             if (step.unavailable()) {
                 retryData = data.clone();
@@ -156,6 +161,11 @@ abstract class TlsTunnel implements EapMethod {
             if (out.size() == 0 || step.done()) {
                 return step;
             }
+            // handshake records (e.g. a session ticket) and the method's answer go out together
+            out.writeBytes(outgoing);
+        }
+        if (out.size() == 0 && finished) {
+            return Step.next(new byte[] {0}); // nothing to say after the handshake: the client's turn
         }
         return send(out.toByteArray());
     }

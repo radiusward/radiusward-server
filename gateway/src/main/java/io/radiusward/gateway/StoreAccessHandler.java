@@ -491,9 +491,17 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return ACCEPT; // no credential to check: EAP-Success right away
         }
         EapMethod.Credentials credentials = new EapMethod.Credentials(
-                passwords,
-                stores.chap().getOrDefault(found.store(), false),
-                (user, challengeHash, ntResponse) -> innerMsChapV2(context, user, challengeHash, ntResponse));
+                passwords, stores.chap().getOrDefault(found.store(), false), new EapMethod.InnerAuth() {
+                    @Override
+                    public EapMethod.Inner msChapV2(String user, byte[] challengeHash, byte[] ntResponse) {
+                        return innerMsChapV2(context, user, challengeHash, ntResponse);
+                    }
+
+                    @Override
+                    public EapMethod.Inner password(String user, byte[] password) {
+                        return innerPassword(context, user, password);
+                    }
+                });
         EapMethod.Step step;
         if (c.method == null) {
             c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)));
@@ -688,6 +696,39 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return new EapMethod.Inner(REJECT, null);
         }
         return new EapMethod.Inner(ACCEPT, Md4.digest(ntHash));
+    }
+
+    /** A password inside a tunnel (TTLS/PAP): the inner user looked up, then a verifier or the stored credentials. */
+    private EapMethod.Inner innerPassword(AccessContext context, String user, byte[] password) {
+        Authorization a = authorize(context, user, false);
+        if (a.code() != ACCEPT) {
+            return new EapMethod.Inner(a.code(), null);
+        }
+        if (a.authType().equalsIgnoreCase("Accept")) {
+            return new EapMethod.Inner(ACCEPT, null);
+        }
+        String verifier = verifierFor(a.authType(), a.found().store(), a.passwords());
+        if (verifier != null) {
+            try {
+                return new EapMethod.Inner(
+                        stores.verifiers()
+                                        .get(verifier)
+                                        .verifyPassword(user, password)
+                                        .accepted()
+                                ? ACCEPT
+                                : REJECT,
+                        null);
+            } catch (StoreUnavailableException e) {
+                warnOnce(
+                        "verifier-unavailable:" + verifier + ":" + e.getMessage(),
+                        "verifier {} unavailable, requests are not answered: {}",
+                        verifier,
+                        e.getMessage());
+                return new EapMethod.Inner(DROP, null);
+            }
+        }
+        return new EapMethod.Inner(
+                checkPassword(context, a.found(), user, a.passwords(), password) ? ACCEPT : REJECT, null);
     }
 
     /**
@@ -983,45 +1024,55 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         byte[] password = Arrays.copyOf(buffer.byteArray(), n);
         try {
-            for (AttributeItem p : passwords) {
-                if (!PasswordCheck.isPassword(p.attribute())) {
-                    continue; // NT-Password / LM-Password: MS-CHAP (5.6)
-                }
-                if (BCrypt.cost(p.value()) > stores.bcryptMaxCost()) {
-                    warnOnce(
-                            "bcrypt-cost:" + found.store(),
-                            "store {}: a bcrypt hash costs more than auth.bcrypt.max.cost; such users are rejected",
-                            found.store());
-                    return false;
-                }
-                boolean slow = PasswordCheck.isSlow(p.attribute(), p.value());
-                String key = slow ? verifiedKey(userName, p.value(), password) : null;
-                long now = clockMillis.getAsLong();
-                long until = key == null ? Long.MIN_VALUE : verified.getValue(key);
-                if (until != Long.MIN_VALUE && until - now > 0) {
-                    return true;
-                }
-                if (PasswordCheck.verify(p.attribute(), p.value(), password)) {
-                    if (key != null && ttlMillis > 0) {
-                        if (verified.size() >= stores.cacheMax()) {
-                            verified.clear();
-                        }
-                        verified.put(key, now + ttlMillis);
-                    }
-                    return true;
-                }
-                return false; // the first usable password decides
-            }
-            warnOnce(
-                    "no-password:" + found.store(),
-                    "users of store {} without a usable password are rejected"
-                            + " (supported: Cleartext-, Crypt- ($5$/$6$/$2b$), SSHA*, PBKDF2-Password)",
-                    found.store());
-            return false;
+            return checkPassword(context, found, userName, passwords, password);
         } finally {
             Arrays.fill(password, (byte) 0);
             Arrays.fill(buffer.byteArray(), (byte) 0);
         }
+    }
+
+    /**
+     * A PAP password against the user's stored credentials: the first usable one decides; successful slow-hash checks
+     * are cached.
+     */
+    private boolean checkPassword(
+            AccessContext context, Found found, String userName, List<AttributeItem> passwords, byte[] password) {
+        Object2LongHashMap<String> verified = cache(context).verified;
+        for (AttributeItem p : passwords) {
+            if (!PasswordCheck.isPassword(p.attribute())) {
+                continue; // NT-Password / LM-Password: MS-CHAP (5.6)
+            }
+            if (BCrypt.cost(p.value()) > stores.bcryptMaxCost()) {
+                warnOnce(
+                        "bcrypt-cost:" + found.store(),
+                        "store {}: a bcrypt hash costs more than auth.bcrypt.max.cost; such users are rejected",
+                        found.store());
+                return false;
+            }
+            boolean slow = PasswordCheck.isSlow(p.attribute(), p.value());
+            String key = slow ? verifiedKey(userName, p.value(), password) : null;
+            long now = clockMillis.getAsLong();
+            long until = key == null ? Long.MIN_VALUE : verified.getValue(key);
+            if (until != Long.MIN_VALUE && until - now > 0) {
+                return true;
+            }
+            if (PasswordCheck.verify(p.attribute(), p.value(), password)) {
+                if (key != null && ttlMillis > 0) {
+                    if (verified.size() >= stores.cacheMax()) {
+                        verified.clear();
+                    }
+                    verified.put(key, now + ttlMillis);
+                }
+                return true;
+            }
+            return false; // the first usable password decides
+        }
+        warnOnce(
+                "no-password:" + found.store(),
+                "users of store {} without a usable password are rejected"
+                        + " (supported: Cleartext-, Crypt- ($5$/$6$/$2b$), SSHA*, PBKDF2-Password)",
+                found.store());
+        return false;
     }
 
     /** A key that proves knowledge of the password without keeping it: SHA-256(random salt, stored, password). */

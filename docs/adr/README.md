@@ -31,5 +31,6 @@
 | [0027](0027-java-25-baseline.md) | Java 25 baseline, for the TLS keying-material exporter | Accepted |
 | [0028](0028-eap-tls.md) | EAP-TLS: JDK TLS engine, RFC 5216 framing, keys from the exporter, certificate-only users | Accepted |
 | [0029](0029-peap.md) | PEAPv0/EAP-MSCHAPv2: shared TLS base, the inner user is authorized, outages keep the conversation | Accepted |
+| [0030](0030-ttls.md) | EAP-TTLS with inner PAP and MS-CHAPv2, implicit challenge | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

@@ -34,6 +34,9 @@ interface EapMethod {
          * @param challengeHash the RFC 2759 challenge hash the NT response answers
          */
         Inner msChapV2(String user, byte[] challengeHash, byte[] ntResponse);
+
+        /** A password inside a tunnel (TTLS/PAP), checked like PAP outside it (stored formats or a verifier). */
+        Inner password(String user, byte[] password);
     }
 
     /**

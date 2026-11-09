@@ -29,6 +29,9 @@ final class PeapPeer implements UnaryOperator<byte[]> {
 
     @Override
     public byte[] apply(byte[] in) {
+        if (in.length == 0) {
+            return null; // in PEAP the server speaks first inside the tunnel
+        }
         EapPacket tlv = EapPacket.parse(in); // a full EAP packet of type 33 first: its code 1 looks like Identity
         if (tlv != null && tlv.code() == EapPacket.REQUEST && tlv.type() == Peap.TLV) {
             byte[] out = in.clone();

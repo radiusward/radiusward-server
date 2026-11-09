@@ -22,7 +22,7 @@ import java.util.Locale;
  */
 record EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
 
-    static final List<String> KNOWN = List.of("md5", "tls", "peap");
+    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls");
 
     static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
@@ -40,9 +40,9 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
             throw new ConfigException("auth.eap.conversations: at least 1");
         }
         EapTlsConfig tls = EapTlsConfig.from(config);
-        if ((methods.contains("tls") || methods.contains("peap")) && tls == null) {
+        if ((methods.contains("tls") || methods.contains("peap") || methods.contains("ttls")) && tls == null) {
             throw new ConfigException(
-                    "auth.eap.methods: tls and peap need auth.eap.tls.certificate and auth.eap.tls.key");
+                    "auth.eap.methods: tls, peap and ttls need auth.eap.tls.certificate and auth.eap.tls.key");
         }
         if (methods.contains("tls") && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.ca, the CAs of client certificates");
@@ -61,6 +61,7 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
             case "md5" -> EapPacket.TYPE_MD5;
             case "tls" -> EapTls.TYPE;
             case "peap" -> Peap.TYPE;
+            case "ttls" -> Ttls.TYPE;
             default -> -1;
         };
     }
@@ -71,6 +72,7 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
             case EapPacket.TYPE_MD5 -> new EapMd5();
             case EapTls.TYPE -> tls == null ? null : new EapTls(tls);
             case Peap.TYPE -> tls == null ? null : new Peap(tls);
+            case Ttls.TYPE -> tls == null ? null : new Ttls(tls);
             default -> null;
         };
     }
@@ -80,6 +82,6 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
      * {@code require.user}), and tunnels, whose outer identity is often anonymous and whose inner one is checked.
      */
     boolean outerOptional(int type) {
-        return (type == EapTls.TYPE && tls != null && !tls.requireUser()) || type == Peap.TYPE;
+        return (type == EapTls.TYPE && tls != null && !tls.requireUser()) || type == Peap.TYPE || type == Ttls.TYPE;
     }
 }

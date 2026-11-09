@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.IdentityStore;
 import io.radiusward.radius.codec.RadiusPacket;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -329,5 +330,106 @@ class EapTlsTest {
         static String hex(byte[] b) {
             return java.util.HexFormat.of().formatHex(b).toUpperCase(java.util.Locale.ROOT);
         }
+    }
+
+    // ---- EAP-TTLS (ADR 0030) ------------------------------------------------------------------------
+
+    private StoreAccessHandler ttls(
+            Map<String, Boolean> mschap,
+            Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
+            Map<String, String> storeVerifiers) {
+        return handler(1024, false, 65_536, List.of("ttls"), mschap, verifiers, storeVerifiers);
+    }
+
+    private EapTlsClient ttlsClient(String protocol, TtlsPeer peer) throws Exception {
+        EapTlsClient client = new EapTlsClient(TestPki.clientContext(null, pki.ca), protocol, 1024, peer);
+        peer.client = client;
+        return client;
+    }
+
+    @Test
+    void ttlsPapWithStoredPasswords() throws Exception {
+        store.user(
+                        "carol",
+                        List.of(new AttributeItem("Cleartext-Password", ":=", "Carol-Pw")),
+                        List.of(new AttributeItem("Filter-Id", "=", "guest")))
+                .user(
+                        "dave",
+                        List.of(new AttributeItem(
+                                "Crypt-Password",
+                                ":=",
+                                ShaCrypt.crypt("Dave-Pw".getBytes(StandardCharsets.UTF_8), "$6$rounds=1000$salt"))),
+                        List.of());
+        for (String protocol : List.of("TLSv1.2", "TLSv1.3")) {
+            EapTlsClient client = ttlsClient(protocol, new TtlsPeer("carol", "Carol-Pw", false, false));
+            assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", client, Ttls.TYPE))
+                    .as(protocol)
+                    .isEqualTo(AccessHandler.ACCEPT);
+            assertThat(reply().findAttribute(11))
+                    .as("the inner user's reply items")
+                    .isPositive();
+            assertKeys(client, Ttls.TYPE);
+        }
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()),
+                        "anonymous",
+                        ttlsClient("TLSv1.3", new TtlsPeer("dave", "Dave-Pw", false, false)),
+                        Ttls.TYPE))
+                .as("a SHA-crypt hash")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()),
+                        "anonymous",
+                        ttlsClient("TLSv1.2", new TtlsPeer("dave", "wrong", false, false)),
+                        Ttls.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.FAILURE);
+    }
+
+    @Test
+    void ttlsMsChapV2WithTheImplicitChallenge() throws Exception {
+        store.user(
+                "erin",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Erin-Pw")))),
+                List.of());
+        TtlsPeer peer = new TtlsPeer("erin", "Erin-Pw", true, false);
+        EapTlsClient client = ttlsClient("TLSv1.3", peer);
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", client, Ttls.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(peer.serverProved).as("MS-CHAP2-Success with the right S=").isTrue();
+        assertKeys(client, Ttls.TYPE);
+
+        TtlsPeer relayed = new TtlsPeer("erin", "Erin-Pw", true, true);
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.2", relayed), Ttls.TYPE))
+                .as("a challenge not derived from this tunnel")
+                .isEqualTo(AccessHandler.REJECT);
+        TtlsPeer wrong = new TtlsPeer("erin", "nope", true, false);
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.2", wrong), Ttls.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void ttlsPapThroughAVerifierAndItsOutage() throws Exception {
+        StoreAccessHandlerTest.FakeVerifier ad = new StoreAccessHandlerTest.FakeVerifier();
+        store.user("User", List.of(), List.of());
+        StoreAccessHandler h = ttls(Map.of(), Map.of("ad", ad), Map.of("main", "ad"));
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        ttlsClient("TLSv1.3", new TtlsPeer("User", "clientPass", false, false)),
+                        Ttls.TYPE))
+                .as("PAP against a directory, e.g. LDAP bind or Netlogon")
+                .isEqualTo(AccessHandler.ACCEPT);
+        ad.down = true;
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        ttlsClient("TLSv1.2", new TtlsPeer("User", "clientPass", false, false)),
+                        Ttls.TYPE))
+                .isEqualTo(AccessHandler.DROP);
+        ad.down = false;
+        assertThat(handle(h, lastResponse, lastState))
+                .as("the retransmission repeats the check")
+                .isEqualTo(AccessHandler.ACCEPT);
     }
 }
