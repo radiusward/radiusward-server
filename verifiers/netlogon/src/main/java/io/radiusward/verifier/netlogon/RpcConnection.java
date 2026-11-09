@@ -136,8 +136,8 @@ final class RpcConnection implements AutoCloseable {
             if (pdu.type != PTYPE_RESPONSE || pdu.callId != id) {
                 throw new IOException("unexpected PDU type " + pdu.type + " (call " + pdu.callId + ")");
             }
-            if (security != null) {
-                security.unprotect(pdu.raw, HEADER + 8, pdu.stubLength - 8, pdu.authValue);
+            if (security != null) { // the padding before the trailer is part of the protected data
+                security.unprotect(pdu.raw, HEADER + 8, pdu.stubLength - 8 + pdu.pad, pdu.authValue);
             }
             result.write(pdu.raw, HEADER + 8, pdu.stubLength - 8);
             if ((pdu.flags & LAST_FRAG) != 0) {
@@ -160,7 +160,7 @@ final class RpcConnection implements AutoCloseable {
             int type, int flags, int id, byte[] body, int stubOffset, int stubLength, Security sec, byte[] auth)
             throws IOException {
         boolean protectedRequest = sec != null && type == PTYPE_REQUEST;
-        int bodyLength = type == PTYPE_REQUEST ? 8 + stubLength : body.length;
+        int bodyLength = type == PTYPE_REQUEST ? 8 + stubLength : stubLength; // a bind passes its used length
         int pad = (auth != null || protectedRequest) ? (4 - (bodyLength % 4)) % 4 : 0;
         int authLength = auth != null ? auth.length : protectedRequest ? sec.signatureLength() : 0;
         int frag = HEADER + bodyLength + (authLength > 0 ? pad + 8 + authLength : 0);
@@ -213,6 +213,7 @@ final class RpcConnection implements AutoCloseable {
         if (authLength > 0) {
             int trailer = frag - authLength - 8;
             int pad = raw[trailer + 2] & 0xFF;
+            pdu.pad = pad;
             pdu.authValue = java.util.Arrays.copyOfRange(raw, trailer + 8, frag);
             bodyEnd = trailer - pad;
         }
@@ -229,6 +230,7 @@ final class RpcConnection implements AutoCloseable {
         int flags;
         int callId;
         int stubLength;
+        int pad;
 
         int u16(int at) {
             return (body[at] & 0xFF) | (body[at + 1] & 0xFF) << 8;

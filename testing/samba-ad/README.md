@@ -13,4 +13,7 @@ Domain `CORP.TEST` (NetBIOS `CORP`), provisioned at first start by `start.sh`:
 | `svc-radius` | `Svc-Passw0rd!` | service account for LDAP searches |
 | `RADIUSWARD$` | `Machine-Passw0rd-1234567890` | workstation trust account for Netlogon |
 
+`ntlm auth = mschapv2-and-ntlmv2-only`: MS-CHAPv2 logons (flagged as such) are allowed, MS-CHAPv1 and other NTLMv1
+responses are not — as on hardened Windows domain controllers.
+
 Ports: 389/636 (LDAP/LDAPS, simple binds need TLS), 135 (endpoint mapper), 49152–49155 (RPC, e.g. Netlogon).

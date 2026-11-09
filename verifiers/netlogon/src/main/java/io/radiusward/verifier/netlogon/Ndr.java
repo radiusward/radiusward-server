@@ -147,6 +147,11 @@ final class Ndr {
             in.position(in.position() + n);
         }
 
+        /** A 32-bit value at an absolute position, not moving the reader. */
+        long u32At(int at) {
+            return in.getInt(at) & 0xFFFF_FFFFL;
+        }
+
         int remaining() {
             return in.remaining();
         }

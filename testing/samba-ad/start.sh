@@ -5,7 +5,8 @@ PASS='Adm1n-Passw0rd!'
 if [ ! -f /var/lib/samba/private/sam.ldb ]; then
     samba-tool domain provision --realm=CORP.TEST --domain=CORP --server-role=dc \
         --dns-backend=SAMBA_INTERNAL --adminpass="$PASS" --use-rfc2307 \
-        --option="rpc server dynamic port range = 49152-49155" >/dev/null
+        --option="rpc server dynamic port range = 49152-49155" \
+        --option="ntlm auth = mschapv2-and-ntlmv2-only" >/dev/null
     samba-tool user create alice 'Alice-Passw0rd!' --given-name=Alice >/dev/null
     samba-tool user create bob 'Bob-Passw0rd!' >/dev/null
     samba-tool user create carol 'Carol-Passw0rd!' >/dev/null

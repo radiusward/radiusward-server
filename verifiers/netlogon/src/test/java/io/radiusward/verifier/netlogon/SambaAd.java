@@ -36,6 +36,7 @@ final class SambaAd {
             GenericContainer<?> c = new GenericContainer<>(new ImageFromDockerfile("radiusward-samba-ad:test", false)
                             .withFileFromPath("Dockerfile", dir.resolve("Dockerfile"))
                             .withFileFromPath("start.sh", dir.resolve("start.sh")))
+                    .withEnv("SAMBA_DEBUG", System.getProperty("samba.debug", "1"))
                     .withPrivilegedMode(true) // Samba keeps ACLs in extended attributes
                     .withExposedPorts(389, 636, 135, 49152, 49153, 49154, 49155)
                     .waitingFor(new WaitAllStrategy()
@@ -60,6 +61,11 @@ final class SambaAd {
     /** A port inside the container (what the endpoint mapper names) as the host reaches it. */
     static java.net.InetSocketAddress mapped(int port) {
         return new java.net.InetSocketAddress(container.getHost(), container.getMappedPort(port));
+    }
+
+    /** The domain controller's log (with {@code -Dsamba.debug=10} detailed enough to see why it refuses). */
+    static String logs() {
+        return container.getLogs();
     }
 
     static String ldapUrl() {
