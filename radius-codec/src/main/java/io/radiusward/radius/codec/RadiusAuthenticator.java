@@ -89,6 +89,15 @@ public final class RadiusAuthenticator {
         buffer.putBytes(offset + RadiusPacket.AUTHENTICATOR_OFFSET, digest);
     }
 
+    /**
+     * Fills the Message-Authenticator of an Access-Request (or Status-Server) at {@code messageAuthenticatorOffset}:
+     * HMAC-MD5 over the packet with its own random Request Authenticator, which stays as it is.
+     */
+    public void signAccessRequest(
+            MutableDirectBuffer buffer, int offset, int length, int messageAuthenticatorOffset, byte[] secret) {
+        writeHmac(buffer, offset, length, messageAuthenticatorOffset, secret);
+    }
+
     // ---- responses ---------------------------------------------------------------------------
 
     /**

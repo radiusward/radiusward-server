@@ -163,4 +163,18 @@ class NasRegistryTest {
                     .hasMessageContaining("nas.x.idle.timeout");
         }
     }
+
+    @Test
+    void accessRequestsRequireMessageAuthenticatorUnlessTheEntrySaysOtherwise() throws Exception {
+        NasRegistry registry = NasRegistry.from(Config.of(Map.of(
+                "nas.a.address", "10.0.0.1",
+                "nas.a.secret", "s",
+                "nas.b.address", "10.0.0.2",
+                "nas.b.secret", "s",
+                "nas.b.access.message-authenticator", "optional")));
+        assertThat(registry.lookup(InetAddress.getByName("10.0.0.1")).accessMessageAuthenticator())
+                .isEqualTo(NasClient.MessageAuthenticatorPolicy.REQUIRED);
+        assertThat(registry.lookup(InetAddress.getByName("10.0.0.2")).accessMessageAuthenticator())
+                .isEqualTo(NasClient.MessageAuthenticatorPolicy.OPTIONAL);
+    }
 }

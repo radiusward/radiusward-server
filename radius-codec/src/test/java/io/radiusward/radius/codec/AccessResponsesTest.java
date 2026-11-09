@@ -83,4 +83,25 @@ class AccessResponsesTest {
                         () -> responses.encode(req, RadiusCode.ACCOUNTING_RESPONSE, out, 0, 0, out, 0, Packets.SECRET))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void accessRequestMessageAuthenticatorSignsAndVerifies() {
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[128]);
+        RadiusPacketEncoder encoder = new RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(RadiusCode.ACCESS_REQUEST, 9)
+                .authenticator(AccessRequestsTest.AUTHENTICATOR)
+                .attribute(1, "nemo".getBytes());
+        int ma = encoder.messageAuthenticator();
+        int length = encoder.finish();
+        authenticator.signAccessRequest(buffer, 0, length, ma, Packets.SECRET);
+        RadiusPacket packet = Packets.wrap(Arrays.copyOf(buffer.byteArray(), length));
+        assertThat(authenticator.verifyRequestMessageAuthenticator(packet, Packets.SECRET))
+                .isTrue();
+        assertThat(authenticator.verifyRequestMessageAuthenticator(packet, "other".getBytes()))
+                .isFalse();
+        assertThat(Arrays.copyOfRange(buffer.byteArray(), 4, 20))
+                .as("the random Request Authenticator is kept")
+                .isEqualTo(AccessRequestsTest.AUTHENTICATOR);
+    }
 }

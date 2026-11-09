@@ -62,6 +62,11 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `gateway.pending.timeout` | `5s` | forget a request with no commit (the next retransmit is submitted again) |
 | `gateway.retransmit.resubmit.after` | `1s` | a retransmit of a request pending longer than this is resubmitted ([ADR 0011](adr/0011-gateway-pipeline.md)) |
 | `gateway.response.cache.ttl` | `30s` | how long committed requests are answered from the cache |
+| `gateway.auth.enabled` | `false` | answer Access-Requests (Phase 5; needs an identity store, coming with work package 5.3 — until then the gateway refuses to start with it) |
+| `gateway.auth.port` | `1812` | RADIUS authentication socket (non-blocking, [ADR 0020](adr/0020-authentication-path.md)) |
+| `gateway.auth.workers` | `4` | threads that decide Access-Requests (they may wait for an identity store; the socket thread never does) |
+| `gateway.auth.pending` | `256` | Access-Requests between the socket and the workers (power of two); beyond it requests are dropped |
+| `gateway.auth.reply.cache.entries` / `gateway.auth.reply.cache.ttl` | `4096` / `10s` | replies kept to answer retransmissions (RFC 5080) |
 | `dictionary.dir` | `/etc/radiusward/dictionary.d` | operator dictionaries, loaded after the bundled set if the directory exists |
 | `debug.enabled` | `false` | allows `debug.*` keys; never in production |
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
@@ -101,6 +106,7 @@ File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 | `nas.<name>.vendor` | `default` | vendor profile |
 | `nas.<name>.message-authenticator` | `optional` | `required` \| `optional` \| `off` |
 | `nas.<name>.id` | FNV-1a hash of the name | identity used in event keys — must be identical on every gateway |
+| `nas.<name>.access.message-authenticator` | `required` | Message-Authenticator on Access-Requests: `required` \| `optional` \| `off` (BlastRADIUS, CVE-2024-3596; always required with EAP) |
 | `nas.<name>.idle.timeout` | cluster's `service.idle.timeout` | close a session of this NAS without an event for this long (lost Stop): about 3 × the NAS's interim interval, e.g. `15m` for 5-minute interims. Whole minutes, 1m–65535m; the latest event of a session sets it |
 | `nas.<name>.identity` | `source-ip` | devices behind this entry (NAT, cloud Wi-Fi): `nas-identifier`, `called-station-id`, `nas-ip-address`, or a list (first present wins); required for `0.0.0.0/0`. Must be identical on every gateway |
 

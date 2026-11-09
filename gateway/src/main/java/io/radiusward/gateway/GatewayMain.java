@@ -27,6 +27,12 @@ public final class GatewayMain {
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));
         GatewayConfig gatewayConfig = GatewayConfig.from(config);
         NasRegistry registry = NasRegistry.from(config);
+        AuthConfig auth = AuthConfig.from(config);
+        if (auth.enabled()) {
+            // the Access-Request path exists (Phase 5.2); the identity stores that decide requests come with 5.3
+            throw new io.radiusward.common.config.ConfigException(
+                    "gateway.auth.enabled: no identity store is available yet (Phase 5.3)");
+        }
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
                 Gateway gateway = Gateway.launch(gatewayConfig, registry);
                 ManagementServer ignored = ManagementServer.start(

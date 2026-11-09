@@ -19,6 +19,8 @@ package io.radiusward.gateway;
  *     source address is the device ({@code source-ip}, the default)
  * @param idleTimeoutMinutes a session of this entry without an event for this long is closed (lost Stop); about three
  *     interim intervals. 0: the cluster's {@code service.idle.timeout}
+ * @param accessMessageAuthenticator Message-Authenticator on Access-Requests ({@code access.message-authenticator},
+ *     default {@code required}: the BlastRADIUS mitigation); requests with EAP always need it
  */
 public record NasClient(
         String name,
@@ -29,7 +31,32 @@ public record NasClient(
         String vendor,
         MessageAuthenticatorPolicy messageAuthenticator,
         Identity[] identity,
-        int idleTimeoutMinutes) {
+        int idleTimeoutMinutes,
+        MessageAuthenticatorPolicy accessMessageAuthenticator) {
+
+    /** With Message-Authenticator required on Access-Requests. */
+    public NasClient(
+            String name,
+            int id,
+            int network,
+            int prefixLength,
+            byte[] secret,
+            String vendor,
+            MessageAuthenticatorPolicy messageAuthenticator,
+            Identity[] identity,
+            int idleTimeoutMinutes) {
+        this(
+                name,
+                id,
+                network,
+                prefixLength,
+                secret,
+                vendor,
+                messageAuthenticator,
+                identity,
+                idleTimeoutMinutes,
+                MessageAuthenticatorPolicy.REQUIRED);
+    }
 
     /** Without an idle timeout of its own. */
     public NasClient(

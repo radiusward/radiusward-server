@@ -14,7 +14,11 @@ java -jar distribution/target/radiusward.jar gateway --config config/local/gatew
 | `EventKeys`, `Murmur3` | session key and exact key (pinned layout) |
 | `ResponseCache` | RFC 5080 duplicate detection, state only (PENDING with correlation id / COMMITTED) |
 | `PendingTable` | preallocated in-flight requests |
+| `AuthAgent` | Access-Requests (Phase 5, [ADR 0020](../docs/adr/0020-authentication-path.md)): its own non-blocking NIO socket; validate, NAS lookup, Message-Authenticator (required by default), reply cache, hand-off to the workers, send the replies |
+| `AccessWorker`, `AccessSlots`, `AccessHandler`, `AccessContext` | bounded hand-off to worker threads that decide a request (`AccessHandler`) and build the signed reply |
+| `ReplyCache`, `AuthConfig`, `AuthStats` | RFC 5080 reply cache with in-flight marks; `gateway.auth.*`; counters |
 | `Gateway`, `GatewayConfig`, `GatewayMain` | wiring, embedded media driver, threading, management |
 
-Never blocks and never allocates per packet (`GatewayAllocationIT`, 100k packets). A retransmit of a request
+Never blocks and never allocates per packet (`GatewayAllocationIT`, 100k accounting packets and 100k
+Access-Requests). A retransmit of a request
 pending for over 1 s is resubmitted, so commands lost with a failed leader are recovered.

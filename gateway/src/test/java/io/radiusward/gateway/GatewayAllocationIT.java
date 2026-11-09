@@ -165,4 +165,78 @@ class GatewayAllocationIT {
         }
         return packets;
     }
+
+    /** Access-Requests (Phase 5.2): receive, slot, worker decision, signed reply, send — no allocation per request. */
+    @Test
+    void accessRequestPathDoesNotAllocate() throws Exception {
+        long[] clock = {1_000_000_000L};
+        AuthStats stats = new AuthStats();
+        AccessSlots slots = new AccessSlots(64);
+        UnsafeBuffer password = new UnsafeBuffer(new byte[128]);
+        AccessHandler handler = context -> {
+            int n = context.credentials()
+                    .decryptUserPassword(context.request(), context.nas().secret(), password, 0);
+            context.reply().uint32(27, 3600);
+            return n == 10 ? AccessHandler.ACCEPT : AccessHandler.REJECT;
+        };
+        AuthAgent agent = new AuthAgent(
+                UdpAgentTest.config(Duration.ZERO, 1024),
+                new AuthConfig(true, 0, 1, 64, 4096, Duration.ofMillis(1)),
+                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
+                slots,
+                stats,
+                () -> clock[0]);
+        AccessWorker worker = new AccessWorker(0, slots, handler, stats);
+        agent.onStart();
+        try (DatagramChannel client = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0))) {
+            client.configureBlocking(false);
+            client.connect(new InetSocketAddress("127.0.0.1", agent.localPort()));
+            ByteBuffer[] requests = new ByteBuffer[2 * PACKETS];
+            for (int i = 0; i < requests.length; i++) {
+                byte[] r = AuthAgentTest.accessRequest(i & 0xFF, "arctangent", true, false);
+                requests[i] = ByteBuffer.allocateDirect(r.length).put(r).flip();
+            }
+            ByteBuffer response = ByteBuffer.allocateDirect(4096);
+            runAccess(agent, worker, client, requests, 0, PACKETS, response, clock); // warm-up
+            long before = THREADS.getCurrentThreadAllocatedBytes();
+            runAccess(agent, worker, client, requests, PACKETS, PACKETS, response, clock);
+            long allocated = THREADS.getCurrentThreadAllocatedBytes() - before;
+            assertThat(stats.get(AuthStats.Counter.ACCEPTED)).isEqualTo(2L * PACKETS);
+            assertThat(allocated)
+                    .as(
+                            "bytes allocated for %d Access-Requests (%.3f per request)",
+                            PACKETS, (double) allocated / PACKETS)
+                    .isLessThan(64 * 1024);
+        } finally {
+            agent.onClose();
+        }
+    }
+
+    private static void runAccess(
+            AuthAgent agent,
+            AccessWorker worker,
+            DatagramChannel client,
+            ByteBuffer[] requests,
+            int from,
+            int count,
+            ByteBuffer response,
+            long[] clock)
+            throws Exception {
+        for (int i = from; i < from + count; i++) {
+            requests[i].clear();
+            client.write(requests[i]);
+            clock[0] += 2_000_000; // 2 ms per request: cached replies expire, the cache stays small
+            int responses = 0;
+            for (int spin = 0; responses == 0 && spin < 1_000_000; spin++) {
+                agent.doWork();
+                worker.doWork();
+                agent.doWork();
+                response.clear();
+                responses = client.read(response);
+            }
+            if (responses <= 0) {
+                throw new AssertionError("no reply for request " + i);
+            }
+        }
+    }
 }

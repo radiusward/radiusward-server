@@ -33,6 +33,7 @@ import org.agrona.collections.Int2ObjectHashMap;
  * nas.core.id      = 1001                # optional, defaults to a hash of the name
  * nas.core.identity = source-ip          # or e.g. nas-identifier, called-station-id (devices behind NAT)
  * nas.core.idle.timeout = 15m            # close sessions without an event for this long (≈ 3 interims)
+ * nas.core.access.message-authenticator = required   # on Access-Requests (default required: BlastRADIUS)
  * </pre>
  */
 public final class NasRegistry {
@@ -95,7 +96,11 @@ public final class NasRegistry {
                     config.string(prefix + "vendor", "default").toLowerCase(Locale.ROOT),
                     policy,
                     identity,
-                    idleMinutes(prefix, config)));
+                    idleMinutes(prefix, config),
+                    config.enumValue(
+                            prefix + "access.message-authenticator",
+                            NasClient.MessageAuthenticatorPolicy.class,
+                            NasClient.MessageAuthenticatorPolicy.REQUIRED)));
         }
         if (clients.isEmpty()) {
             throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");

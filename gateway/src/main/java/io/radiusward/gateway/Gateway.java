@@ -42,18 +42,39 @@ public final class Gateway implements AutoCloseable {
     private final GatewayStats stats;
     private final MediaDriver driver;
     private final UdpAgent udpAgent;
+    private final AuthAgent authAgent;
+    private final AuthStats authStats;
     private final AgentRunner[] runners;
 
     private Gateway(
-            GatewayConfig config, GatewayStats stats, MediaDriver driver, UdpAgent udpAgent, AgentRunner... runners) {
+            GatewayConfig config,
+            GatewayStats stats,
+            MediaDriver driver,
+            UdpAgent udpAgent,
+            AuthAgent authAgent,
+            AuthStats authStats,
+            AgentRunner... runners) {
         this.config = config;
         this.stats = stats;
         this.driver = driver;
         this.udpAgent = udpAgent;
+        this.authAgent = authAgent;
+        this.authStats = authStats;
         this.runners = runners;
     }
 
     public static Gateway launch(GatewayConfig config, NasRegistry registry) {
+        return launch(config, registry, AuthConfig.DISABLED, null);
+    }
+
+    /**
+     * A gateway that also answers Access-Requests when {@code auth} is enabled (Phase 5), deciding them with
+     * {@code handler} on {@link AuthConfig#workers()} threads.
+     */
+    public static Gateway launch(GatewayConfig config, NasRegistry registry, AuthConfig auth, AccessHandler handler) {
+        if (auth.enabled() && handler == null) {
+            throw new IllegalArgumentException("authentication enabled without an access handler");
+        }
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (config.dictionaryDir() != null) {
             dictionaries.addDirectory(config.dictionaryDir(), ParseMode.LENIENT);
@@ -82,26 +103,44 @@ public final class Gateway implements AutoCloseable {
                     .messageTimeoutNs(Duration.ofSeconds(5).toNanos())
                     .errorHandler(t -> LOG.warn("cluster client: {}", t.getMessage()));
             ClusterClientAgent client = new ClusterClientAgent(clusterContext, toCluster, fromCluster, stats);
-
-            AgentRunner[] runners;
-            if (config.dedicatedThreads()) {
-                runners = new AgentRunner[] {
-                    new AgentRunner(Profile.idleStrategy(config.idleStrategy()), Gateway::error, null, udp),
-                    new AgentRunner(Profile.idleStrategy(config.idleStrategy()), Gateway::error, null, client)
-                };
-            } else {
-                runners = new AgentRunner[] {
-                    new AgentRunner(
-                            Profile.idleStrategy(config.idleStrategy()),
+            AuthStats authStats = new AuthStats();
+            AuthAgent authAgent = null;
+            java.util.List<AgentRunner> runnerList = new java.util.ArrayList<>();
+            java.util.List<org.agrona.concurrent.Agent> socketAgents =
+                    new java.util.ArrayList<>(java.util.List.of(udp));
+            if (auth.enabled()) {
+                AccessSlots slots = new AccessSlots(auth.pending());
+                authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime);
+                socketAgents.add(authAgent);
+                for (int w = 0; w < auth.workers(); w++) {
+                    // workers may wait on an identity store: a parking idle strategy, never a busy spin
+                    runnerList.add(new AgentRunner(
+                            new org.agrona.concurrent.BackoffIdleStrategy(10, 20, 1_000, 1_000_000),
                             Gateway::error,
                             null,
-                            new CompositeAgent(udp, client))
-                };
+                            new AccessWorker(w, slots, handler, authStats)));
+                }
             }
+            if (config.dedicatedThreads()) {
+                for (org.agrona.concurrent.Agent agent : socketAgents) {
+                    runnerList.add(
+                            new AgentRunner(Profile.idleStrategy(config.idleStrategy()), Gateway::error, null, agent));
+                }
+                runnerList.add(
+                        new AgentRunner(Profile.idleStrategy(config.idleStrategy()), Gateway::error, null, client));
+            } else {
+                socketAgents.add(client);
+                runnerList.add(new AgentRunner(
+                        Profile.idleStrategy(config.idleStrategy()),
+                        Gateway::error,
+                        null,
+                        new CompositeAgent(socketAgents)));
+            }
+            AgentRunner[] runners = runnerList.toArray(AgentRunner[]::new);
             for (AgentRunner runner : runners) {
                 AgentRunner.startOnThread(runner);
             }
-            Gateway gateway = new Gateway(config, stats, driver, udp, runners);
+            Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, runners);
             LOG.info(
                     "gateway {} started: {} NAS, cluster {}, {} threads",
                     config.gatewayId(),
@@ -156,6 +195,22 @@ public final class Gateway implements AutoCloseable {
         return udpAgent.localPort();
     }
 
+    public AuthStats authStats() {
+        return authStats;
+    }
+
+    /** Access-Request port actually bound, -1 when authentication is off; waits briefly for the bind. */
+    public int authPort() {
+        if (authAgent == null) {
+            return -1;
+        }
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (!authStats.bound() && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        return authAgent.localPort();
+    }
+
     public Health health() {
         for (AgentRunner runner : runners) {
             if (runner.isClosed()) {
@@ -169,6 +224,9 @@ public final class Gateway implements AutoCloseable {
     public Health ready() {
         if (!stats.bound()) {
             return Health.down("RADIUS socket not bound");
+        }
+        if (authAgent != null && !authStats.bound()) {
+            return Health.down("RADIUS authentication socket not bound");
         }
         if (!stats.connected()) {
             return Health.down("not connected to the cluster");
@@ -187,8 +245,15 @@ public final class Gateway implements AutoCloseable {
         for (GatewayStats.Counter c : GatewayStats.counters()) {
             json.field(c.name().toLowerCase(java.util.Locale.ROOT), stats.get(c));
         }
-        return json.end()
-                .object("log")
+        json.end();
+        if (authAgent != null) {
+            json.object("access").field("inFlight", authStats.inFlight()).field("replyCache", authStats.cached());
+            for (AuthStats.Counter c : AuthStats.counters()) {
+                json.field(c.name().toLowerCase(java.util.Locale.ROOT), authStats.get(c));
+            }
+            json.end();
+        }
+        return json.object("log")
                 .field("dropped", NonBlockingQueueFullPolicy.dropped())
                 .end()
                 .finish();
@@ -208,6 +273,16 @@ public final class Gateway implements AutoCloseable {
                 .sample(stats.cacheSize(), "gateway", id);
         w.gauge("radiusward_gateway_cluster_connected", "1 when connected to the cluster")
                 .sample(stats.connected() ? 1 : 0, "gateway", id);
+        if (authAgent != null) {
+            w.counter("radiusward_gateway_access_requests_total", "Access-Requests by what happened to them");
+            for (AuthStats.Counter c : AuthStats.counters()) {
+                w.sample(authStats.get(c), "gateway", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
+            }
+            w.gauge("radiusward_gateway_access_in_flight", "Access-Requests handed to the workers, not answered yet")
+                    .sample(authStats.inFlight(), "gateway", id);
+            w.gauge("radiusward_gateway_access_reply_cache_entries", "Replies kept for retransmissions")
+                    .sample(authStats.cached(), "gateway", id);
+        }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());
         JvmMetrics.write(w);
