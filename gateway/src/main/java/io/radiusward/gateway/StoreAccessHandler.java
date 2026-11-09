@@ -92,6 +92,20 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
         final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
         final MsChapOutcome msChap = new MsChapOutcome();
+        final EapRound eap = new EapRound();
+    }
+
+    /** The EAP state of the request being decided; per worker, reset for every request. */
+    private static final class EapRound {
+        EapPacket packet;
+        EapConversations.Conversation conversation;
+        byte[] msk;
+
+        void reset() {
+            packet = null;
+            conversation = null;
+            msk = null;
+        }
     }
 
     /** What a successful MS-CHAP check leaves for the reply; per worker, reset for every request. */
@@ -126,6 +140,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.ttlMillis = stores.cacheTtl().toMillis();
         new java.security.SecureRandom().nextBytes(verifierSalt);
         stores.replyVendors().keySet().forEach(nas -> filtered.put(nas, new AtomicLong()));
+        this.conversations = new EapConversations(stores.eap().conversations());
     }
 
     @Override
@@ -133,9 +148,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         int method = context.credentials().method(context.request());
         WorkerCache cache = cache(context);
         cache.msChap.reset();
+        cache.eap.reset();
         int result = decide(context, method);
         if (result == REJECT && isMsChap(method)) {
             writeMsChapError(context, method); // the client shows a proper failure instead of a timeout
+        }
+        if (result == REJECT && method == AccessRequests.METHOD_EAP && cache.eap.packet != null) {
+            EapPacket.failure(cache.eap.packet.identifier()).writeTo(context.reply()); // RFC 3579 §2.6.3
         }
         return result;
     }
@@ -146,10 +165,22 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private int decide(AccessContext context, int method) {
         RadiusPacket request = context.request();
-        if (method != AccessRequests.METHOD_PAP && method != AccessRequests.METHOD_CHAP && !isMsChap(method)) {
-            return REJECT; // EAP (5.7) comes later; none or several methods are never valid
+        if (method != AccessRequests.METHOD_PAP
+                && method != AccessRequests.METHOD_CHAP
+                && !isMsChap(method)
+                && method != AccessRequests.METHOD_EAP) {
+            return REJECT; // none or several methods are never valid
         }
-        String userName = string(request, USER_NAME);
+        String userName;
+        if (method == AccessRequests.METHOD_EAP) {
+            int begun = eapBegin(context);
+            if (begun != ACCEPT) {
+                return begun;
+            }
+            userName = cache(context).eap.conversation.identity;
+        } else {
+            userName = string(request, USER_NAME);
+        }
         if (userName == null || userName.isEmpty()) {
             return REJECT;
         }
@@ -192,7 +223,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (authType.equalsIgnoreCase("Reject")) {
             return REJECT;
         }
-        if (!authType.equalsIgnoreCase("Accept")) {
+        if (method == AccessRequests.METHOD_EAP) {
+            int round = eapRound(context, found, authType, passwords);
+            if (round != ACCEPT) {
+                return round; // CHALLENGE (another round trip), REJECT or DROP
+            }
+        } else if (!authType.equalsIgnoreCase("Accept")) {
             String verifier = verifierFor(authType, found.store(), passwords);
             int checked = verifier != null
                     ? verify(context, method, verifier, userName)
@@ -209,6 +245,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         encode(cache(context).encoded, reply, context.reply(), context.nas().name());
         writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
+        writeEapSuccess(context, method);
         return ACCEPT;
     }
 
@@ -358,6 +395,135 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
     }
 
+    // ---- EAP (RFC 3748, RFC 3579; ADR 0026) -----------------------------------------------------
+
+    private static final int STATE = 24;
+
+    /**
+     * Reads the EAP response and finds its conversation: a new one for an Identity response without State, the one
+     * the State names otherwise. {@link #ACCEPT} to go on; a malformed packet is discarded ({@link #DROP}), an
+     * unknown or used State is rejected.
+     */
+    private int eapBegin(AccessContext context) {
+        RadiusPacket request = context.request();
+        EapPacket eap = EapPacket.from(request);
+        if (eap == null || eap.code() != EapPacket.RESPONSE) {
+            return DROP; // RFC 3579 §2.6.2: silently discard
+        }
+        EapRound round = cache(context).eap;
+        round.packet = eap;
+        int at = request.findAttribute(STATE);
+        if (at < 0) {
+            if (eap.type() != EapPacket.TYPE_IDENTITY) {
+                return REJECT;
+            }
+            String identity = new String(eap.data(), StandardCharsets.UTF_8)
+                    .replace("\0", "")
+                    .trim();
+            if (identity.isEmpty()) {
+                return REJECT;
+            }
+            round.conversation = new EapConversations.Conversation(context.nas().name(), identity);
+            return ACCEPT;
+        }
+        byte[] state = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
+        request.buffer().getBytes(at + 2, state);
+        round.conversation = conversations.take(state, context.nas().name(), clockMillis.getAsLong());
+        return round.conversation == null ? REJECT : ACCEPT;
+    }
+
+    /**
+     * One round of the conversation's method: starts it after the Identity response, follows a Nak, or gives the
+     * method the peer's response. Returns {@link #CHALLENGE} with the next request and a new State, {@link #ACCEPT}
+     * when the method succeeded, {@link #REJECT} when it failed, {@link #DROP} when the table is full or the response
+     * answers another request.
+     */
+    private int eapRound(AccessContext context, Found found, String authType, List<AttributeItem> passwords) {
+        EapRound round = cache(context).eap;
+        EapPacket eap = round.packet;
+        EapConversations.Conversation c = round.conversation;
+        if (authType.equalsIgnoreCase("Accept")) {
+            return ACCEPT; // no credential to check: EAP-Success right away
+        }
+        EapMethod.Credentials credentials =
+                new EapMethod.Credentials(passwords, stores.chap().getOrDefault(found.store(), false));
+        EapMethod.Step step;
+        if (c.method == null) {
+            c.method = EapConfig.create(EapConfig.type(stores.eap().methods().get(0)));
+            step = c.method.start(eap.identifier() + 1, credentials);
+        } else if (eap.identifier() != c.identifier) {
+            return DROP; // a response to an earlier request
+        } else if (eap.type() == EapPacket.TYPE_NAK) {
+            EapMethod offered = null;
+            for (byte t : eap.data()) {
+                int type = t & 0xFF;
+                if (type != c.method.type()
+                        && stores.eap().methods().stream().anyMatch(m -> EapConfig.type(m) == type)) {
+                    offered = EapConfig.create(type);
+                    break;
+                }
+            }
+            if (offered == null || c.rounds > 1) {
+                return REJECT; // nothing both sides support, or a Nak after the method began
+            }
+            c.method = offered;
+            step = c.method.start(eap.identifier() + 1, credentials);
+        } else if (eap.type() != c.method.type()) {
+            return REJECT;
+        } else {
+            step = c.method.process(eap.identifier(), eap.data(), credentials);
+        }
+        if (++c.rounds > stores.eap().maxRounds()) {
+            return REJECT;
+        }
+        if (step.done()) {
+            round.msk = step.msk();
+            return step.success() ? ACCEPT : REJECT;
+        }
+        long now = clockMillis.getAsLong();
+        c.identifier = (eap.identifier() + 1) & 0xFF;
+        c.expires = now + stores.eap().timeout().toMillis();
+        byte[] state = conversations.put(c, now);
+        if (state == null) {
+            warnOnce("eap-full", "EAP conversations full (auth.eap.conversations): new rounds are not answered", null);
+            return DROP;
+        }
+        EapPacket.request(c.identifier, c.method.type(), step.request()).writeTo(context.reply());
+        context.reply().attribute(STATE, state);
+        return CHALLENGE;
+    }
+
+    /** EAP-Success and, for methods that derive one, the MSK as MS-MPPE keys (RFC 3748 §7.10, RFC 2548). */
+    private void writeEapSuccess(AccessContext context, int method) {
+        EapRound round = cache(context).eap;
+        if (method != AccessRequests.METHOD_EAP || round.packet == null) {
+            return;
+        }
+        EapPacket.success(round.packet.identifier()).writeTo(context.reply());
+        if (round.msk != null && round.msk.length >= 64) {
+            byte[] authenticator = new byte[16];
+            context.request().buffer().getBytes(context.request().authenticatorOffset(), authenticator);
+            byte[] secret = context.nas().secret();
+            int salt = saltRandom.nextInt(0x8000) & ~1;
+            context.reply()
+                    .vendorAttribute(
+                            MICROSOFT,
+                            MS_MPPE_RECV_KEY,
+                            MsChap.encryptKey(Arrays.copyOfRange(round.msk, 0, 32), secret, authenticator, salt(salt)));
+            context.reply()
+                    .vendorAttribute(
+                            MICROSOFT,
+                            MS_MPPE_SEND_KEY,
+                            MsChap.encryptKey(
+                                    Arrays.copyOfRange(round.msk, 32, 64), secret, authenticator, salt(salt | 1)));
+        }
+    }
+
+    /** Conversations in the table (for {@code /state} and tests). */
+    int eapConversations() {
+        return conversations.size();
+    }
+
     // ---- MS-CHAP (RFC 2433, RFC 2759, RFC 2548, RFC 3079) ---------------------------------------
 
     private static final int MICROSOFT = 311;
@@ -372,6 +538,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private static final int RESPONSE_LENGTH = 50;
 
     private final java.security.SecureRandom saltRandom = new java.security.SecureRandom();
+    private final EapConversations conversations;
 
     /**
      * Verifies MS-CHAPv1 or v2 from the user's NT hash: {@code NT-Password}, or the cleartext password where the

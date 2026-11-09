@@ -141,6 +141,37 @@ class FreeRadiusClientInteropIT {
                 .contains("E=691");
     }
 
+    /** FreeRADIUS's EAP test client: Identity, then the MD5 challenge answered from the cleartext password. */
+    @Test
+    void eapMd5() throws Exception {
+        Optional<Path> eapClient = find("radeapclient");
+        assumeTrue(eapClient.isPresent(), "radeapclient not installed");
+        assertThat(eap(eapClient.get(), "arctangent")).contains("Received Access-Accept");
+        assertThat(eap(eapClient.get(), "wrong")).contains("Received Access-Reject");
+    }
+
+    private static String eap(Path eapClient, String password) throws Exception {
+        Process process = new ProcessBuilder(
+                        eapClient.toString(),
+                        "-x",
+                        "-r",
+                        "2",
+                        "-t",
+                        "2",
+                        "127.0.0.1:" + gateway.authPort(),
+                        "auth",
+                        "testing123")
+                .redirectErrorStream(true)
+                .start();
+        String request = "User-Name = \"nemo\", Cleartext-Password = \"" + password + "\", EAP-Code = Response,"
+                + " EAP-Id = 210, EAP-Type-Identity = \"nemo\", Message-Authenticator = 0x00\n";
+        process.getOutputStream().write(request.getBytes(StandardCharsets.US_ASCII));
+        process.getOutputStream().close();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor(20, TimeUnit.SECONDS)).isTrue();
+        return output;
+    }
+
     @Test
     void statusServer() throws Exception {
         assertThat(radclient("status", "Message-Authenticator = 0x00\n")).contains("Received Access-Accept");

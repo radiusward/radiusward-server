@@ -27,5 +27,6 @@
 | [0023](0023-simultaneous-use.md) | Simultaneous use through the cluster: distinct devices per user, reservations committed before the Accept, state version 6 | Accepted |
 | [0024](0024-ms-chap-and-status-server.md) | MS-CHAPv1/v2 from NT hashes, MPPE keys, generic errors; Status-Server on both ports | Accepted |
 | [0025](0025-credential-verifiers-and-ldap.md) | Credential verifiers, the LDAP store, pure-Java Netlogon for Active Directory | Accepted |
+| [0026](0026-eap-framework.md) | EAP conversations: single-use State tokens, bounded node-local table, method interface, EAP-MD5 | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

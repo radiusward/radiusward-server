@@ -19,6 +19,7 @@ java -jar distribution/target/radiusward.jar gateway --config config/local/gatew
 | `ReplyCache`, `AuthConfig`, `AuthStats` | RFC 5080 reply cache with in-flight marks; `gateway.auth.*`; counters |
 | `AuthStores`, `StoreAccessHandler` | identity stores from `auth.*` ([ADR 0021](../docs/adr/0021-identity-stores.md)); PAP/CHAP decision: stores in order, check items, groups, reply items filtered by the NAS entry's vendors ([ADR 0022](../docs/adr/0022-reply-attributes.md)); per-worker Agrona caches |
 | `SessionLimits`, `ClusterReservations`, `UserKeys` | simultaneous use: reservations through the cluster with a mailbox per worker; user and device keys shared with the accounting path ([ADR 0023](../docs/adr/0023-simultaneous-use.md)) |
+| `EapPacket`, `EapConversations`, `EapMethod`, `EapMd5`, `EapConfig` | EAP: packets over `EAP-Message`, conversations by single-use State, methods ([ADR 0026](../docs/adr/0026-eap-framework.md)) |
 | `MsChap`, `Md4` | MS-CHAPv1/v2 verification, authenticator response, MPPE keys and their RFC 2548 encryption ([ADR 0024](../docs/adr/0024-ms-chap-and-status-server.md)) |
 | `PasswordCheck`, `ShaCrypt`, `BCrypt` | stored credential formats: cleartext, `$5$`/`$6$` SHA-crypt, `$2a$`/`$2b$`/`$2y$` bcrypt, salted SHA, PBKDF2 |
 | `Gateway`, `GatewayConfig`, `GatewayMain` | wiring, embedded media driver, threading, management |

@@ -71,6 +71,8 @@ class StoreAccessHandlerTest {
     private final Map<String, Boolean> mschap = new HashMap<>();
     private final Map<String, io.radiusward.auth.CredentialVerifier> verifiers = new HashMap<>();
     private final Map<String, String> storeVerifiers = new HashMap<>();
+    private final Map<String, Boolean> chapStores = new HashMap<>();
+    private EapConfig eapConfig = EapConfig.DEFAULT;
 
     private StoreAccessHandler handler(Map<String, Boolean> chap, Map<String, List<String>> perNas) {
         Map<String, IdentityStore> stores = new java.util.LinkedHashMap<>();
@@ -88,7 +90,8 @@ class StoreAccessHandlerTest {
                         replyVendors,
                         mschap,
                         verifiers,
-                        storeVerifiers),
+                        storeVerifiers,
+                        eapConfig),
                 DICTIONARY,
                 () -> now[0]);
     }
@@ -714,6 +717,134 @@ class StoreAccessHandlerTest {
         assertThat(pap(h, "User", "clientPass")).isEqualTo(AccessHandler.ACCEPT);
         assertThat(pap(h, "User", "local")).as("the local password is not used").isEqualTo(AccessHandler.REJECT);
         assertThat(ad.calls).isEqualTo(2);
+    }
+
+    /** An Access-Request carrying one EAP response, with a State when the conversation goes on. */
+    static byte[] eapRequest(EapPacket eap, byte[] state) {
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[1024]);
+        RadiusPacketEncoder enc = new RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(RadiusCode.ACCESS_REQUEST, 1)
+                .authenticator(new byte[16]);
+        enc.attribute(1, "alice");
+        eap.writeTo(enc);
+        if (state != null) {
+            enc.attribute(24, state);
+        }
+        return Arrays.copyOf(buffer.byteArray(), enc.finish());
+    }
+
+    /** The reply's EAP packet and State. */
+    private EapPacket replyEap() {
+        return EapPacket.from(reply());
+    }
+
+    private byte[] replyState() {
+        RadiusPacket r = reply();
+        int at = r.findAttribute(24);
+        if (at < 0) {
+            return null;
+        }
+        byte[] state = new byte[(r.buffer().getByte(at + 1) & 0xFF) - 2];
+        r.buffer().getBytes(at + 2, state);
+        return state;
+    }
+
+    static EapPacket identity(int id, String name) {
+        return new EapPacket(EapPacket.RESPONSE, id, EapPacket.TYPE_IDENTITY, name.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** An EAP-MD5 response to {@code challenge} (RFC 3748 §5.4). */
+    static EapPacket md5Response(EapPacket challenge, String password) throws Exception {
+        java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
+        md5.update((byte) challenge.identifier());
+        md5.update(password.getBytes(StandardCharsets.UTF_8));
+        md5.update(challenge.data(), 1, challenge.data()[0] & 0xFF);
+        byte[] data = new byte[17];
+        data[0] = 16;
+        System.arraycopy(md5.digest(), 0, data, 1, 16);
+        return new EapPacket(EapPacket.RESPONSE, challenge.identifier(), EapPacket.TYPE_MD5, data);
+    }
+
+    @Test
+    void eapMd5ConversationEndsInSuccessWithTheUsersReplyItems() throws Exception {
+        main.user(
+                "alice", List.of(item("Cleartext-Password", ":=", "arctangent")), List.of(item("Filter-Id", "=", "x")));
+        chapStores.put("main", true);
+        StoreAccessHandler h = handler(chapStores, Map.of());
+
+        assertThat(handle(h, eapRequest(identity(5, "alice"), null))).isEqualTo(AccessHandler.CHALLENGE);
+        EapPacket challenge = replyEap();
+        byte[] state = replyState();
+        assertThat(challenge.code()).isEqualTo(EapPacket.REQUEST);
+        assertThat(challenge.type()).isEqualTo(EapPacket.TYPE_MD5);
+        assertThat(challenge.identifier()).isEqualTo(6);
+        assertThat(state).hasSize(16);
+        assertThat(h.eapConversations()).isEqualTo(1);
+
+        byte[] answer = eapRequest(md5Response(challenge, "arctangent"), state);
+        assertThat(handle(h, answer)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.SUCCESS);
+        assertThat(replyEap().identifier()).isEqualTo(6);
+        assertThat(reply().findAttribute(11)).as("Filter-Id").isPositive();
+        assertThat(h.eapConversations()).isZero();
+
+        assertThat(handle(h, answer)).as("a used State").isEqualTo(AccessHandler.REJECT);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.FAILURE);
+    }
+
+    @Test
+    void eapFailures() throws Exception {
+        main.user("alice", List.of(item("Cleartext-Password", ":=", "arctangent")), List.of())
+                .user("plain", List.of(item("Cleartext-Password", ":=", "pw")), List.of());
+        chapStores.put("main", true);
+        StoreAccessHandler h = handler(chapStores, Map.of());
+
+        handle(h, eapRequest(identity(1, "alice"), null));
+        EapPacket challenge = replyEap();
+        assertThat(handle(h, eapRequest(md5Response(challenge, "wrong"), replyState())))
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(replyEap().code()).as("EAP-Failure in every EAP Reject").isEqualTo(EapPacket.FAILURE);
+
+        assertThat(handle(h, eapRequest(identity(1, "nobody"), null))).isEqualTo(AccessHandler.REJECT);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.FAILURE);
+
+        handle(h, eapRequest(identity(1, "alice"), null));
+        EapPacket c2 = replyEap();
+        byte[] s2 = replyState();
+        EapPacket otherId = new EapPacket(EapPacket.RESPONSE, c2.identifier() + 1, EapPacket.TYPE_MD5, new byte[17]);
+        assertThat(handle(h, eapRequest(otherId, s2)))
+                .as("an answer to another request")
+                .isEqualTo(AccessHandler.DROP);
+
+        handle(h, eapRequest(identity(1, "alice"), null));
+        EapPacket c3 = replyEap();
+        byte[] s3 = replyState();
+        now[0] += 31_000;
+        assertThat(handle(h, eapRequest(md5Response(c3, "arctangent"), s3)))
+                .as("expired")
+                .isEqualTo(AccessHandler.REJECT);
+
+        handle(h, eapRequest(identity(1, "alice"), null));
+        EapPacket c4 = replyEap();
+        EapPacket nak = new EapPacket(EapPacket.RESPONSE, c4.identifier(), EapPacket.TYPE_NAK, new byte[] {13});
+        assertThat(handle(h, eapRequest(nak, replyState())))
+                .as("the peer wants EAP-TLS, which is not offered")
+                .isEqualTo(AccessHandler.REJECT);
+
+        assertThat(handle(h, eapRequest(new EapPacket(EapPacket.RESPONSE, 1, EapPacket.TYPE_MD5, new byte[17]), null)))
+                .as("not Identity, no State")
+                .isEqualTo(AccessHandler.REJECT);
+        byte[] broken = eapRequest(identity(1, "alice"), null);
+        broken[broken.length - 1 - "alice".length() - 2] = 0x7F; // EAP length no longer matches
+        assertThat(handle(h, broken)).as("malformed EAP is discarded").isEqualTo(AccessHandler.DROP);
+
+        StoreAccessHandler noCleartext = handler();
+        handle(noCleartext, eapRequest(identity(1, "plain"), null));
+        EapPacket c5 = replyEap();
+        assertThat(handle(noCleartext, eapRequest(md5Response(c5, "pw"), replyState())))
+                .as("EAP-MD5 needs the store's chap opt-in, like CHAP")
+                .isEqualTo(AccessHandler.REJECT);
     }
 
     @Test

@@ -58,7 +58,8 @@ record AuthStores(
         Map<String, IntHashSet> replyVendors,
         Map<String, Boolean> mschap,
         Map<String, CredentialVerifier> verifiers,
-        Map<String, String> storeVerifiers)
+        Map<String, String> storeVerifiers,
+        EapConfig eap)
         implements AutoCloseable {
 
     /** Vendors whose attributes a NAS of this vendor also understands (Juniper's E-series / ERX attributes). */
@@ -162,7 +163,8 @@ record AuthStores(
                 dictionary == null ? Map.of() : replyVendors(config, dictionary),
                 mschap,
                 verifiers,
-                storeVerifiers);
+                storeVerifiers,
+                EapConfig.from(config));
     }
 
     /** Why {@code item} cannot be sent in a reply, or {@code null}. */

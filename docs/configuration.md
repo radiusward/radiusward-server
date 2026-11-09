@@ -83,7 +83,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 |---|---|---|
 | `auth.stores` | — (required) | store names, asked in this order; the first that knows the user decides |
 | `auth.store.<name>.type` | — | `file`, `sql`, or the type of a plug-in |
-| `auth.store.<name>.chap` | `false` | allow CHAP with this store's `Cleartext-Password` |
+| `auth.store.<name>.chap` | `false` | allow CHAP and EAP-MD5 with this store's `Cleartext-Password` |
 | `auth.store.<name>.mschap` | `false` | allow MS-CHAPv1/v2 to derive the NT hash from this store's `Cleartext-Password`; `NT-Password` needs no opt-in ([ADR 0024](adr/0024-ms-chap-and-status-server.md)) |
 | `auth.store.<name>.path` | — | `file`: the users file |
 | `auth.store.<name>.reload.interval` | `5s` | `file`: how often the file's modification time is checked |
@@ -96,6 +96,9 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.verifiers` | none | credential verifiers by name; `Auth-Type := <name>` sends a user to one |
 | `auth.verifier.<name>.type` | — | `ldap` (PAP by binding as the user; settings as the LDAP store's, [stores/ldap](../stores/ldap/README.md)), `netlogon` (MS-CHAPv1/v2 and PAP against Active Directory: `server` or `dns.domain` (+ `dns.server`, `dns.refresh`), `domain`, `machine.account`, `machine.password`, `server.name`, `endpoint.mapper.port`, `netlogon.port`, `strip.realm`, `timeout`, `connections`; [verifiers/netlogon](../verifiers/netlogon/README.md)), or a plug-in's type |
 | `auth.store.<name>.*` for `type = ldap` | | `url`, `tls.ca`, `bind.dn`, `bind.password`, `base.dn`, `user.filter`, `group.attribute`, `group.nested`, `require.groups`, `policy.<id>.group/check/reply`, `check.<attribute>`, `reply.<attribute>`, `timeout`, `pool` ([stores/ldap](../stores/ldap/README.md)) |
+| `auth.eap.methods` | `md5` | EAP methods offered, in order of preference; a peer may Nak to another listed one ([ADR 0026](adr/0026-eap-framework.md)). EAP-MD5 needs the store's `chap` opt-in |
+| `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
+| `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |
 | `auth.bcrypt.max.cost` | `14` | highest bcrypt cost verified (4–31); a stored hash above it is rejected rather than tying up a worker (cost 14 ≈ 1 s of CPU) |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |

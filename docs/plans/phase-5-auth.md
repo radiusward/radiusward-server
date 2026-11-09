@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: in progress (2026-11-09); decisions 1–7 taken; 5.1–5.6 done (ADR 0020–0024). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: in progress (2026-11-09); decisions 1–7 taken; 5.1–5.7 done (ADR 0020–0026). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -103,7 +103,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.5 ✅ | Simultaneous use via the cluster | `AuthReservation` command, distinct devices per user, reservations until the Accounting-Start, same device always let in, state version 6 (`atLeast(6)`) ([ADR 0023](../adr/0023-simultaneous-use.md)) | M |
 | 5.6 ✅ | MS-CHAPv1/v2 (non-EAP), Status-Server | RFC 2433/2759, NT-Password (or cleartext with `mschap` opt-in), MS-CHAP2-Success, RFC 3079 MPPE keys encrypted per RFC 2548, MS-CHAP-Error; Status-Server (RFC 5997) on both ports ([ADR 0024](../adr/0024-ms-chap-and-status-server.md)) | S |
 | 5.6b ✅ | Active Directory (Netlogon, pure Java) + LDAP store | a credential-verifier plug-in type next to identity stores; MS-NRPC over TCP: DC discovery (DNS SRV), secure channel with a machine account (NetrServerReqChallenge/Authenticate3, AES session key), Netlogon-signed and sealed RPC as DCs require since CVE-2020-1472, NetrLogonSamLogon network logon for MS-CHAPv1/v2 (and PAP) returning the user session key for MPPE; failover between DCs, timeouts (no answer → no answer to the NAS), machine password rotation; tests against a Samba AD DC container in `-Plinux`. Done: credential-verifier plug-in type, LDAP store and bind verifier, the `netlogon` verifier (endpoint mapper, AES secure channel, sealed RPC, network logons, DNS discovery, failover, metrics), through a real gateway. Open: a check against a Windows domain controller; no machine-password rotation by design ([ADR 0025](../adr/0025-credential-verifiers-and-ldap.md)) | L |
-| 5.7 | EAP framework | state machine, State tokens, conversation table, fragmentation, EAP-MD5 for the plumbing | L |
+| 5.7 ✅ | EAP framework | conversations keyed by single-use State tokens, bounded node-local table with timeout, method interface with Nak, EAP-Success/Failure, MSK → MS-MPPE keys, EAP-MD5 for the plumbing; `radeapclient` interop ([ADR 0026](../adr/0026-eap-framework.md)). TLS fragmentation moves to 5.8 with the methods that need it | M |
 | 5.8 | EAP-TLS, PEAP, TTLS | TLS engine + exporter, methods above, certificates, `eapol_test` interop | L |
 | 5.9 | RadSec (RFC 6614) | TLS over TCP transport for both ports (ADR 0006 named it as the place to revisit) | M |
 
