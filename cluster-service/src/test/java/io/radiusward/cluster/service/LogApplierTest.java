@@ -102,4 +102,41 @@ class LogApplierTest {
                 .as("deviceUnknown is not stored")
                 .isZero();
     }
+
+    private int report(LogApplier applier, int member, int supported, int clusterSize, boolean hold) {
+        new io.radiusward.protocol.MemberLogPositionEncoder()
+                .wrapAndApplyHeader(buffer, 0, header)
+                .memberId(member)
+                .logPosition(1)
+                .supportedVersion(supported)
+                .clusterSize(clusterSize)
+                .hold((short) (hold ? 1 : 0));
+        return applier.apply(buffer, 0, 1, 1);
+    }
+
+    private int activate(LogApplier applier, int version) {
+        new io.radiusward.protocol.ActivateVersionEncoder()
+                .wrapAndApplyHeader(buffer, 0, header)
+                .correlationId(77)
+                .version(version);
+        return applier.apply(buffer, 0, 2, 2);
+    }
+
+    @Test
+    void versionReportsAndActivationRequestsComeFromTheLog() {
+        int b = StateVersions.BASELINE;
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(10), b + 1);
+        LogApplier logs = new LogApplier(sm);
+        assertThat(report(logs, 0, b + 1, 2, true)).isEqualTo(LogApplier.MEMBER_POSITION);
+        assertThat(logs.activatedVersion()).isZero();
+        assertThat(activate(logs, b + 1)).isEqualTo(LogApplier.ACTIVATION);
+        assertThat(logs.activationResult()).as("member 1 has not reported").isEqualTo(StateVersions.MEMBERS_NOT_READY);
+        report(logs, 1, b + 1, 2, false);
+        assertThat(logs.activatedVersion()).as("held by member 0").isZero();
+        assertThat(activate(logs, b + 1)).isEqualTo(LogApplier.ACTIVATION);
+        assertThat(logs.activationResult()).isEqualTo(StateVersions.ACTIVATED);
+        assertThat(logs.activatedVersion()).isEqualTo(b + 1);
+        assertThat(logs.activation().correlationId()).isEqualTo(77);
+        assertThat(sm.atLeast(b + 1)).isTrue();
+    }
 }

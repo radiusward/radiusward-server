@@ -68,6 +68,9 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
   `DirectBuffer`, primitive collections, no `String`/boxing/lambdas capturing per packet.
   `HotPathAllocationIT` enforces it; keep it green and extend it when the hot path grows.
 - **Return status codes, don't throw, for bad input.** Malformed packets are silently discarded (RFC 2865 §3).
+- **State-machine rule changes are versioned:** a change to how an event is applied raises
+  `AccountingStateMachine.STATE_VERSION` and keeps the old rule behind `machine.atLeast(n)`; the cluster activates
+  it once every member runs it ([ADR 0005](docs/adr/0005-log-determinism-versioning.md)).
 - **Determinism in the cluster service (Phase 1+):** cluster time only, no I/O, no randomness, no wall
   clock, no iteration over hash-ordered collections that affects output.
 - **ACK boundary:** an Accounting-Response is sent only after the cluster reports the command committed.

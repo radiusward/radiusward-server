@@ -272,7 +272,12 @@ public final class ClusterNode implements AutoCloseable {
                 if (position == AeronArchive.NULL_POSITION) {
                     position = purgeArchive.getStopPosition(logRecording);
                 }
-                reporter.report(config.nodeId(), position);
+                reporter.report(
+                        config.nodeId(),
+                        position,
+                        config.serviceSettings().supportedVersion(),
+                        config.members().size(),
+                        config.versionHold());
             }
             lastPurge = new LogPurger(
                             clusterDir, config.members().size(), config.purge().dryRun())
@@ -330,6 +335,9 @@ public final class ClusterNode implements AutoCloseable {
     /** Ready when the service has started, a leader is known and the data directory has space left. */
     public Health ready() {
         ServiceStats s = service.stats();
+        if (s.fatal() != null) {
+            return Health.down(s.fatal());
+        }
         if (!s.started()) {
             return Health.down("service not started");
         }
@@ -377,6 +385,9 @@ public final class ClusterNode implements AutoCloseable {
                 .field("snapshots", s.snapshots())
                 .field("egressDropped", s.egressDropped())
                 .field("identityMismatches", s.identityMismatches())
+                .field("stateVersionActive", s.activeVersion())
+                .field("stateVersionSupported", config.serviceSettings().supportedVersion())
+                .field("stateVersionLowestSupported", s.lowestSupportedVersion())
                 .object("log")
                 .field("dropped", NonBlockingQueueFullPolicy.dropped())
                 .end();
@@ -438,6 +449,12 @@ public final class ClusterNode implements AutoCloseable {
                         "radiusward_nas_identity_mismatches_total",
                         "Accounting from gateways whose nas.<name>.identity differs from the entry's first one seen")
                 .sample(s.identityMismatches(), "member", member);
+        w.gauge("radiusward_state_version", "State-machine version (ADR 0005): active in the cluster, supported here")
+                .sample(s.activeVersion(), "member", member, "kind", "active")
+                .sample(config.serviceSettings().supportedVersion(), "member", member, "kind", "supported")
+                .sample(s.lowestSupportedVersion(), "member", member, "kind", "lowest_supported");
+        w.gauge("radiusward_state_version_held", "1 while cluster.version.hold keeps a supported version off")
+                .sample(s.versionHeld() ? 1 : 0, "member", member);
         w.gauge("radiusward_sessions", "Sessions in the replicated state")
                 .sample(s.activeSessions(), "member", member, "state", "active")
                 .sample(s.stoppedSessions(), "member", member, "state", "stopped");

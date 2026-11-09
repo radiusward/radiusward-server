@@ -139,6 +139,43 @@ class SnapshotAndReplayTest {
     }
 
     @Test
+    void activeVersionAndMemberReportsSurviveASnapshot() {
+        int b = StateVersions.BASELINE;
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000), b + 1);
+        for (int m = 0; m < 3; m++) { // as MemberLogPosition does: position and version together
+            sm.export().memberPosition(m, 100);
+            sm.reportMemberVersion(m, b + 1, 3, m == 0); // member 0 holds: no automatic activation
+        }
+        List<byte[]> held = snapshot(sm);
+        AccountingStateMachine restored = restoreWith(held, b + 1);
+        assertThat(restored.versions().held()).isTrue();
+        assertThat(restored.versions().lowestSupported()).isEqualTo(b + 1);
+        assertThat(restored.versions().active()).isEqualTo(b);
+        assertThat(restoreWith(held, b).versions().active())
+                .as("before activation, older code can still read it: rollback possible")
+                .isEqualTo(b);
+
+        assertThat(sm.activateVersion(b + 1)).isEqualTo(StateVersions.ACTIVATED);
+        List<byte[]> activated = snapshot(sm);
+        assertThat(restoreWith(activated, b + 1).atLeast(b + 1)).isTrue();
+        assertThat(restoreWith(activated, b + 1).digest()).isEqualTo(sm.digest());
+        assertThatThrownBy(() -> restoreWith(activated, b))
+                .as("after activation, older code must not load it")
+                .isInstanceOf(StateVersions.UnsupportedStateVersionException.class);
+    }
+
+    private static AccountingStateMachine restoreWith(List<byte[]> messages, int supported) {
+        AccountingStateMachine sm =
+                new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000_000), supported);
+        SnapshotCodec codec = new SnapshotCodec();
+        for (byte[] m : messages) {
+            codec.onMessage(sm, new UnsafeBuffer(m), 0, m.length);
+        }
+        assertThat(codec.complete()).isTrue();
+        return sm;
+    }
+
+    @Test
     void identicalStreamsGiveIdenticalDigests() {
         List<DuplicatesPropertyTest.Event> events = DuplicatesPropertyTest.cleanStream(new Random(11), 3_000);
         assertThat(DuplicatesPropertyTest.run(events).digest())

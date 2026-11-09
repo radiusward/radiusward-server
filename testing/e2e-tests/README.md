@@ -21,6 +21,7 @@ logs in the message, since the temp directory is not kept in CI.
 | `NodeRestartIT` | follower killed with -9 restarts right away and catches up |
 | `SnapshotRestoreIT` | `cluster-tool snapshot`, restart all members, old events are still duplicates |
 | `AccountingOnOffIT` | Accounting-On closes the NAS's sessions |
+| `RollingUpgradeIT` | members restarted one by one with a release knowing a newer state version: activated automatically when the last one runs it, same digest everywhere; a member rolled back afterwards stops |
 | `DevicesBehindNatIT` | NAS entry with `identity = nas-identifier`: two access points with the same Acct-Session-Id are two sessions; an Accounting-On stops only the rebooted one's |
 | `VendorFixturesIT` | all 21 vendor fixtures acknowledged and replicated |
 

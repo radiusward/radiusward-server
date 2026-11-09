@@ -37,12 +37,19 @@ public final class LogApplier {
     /** {@link #apply} result for a {@code MemberLogPosition}. */
     public static final int MEMBER_POSITION = -3;
 
+    /** An {@code ActivateVersion} request; {@link #activationResult()} holds the result. */
+    public static final int ACTIVATION = -5;
+
     private final AccountingStateMachine machine;
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final AccountingCommandDecoder commandDecoder = new AccountingCommandDecoder();
     private final ExportCheckpointDecoder checkpointDecoder = new ExportCheckpointDecoder();
     private final MemberLogPositionDecoder memberPositionDecoder = new MemberLogPositionDecoder();
     private final SinkResyncDecoder resyncDecoder = new SinkResyncDecoder();
+    private final io.radiusward.protocol.ActivateVersionDecoder activateDecoder =
+            new io.radiusward.protocol.ActivateVersionDecoder();
+    private int activationResult;
+    private int activatedVersion;
     private final byte[] sinkName = new byte[ExportState.NAME_LENGTH];
     private int leaseResult;
     private int sinkSlot = -1;
@@ -85,7 +92,20 @@ public final class LogApplier {
             case MemberLogPositionDecoder.TEMPLATE_ID -> {
                 memberPositionDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
                 machine.export().memberPosition(memberPositionDecoder.memberId(), memberPositionDecoder.logPosition());
+                activatedVersion = memberPositionDecoder.actingVersion() >= 5
+                        ? machine.reportMemberVersion(
+                                memberPositionDecoder.memberId(),
+                                memberPositionDecoder.supportedVersion(),
+                                memberPositionDecoder.clusterSize(),
+                                memberPositionDecoder.hold() != 0)
+                        : 0;
                 yield MEMBER_POSITION;
+            }
+            case io.radiusward.protocol.ActivateVersionDecoder.TEMPLATE_ID -> {
+                activateDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                activationResult = machine.activateVersion(activateDecoder.version());
+                activatedVersion = activationResult == StateVersions.ACTIVATED ? activateDecoder.version() : 0;
+                yield ACTIVATION;
             }
             default -> NOT_A_COMMAND;
         };
@@ -161,6 +181,21 @@ public final class LogApplier {
     }
 
     /** The resync decoded by the last {@link #apply} that returned {@link #RESYNC}. */
+    /** The {@code ActivateVersion} decoded by the last {@link #apply} that returned {@link #ACTIVATION}. */
+    public io.radiusward.protocol.ActivateVersionDecoder activation() {
+        return activateDecoder;
+    }
+
+    /** {@link StateVersions} result of the last {@link #ACTIVATION}. */
+    public int activationResult() {
+        return activationResult;
+    }
+
+    /** Version activated by the last {@link #MEMBER_POSITION} or {@link #ACTIVATION}, 0 if none. */
+    public int activatedVersion() {
+        return activatedVersion;
+    }
+
     public SinkResyncDecoder resync() {
         return resyncDecoder;
     }

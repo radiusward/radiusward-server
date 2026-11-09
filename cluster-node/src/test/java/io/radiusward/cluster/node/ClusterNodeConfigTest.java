@@ -34,6 +34,34 @@ class ClusterNodeConfigTest {
         assertThat(c.maxClientSessions()).isEqualTo(256);
         assertThat(c.export().enabled()).isFalse();
         assertThat(c.purge()).isEqualTo(LogPurgeConfig.DEFAULTS);
+        assertThat(c.versionHold()).isFalse();
+        assertThat(c.serviceSettings().supportedVersion())
+                .isEqualTo(io.radiusward.cluster.service.AccountingStateMachine.STATE_VERSION);
+    }
+
+    @Test
+    void stateVersionSettings() {
+        int v = io.radiusward.cluster.service.AccountingStateMachine.STATE_VERSION;
+        assertThat(ClusterNodeConfig.from(Config.of(Map.of("cluster.node.id", "1", "cluster.version.hold", "true")))
+                        .versionHold())
+                .isTrue();
+        assertThat(ClusterNodeConfig.from(Config.of(Map.of(
+                                "cluster.node.id",
+                                "1",
+                                "debug.enabled",
+                                "true",
+                                "debug.state.version.supported",
+                                Integer.toString(v + 1))))
+                        .serviceSettings()
+                        .supportedVersion())
+                .as("simulates a newer release in tests")
+                .isEqualTo(v + 1);
+        assertThatThrownBy(() -> ClusterNodeConfig.from(Config.of(
+                        Map.of("cluster.node.id", "1", "debug.state.version.supported", Integer.toString(v + 1)))))
+                .hasMessageContaining("only allowed with debug.enabled=true");
+        assertThatThrownBy(() -> ClusterNodeConfig.from(Config.of(
+                        Map.of("cluster.node.id", "1", "debug.enabled", "true", "debug.state.version.supported", "1"))))
+                .hasMessageContaining("at least");
     }
 
     @Test

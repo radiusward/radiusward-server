@@ -28,6 +28,8 @@ Names carry the unit (`_bytes`, `_seconds`); counters end in `_total`. Members a
 | `radiusward_cluster_log_position_bytes` | gauge | log position of the last accounting entry applied |
 | `radiusward_accounting_events_total{outcome}` | counter | `applied`, `duplicate`, `stale`, `rejected` |
 | `radiusward_accounting_export_lag_rejections_total` | counter | accounting not acknowledged because a required sink was over its `maxLag` |
+| `radiusward_state_version{kind}` | gauge | state-machine version: `active` in the cluster, `supported` by this member's release, `lowest_supported` by all members (0 while one has not reported) ([ADR 0005](../adr/0005-log-determinism-versioning.md)) |
+| `radiusward_state_version_held` | gauge | 1 while `cluster.version.hold` keeps a supported version off |
 | `radiusward_nas_identity_mismatches_total` | counter | accounting from a gateway whose `nas.<name>.identity` differs from the entry's first one seen — configure every gateway alike ([ADR 0019](../adr/0019-nas-device-identity.md)) |
 | `radiusward_sessions{state}` | gauge | `active`, `stopped` sessions in the replicated state |
 | `radiusward_snapshots_total` | counter | snapshots taken |

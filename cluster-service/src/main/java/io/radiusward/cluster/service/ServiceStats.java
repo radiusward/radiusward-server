@@ -31,12 +31,16 @@ public final class ServiceStats {
     private static final int EXPORT_FLOOR = 14;
     private static final int EXPORT_LAG_REJECTED = 15;
     private static final int IDENTITY_MISMATCHES = 16;
+    private static final int ACTIVE_VERSION = 17;
+    private static final int LOWEST_SUPPORTED_VERSION = 18;
+    private static final int VERSION_HELD = 19;
 
-    private final AtomicLongArray values = new AtomicLongArray(17);
+    private final AtomicLongArray values = new AtomicLongArray(20);
     /** Log position each member reported for itself; -1 = never reported (indexed by member id). */
     private final AtomicLongArray memberPositions = new AtomicLongArray(ExportState.MAX_MEMBERS);
 
     private final AtomicReference<String> role = new AtomicReference<>("UNKNOWN");
+    private final AtomicReference<String> fatal = new AtomicReference<>();
 
     public ServiceStats() {
         values.set(LEADER, -1);
@@ -53,6 +57,36 @@ public final class ServiceStats {
         for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
             memberPositions.setRelease(m, export.memberReported(m) ? export.memberPosition(m) : -1);
         }
+    }
+
+    void versions(int active, int lowestSupported, boolean held) {
+        values.setRelease(ACTIVE_VERSION, active);
+        values.setRelease(LOWEST_SUPPORTED_VERSION, lowestSupported);
+        values.setRelease(VERSION_HELD, held ? 1 : 0);
+    }
+
+    /** State-machine version the cluster applies (ADR 0005). */
+    public int activeVersion() {
+        return (int) values.getAcquire(ACTIVE_VERSION);
+    }
+
+    /** Lowest version every member supports; 0 while a member has not reported. */
+    public int lowestSupportedVersion() {
+        return (int) values.getAcquire(LOWEST_SUPPORTED_VERSION);
+    }
+
+    /** Whether a member holds automatic activation. */
+    public boolean versionHeld() {
+        return values.getAcquire(VERSION_HELD) != 0;
+    }
+
+    void fatal(String reason) {
+        fatal.set(reason);
+    }
+
+    /** Why this member's service stopped, {@code null} while it runs. */
+    public String fatal() {
+        return fatal.get();
     }
 
     void recordIdentityMismatch() {

@@ -29,7 +29,11 @@ package io.radiusward.cluster.service;
 public final class AccountingStateMachine {
 
     /** Version of the state-machine behaviour, carried in snapshots (ADR 0005). */
-    // 2: export sinks; 3: late Start merged; 4: old Interim stale; 5: idle timeout per NAS entry
+    /**
+     * Newest behaviour this code knows (ADR 0005); the cluster applies {@link StateVersions#active()}. History before
+     * the first release (no gate yet): 2 export sinks, 3 late Start merged, 4 old Interim stale, 5 idle timeout per
+     * NAS entry = {@link StateVersions#BASELINE}. From 6 on, new rules check {@link #atLeast(int)}.
+     */
     public static final int STATE_VERSION = 5;
 
     public static final int STATUS_START = 1;
@@ -58,8 +62,16 @@ public final class AccountingStateMachine {
      * @param tombstoneMs how long a stopped session is kept to recognise retransmitted Stops
      * @param idleTimeoutMs sessions without any event for this long are removed (lost Stop)
      * @param exactKeyWindowMs how long exact keys are remembered
+     * @param supportedVersion newest state version this code applies ({@link #STATE_VERSION}; lower or higher only in
+     *     tests of upgrades, {@code debug.state.version.supported})
      */
-    public record Settings(int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs) {
+    public record Settings(
+            int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs, int supportedVersion) {
+
+        public Settings(int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs) {
+            this(maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, STATE_VERSION);
+        }
+
         public static Settings defaults(int maxSessions) {
             return new Settings(maxSessions, 3_600_000L, 7_200_000L, 900_000L);
         }
@@ -69,6 +81,7 @@ public final class AccountingStateMachine {
     private final SessionStore store = new SessionStore();
     private final ExactKeyWindow window = new ExactKeyWindow();
     private final ExportState export = new ExportState();
+    private final StateVersions versions;
     private SessionListener sessionListener;
 
     private long applied;
@@ -81,7 +94,48 @@ public final class AccountingStateMachine {
     private boolean created;
 
     public AccountingStateMachine(Settings settings) {
+        this(settings, settings.supportedVersion());
+    }
+
+    /** With code supporting state versions up to {@code supportedVersion} (tests of upgrades). */
+    public AccountingStateMachine(Settings settings, int supportedVersion) {
         this.settings = settings;
+        this.versions = new StateVersions(supportedVersion);
+    }
+
+    /** Whether behaviour introduced in state version {@code version} applies at this log position. */
+    public boolean atLeast(int version) {
+        return versions.atLeast(version);
+    }
+
+    /** Replicated state versions. */
+    public StateVersions versions() {
+        return versions;
+    }
+
+    /**
+     * Applies a member's {@code MemberLogPosition} report of its supported version.
+     *
+     * @return the version it activated, 0 if none
+     * @throws StateVersions.UnsupportedStateVersionException if this member's code cannot apply what was activated
+     */
+    public int reportMemberVersion(int member, int supportedVersion, int clusterSize, boolean hold) {
+        int activated = versions.report(member, supportedVersion, clusterSize, hold);
+        if (activated != 0) {
+            digest = mix(digest, 0x5ec7_0b51L, activated, 0, 0);
+            versions.requireSupported();
+        }
+        return activated;
+    }
+
+    /** Applies an {@code ActivateVersion} request; returns a {@link StateVersions} result. */
+    public int activateVersion(int version) {
+        int result = versions.activate(version);
+        if (result == StateVersions.ACTIVATED) {
+            digest = mix(digest, 0x5ec7_0b51L, version, 0, 0);
+            versions.requireSupported();
+        }
+        return result;
     }
 
     /**

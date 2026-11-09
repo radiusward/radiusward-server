@@ -35,7 +35,19 @@ public final class AdminClient implements AutoCloseable, EgressListener {
 
     /** State totals as replicated. */
     public record State(
-            long applied, long duplicates, long stale, long rejected, long active, long stopped, long digest) {}
+            long applied,
+            long duplicates,
+            long stale,
+            long rejected,
+            long active,
+            long stopped,
+            long digest,
+            int activeVersion,
+            int lowestSupportedVersion) {}
+
+    /** Result of {@link #activateVersion}. */
+    public record Activation(
+            io.radiusward.protocol.ActivationResult result, int activeVersion, int lowestSupportedVersion) {}
 
     /** One session as replicated. */
     public record Session(
@@ -142,6 +154,20 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 request(id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkQueryEncoder.BLOCK_LENGTH);
     }
 
+    /**
+     * Switches the cluster to state-machine version {@code version} from this log position on (ADR 0005); refused
+     * unless every member supports it and it is newer than the active one.
+     */
+    public Activation activateVersion(int version) {
+        long id = ++correlation;
+        new io.radiusward.protocol.ActivateVersionEncoder()
+                .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                .correlationId(id)
+                .version(version);
+        return (Activation) request(
+                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.ActivateVersionEncoder.BLOCK_LENGTH);
+    }
+
     /** Moves a sink's checkpoint to {@code position}, fences its exporter and re-attaches it; returns the sinks. */
     public Sinks resync(String sink, long position) {
         long id = ++correlation;
@@ -211,7 +237,9 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                     stateDecoder.rejected(),
                     stateDecoder.activeSessions(),
                     stateDecoder.stoppedSessions(),
-                    stateDecoder.stateDigest());
+                    stateDecoder.stateDigest(),
+                    stateDecoder.activeVersion(),
+                    stateDecoder.lowestSupportedVersion());
         } else if (headerDecoder.templateId() == io.radiusward.protocol.SinkReportDecoder.TEMPLATE_ID) {
             io.radiusward.protocol.SinkReportDecoder report = new io.radiusward.protocol.SinkReportDecoder();
             report.wrapAndApplyHeader(buf, offset, headerDecoder);
@@ -237,6 +265,12 @@ public final class AdminClient implements AutoCloseable, EgressListener {
             }
             replyCorrelation = correlationId;
             reply = new Sinks(logPosition, List.copyOf(sinks));
+        } else if (headerDecoder.templateId() == io.radiusward.protocol.ActivateVersionResultDecoder.TEMPLATE_ID) {
+            io.radiusward.protocol.ActivateVersionResultDecoder r =
+                    new io.radiusward.protocol.ActivateVersionResultDecoder();
+            r.wrapAndApplyHeader(buf, offset, headerDecoder);
+            replyCorrelation = r.correlationId();
+            reply = new Activation(r.result(), r.activeVersion(), r.lowestSupportedVersion());
         } else if (headerDecoder.templateId() == SessionReportDecoder.TEMPLATE_ID) {
             sessionDecoder.wrapAndApplyHeader(buf, offset, headerDecoder);
             replyCorrelation = sessionDecoder.correlationId();

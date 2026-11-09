@@ -36,7 +36,65 @@ public record ClusterNodeConfig(
         AccountingStateMachine.Settings serviceSettings,
         Duration sweepInterval,
         ExportConfig export,
-        LogPurgeConfig purge) {
+        LogPurgeConfig purge,
+        boolean versionHold) {
+
+    /** Without {@code cluster.version.hold}. */
+    public ClusterNodeConfig(
+            int nodeId,
+            List<String> members,
+            int basePort,
+            File dataDir,
+            String aeronDir,
+            Profile profile,
+            Duration leaderHeartbeatTimeout,
+            Duration electionTimeout,
+            Duration sessionTimeout,
+            Duration snapshotInterval,
+            int fileSyncLevel,
+            long diskMinFree,
+            int maxClientSessions,
+            AccountingStateMachine.Settings serviceSettings,
+            Duration sweepInterval,
+            ExportConfig export,
+            LogPurgeConfig purge) {
+        this(
+                nodeId,
+                members,
+                basePort,
+                dataDir,
+                aeronDir,
+                profile,
+                leaderHeartbeatTimeout,
+                electionTimeout,
+                sessionTimeout,
+                snapshotInterval,
+                fileSyncLevel,
+                diskMinFree,
+                maxClientSessions,
+                serviceSettings,
+                sweepInterval,
+                export,
+                purge,
+                false);
+    }
+
+    /**
+     * {@link AccountingStateMachine#STATE_VERSION}; {@code debug.state.version.supported} pretends another one, to test
+     * rolling upgrades and activation (ADR 0005) — only with {@code debug.enabled=true}.
+     */
+    static int supportedStateVersion(Config config) {
+        int version = config.integer("debug.state.version.supported", AccountingStateMachine.STATE_VERSION);
+        if (version != AccountingStateMachine.STATE_VERSION && !config.bool("debug.enabled", false)) {
+            throw new ConfigException(
+                    "debug.state.version.supported: only allowed with debug.enabled=true (never in production)");
+        }
+        if (version < io.radiusward.cluster.service.StateVersions.BASELINE) {
+            throw new ConfigException(
+                    "debug.state.version.supported: at least " + io.radiusward.cluster.service.StateVersions.BASELINE);
+        }
+        return version;
+    }
 
     public static final int INGRESS_OFFSET = 0;
     public static final int CONSENSUS_OFFSET = 1;
@@ -71,7 +129,8 @@ public record ClusterNodeConfig(
                 config.duration("service.tombstone", Duration.ofHours(1)).toMillis(),
                 config.duration("service.idle.timeout", Duration.ofHours(2)).toMillis(),
                 config.duration("service.exact.key.window", Duration.ofMinutes(15))
-                        .toMillis());
+                        .toMillis(),
+                supportedStateVersion(config));
         return new ClusterNodeConfig(
                 nodeId,
                 members,
@@ -91,7 +150,9 @@ public record ClusterNodeConfig(
                 settings,
                 config.duration("service.sweep.interval", Duration.ofSeconds(60)),
                 ExportConfig.from(config),
-                LogPurgeConfig.from(config));
+                LogPurgeConfig.from(config),
+                // keep newer state-machine versions off after an upgrade (rollback stays possible, ADR 0005)
+                config.bool("cluster.version.hold", false));
     }
 
     public String host() {

@@ -28,7 +28,7 @@ final class MemberReporter implements AutoCloseable {
     }
 
     /** Returns whether the report was handed to the cluster. */
-    boolean report(int memberId, long logPosition) {
+    boolean report(int memberId, long logPosition, int supportedVersion, int clusterSize, boolean hold) {
         try {
             if (cluster == null || cluster.isClosed()) {
                 cluster = AeronCluster.connect(new AeronCluster.Context()
@@ -40,7 +40,10 @@ final class MemberReporter implements AutoCloseable {
             }
             encoder.wrapAndApplyHeader(buffer, 0, new MessageHeaderEncoder())
                     .memberId(memberId)
-                    .logPosition(logPosition);
+                    .logPosition(logPosition)
+                    .supportedVersion(supportedVersion)
+                    .clusterSize(clusterSize)
+                    .hold((short) (hold ? 1 : 0));
             int length = MessageHeaderEncoder.ENCODED_LENGTH + encoder.encodedLength();
             for (int attempt = 0; attempt < 100; attempt++) {
                 cluster.pollEgress();

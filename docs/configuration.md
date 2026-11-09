@@ -33,6 +33,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.leader.heartbeat.timeout` | `1500ms` | leader failure detection; with the election timeout a crashed leader is replaced in ~2.2 s, below a 3 s NAS timeout ([ADR 0011](adr/0011-gateway-pipeline.md)) |
 | `cluster.election.timeout` | `500ms` | how long a candidate waits for votes |
 | `cluster.session.timeout` | `10s` | client session timeout |
+| `cluster.version.hold` | `false` | keep a newer state-machine version off after an upgrade, so a rollback stays possible; activate with `admin activate-version` ([release.md](operations/release.md#upgrading-a-cluster)) |
 | `cluster.client.sessions.max` | `256` | concurrent cluster client sessions: every gateway, two per sink on every member, one position reporter per member, admin tools |
 | `archive.file.sync.level` | `2` | `0` page cache, `1` fsync data, `2` fsync data + metadata; the archive catalog and the cluster's recording log and node state use the same level. Below `2` a power loss can lose acknowledged events or stop members from starting (`PowerLossIT`) |
 | `archive.segment.length` | `128m` | archive segment file size, a power of two of at least the term length; the log is purged in whole segments. **Fixed per recording**: a change only affects recordings created afterwards |
@@ -64,6 +65,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `dictionary.dir` | `/etc/radiusward/dictionary.d` | operator dictionaries, loaded after the bundled set if the directory exists |
 | `debug.enabled` | `false` | allows `debug.*` keys; never in production |
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
+| `debug.state.version.supported` | code's version | pretend the member's release knows another state version, to test upgrades (tests only; requires `debug.enabled=true`) |
 
 ## Export
 

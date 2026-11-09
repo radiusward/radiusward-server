@@ -85,7 +85,9 @@ public final class SnapshotCodec {
                 .timerScheduled((short) (machine.timerScheduled() ? 1 : 0))
                 .sinkCount(machine.export().count())
                 .lastCommandPosition(machine.export().lastCommandPosition())
-                .memberPositionCount(reportedMembers(machine.export()));
+                .memberPositionCount(reportedMembers(machine.export()))
+                .activeVersion(machine.versions().activeRaw())
+                .clusterSize(machine.versions().clusterSize());
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + snapshotHeaderEncoder.encodedLength());
 
         int slot = 0;
@@ -147,7 +149,7 @@ public final class SnapshotCodec {
         }
 
         writeSinks(machine.export(), sink);
-        writeMemberPositions(machine.export(), sink);
+        writeMemberPositions(machine.export(), machine.versions(), sink);
 
         footerEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
@@ -166,7 +168,7 @@ public final class SnapshotCodec {
         return n;
     }
 
-    private void writeMemberPositions(ExportState export, Sink sink) {
+    private void writeMemberPositions(ExportState export, StateVersions versions, Sink sink) {
         int n = reportedMembers(export);
         if (n == 0) {
             return;
@@ -175,7 +177,11 @@ public final class SnapshotCodec {
                 memberChunkEncoder.wrapAndApplyHeader(buffer, 0, headerEncoder).membersCount(n);
         for (int m = 0; m < ExportState.MAX_MEMBERS; m++) {
             if (export.memberReported(m)) {
-                members.next().memberId(m).logPosition(export.memberPosition(m));
+                members.next()
+                        .memberId(m)
+                        .logPosition(export.memberPosition(m))
+                        .supportedVersion(versions.supported(m))
+                        .hold((short) (versions.hold(m) ? 1 : 0));
             }
         }
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + memberChunkEncoder.encodedLength());
@@ -233,10 +239,13 @@ public final class SnapshotCodec {
         switch (headerDecoder.templateId()) {
             case SnapshotHeaderDecoder.TEMPLATE_ID -> {
                 snapshotHeaderDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                if (snapshotHeaderDecoder.stateVersion() > AccountingStateMachine.STATE_VERSION) {
-                    throw new IllegalStateException("snapshot state version " + snapshotHeaderDecoder.stateVersion()
-                            + " is newer than this software (" + AccountingStateMachine.STATE_VERSION + ")");
+                // a snapshot written by newer code is fine as long as its active version is one this code knows
+                // (a rollback before activation, ADR 0005)
+                if (headerDecoder.version() >= 5) {
+                    machine.versions()
+                            .restore(snapshotHeaderDecoder.activeVersion(), snapshotHeaderDecoder.clusterSize());
                 }
+                machine.versions().requireSupported();
                 machine.restoreCounters(
                         snapshotHeaderDecoder.applied(),
                         snapshotHeaderDecoder.duplicates(),
@@ -312,6 +321,9 @@ public final class SnapshotCodec {
                 memberChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
                 for (MemberPositionChunkDecoder.MembersDecoder m : memberChunkDecoder.members()) {
                     machine.export().memberPosition(m.memberId(), m.logPosition());
+                    if (memberChunkDecoder.actingVersion() >= 5) {
+                        machine.versions().restoreMember(m.memberId(), m.supportedVersion(), m.hold() != 0);
+                    }
                     loadedMembers++;
                 }
             }

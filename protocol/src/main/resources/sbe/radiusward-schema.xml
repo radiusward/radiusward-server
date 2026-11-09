@@ -10,8 +10,8 @@
 <sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
                    package="io.radiusward.protocol"
                    id="7101"
-                   version="4"
-                   semanticVersion="4.0"
+                   version="5"
+                   semanticVersion="5.0"
                    description="radiusward cluster protocol"
                    byteOrder="littleEndian">
     <types>
@@ -43,6 +43,11 @@
             <validValue name="CAPACITY">0</validValue>
             <validValue name="INVALID">1</validValue>
             <validValue name="EXPORT_LAG" sinceVersion="2" description="a required sink is more than maxLag behind">2</validValue>
+        </enum>
+        <enum name="ActivationResult" encodingType="uint8" sinceVersion="5">
+            <validValue name="ACTIVATED" description="the version applies from this log position on">0</validValue>
+            <validValue name="NOT_NEWER" description="the version is not newer than the active one">1</validValue>
+            <validValue name="MEMBERS_NOT_READY" description="a member has not reported support for it">2</validValue>
         </enum>
         <enum name="OnMaxLag" encodingType="uint8" sinceVersion="2">
             <validValue name="BLOCK" description="stop acknowledging new accounting">0</validValue>
@@ -135,6 +140,22 @@
     <sbe:message name="MemberLogPosition" id="10" sinceVersion="2">
         <field name="memberId" id="1" type="int32"/>
         <field name="logPosition" id="2" type="int64" description="this member's local log recording position"/>
+        <field name="supportedVersion" id="3" type="int32" sinceVersion="5"
+               description="newest state-machine version this member's code knows (ADR 0005)"/>
+        <field name="clusterSize" id="4" type="int32" sinceVersion="5" description="members in its configuration"/>
+        <field name="hold" id="5" type="uint8" sinceVersion="5" description="1: cluster.version.hold, no automatic activation"/>
+    </sbe:message>
+
+    <!-- admin -> cluster -> admin: switch the state machine to a newer version at this log position (ADR 0005) -->
+    <sbe:message name="ActivateVersion" id="14" sinceVersion="5">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="version" id="2" type="int32"/>
+    </sbe:message>
+    <sbe:message name="ActivateVersionResult" id="15" sinceVersion="5">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="result" id="2" type="ActivationResult"/>
+        <field name="activeVersion" id="3" type="int32"/>
+        <field name="lowestSupportedVersion" id="4" type="int32" description="0 while a member has not reported"/>
     </sbe:message>
 
     <!-- admin -> cluster -> admin: sinks in the replicated state (radiusward admin sinks | resync) -->
@@ -190,7 +211,10 @@
         <field name="activeSessions" id="6" type="int64"/>
         <field name="stoppedSessions" id="7" type="int64"/>
         <field name="stateDigest" id="8" type="int64"/>
-        <field name="stateVersion" id="9" type="int32"/>
+        <field name="stateVersion" id="9" type="int32" description="newest version the answering member's code knows"/>
+        <field name="activeVersion" id="10" type="int32" sinceVersion="5" description="version the cluster applies"/>
+        <field name="lowestSupportedVersion" id="11" type="int32" sinceVersion="5"
+               description="lowest version all members support; 0 while a member has not reported"/>
     </sbe:message>
 
     <!-- snapshot, written by onTakeSnapshot and read in onStart -->
@@ -207,6 +231,8 @@
         <field name="sinkCount" id="10" type="int32" sinceVersion="2"/>
         <field name="lastCommandPosition" id="11" type="int64" sinceVersion="2"/>
         <field name="memberPositionCount" id="12" type="int32" sinceVersion="2"/>
+        <field name="activeVersion" id="13" type="int32" sinceVersion="5" description="0 = never activated: the baseline"/>
+        <field name="clusterSize" id="14" type="int32" sinceVersion="5"/>
     </sbe:message>
     <sbe:message name="SessionChunk" id="21">
         <group name="sessions" id="1" dimensionType="groupSizeEncoding">
@@ -253,6 +279,8 @@
         <group name="members" id="1" dimensionType="groupSizeEncoding">
             <field name="memberId" id="1" type="int32"/>
             <field name="logPosition" id="2" type="int64"/>
+            <field name="supportedVersion" id="3" type="int32" sinceVersion="5"/>
+            <field name="hold" id="4" type="uint8" sinceVersion="5"/>
         </group>
     </sbe:message>
     <sbe:message name="SnapshotFooter" id="23">

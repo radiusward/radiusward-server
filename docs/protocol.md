@@ -43,6 +43,14 @@ compute keys the dedup state has never seen.
 
 `correlationId`, `outcome` (`APPLIED` \| `DUPLICATE` \| `STALE`), `eventId` = log position of the event.
 
+### State versions (v5, ADR 0005)
+
+- `MemberLogPosition` (every member, every `log.purge.interval`) appends `supportedVersion`, `clusterSize`, `hold`.
+- `ActivateVersion` (`correlationId`, `version`) → `ActivateVersionResult` (`result` `ACTIVATED` \| `NOT_NEWER` \|
+  `MEMBERS_NOT_READY`, `activeVersion`, `lowestSupportedVersion`).
+- `StateReport` appends `activeVersion`, `lowestSupportedVersion`; `SnapshotHeader` appends `activeVersion`,
+  `clusterSize`; `MemberPositionChunk` appends `supportedVersion`, `hold`.
+
 ## Versioning rules
 
 - Fields are only appended, with `sinceVersion`; ids are never reused; the schema version increments with

@@ -39,6 +39,8 @@ final class ProcessCluster implements AutoCloseable {
     private final Map<String, Process> processes = new LinkedHashMap<>();
     private final Map<String, String> extraGatewayConfig = new LinkedHashMap<>();
     private String extraNasConfig = "";
+    private String extraClusterConfig = "";
+    private final Map<String, String> extraNodeConfig = new LinkedHashMap<>();
     private final HttpClient http =
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(1)).build();
 
@@ -68,6 +70,20 @@ final class ProcessCluster implements AutoCloseable {
         return this;
     }
 
+    /** Extra properties for every member; call before starting them. */
+    ProcessCluster clusterConfig(String properties) throws IOException {
+        extraClusterConfig = properties;
+        writeConfig();
+        return this;
+    }
+
+    /** Extra properties for one member, used from its next start (e.g. to simulate another release). */
+    ProcessCluster nodeConfig(String node, String properties) throws IOException {
+        extraNodeConfig.put(node, properties);
+        writeConfig();
+        return this;
+    }
+
     /** Extra properties for the NAS entry {@code nas.local.*} on every gateway; call before starting them. */
     ProcessCluster nasConfig(String properties) throws IOException {
         extraNasConfig = properties;
@@ -76,7 +92,8 @@ final class ProcessCluster implements AutoCloseable {
     }
 
     private void writeConfig() throws IOException {
-        Files.writeString(dir.resolve("cluster.properties"), """
+        Files.writeString(
+                dir.resolve("cluster.properties"), """
                 profile=small
                 cluster.members=localhost,localhost,localhost
                 cluster.base.port=%d
@@ -86,12 +103,14 @@ final class ProcessCluster implements AutoCloseable {
                 archive.file.sync.level=2
                 snapshot.interval=0
                 management.http.host=127.0.0.1
-                """.formatted(basePort, dir.resolve("data")));
+                %s
+                """.formatted(basePort, dir.resolve("data"), extraClusterConfig));
         for (int i = 0; i < 3; i++) {
             Files.writeString(
                     dir.resolve("node-" + i + ".properties"),
                     "cluster.node.id=" + i + "\nmanagement.http.port=" + managementPorts.get("node-" + i) + "\n"
-                            + "cluster.aeron.dir=" + dir.resolve("aeron/node-" + i) + "\n");
+                            + "cluster.aeron.dir=" + dir.resolve("aeron/node-" + i) + "\n"
+                            + extraNodeConfig.getOrDefault("node-" + i, "") + "\n");
         }
         int id = 1;
         for (String g : List.of("gateway-a", "gateway-b")) {
@@ -199,6 +218,21 @@ final class ProcessCluster implements AutoCloseable {
                             .build(),
                     HttpResponse.BodyHandlers.ofString());
             return r.body();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /** Body of {@code /ready} (the reason when not ready). */
+    String readiness(String name) {
+        try {
+            return http.send(
+                            HttpRequest.newBuilder(
+                                            URI.create("http://127.0.0.1:" + managementPorts.get(name) + "/ready"))
+                                    .timeout(Duration.ofSeconds(2))
+                                    .build(),
+                            HttpResponse.BodyHandlers.ofString())
+                    .body();
         } catch (Exception e) {
             return "";
         }

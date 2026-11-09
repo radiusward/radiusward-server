@@ -343,6 +343,52 @@ class LocalClusterIT {
     }
 
     @Test
+    void membersReportTheirStateVersionAndActivationIsGated() throws Exception {
+        int supported = io.radiusward.cluster.service.AccountingStateMachine.STATE_VERSION;
+        cluster = LocalCluster.start(
+                dir.toFile(),
+                3,
+                1,
+                LocalCluster.freePortBase(3),
+                new int[1],
+                Duration.ZERO,
+                id -> io.radiusward.exporter.ExportConfig.NONE,
+                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster.awaitLeader();
+        cluster.awaitGatewaysConnected();
+        exchange(cluster.gateway(0).radiusPort(), request(1, 1, "s-9", 0)); // the log needs a recording to report
+        try (AdminClient admin = cluster.admin()) {
+            LocalCluster.await(
+                    Duration.ofSeconds(30),
+                    "every member reported its supported version",
+                    () -> admin.state().lowestSupportedVersion() == supported);
+            AdminClient.State state = admin.state();
+            assertThat(state.activeVersion()).isEqualTo(io.radiusward.cluster.service.StateVersions.BASELINE);
+            assertThat(admin.activateVersion(supported).result())
+                    .as("already active")
+                    .isEqualTo(io.radiusward.protocol.ActivationResult.NOT_NEWER);
+            AdminClient.Activation future = admin.activateVersion(supported + 1);
+            assertThat(future.result())
+                    .as("no member runs code that knows it")
+                    .isEqualTo(io.radiusward.protocol.ActivationResult.MEMBERS_NOT_READY);
+            assertThat(future.lowestSupportedVersion()).isEqualTo(supported);
+        }
+        String metrics = cluster.awaitLeader().metrics();
+        io.radiusward.common.management.PrometheusWriter.validate(metrics);
+        assertThat(metrics)
+                .containsPattern("radiusward_state_version\\{member=\"\\d\",kind=\"active\"\\} " + supported)
+                .contains("radiusward_state_version_held{");
+        assertThat(cluster.awaitLeader().stateJson()).contains("\"stateVersionActive\":" + supported);
+
+        // a member restarted from the log applies the same version
+        cluster.stopNode(2);
+        cluster.startNode(2);
+        cluster.awaitConverged();
+        assertThat(cluster.node(2).stats().activeVersion()).isEqualTo(supported);
+        assertThat(cluster.node(2).stats().fatal()).isNull();
+    }
+
+    @Test
     void leaderLossDoesNotLoseAcknowledgedEvents() throws Exception {
         start();
         int port = cluster.gateway(0).radiusPort();

@@ -63,6 +63,9 @@ public final class AccountingService implements ClusteredService {
     private final AccountingRejectedEncoder rejectedEncoder = new AccountingRejectedEncoder();
     private final SessionReportEncoder sessionReportEncoder = new SessionReportEncoder();
     private final StateReportEncoder stateReportEncoder = new StateReportEncoder();
+    private final io.radiusward.protocol.ActivateVersionResultEncoder activationEncoder =
+            new io.radiusward.protocol.ActivateVersionResultEncoder();
+    private boolean holdWarned;
     private final ExportCheckpointAckEncoder checkpointAckEncoder = new ExportCheckpointAckEncoder();
     private final io.radiusward.protocol.SinkQueryDecoder sinkQueryDecoder =
             new io.radiusward.protocol.SinkQueryDecoder();
@@ -133,6 +136,17 @@ public final class AccountingService implements ClusteredService {
     @Override
     public void onSessionMessage(
             ClientSession session, long timestamp, DirectBuffer buffer, int offset, int length, Header header) {
+        try {
+            dispatch(session, timestamp, buffer, offset, header);
+        } catch (StateVersions.UnsupportedStateVersionException e) {
+            // applying further entries with older rules would diverge from the other members: stop here
+            LOG.error("stopping this member's service: {}", e.getMessage());
+            stats.fatal(e.getMessage());
+            throw new org.agrona.concurrent.AgentTerminationException(e);
+        }
+    }
+
+    private void dispatch(ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
         headerDecoder.wrap(buffer, offset);
         if (headerDecoder.schemaId() != MessageHeaderDecoder.SCHEMA_ID) {
             return; // not ours; ignoring is deterministic
@@ -153,6 +167,25 @@ public final class AccountingService implements ClusteredService {
             case io.radiusward.protocol.MemberLogPositionDecoder.TEMPLATE_ID -> {
                 applier.apply(buffer, offset, header.position(), timestamp);
                 stats.purgeInputs(machine.export());
+                onVersions(applier.activatedVersion(), "every member supports it", header.position());
+            }
+            case io.radiusward.protocol.ActivateVersionDecoder.TEMPLATE_ID -> {
+                applier.apply(buffer, offset, header.position(), timestamp);
+                onVersions(applier.activatedVersion(), "requested", header.position());
+                activationEncoder
+                        .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                        .correlationId(applier.activation().correlationId())
+                        .result(
+                                switch (applier.activationResult()) {
+                                    case StateVersions.ACTIVATED -> io.radiusward.protocol.ActivationResult.ACTIVATED;
+                                    case StateVersions.NOT_NEWER -> io.radiusward.protocol.ActivationResult.NOT_NEWER;
+                                    default -> io.radiusward.protocol.ActivationResult.MEMBERS_NOT_READY;
+                                })
+                        .activeVersion(machine.versions().active())
+                        .lowestSupportedVersion(machine.versions().lowestSupported());
+                if (session != null) {
+                    reply(session, MessageHeaderEncoder.ENCODED_LENGTH + activationEncoder.encodedLength());
+                }
             }
             case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);
             case SessionQueryDecoder.TEMPLATE_ID -> onSessionQuery(session, buffer, offset);
@@ -278,6 +311,24 @@ public final class AccountingService implements ClusteredService {
         }
     }
 
+    /** Logs an activation and warns once while every member supports a newer version that a hold keeps off. */
+    private void onVersions(int activated, String why, long position) {
+        StateVersions v = machine.versions();
+        if (activated != 0) {
+            LOG.info("state version {} active from log position {} ({})", activated, position, why);
+            holdWarned = false;
+        } else if (v.held() && v.lowestSupported() > v.active() && !holdWarned) {
+            holdWarned = true;
+            LOG.warn(
+                    "every member supports state version {}, the cluster applies {}: activation is held"
+                            + " (cluster.version.hold); `admin activate-version --version {}` activates it",
+                    v.lowestSupported(),
+                    v.active(),
+                    v.lowestSupported());
+        }
+        stats.versions(v.active(), v.lowestSupported(), v.held());
+    }
+
     private void onStateQuery(ClientSession session, DirectBuffer buffer, int offset) {
         stateQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
         stateReportEncoder
@@ -290,7 +341,9 @@ public final class AccountingService implements ClusteredService {
                 .activeSessions(machine.store().activeCount())
                 .stoppedSessions(machine.store().stoppedCount())
                 .stateDigest(machine.digest())
-                .stateVersion(AccountingStateMachine.STATE_VERSION);
+                .stateVersion(AccountingStateMachine.STATE_VERSION)
+                .activeVersion(machine.versions().active())
+                .lowestSupportedVersion(machine.versions().lowestSupported());
         if (session != null) {
             reply(session, MessageHeaderEncoder.ENCODED_LENGTH + stateReportEncoder.encodedLength());
         }
@@ -402,6 +455,10 @@ public final class AccountingService implements ClusteredService {
                 machine.digest(),
                 position);
         stats.purgeInputs(machine.export());
+        stats.versions(
+                machine.versions().active(),
+                machine.versions().lowestSupported(),
+                machine.versions().held());
     }
 
     /** For tests in this package. */

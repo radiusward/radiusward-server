@@ -23,6 +23,7 @@ import java.util.Map;
  * admin verify-acks    --members ... --ack-log acks.csv --nas-id 1001
  * admin sinks          --members ...
  * admin resync         --members ... --sink pg --position 0
+ * admin activate-version --members ... --version 6
  * admin export-schema  [--type postgres]
  * admin verify-export  --jdbc-url ... [--jdbc-user u --jdbc-password p] --ack-log acks.csv --nas-id 1001 [--members ...]
  * </pre>
@@ -56,6 +57,7 @@ public final class AdminMain {
                 case "state", "sinks" -> need(o, "members");
                 case "verify-acks" -> need(o, "members", "ack-log", "nas-id");
                 case "resync" -> need(o, "members", "sink", "position");
+                case "activate-version" -> need(o, "members", "version");
                 case "verify-export" -> need(o, "jdbc-url", "ack-log", "nas-id");
                 case "export-schema" -> {}
                 default -> throw new IllegalArgumentException("unknown command " + command);
@@ -103,6 +105,13 @@ public final class AdminMain {
                     printSinks(sinks, out);
                     return EXIT_OK;
                 }
+                case "activate-version" -> {
+                    AdminClient.Activation a = admin.activateVersion(Integer.parseInt(o.get("version")));
+                    out.println("result=" + a.result());
+                    out.println("activeVersion=" + a.activeVersion());
+                    out.println("lowestSupportedVersion=" + a.lowestSupportedVersion());
+                    return a.result() == io.radiusward.protocol.ActivationResult.ACTIVATED ? EXIT_OK : EXIT_FAILED;
+                }
                 default -> {}
             }
             AdminClient.State state = admin.state();
@@ -113,6 +122,8 @@ public final class AdminMain {
             out.println("active=" + state.active());
             out.println("stopped=" + state.stopped());
             out.println("digest=" + Long.toHexString(state.digest()));
+            out.println("stateVersion=" + state.activeVersion());
+            out.println("lowestSupportedVersion=" + state.lowestSupportedVersion());
             if (command.equals("state")) {
                 return EXIT_OK;
             }
@@ -213,6 +224,7 @@ public final class AdminMain {
                        admin verify-acks    --members ... --ack-log <acks.csv> --nas-id <id>
                        admin sinks          --members ...
                        admin resync         --members ... --sink <name> --position <log position>
+                       admin activate-version --members ... --version <n>   (after every member runs a release with n)
                        admin export-schema  [--type postgres]          (full SQL for DBAs, schema.manage=none)
                        admin verify-export  --jdbc-url <url> [--jdbc-user u --jdbc-password p] --ack-log <acks.csv>
                                             --nas-id <id> [--members ...]   (sessions in the database vs. acks/cluster)
