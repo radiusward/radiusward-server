@@ -80,6 +80,17 @@ final class EapConversations {
         return state;
     }
 
+    /** Puts a taken conversation back under the same State (its request was not answered; the peer will retry). */
+    void putBack(byte[] state, Conversation c, long now) {
+        Key key = key(state);
+        Stripe stripe = stripes[stripe(key)];
+        synchronized (stripe) {
+            if (stripe.map.put(key, c) == null) {
+                size.incrementAndGet();
+            }
+        }
+    }
+
     /** Takes the conversation of {@code state} out, if it exists, is not expired and belongs to {@code nas}. */
     Conversation take(byte[] state, String nas, long now) {
         if (state.length != 16) {

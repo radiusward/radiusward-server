@@ -22,7 +22,7 @@ import java.util.Locale;
  */
 record EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
 
-    static final List<String> KNOWN = List.of("md5", "tls");
+    static final List<String> KNOWN = List.of("md5", "tls", "peap");
 
     static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
@@ -40,8 +40,9 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
             throw new ConfigException("auth.eap.conversations: at least 1");
         }
         EapTlsConfig tls = EapTlsConfig.from(config);
-        if (methods.contains("tls") && tls == null) {
-            throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.certificate and auth.eap.tls.key");
+        if ((methods.contains("tls") || methods.contains("peap")) && tls == null) {
+            throw new ConfigException(
+                    "auth.eap.methods: tls and peap need auth.eap.tls.certificate and auth.eap.tls.key");
         }
         if (methods.contains("tls") && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.ca, the CAs of client certificates");
@@ -59,6 +60,7 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
         return switch (method) {
             case "md5" -> EapPacket.TYPE_MD5;
             case "tls" -> EapTls.TYPE;
+            case "peap" -> Peap.TYPE;
             default -> -1;
         };
     }
@@ -68,12 +70,16 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
         return switch (type) {
             case EapPacket.TYPE_MD5 -> new EapMd5();
             case EapTls.TYPE -> tls == null ? null : new EapTls(tls);
+            case Peap.TYPE -> tls == null ? null : new Peap(tls);
             default -> null;
         };
     }
 
-    /** Whether a peer known by its certificate alone may log in without an entry in a store. */
-    boolean certificateOnly(int type) {
-        return type == EapTls.TYPE && tls != null && !tls.requireUser();
+    /**
+     * Whether the outer identity needs no store entry: EAP-TLS, where the certificate is the credential (unless
+     * {@code require.user}), and tunnels, whose outer identity is often anonymous and whose inner one is checked.
+     */
+    boolean outerOptional(int type) {
+        return (type == EapTls.TYPE && tls != null && !tls.requireUser()) || type == Peap.TYPE;
     }
 }

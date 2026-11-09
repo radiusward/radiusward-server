@@ -84,7 +84,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.stores` | — (required) | store names, asked in this order; the first that knows the user decides |
 | `auth.store.<name>.type` | — | `file`, `sql`, or the type of a plug-in |
 | `auth.store.<name>.chap` | `false` | allow CHAP and EAP-MD5 with this store's `Cleartext-Password` |
-| `auth.store.<name>.mschap` | `false` | allow MS-CHAPv1/v2 to derive the NT hash from this store's `Cleartext-Password`; `NT-Password` needs no opt-in ([ADR 0024](adr/0024-ms-chap-and-status-server.md)) |
+| `auth.store.<name>.mschap` | `false` | allow MS-CHAPv1/v2 (also inside PEAP) to derive the NT hash from this store's `Cleartext-Password`; `NT-Password` needs no opt-in ([ADR 0024](adr/0024-ms-chap-and-status-server.md)) |
 | `auth.store.<name>.path` | — | `file`: the users file |
 | `auth.store.<name>.reload.interval` | `5s` | `file`: how often the file's modification time is checked |
 | `auth.store.<name>.url` / `.user` / `.password` | — / empty / empty | `sql`: JDBC URL and credentials |
@@ -96,9 +96,9 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.verifiers` | none | credential verifiers by name; `Auth-Type := <name>` sends a user to one |
 | `auth.verifier.<name>.type` | — | `ldap` (PAP by binding as the user; settings as the LDAP store's, [stores/ldap](../stores/ldap/README.md)), `netlogon` (MS-CHAPv1/v2 and PAP against Active Directory: `server` or `dns.domain` (+ `dns.server`, `dns.refresh`), `domain`, `machine.account`, `machine.password`, `server.name`, `endpoint.mapper.port`, `netlogon.port`, `strip.realm`, `timeout`, `connections`; [verifiers/netlogon](../verifiers/netlogon/README.md)), or a plug-in's type |
 | `auth.store.<name>.*` for `type = ldap` | | `url`, `tls.ca`, `bind.dn`, `bind.password`, `base.dn`, `user.filter`, `group.attribute`, `group.nested`, `require.groups`, `policy.<id>.group/check/reply`, `check.<attribute>`, `reply.<attribute>`, `timeout`, `pool` ([stores/ldap](../stores/ldap/README.md)) |
-| `auth.eap.methods` | `md5` | EAP methods offered, in order of preference: `tls`, `md5`; a peer may Nak to another listed one ([ADR 0026](adr/0026-eap-framework.md)). EAP-MD5 needs the store's `chap` opt-in |
+| `auth.eap.methods` | `md5` | EAP methods offered, in order of preference: `tls`, `peap`, `md5`; a peer may Nak to another listed one ([ADR 0026](adr/0026-eap-framework.md)). EAP-MD5 needs the store's `chap` opt-in |
 | `auth.eap.tls.certificate` / `auth.eap.tls.key` | — | the server's certificate chain and its unencrypted PKCS#8 key, PEM ([ADR 0028](adr/0028-eap-tls.md)) |
-| `auth.eap.tls.ca` | — | CA certificates (PEM) that client certificates must chain to; required for `tls` |
+| `auth.eap.tls.ca` | — | CA certificates (PEM) that client certificates must chain to; required for `tls`, not used by `peap` |
 | `auth.eap.tls.versions` | `TLSv1.2, TLSv1.3` | enabled TLS versions |
 | `auth.eap.tls.fragment.size` | `1024` | largest TLS payload per EAP message (64–3000) |
 | `auth.eap.tls.max.message` | `65536` | largest TLS message a peer may send in fragments |

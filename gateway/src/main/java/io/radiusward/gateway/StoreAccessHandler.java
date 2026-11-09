@@ -99,10 +99,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private static final class EapRound {
         EapPacket packet;
         EapConversations.Conversation conversation;
+        byte[] state;
         byte[] msk;
 
         void reset() {
             packet = null;
+            state = null;
             conversation = null;
             msk = null;
         }
@@ -184,26 +186,87 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (userName == null || userName.isEmpty()) {
             return REJECT;
         }
+        Authorization a = authorize(context, userName, method == AccessRequests.METHOD_EAP && outerOptional(context));
+        if (a.code() != ACCEPT) {
+            return a.code();
+        }
+        Found found = a.found();
+        String authType = a.authType();
+        List<AttributeItem> passwords = a.passwords();
+        if (method == AccessRequests.METHOD_EAP) {
+            int round = eapRound(context, found, authType, passwords);
+            if (round != ACCEPT) {
+                return round; // CHALLENGE (another round trip), REJECT or DROP
+            }
+            EapConversations.Conversation c = cache(context).eap.conversation;
+            String inner = c.method == null ? null : c.method.innerIdentity();
+            if (inner != null) { // a tunnel: the inner user is the one authorized (ADR 0029)
+                a = authorize(context, inner, false);
+                if (a.code() != ACCEPT) {
+                    return a.code();
+                }
+                found = a.found();
+            }
+        } else if (!authType.equalsIgnoreCase("Accept")) {
+            String verifier = verifierFor(authType, found.store(), passwords);
+            int checked = verifier != null
+                    ? verify(context, method, verifier, userName)
+                    : authenticate(context, method, found, userName, passwords) ? ACCEPT : REJECT;
+            if (checked != ACCEPT) {
+                return checked;
+            }
+        }
+        if (a.limit() != null) {
+            int decision = limit(context, request, found.store(), a.limit());
+            if (decision != ACCEPT) {
+                return decision;
+            }
+        }
+        encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
+        writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
+        writeEapSuccess(context, method);
+        return ACCEPT;
+    }
+
+    /**
+     * The authorization of a user: its store entry, check items and the groups that apply. {@code code} is
+     * {@link #ACCEPT} to go on, {@link #REJECT} (unknown user, failed check, Auth-Type Reject) or {@link #DROP}.
+     */
+    private record Authorization(
+            int code,
+            Found found,
+            String authType,
+            List<AttributeItem> passwords,
+            List<AttributeItem> reply,
+            String limit) {
+
+        static Authorization of(int code) {
+            return new Authorization(code, null, null, null, null, null);
+        }
+    }
+
+    /** Looks {@code userName} up and evaluates its checks and groups; {@code optional}: a missing user is empty. */
+    private Authorization authorize(AccessContext context, String userName, boolean optional) {
+        RadiusPacket request = context.request();
         Found found;
         try {
             found = find(cache(context), context.nas().name(), userName);
         } catch (StoreUnavailableException e) {
             warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
-            return DROP;
+            return Authorization.of(DROP);
         }
         if (found == null) {
-            if (method != AccessRequests.METHOD_EAP || !certificateOnly(context)) {
-                return REJECT;
+            if (!optional) {
+                return Authorization.of(REJECT);
             }
-            // EAP-TLS: the client certificate is the credential; no store entry, no extra items (ADR 0028)
+            // EAP-TLS: the certificate is the credential; tunnels: the inner user is looked up (ADR 0028, 0029)
             found = new Found("", new UserRecord(userName, List.of(), List.of(), List.of()));
         }
-
         List<AttributeItem> passwords = new ArrayList<>();
         List<AttributeItem> reply = new ArrayList<>(found.user().reply());
         String authType = checks(found.user().check(), request, passwords);
         if (authType == null) {
-            return REJECT;
+            return Authorization.of(REJECT);
         }
         String limit = simultaneousUse(found.user().check());
         for (UserRecord.Group group : found.user().groups()) {
@@ -213,7 +276,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 continue; // the group's conditions do not hold: it does not apply
             }
             if (groupAuthType.equalsIgnoreCase("Reject")) {
-                return REJECT;
+                return Authorization.of(REJECT);
             }
             if (authType.isEmpty()) {
                 authType = groupAuthType;
@@ -225,32 +288,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             merge(reply, group.reply());
         }
         if (authType.equalsIgnoreCase("Reject")) {
-            return REJECT;
+            return Authorization.of(REJECT);
         }
-        if (method == AccessRequests.METHOD_EAP) {
-            int round = eapRound(context, found, authType, passwords);
-            if (round != ACCEPT) {
-                return round; // CHALLENGE (another round trip), REJECT or DROP
-            }
-        } else if (!authType.equalsIgnoreCase("Accept")) {
-            String verifier = verifierFor(authType, found.store(), passwords);
-            int checked = verifier != null
-                    ? verify(context, method, verifier, userName)
-                    : authenticate(context, method, found, userName, passwords) ? ACCEPT : REJECT;
-            if (checked != ACCEPT) {
-                return checked;
-            }
-        }
-        if (limit != null) {
-            int decision = limit(context, request, found.store(), limit);
-            if (decision != ACCEPT) {
-                return decision;
-            }
-        }
-        encode(cache(context).encoded, reply, context.reply(), context.nas().name());
-        writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
-        writeEapSuccess(context, method);
-        return ACCEPT;
+        return new Authorization(ACCEPT, found, authType, passwords, reply, limit);
     }
 
     // ---- look-up -------------------------------------------------------------------------------
@@ -432,6 +472,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         byte[] state = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
         request.buffer().getBytes(at + 2, state);
+        round.state = state;
         round.conversation = conversations.take(state, context.nas().name(), clockMillis.getAsLong());
         return round.conversation == null ? REJECT : ACCEPT;
     }
@@ -449,8 +490,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (authType.equalsIgnoreCase("Accept")) {
             return ACCEPT; // no credential to check: EAP-Success right away
         }
-        EapMethod.Credentials credentials =
-                new EapMethod.Credentials(passwords, stores.chap().getOrDefault(found.store(), false));
+        EapMethod.Credentials credentials = new EapMethod.Credentials(
+                passwords,
+                stores.chap().getOrDefault(found.store(), false),
+                (user, challengeHash, ntResponse) -> innerMsChapV2(context, user, challengeHash, ntResponse));
         EapMethod.Step step;
         if (c.method == null) {
             c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)));
@@ -477,6 +520,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         } else {
             step = c.method.process(eap.identifier(), eap.data(), credentials);
         }
+        if (step.unavailable()) {
+            // the inner credential cannot be checked now: keep the conversation for the peer's retransmission
+            if (round.state != null) {
+                conversations.putBack(round.state, c, clockMillis.getAsLong());
+            }
+            return DROP;
+        }
         if (++c.rounds > stores.eap().maxRounds()) {
             return REJECT;
         }
@@ -498,21 +548,20 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** Whether this conversation's method (or the one it will start, or a Nak asks for) needs no store entry. */
-    private boolean certificateOnly(AccessContext context) {
+    private boolean outerOptional(AccessContext context) {
         EapRound round = cache(context).eap;
         EapConversations.Conversation c = round.conversation;
         if (c.method != null) {
             if (round.packet.type() == EapPacket.TYPE_NAK) {
                 for (byte t : round.packet.data()) {
-                    if (stores.eap().certificateOnly(t & 0xFF)) {
+                    if (stores.eap().outerOptional(t & 0xFF)) {
                         return true;
                     }
                 }
             }
-            return stores.eap().certificateOnly(c.method.type());
+            return stores.eap().outerOptional(c.method.type());
         }
-        return stores.eap()
-                .certificateOnly(EapConfig.type(stores.eap().methods().get(0)));
+        return stores.eap().outerOptional(EapConfig.type(stores.eap().methods().get(0)));
     }
 
     /** EAP-Success and, for methods that derive one, the MSK as MS-MPPE keys (RFC 3748 §7.10, RFC 2548). */
@@ -567,31 +616,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * store allows it ({@code auth.store.<name>.mschap}). The first usable credential decides.
      */
     private boolean msChap(AccessContext context, int method, Found found, List<AttributeItem> passwords) {
-        byte[] ntHash = null;
-        for (AttributeItem p : passwords) {
-            if (p.attribute().equalsIgnoreCase("NT-Password")) {
-                ntHash = MsChap.parseNtPassword(p.value());
-                if (ntHash == null) {
-                    warnOnce(
-                            "nt-password:" + found.store(),
-                            "store {}: NT-Password is not 32 hex digits;" + " such users are rejected",
-                            found.store());
-                    return false;
-                }
-                break;
-            }
-            if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)
-                    && stores.mschap().getOrDefault(found.store(), false)) {
-                ntHash = MsChap.ntHash(p.value());
-                break;
-            }
-        }
+        byte[] ntHash = localNtHash(found, passwords);
         if (ntHash == null) {
-            warnOnce(
-                    "mschap:" + found.store(),
-                    "MS-CHAP request for store {} without NT-Password (or Cleartext-Password with"
-                            + " auth.store.<name>.mschap = true): rejected",
-                    found.store());
             return false;
         }
         MsChapRequest r = msChapRequest(context.request(), method);
@@ -602,6 +628,66 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         succeeded(context, r, Md4.digest(ntHash));
         return true;
+    }
+
+    /** The user's NT hash from its store: NT-Password, or the cleartext where the store allows it; {@code null}. */
+    private byte[] localNtHash(Found found, List<AttributeItem> passwords) {
+        for (AttributeItem p : passwords) {
+            if (p.attribute().equalsIgnoreCase("NT-Password")) {
+                byte[] ntHash = MsChap.parseNtPassword(p.value());
+                if (ntHash == null) {
+                    warnOnce(
+                            "nt-password:" + found.store(),
+                            "store {}: NT-Password is not 32 hex digits; such users are rejected",
+                            found.store());
+                }
+                return ntHash;
+            }
+            if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)
+                    && stores.mschap().getOrDefault(found.store(), false)) {
+                return MsChap.ntHash(p.value());
+            }
+        }
+        warnOnce(
+                "mschap:" + found.store(),
+                "MS-CHAP request for store {} without NT-Password (or Cleartext-Password with"
+                        + " auth.store.<name>.mschap = true): rejected",
+                found.store());
+        return null;
+    }
+
+    /**
+     * MS-CHAPv2 inside a tunnel (PEAP, TTLS): the inner user is looked up and checked like outside — a credential
+     * verifier, or the local NT hash.
+     */
+    private EapMethod.Inner innerMsChapV2(AccessContext context, String user, byte[] challengeHash, byte[] ntResponse) {
+        Authorization a = authorize(context, user, false);
+        if (a.code() != ACCEPT) {
+            return new EapMethod.Inner(a.code(), null);
+        }
+        String verifier = verifierFor(a.authType(), a.found().store(), a.passwords());
+        if (verifier != null) {
+            try {
+                CredentialVerifier.Result r =
+                        stores.verifiers().get(verifier).verifyMsChap(user, challengeHash, ntResponse, true);
+                return r.accepted() && r.ntHashHash() != null
+                        ? new EapMethod.Inner(ACCEPT, r.ntHashHash())
+                        : new EapMethod.Inner(REJECT, null);
+            } catch (StoreUnavailableException e) {
+                warnOnce(
+                        "verifier-unavailable:" + verifier + ":" + e.getMessage(),
+                        "verifier {} unavailable, requests are not answered: {}",
+                        verifier,
+                        e.getMessage());
+                return new EapMethod.Inner(DROP, null);
+            }
+        }
+        byte[] ntHash = localNtHash(a.found(), a.passwords());
+        if (ntHash == null
+                || !java.security.MessageDigest.isEqual(MsChap.challengeResponse(challengeHash, ntHash), ntResponse)) {
+            return new EapMethod.Inner(REJECT, null);
+        }
+        return new EapMethod.Inner(ACCEPT, Md4.digest(ntHash));
     }
 
     /**

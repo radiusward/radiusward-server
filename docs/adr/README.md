@@ -30,5 +30,6 @@
 | [0026](0026-eap-framework.md) | EAP conversations: single-use State tokens, bounded node-local table, method interface, EAP-MD5 | Accepted |
 | [0027](0027-java-25-baseline.md) | Java 25 baseline, for the TLS keying-material exporter | Accepted |
 | [0028](0028-eap-tls.md) | EAP-TLS: JDK TLS engine, RFC 5216 framing, keys from the exporter, certificate-only users | Accepted |
+| [0029](0029-peap.md) | PEAPv0/EAP-MSCHAPv2: shared TLS base, the inner user is authorized, outages keep the conversation | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

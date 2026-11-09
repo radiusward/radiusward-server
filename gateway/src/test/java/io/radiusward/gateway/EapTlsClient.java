@@ -20,16 +20,26 @@ final class EapTlsClient {
 
     private final SSLEngine engine;
     private final int fragmentSize;
+    private final java.util.function.UnaryOperator<byte[]> tunnel;
     private final ByteArrayOutputStream incoming = new ByteArrayOutputStream();
     private byte[] outgoing;
     private int sent;
 
     EapTlsClient(SSLContext context, String protocol, int fragmentSize) {
+        this(context, protocol, fragmentSize, null);
+    }
+
+    /** With {@code tunnel}: what the peer answers to application data inside the tunnel (PEAP, TTLS). */
+    EapTlsClient(
+            SSLContext context, String protocol, int fragmentSize, java.util.function.UnaryOperator<byte[]> tunnel) {
         engine = context.createSSLEngine("radius.test", 0);
         engine.setUseClientMode(true);
         engine.setEnabledProtocols(new String[] {protocol});
         this.fragmentSize = fragmentSize;
+        this.tunnel = tunnel;
     }
+
+    private final ByteArrayOutputStream application = new ByteArrayOutputStream();
 
     /** The type data answering the server's EAP-TLS request type data. */
     byte[] answer(byte[] request) throws Exception {
@@ -51,7 +61,24 @@ final class EapTlsClient {
         }
         byte[] message = incoming.toByteArray();
         incoming.reset();
+        application.reset();
         outgoing = drive(message);
+        if (application.size() > 0 && tunnel != null) {
+            byte[] plain = tunnel.apply(application.toByteArray());
+            if (plain != null) {
+                ByteArrayOutputStream records = new ByteArrayOutputStream();
+                records.write(outgoing);
+                ByteBuffer in = ByteBuffer.wrap(plain);
+                ByteBuffer net = ByteBuffer.allocate(64 * 1024);
+                while (in.hasRemaining()) {
+                    net.clear();
+                    engine.wrap(in, net);
+                    net.flip();
+                    records.write(net.array(), 0, net.limit());
+                }
+                outgoing = records.toByteArray();
+            }
+        }
         sent = 0;
         return outgoing.length == 0 ? new byte[] {0} : fragment();
     }
@@ -100,11 +127,15 @@ final class EapTlsClient {
                     if (r.getStatus() == SSLEngineResult.Status.BUFFER_UNDERFLOW) {
                         throw new IllegalStateException("incomplete record");
                     }
+                    app.flip();
+                    application.write(app.array(), 0, app.limit());
                 }
                 default -> {
-                    while (in.hasRemaining()) { // the commitment message and session tickets after the handshake
+                    while (in.hasRemaining()) { // after the handshake: tickets, the commitment, tunnel data
                         app.clear();
                         engine.unwrap(in, app);
+                        app.flip();
+                        application.write(app.array(), 0, app.limit());
                     }
                     return out.toByteArray();
                 }
@@ -114,9 +145,13 @@ final class EapTlsClient {
 
     /** The MSK as the client derives it, to compare with what the server sent. */
     byte[] msk() throws Exception {
+        return msk(13);
+    }
+
+    byte[] msk(int type) throws Exception {
         ExtendedSSLSession session = (ExtendedSSLSession) engine.getSession();
         byte[] material = session.getProtocol().equals("TLSv1.3")
-                ? session.exportKeyingMaterialData("EXPORTER_EAP_TLS_Key_Material", new byte[] {13}, 128)
+                ? session.exportKeyingMaterialData("EXPORTER_EAP_TLS_Key_Material", new byte[] {(byte) type}, 128)
                 : session.exportKeyingMaterialData("client EAP encryption", null, 128);
         return Arrays.copyOf(material, 64);
     }

@@ -47,6 +47,17 @@ class EapTlsTest {
     }
 
     private StoreAccessHandler handler(int fragmentSize, boolean requireUser, int maxMessage) {
+        return handler(fragmentSize, requireUser, maxMessage, List.of("tls", "md5"), Map.of(), Map.of(), Map.of());
+    }
+
+    private StoreAccessHandler handler(
+            int fragmentSize,
+            boolean requireUser,
+            int maxMessage,
+            List<String> methods,
+            Map<String, Boolean> mschap,
+            Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
+            Map<String, String> storeVerifiers) {
         EapTlsConfig tls = new EapTlsConfig(
                 EapTlsConfig.context(pki.serverPem, pki.serverKey, pki.caPem),
                 List.of("TLSv1.2", "TLSv1.3"),
@@ -64,10 +75,10 @@ class EapTlsTest {
                 1000,
                 12,
                 Map.<String, IntHashSet>of(),
-                Map.of(),
-                Map.of(),
-                Map.of(),
-                new EapConfig(List.of("tls", "md5"), Duration.ofSeconds(30), 1000, 200, tls));
+                mschap,
+                verifiers,
+                storeVerifiers,
+                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls));
         return new StoreAccessHandler(auth, StoreAccessHandlerTest.DICTIONARY, System::currentTimeMillis);
     }
 
@@ -102,13 +113,22 @@ class EapTlsTest {
 
     /** Runs a whole conversation; returns the final code. */
     private int converse(StoreAccessHandler h, String identity, EapTlsClient client) throws Exception {
+        return converse(h, identity, client, EapTls.TYPE);
+    }
+
+    private EapPacket lastResponse;
+    private byte[] lastState;
+
+    private int converse(StoreAccessHandler h, String identity, EapTlsClient client, int type) throws Exception {
         int code = handle(h, StoreAccessHandlerTest.identity(1, identity), null);
         int rounds = 0;
         while (code == AccessHandler.CHALLENGE && rounds++ < 300) {
             EapPacket request = EapPacket.from(reply());
-            assertThat(request.type()).isEqualTo(EapTls.TYPE);
+            assertThat(request.type()).isEqualTo(type);
             byte[] answer = client.answer(request.data());
-            code = handle(h, new EapPacket(EapPacket.RESPONSE, request.identifier(), EapTls.TYPE, answer), state());
+            lastResponse = new EapPacket(EapPacket.RESPONSE, request.identifier(), type, answer);
+            lastState = state();
+            code = handle(h, lastResponse, lastState);
         }
         return code;
     }
@@ -149,7 +169,11 @@ class EapTlsTest {
     }
 
     private void assertKeys(EapTlsClient client) throws Exception {
-        byte[] msk = client.msk();
+        assertKeys(client, EapTls.TYPE);
+    }
+
+    private void assertKeys(EapTlsClient client, int type) throws Exception {
+        byte[] msk = client.msk(type);
         assertThat(mppe(17)).as("MS-MPPE-Recv-Key = MSK[0..32]").isEqualTo(Arrays.copyOfRange(msk, 0, 32));
         assertThat(mppe(16)).as("MS-MPPE-Send-Key = MSK[32..64]").isEqualTo(Arrays.copyOfRange(msk, 32, 64));
     }
@@ -209,5 +233,101 @@ class EapTlsTest {
         assertThat(converse(tiny, "dave", big))
                 .as("a message over auth.eap.tls.max.message")
                 .isEqualTo(AccessHandler.REJECT);
+    }
+
+    // ---- PEAPv0 / EAP-MSCHAPv2 (ADR 0029) --------------------------------------------------------
+
+    private StoreAccessHandler peap() {
+        return peap(Map.of(), Map.of(), Map.of());
+    }
+
+    private StoreAccessHandler peap(
+            Map<String, Boolean> mschap,
+            Map<String, io.radiusward.auth.CredentialVerifier> verifiers,
+            Map<String, String> storeVerifiers) {
+        return handler(1024, false, 65_536, List.of("peap"), mschap, verifiers, storeVerifiers);
+    }
+
+    private EapTlsClient peapClient(String protocol, PeapPeer peer) throws Exception {
+        return new EapTlsClient(TestPki.clientContext(null, pki.ca), protocol, 1024, peer);
+    }
+
+    @Test
+    void peapTls13WithAnAnonymousOuterIdentity() throws Exception {
+        store.user(
+                "alice",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Alice-Pw")))),
+                List.of(new AttributeItem("Filter-Id", "=", "staff")));
+        PeapPeer peer = new PeapPeer("alice", "Alice-Pw");
+        EapTlsClient client = peapClient("TLSv1.3", peer);
+        assertThat(converse(peap(), "anonymous@corp.test", client, Peap.TYPE)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(peer.serverProved)
+                .as("the server proved it knew the password (S=)")
+                .isTrue();
+        assertThat(reply().findAttribute(11)).as("the inner user's reply items").isPositive();
+        assertKeys(client, Peap.TYPE);
+    }
+
+    @Test
+    void peapTls12WithACleartextPassword() throws Exception {
+        store.user("bob", List.of(new AttributeItem("Cleartext-Password", ":=", "Bob-Pw")), List.of());
+        PeapPeer peer = new PeapPeer("bob", "Bob-Pw");
+        EapTlsClient client = peapClient("TLSv1.2", peer);
+        assertThat(converse(peap(Map.of("main", true), Map.of(), Map.of()), "anonymous", client, Peap.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertKeys(client, Peap.TYPE);
+    }
+
+    @Test
+    void peapRejectsWrongPasswordsAndUnknownUsers() throws Exception {
+        store.user(
+                        "alice",
+                        List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Alice-Pw")))),
+                        List.of())
+                .user(
+                        "blocked",
+                        List.of(
+                                new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("pw"))),
+                                new AttributeItem("Auth-Type", ":=", "Reject")),
+                        List.of());
+        PeapPeer wrong = new PeapPeer("alice", "wrong");
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.3", wrong), Peap.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(wrong.failureSeen)
+                .as("an MS-CHAPv2 Failure inside the tunnel first")
+                .isTrue();
+        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.FAILURE);
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.2", new PeapPeer("nobody", "x")), Peap.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.3", new PeapPeer("blocked", "pw")), Peap.TYPE))
+                .as("Auth-Type := Reject of the inner user")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void peapWithACredentialVerifierAndItsOutage() throws Exception {
+        StoreAccessHandlerTest.FakeVerifier ad = new StoreAccessHandlerTest.FakeVerifier();
+        store.user("User", List.of(), List.of());
+        StoreAccessHandler h = peap(Map.of(), Map.of("ad", ad), Map.of("main", "ad"));
+        PeapPeer peer = new PeapPeer("User", "clientPass");
+        assertThat(converse(h, "anonymous", peapClient("TLSv1.3", peer), Peap.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(peer.serverProved).as("S= from the verifier's session key").isTrue();
+
+        ad.down = true;
+        PeapPeer again = new PeapPeer("User", "clientPass");
+        assertThat(converse(h, "anonymous", peapClient("TLSv1.2", again), Peap.TYPE))
+                .as("the verifier cannot answer: no answer")
+                .isEqualTo(AccessHandler.DROP);
+        ad.down = false;
+        int code = handle(h, lastResponse, lastState); // the NAS retransmits the same request
+        assertThat(code).as("the conversation waited for the retransmission").isEqualTo(AccessHandler.CHALLENGE);
+    }
+
+    /** Hex of a byte array, upper case, as NT-Password is stored. */
+    static final class HexFormatHolder {
+        static String hex(byte[] b) {
+            return java.util.HexFormat.of().formatHex(b).toUpperCase(java.util.Locale.ROOT);
+        }
     }
 }
