@@ -83,6 +83,16 @@ class CodecFuzzTest {
         int end = pad + packet.length();
         assertThat(packet.length()).isBetween(20, Math.min(receivedLength, RadiusPacket.MAX_LENGTH));
 
+        // Access-Request credential handling: statuses, never exceptions or reads outside the packet
+        AccessRequests access = new AccessRequests();
+        int method = access.method(packet);
+        assertThat(method).isBetween(AccessRequests.METHOD_AMBIGUOUS, AccessRequests.METHOD_EAP);
+        UnsafeBuffer password = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
+        int decrypted = access.decryptUserPassword(packet, Packets.SECRET, password, 0);
+        assertThat(decrypted).isBetween(AccessRequests.MALFORMED, AccessRequests.MAX_PASSWORD);
+        assertThat(access.verifyChap(packet, password, 0, Math.max(0, decrypted)))
+                .isBetween(AccessRequests.MALFORMED, AccessRequests.CHAP_MATCH);
+
         AttributeCursor cursor = new AttributeCursor(MIXED_FORMATS).wrap(packet);
         int count = 0;
         while (cursor.next()) {

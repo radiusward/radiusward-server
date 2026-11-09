@@ -116,6 +116,14 @@ public final class RadiusPacketEncoder {
         return this;
     }
 
+    /** Copies already encoded attributes (type, length, value …), e.g. a reply template. */
+    public RadiusPacketEncoder rawAttributes(DirectBuffer source, int sourceOffset, int length) {
+        ensure(length);
+        buffer.putBytes(position, source, sourceOffset, length);
+        position += length;
+        return this;
+    }
+
     /** RFC 2865 Vendor-Specific attribute holding one standard-format (1,1) sub-attribute. */
     public RadiusPacketEncoder vendorAttribute(
             int vendorId, int vendorType, DirectBuffer value, int valueOffset, int valueLength) {

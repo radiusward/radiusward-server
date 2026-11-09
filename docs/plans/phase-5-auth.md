@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: proposed (2026-11-09); decisions 1 and 2 taken. Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: in progress (2026-11-09); decisions 1 and 2 taken; 5.1 done. Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -96,7 +96,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 
 | # | Package | Contents | Size |
 |---|---|---|---|
-| 5.1 | Codec | Access-Request view, User-Password decrypt (RFC 2865 §5.2, length 16..128, ×16), CHAP verify (RFC 1994), Access-Accept/Reject/Challenge builder with Message-Authenticator first, attribute templates; zero allocation; RFC vectors | M |
+| 5.1 ✅ | Codec | Access-Request view, User-Password decrypt (RFC 2865 §5.2, length 16..128, ×16), CHAP verify (RFC 1994), Access-Accept/Reject/Challenge builder with Message-Authenticator first, attribute templates; zero allocation; RFC vectors | M |
 | 5.2 | AuthAgent | socket 1812, NAS entries with `auth.secret`/policy, required Message-Authenticator, response cache, bounded worker pool, counters, `/metrics` | M |
 | 5.3 | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option | M |
 | 5.4 | Policy | pure decision, templates per vendor, Class token, reject reasons (generic on the wire) | M |

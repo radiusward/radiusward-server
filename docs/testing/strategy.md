@@ -5,11 +5,11 @@
 | Level | Where | Runs | What it proves |
 |---|---|---|---|
 | Unit | `src/test/java/**/*Test.java` | `./mvnw verify` (Surefire, with JaCoCo) | parser, codec, generator behaviour |
-| Property-based fuzzing | `CodecFuzzTest`, `Aaa4jDifferentialTest` (jqwik) | `./mvnw verify` | decoder never throws or reads out of bounds; agreement with aaa4j on random attribute sets |
-| Differential | `Aaa4jDifferentialTest` | `./mvnw verify` | our codec and aaa4j-radius accept each other's packets and authenticators |
-| Standard vectors | `RadiusAuthenticatorTest` | `./mvnw verify` | RFC 2865 §7.1 response authenticator, RFC 2104/2202 HMAC-MD5 |
+| Property-based fuzzing | `CodecFuzzTest`, `Aaa4jDifferentialTest` (jqwik) | `./mvnw verify` | decoder and Access-Request credential handling never throw or read out of bounds; agreement with aaa4j on random attribute sets and passwords |
+| Differential | `Aaa4jDifferentialTest` | `./mvnw verify` | our codec and aaa4j-radius accept each other's packets and authenticators; User-Password encrypted by either decrypts in the other; aaa4j verifies our Access-Accept/Reject/Challenge |
+| Standard vectors | `RadiusAuthenticatorTest` | `./mvnw verify` | RFC 2865 §7.1 response authenticator and User-Password, RFC 2104/2202 HMAC-MD5; `AccessRequestsTest`: CHAP against an independent JDK reference |
 | Vendor fixtures | `VendorFixtureTest` | `./mvnw verify` | 33 packets (BNG: Cisco, Juniper, Juniper ERX, MikroTik, Huawei; Wi-Fi: Aruba, Meraki, MikroTik hotspot, Open-Mesh, Ruckus, Ubiquiti UniFi × Start/Interim/Stop) encode byte-exactly, verify, extract correctly; aaa4j decodes them too |
-| Allocation | `HotPathAllocationIT` (Failsafe, no JaCoCo) | `./mvnw verify` | 1M accounting packets through the receive path allocate < 4 KB in total |
+| Allocation | `HotPathAllocationIT` (Failsafe, no JaCoCo) | `./mvnw verify` | 1M accounting packets through the receive path allocate < 4 KB in total; so do 1M PAP + CHAP Access-Requests with replies |
 | Interop | `FreeRadiusInteropIT` | `./mvnw -Pinterop verify` | a real FreeRADIUS accepts our requests and we verify its responses |
 | Loopback UDP | `RadClientTest` | `./mvnw verify` | radclient against a codec-based responder: retries, timeouts, Message-Authenticator |
 | Protocol | `ProtocolRoundTripTest` | `./mvnw verify` | every SBE message round-trips; a v1 decoder reads v2 |
