@@ -46,6 +46,7 @@ public final class Gateway implements AutoCloseable {
     private final AuthStats authStats;
     private final AccessHandler handler;
     private final AgentRunner[] runners;
+    private RadsecAgent radsecAgent;
 
     private Gateway(
             GatewayConfig config,
@@ -87,6 +88,16 @@ public final class Gateway implements AutoCloseable {
             NasRegistry registry,
             AuthConfig auth,
             java.util.function.Function<Dictionary, AccessHandler> handlerFactory) {
+        return launchWith(config, registry, auth, handlerFactory, RadsecConfig.DISABLED);
+    }
+
+    /** As above, also listening for RadSec connections when {@code radsec} is enabled (ADR 0034). */
+    public static Gateway launchWith(
+            GatewayConfig config,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
+            RadsecConfig radsec) {
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (config.dictionaryDir() != null) {
             dictionaries.addDirectory(config.dictionaryDir(), ParseMode.LENIENT);
@@ -109,8 +120,17 @@ public final class Gateway implements AutoCloseable {
             GatewayStats stats = new GatewayStats();
             OneToOneRingBuffer toCluster = ring();
             OneToOneRingBuffer fromCluster = ring();
+            java.util.Map<String, Integer> radsecIndex = new java.util.TreeMap<>();
+            RadsecLink link = radsec.enabled() ? radsecLink(registry, radsec, radsecIndex) : null;
             UdpAgent udp = new UdpAgent(
-                    config, registry, VendorFormats.from(dictionary), toCluster, fromCluster, stats, System::nanoTime);
+                    config,
+                    registry,
+                    VendorFormats.from(dictionary),
+                    toCluster,
+                    fromCluster,
+                    stats,
+                    System::nanoTime,
+                    link);
             AeronCluster.Context clusterContext = new AeronCluster.Context()
                     .aeronDirectoryName(driver.aeronDirectoryName())
                     .ingressChannel("aeron:udp?" + config.profile().termLengthParam())
@@ -131,7 +151,7 @@ public final class Gateway implements AutoCloseable {
                     new java.util.ArrayList<>(java.util.List.of(udp));
             if (auth.enabled()) {
                 AccessSlots slots = new AccessSlots(auth.pending());
-                authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime);
+                authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime, link);
                 socketAgents.add(authAgent);
                 for (int w = 0; w < auth.workers(); w++) {
                     // workers may wait on an identity store: a parking idle strategy, never a busy spin
@@ -141,6 +161,11 @@ public final class Gateway implements AutoCloseable {
                             null,
                             new AccessWorker(w, slots, handler, authStats, reservations.forWorker(w))));
                 }
+            }
+            RadsecAgent radsecAgent = null;
+            if (link != null) {
+                radsecAgent = new RadsecAgent(radsec, registry, link, radsecIndex, auth.enabled(), System::nanoTime);
+                socketAgents.add(radsecAgent);
             }
             if (config.dedicatedThreads()) {
                 for (org.agrona.concurrent.Agent agent : socketAgents) {
@@ -162,6 +187,7 @@ public final class Gateway implements AutoCloseable {
                 AgentRunner.startOnThread(runner);
             }
             Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
+            gateway.radsecAgent = radsecAgent;
             LOG.info(
                     "gateway {} started: {} NAS, cluster {}, {} threads",
                     config.gatewayId(),
@@ -242,6 +268,48 @@ public final class Gateway implements AutoCloseable {
         return authAgent.localPort();
     }
 
+    /** The NAS entries allowed over RadSec, with their RadSec secret; the same ids, so events dedup across both. */
+    private static RadsecLink radsecLink(
+            NasRegistry registry, RadsecConfig radsec, java.util.Map<String, Integer> index) {
+        java.util.List<NasClient> clients = new java.util.ArrayList<>();
+        radsec.clients().keySet().stream().sorted().forEach(name -> {
+            NasClient n = registry.clients().stream()
+                    .filter(c -> c.name().equals(name))
+                    .findFirst()
+                    .orElseThrow(() -> new io.radiusward.common.config.ConfigException(
+                            "nas." + name + ".radsec: no such NAS entry"));
+            index.put(name, clients.size());
+            clients.add(new NasClient(
+                    n.name(),
+                    n.id(),
+                    n.network(),
+                    n.prefixLength(),
+                    radsec.clients().get(name).secret(),
+                    n.vendor(),
+                    n.messageAuthenticator(),
+                    n.identity(),
+                    n.idleTimeoutMinutes(),
+                    n.accessMessageAuthenticator()));
+        });
+        return new RadsecLink(clients.toArray(NasClient[]::new));
+    }
+
+    /** RadSec port actually bound, -1 without RadSec; waits briefly for the bind. */
+    public int radsecPort() {
+        if (radsecAgent == null) {
+            return -1;
+        }
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (!radsecAgent.bound() && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        return radsecAgent.localPort();
+    }
+
+    RadsecAgent radsecAgent() {
+        return radsecAgent;
+    }
+
     public Health health() {
         for (AgentRunner runner : runners) {
             if (runner.isClosed()) {
@@ -258,6 +326,9 @@ public final class Gateway implements AutoCloseable {
         }
         if (authAgent != null && !authStats.bound()) {
             return Health.down("RADIUS authentication socket not bound");
+        }
+        if (radsecAgent != null && !radsecAgent.bound()) {
+            return Health.down("RadSec socket not bound");
         }
         if (!stats.connected()) {
             return Health.down("not connected to the cluster");
@@ -316,6 +387,9 @@ public final class Gateway implements AutoCloseable {
             if (handler != null) {
                 handler.writeMetrics(w, id);
             }
+        }
+        if (radsecAgent != null) {
+            radsecAgent.writeMetrics(w, id);
         }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());

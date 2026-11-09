@@ -102,6 +102,10 @@ class AuthAgentTest {
 
     /** A signed Access-Request: User-Password encrypted for {@code password}, a Proxy-State, optional MA / EAP. */
     static byte[] accessRequest(int identifier, String password, boolean withMa, boolean withEap) {
+        return accessRequest(identifier, password, withMa, withEap, SECRET);
+    }
+
+    static byte[] accessRequest(int identifier, String password, boolean withMa, boolean withEap, byte[] secret) {
         byte[] authenticator = new byte[16];
         ThreadLocalRandom.current().nextBytes(authenticator);
         UnsafeBuffer cipher = new UnsafeBuffer(new byte[128]);
@@ -113,7 +117,7 @@ class AuthAgentTest {
                         plain.length,
                         new UnsafeBuffer(authenticator),
                         0,
-                        SECRET,
+                        secret,
                         cipher,
                         0);
         UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
@@ -130,7 +134,7 @@ class AuthAgentTest {
         int ma = withMa ? enc.messageAuthenticator() : -1;
         int length = enc.finish();
         if (ma >= 0) {
-            new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, SECRET);
+            new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, secret);
         }
         return Arrays.copyOf(buffer.byteArray(), length);
     }
@@ -162,12 +166,16 @@ class AuthAgentTest {
     }
 
     static void assertSignedReplyTo(byte[] reply, byte[] request, int code) {
+        assertSignedReplyTo(reply, request, code, SECRET);
+    }
+
+    static void assertSignedReplyTo(byte[] reply, byte[] request, int code, byte[] secret) {
         RadiusPacket r = wrap(reply);
         RadiusAuthenticator a = new RadiusAuthenticator();
         assertThat(r.code()).isEqualTo(code);
         assertThat(r.identifier()).isEqualTo(request[1] & 0xFF);
-        assertThat(a.verifyResponse(r, new UnsafeBuffer(request), 4, SECRET)).isTrue();
-        assertThat(a.verifyResponseMessageAuthenticator(r, new UnsafeBuffer(request), 4, SECRET))
+        assertThat(a.verifyResponse(r, new UnsafeBuffer(request), 4, secret)).isTrue();
+        assertThat(a.verifyResponseMessageAuthenticator(r, new UnsafeBuffer(request), 4, secret))
                 .isTrue();
         assertThat(reply[20]).as("Message-Authenticator first").isEqualTo((byte) 80);
         assertThat(r.findAttribute(33)).as("Proxy-State echoed").isPositive();

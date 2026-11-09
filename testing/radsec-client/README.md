@@ -1,0 +1,7 @@
+# RadSec interop client
+
+radsecproxy 1.11 with FreeRADIUS's `radclient` and wpa_supplicant's `eapol_test` (Debian packages) as an independent
+RadSec client for the gateway, never for production. Built by `RadsecproxyIT` in the gateway module (Testcontainers):
+the test copies a radsecproxy configuration and a client certificate into `/work`, starts radsecproxy, and sends
+over UDP to it on `127.0.0.1:1812`; radsecproxy forwards over TLS to the gateway on the host
+(`host.docker.internal`, mapped to the host gateway). Its log ends up in `gateway/target/radsec-client`.

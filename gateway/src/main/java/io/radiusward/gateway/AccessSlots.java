@@ -24,6 +24,7 @@ final class AccessSlots {
     final UnsafeBuffer requests;
     final int[] requestLength;
     final InetSocketAddress[] source;
+    final long[] route; // RadsecLink.UDP, or the RadSec connection to answer on
     final NasClient[] nas;
     final long[] cacheKey;
     final ByteBuffer[] replies; // direct, for DatagramChannel.send
@@ -41,6 +42,7 @@ final class AccessSlots {
         this.requests = new UnsafeBuffer(new byte[capacity * RadiusPacket.MAX_LENGTH]);
         this.requestLength = new int[capacity];
         this.source = new InetSocketAddress[capacity];
+        this.route = new long[capacity];
         this.nas = new NasClient[capacity];
         this.cacheKey = new long[capacity];
         this.replies = new ByteBuffer[capacity];

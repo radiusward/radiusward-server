@@ -16,7 +16,9 @@ import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import org.agrona.BufferUtil;
+import org.agrona.DirectBuffer;
 import org.agrona.concurrent.Agent;
+import org.agrona.concurrent.MessageHandler;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -26,7 +28,9 @@ import org.apache.logging.log4j.Logger;
  * accounting {@link UdpAgent}. Per datagram: validate → NAS entry → Message-Authenticator (required by default and
  * with EAP) → reply cache (RFC 5080: a retransmission is answered with the same reply, or dropped while its original
  * is still being decided) → copy into a free {@link AccessSlots slot} and queue it for the {@link AccessWorker}s.
- * Replies come back through the done queue and leave from this socket. Never blocks and allocates nothing per
+ * Replies come back through the done queue and leave from this socket. Access-Requests from RadSec connections
+ * (ADR 0034) arrive from the {@link RadsecAgent} with their NAS entry and take the same path; their replies go back
+ * to it. Never blocks and allocates nothing per
  * packet except the sender address the JDK creates: no free slot or a full queue means the request is dropped and
  * the NAS retransmits.
  */
@@ -52,6 +56,8 @@ final class AuthAgent implements Agent {
     private final io.radiusward.radius.codec.AccessResponses statusResponses =
             new io.radiusward.radius.codec.AccessResponses(new RadiusAuthenticator());
     private final ReplyCache cache;
+    private final RadsecLink radsec;
+    private final MessageHandler radsecHandler = this::onRadsec;
 
     private DatagramChannel channel;
     private long now;
@@ -63,6 +69,19 @@ final class AuthAgent implements Agent {
             AccessSlots slots,
             AuthStats stats,
             UdpAgent.NanoClock clock) {
+        this(gateway, config, registry, slots, stats, clock, null);
+    }
+
+    /** @param radsec the link to the RadSec agent, {@code null} without RadSec */
+    AuthAgent(
+            GatewayConfig gateway,
+            AuthConfig config,
+            NasRegistry registry,
+            AccessSlots slots,
+            AuthStats stats,
+            UdpAgent.NanoClock clock,
+            RadsecLink radsec) {
+        this.radsec = radsec;
         this.gateway = gateway;
         this.config = config;
         this.registry = registry;
@@ -110,6 +129,9 @@ final class AuthAgent implements Agent {
             onDatagram((InetSocketAddress) from, receiveBuffer.position());
             work++;
         }
+        if (radsec != null) {
+            work += radsec.toAuth.read(radsecHandler, RECEIVE_BATCH);
+        }
         for (Integer id = slots.done.poll(); id != null; id = slots.done.poll()) {
             reply(id);
             work++;
@@ -120,20 +142,36 @@ final class AuthAgent implements Agent {
     }
 
     private void onDatagram(InetSocketAddress from, int length) {
+        onPacket(from, null, RadsecLink.UDP, length);
+    }
+
+    /** A request from a RadSec connection: copied into the receive buffer and decided like a datagram. */
+    private void onRadsec(int msgTypeId, DirectBuffer buffer, int index, int length) {
+        int packetLength = length - 12;
+        received.putBytes(0, buffer, index + 12, packetLength);
+        onPacket(null, radsec.clients[buffer.getInt(index + 8)], buffer.getLong(index), packetLength);
+    }
+
+    /**
+     * @param from the sender of a datagram, {@code null} for RadSec
+     * @param radsecNas the NAS entry of a RadSec connection, {@code null} for a datagram (looked up by address)
+     * @param route {@link RadsecLink#UDP} or the RadSec connection
+     */
+    private void onPacket(InetSocketAddress from, NasClient radsecNas, long route, int length) {
         stats.increment(AuthStats.Counter.RECEIVED);
         if (packet.wrap(received, 0, length) != DecodeStatus.OK) {
             stats.increment(AuthStats.Counter.MALFORMED);
             return;
         }
+        NasClient nas = radsecNas != null ? radsecNas : registry.lookup(from.getAddress());
         if (packet.code() == RadiusCode.STATUS_SERVER) {
-            statusServer(from);
+            statusServer(nas, from, route);
             return;
         }
         if (packet.code() != RadiusCode.ACCESS_REQUEST) {
             stats.increment(AuthStats.Counter.NOT_ACCESS_REQUEST);
             return;
         }
-        NasClient nas = registry.lookup(from.getAddress());
         if (nas == null) {
             stats.increment(AuthStats.Counter.UNKNOWN_NAS);
             return;
@@ -155,8 +193,8 @@ final class AuthAgent implements Agent {
 
         int auth = packet.authenticatorOffset();
         long key = ResponseCache.key(
-                from.getAddress().hashCode(),
-                from.getPort(),
+                route == RadsecLink.UDP ? from.getAddress().hashCode() : RadsecLink.generation(route),
+                route == RadsecLink.UDP ? from.getPort() : RadsecLink.connection(route),
                 packet.identifier(),
                 received.getLong(auth),
                 received.getLong(auth + 8));
@@ -168,7 +206,7 @@ final class AuthAgent implements Agent {
         if (cached >= 0) {
             stats.increment(AuthStats.Counter.CACHE_HITS);
             int replyLength = cache.copy(cached, sending, 0);
-            send(sendBuffer, replyLength, from);
+            send(sendBuffer, sending, replyLength, from, route);
             return;
         }
 
@@ -180,6 +218,7 @@ final class AuthAgent implements Agent {
         slots.requests.putBytes(AccessSlots.requestOffset(slot), received, 0, packet.length());
         slots.requestLength[slot] = packet.length();
         slots.source[slot] = from;
+        slots.route[slot] = route;
         slots.nas[slot] = nas;
         slots.cacheKey[slot] = key;
         if (!slots.work.offer(slots.ids[slot])) {
@@ -194,7 +233,7 @@ final class AuthAgent implements Agent {
         int length = slots.replyLength[slot];
         long key = slots.cacheKey[slot];
         if (length > 0) {
-            send(slots.replies[slot], length, slots.source[slot]);
+            send(slots.replies[slot], slots.replyViews[slot], length, slots.source[slot], slots.route[slot]);
             cache.put(key, slots.replyViews[slot], 0, length, now + ttlNanos);
         } else {
             cache.clearInFlight(key); // not answered: a retransmission is decided again
@@ -206,8 +245,7 @@ final class AuthAgent implements Agent {
      * Status-Server on the authentication port (RFC 5997): an Access-Accept without attributes when a valid
      * Message-Authenticator proves the NAS; otherwise silence. Answered on this thread, never cached.
      */
-    private void statusServer(InetSocketAddress from) {
-        NasClient nas = registry.lookup(from.getAddress());
+    private void statusServer(NasClient nas, InetSocketAddress from, long route) {
         if (nas == null) {
             stats.increment(AuthStats.Counter.UNKNOWN_NAS);
             return;
@@ -222,10 +260,18 @@ final class AuthAgent implements Agent {
         }
         stats.increment(AuthStats.Counter.STATUS_SERVER);
         int length = statusResponses.encode(packet, RadiusCode.ACCESS_ACCEPT, received, 0, 0, sending, 0, nas.secret());
-        send(sendBuffer, length, from);
+        send(sendBuffer, sending, length, from, route);
     }
 
-    private void send(ByteBuffer buffer, int length, InetSocketAddress to) {
+    /** From this socket, or back to the RadSec connection the request came from. */
+    private void send(ByteBuffer buffer, UnsafeBuffer view, int length, InetSocketAddress to, long route) {
+        if (route != RadsecLink.UDP) {
+            stats.increment(
+                    RadsecLink.reply(radsec.fromAuth, route, view, 0, length)
+                            ? AuthStats.Counter.RESPONSES_SENT
+                            : AuthStats.Counter.SEND_FAILED);
+            return;
+        }
         buffer.clear().limit(length);
         try {
             if (channel.send(buffer, to) == length) {

@@ -4,6 +4,7 @@
  */
 package io.radiusward.gateway;
 
+import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -56,6 +57,7 @@ final class TlsCredentials {
         OCSP
     }
 
+    private final String prefix;
     private final Path chain;
     private final Path key;
     private final Path ca;
@@ -83,6 +85,21 @@ final class TlsCredentials {
             URI ocspResponder,
             boolean softFail,
             Duration reload) {
+        this("auth.eap.tls.", chain, key, ca, crls, revocation, ocspResponder, softFail, reload);
+    }
+
+    /** @param prefix the configuration keys these come from, for messages ({@code auth.eap.tls.}, {@code radsec.}) */
+    TlsCredentials(
+            String prefix,
+            Path chain,
+            Path key,
+            Path ca,
+            List<Path> crls,
+            Revocation revocation,
+            URI ocspResponder,
+            boolean softFail,
+            Duration reload) {
+        this.prefix = prefix;
         this.chain = chain;
         this.key = key;
         this.ca = ca;
@@ -92,14 +109,57 @@ final class TlsCredentials {
         this.softFail = softFail;
         this.checkEveryMillis = reload.toMillis();
         if (revocation != Revocation.NONE && ca == null) {
-            throw new ConfigException("auth.eap.tls.revocation: needs auth.eap.tls.ca, the CAs of client certificates");
+            throw new ConfigException(prefix + "revocation: needs " + prefix + "ca, the CAs of client certificates");
         }
         if (revocation == Revocation.CRL && crls.isEmpty()) {
-            throw new ConfigException("auth.eap.tls.revocation: crl needs auth.eap.tls.crl, the CRL files");
+            throw new ConfigException(prefix + "revocation: crl needs " + prefix + "crl, the CRL files");
         }
         stamps = stamps();
         context = build();
         nextCheck = System.currentTimeMillis() + checkEveryMillis;
+    }
+
+    /**
+     * The revocation and reload settings below {@code prefix} ({@code auth.eap.tls.}, {@code radsec.}): {@code crl},
+     * {@code revocation}, {@code ocsp.url}, {@code ocsp.timeout}, {@code revocation.soft.fail}, {@code reload}.
+     *
+     * @param ca the client CAs file, empty when none
+     */
+    static TlsCredentials from(Config config, String prefix, Path chain, Path key, String ca) {
+        Revocation revocation = EapTlsConfig.choice(
+                Revocation.class, prefix + "revocation", config.string(prefix + "revocation", "none"));
+        String ocspUrl = config.string(prefix + "ocsp.url", "");
+        if (revocation == Revocation.OCSP) {
+            ocspTimeouts(config.duration(prefix + "ocsp.timeout", Duration.ofSeconds(2)));
+        }
+        return new TlsCredentials(
+                prefix,
+                chain,
+                key,
+                ca.isBlank() ? null : Path.of(ca),
+                config.list(prefix + "crl", List.of()).stream()
+                        .map(String::trim)
+                        .filter(f -> !f.isEmpty())
+                        .map(Path::of)
+                        .toList(),
+                revocation,
+                ocspUrl.isBlank() ? null : URI.create(ocspUrl.trim()),
+                config.bool(prefix + "revocation.soft.fail", false),
+                config.duration(prefix + "reload", Duration.ofSeconds(60)));
+    }
+
+    /**
+     * The JDK's OCSP client reads its timeouts from system properties, once: set them unless the operator did
+     * ({@code -Dcom.sun.security.ocsp.timeout=...}).
+     */
+    private static void ocspTimeouts(Duration timeout) {
+        String millis = timeout.toMillis() + "ms";
+        if (System.getProperty("com.sun.security.ocsp.timeout") == null) {
+            System.setProperty("com.sun.security.ocsp.timeout", millis);
+        }
+        if (System.getProperty("com.sun.security.ocsp.readtimeout") == null) {
+            System.setProperty("com.sun.security.ocsp.readtimeout", millis);
+        }
     }
 
     /** The current context; rebuilt first if the files changed since the last check. */
@@ -163,12 +223,11 @@ final class TlsCredentials {
         try {
             Certificate[] certificates = certificates(chain).toArray(Certificate[]::new);
             if (certificates.length == 0) {
-                throw new ConfigException("auth.eap.tls.certificate: no certificate in " + chain);
+                throw new ConfigException(prefix + "certificate: no certificate in " + chain);
             }
-            PrivateKey privateKey = EapTlsConfig.privateKey(key);
+            PrivateKey privateKey = EapTlsConfig.privateKey(key, prefix + "key");
             if (!matches(privateKey, certificates[0])) {
-                throw new ConfigException(
-                        "auth.eap.tls.key: " + key + " is not the key of the certificate in " + chain);
+                throw new ConfigException(prefix + "key: " + key + " is not the key of the certificate in " + chain);
             }
             KeyStore keys = KeyStore.getInstance("PKCS12");
             keys.load(null, null);
@@ -179,7 +238,7 @@ final class TlsCredentials {
             ssl.init(kmf.getKeyManagers(), ca == null ? null : trust().getTrustManagers(), null);
             return ssl;
         } catch (IOException | GeneralSecurityException e) {
-            throw new ConfigException("auth.eap.tls: " + e.getMessage(), e);
+            throw new ConfigException(prefix + "certificate: " + e.getMessage(), e);
         }
     }
 
@@ -191,7 +250,7 @@ final class TlsCredentials {
             anchors.setCertificateEntry("ca-" + n++, c);
         }
         if (n == 0) {
-            throw new ConfigException("auth.eap.tls.ca: no certificate in " + ca);
+            throw new ConfigException(prefix + "ca: no certificate in " + ca);
         }
         PKIXBuilderParameters params = new PKIXBuilderParameters(anchors, new X509CertSelector());
         if (revocation == Revocation.NONE) {

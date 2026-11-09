@@ -27,7 +27,7 @@ USER 10001:10001
 WORKDIR /var/lib/radiusward
 ENV RADIUSWARD_PROFILE=small
 VOLUME ["/var/lib/radiusward"]
-EXPOSE 1813/udp 9090/tcp
+EXPOSE 1812/udp 1813/udp 2083/tcp 9090/tcp
 
 ENTRYPOINT ["/usr/local/bin/radiusward"]
 CMD ["version"]

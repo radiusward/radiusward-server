@@ -7,7 +7,6 @@ package io.radiusward.gateway;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import java.io.IOException;
-import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -65,28 +64,7 @@ record EapTlsConfig(
         if (fragment < 64 || fragment > 3000) {
             throw new ConfigException("auth.eap.tls.fragment.size: 64 to 3000, got " + fragment);
         }
-        TlsCredentials.Revocation revocation = choice(
-                TlsCredentials.Revocation.class,
-                "auth.eap.tls.revocation",
-                config.string("auth.eap.tls.revocation", "none"));
-        String ocspUrl = config.string("auth.eap.tls.ocsp.url", "");
-        Duration ocspTimeout = config.duration("auth.eap.tls.ocsp.timeout", Duration.ofSeconds(2));
-        if (revocation == TlsCredentials.Revocation.OCSP) {
-            ocspTimeouts(ocspTimeout);
-        }
-        TlsCredentials credentials = new TlsCredentials(
-                chain,
-                key,
-                ca.isBlank() ? null : Path.of(ca),
-                config.list("auth.eap.tls.crl", List.of()).stream()
-                        .map(String::trim)
-                        .filter(f -> !f.isEmpty())
-                        .map(Path::of)
-                        .toList(),
-                revocation,
-                ocspUrl.isBlank() ? null : URI.create(ocspUrl.trim()),
-                config.bool("auth.eap.tls.revocation.soft.fail", false),
-                config.duration("auth.eap.tls.reload", Duration.ofSeconds(60)));
+        TlsCredentials credentials = TlsCredentials.from(config, "auth.eap.tls.", chain, key, ca);
         return new EapTlsConfig(
                 credentials,
                 List.copyOf(versions),
@@ -105,7 +83,7 @@ record EapTlsConfig(
                 chainFile, keyFile, caFile, List.of(), TlsCredentials.Revocation.NONE, null, false, Duration.ZERO);
     }
 
-    private static <E extends Enum<E>> E choice(Class<E> type, String key, String value) {
+    static <E extends Enum<E>> E choice(Class<E> type, String key, String value) {
         try {
             return Enum.valueOf(type, value.trim().toUpperCase(Locale.ROOT));
         } catch (IllegalArgumentException e) {
@@ -117,27 +95,13 @@ record EapTlsConfig(
         }
     }
 
-    /**
-     * The JDK's OCSP client reads its timeouts from system properties, once: set them unless the operator did
-     * ({@code -Dcom.sun.security.ocsp.timeout=...}).
-     */
-    private static void ocspTimeouts(Duration timeout) {
-        String millis = timeout.toMillis() + "ms";
-        if (System.getProperty("com.sun.security.ocsp.timeout") == null) {
-            System.setProperty("com.sun.security.ocsp.timeout", millis);
-        }
-        if (System.getProperty("com.sun.security.ocsp.readtimeout") == null) {
-            System.setProperty("com.sun.security.ocsp.readtimeout", millis);
-        }
-    }
-
     /** An unencrypted PKCS#8 key ({@code BEGIN PRIVATE KEY}): RSA, EC or EdDSA. */
-    static PrivateKey privateKey(Path pem) throws IOException, GeneralSecurityException {
+    static PrivateKey privateKey(Path pem, String setting) throws IOException, GeneralSecurityException {
         String text = Files.readString(pem, StandardCharsets.US_ASCII);
         int begin = text.indexOf("-----BEGIN PRIVATE KEY-----");
         int end = text.indexOf("-----END PRIVATE KEY-----");
         if (begin < 0 || end < begin) {
-            throw new ConfigException("auth.eap.tls.key: " + pem + " needs an unencrypted PKCS#8 key (BEGIN PRIVATE"
+            throw new ConfigException(setting + ": " + pem + " needs an unencrypted PKCS#8 key (BEGIN PRIVATE"
                     + " KEY); convert with: openssl pkcs8 -topk8 -nocrypt -in key.pem");
         }
         byte[] der = Base64.getMimeDecoder().decode(text.substring(begin + 27, end));
@@ -148,6 +112,6 @@ record EapTlsConfig(
                 // not this algorithm
             }
         }
-        throw new ConfigException("auth.eap.tls.key: " + pem + " holds no RSA, EC or EdDSA key");
+        throw new ConfigException(setting + ": " + pem + " holds no RSA, EC or EdDSA key");
     }
 }

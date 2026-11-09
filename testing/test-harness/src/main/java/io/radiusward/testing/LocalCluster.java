@@ -16,6 +16,7 @@ import io.radiusward.gateway.Gateway;
 import io.radiusward.gateway.GatewayConfig;
 import io.radiusward.gateway.NasClient;
 import io.radiusward.gateway.NasRegistry;
+import io.radiusward.gateway.RadsecConfig;
 import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
 import java.net.DatagramSocket;
@@ -186,6 +187,17 @@ public final class LocalCluster implements AutoCloseable {
             NasRegistry registry,
             AuthConfig auth,
             java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler) {
+        return startGateway(gatewayId, radiusPort, registry, auth, handler, RadsecConfig.DISABLED);
+    }
+
+    /** As above, also accepting RadSec connections (ADR 0034). */
+    public Gateway startGateway(
+            int gatewayId,
+            int radiusPort,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler,
+            RadsecConfig radsec) {
         GatewayConfig config = new GatewayConfig(
                 gatewayId,
                 "127.0.0.1",
@@ -204,7 +216,7 @@ public final class LocalCluster implements AutoCloseable {
                 new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
                 null,
                 Duration.ZERO);
-        Gateway gateway = Gateway.launchWith(config, registry, auth, handler);
+        Gateway gateway = Gateway.launchWith(config, registry, auth, handler, radsec);
         gateways.add(gateway);
         return gateway;
     }

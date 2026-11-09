@@ -58,19 +58,19 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.bouncycastle.operator.jcajce.JcaDigestCalculatorProviderBuilder;
 
 /** Test certificates (Bouncy Castle, test scope only): a CA, a server and client certificates, as PEM files. */
-final class TestPki {
+public final class TestPki {
 
-    record Issued(KeyPair keys, X509Certificate certificate) {}
+    public record Issued(KeyPair keys, X509Certificate certificate) {}
 
     private static final java.util.concurrent.atomic.AtomicLong SERIALS = new java.util.concurrent.atomic.AtomicLong();
 
-    final Issued ca;
-    final Issued server;
-    final Path caPem;
-    final Path serverPem;
-    final Path serverKey;
+    public final Issued ca;
+    public final Issued server;
+    public final Path caPem;
+    public final Path serverPem;
+    public final Path serverKey;
 
-    TestPki(Path dir, String name) throws Exception {
+    public TestPki(Path dir, String name) throws Exception {
         ca = issue("CN=" + name + " Test CA", null, true, null);
         server = issue("CN=radius." + name + ".test", ca, false, KeyPurposeId.id_kp_serverAuth);
         caPem = write(
@@ -85,7 +85,7 @@ final class TestPki {
                 server.keys().getPrivate().getEncoded());
     }
 
-    Issued client(String commonName) throws Exception {
+    public Issued client(String commonName) throws Exception {
         return issue("CN=" + commonName, ca, false, KeyPurposeId.id_kp_clientAuth);
     }
 
@@ -174,7 +174,7 @@ final class TestPki {
     final java.util.concurrent.atomic.AtomicInteger ocspRequests = new java.util.concurrent.atomic.AtomicInteger();
 
     /** A TLS client context: its certificate (or none) and trust in {@code serverCa}. */
-    static SSLContext clientContext(Issued client, Issued serverCa) throws Exception {
+    public static SSLContext clientContext(Issued client, Issued serverCa) throws Exception {
         KeyStore keys = KeyStore.getInstance("PKCS12");
         keys.load(null, null);
         if (client != null) {

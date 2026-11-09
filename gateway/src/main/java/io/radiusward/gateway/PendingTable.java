@@ -31,6 +31,7 @@ final class PendingTable {
     private final int[] identifier;
     private final boolean[] withMessageAuthenticator;
     private final InetSocketAddress[] sender;
+    private final long[] route;
     private final NasClient[] nas;
     private final int[] proxyStateLength;
     private final int[] commandLength;
@@ -51,6 +52,7 @@ final class PendingTable {
         identifier = new int[capacity];
         withMessageAuthenticator = new boolean[capacity];
         sender = new InetSocketAddress[capacity];
+        route = new long[capacity];
         nas = new NasClient[capacity];
         proxyStateLength = new int[capacity];
         commandLength = new int[capacity];
@@ -66,6 +68,11 @@ final class PendingTable {
 
     /** Allocates a slot; returns its correlation id, or {@code -1} when full. */
     long allocate(long key, long now, InetSocketAddress from, NasClient client, int id, boolean withMa) {
+        return allocate(key, now, from, RadsecLink.UDP, client, id, withMa);
+    }
+
+    /** As above, for a request that came from {@code route} ({@link RadsecLink#UDP} or a RadSec connection). */
+    long allocate(long key, long now, InetSocketAddress from, long via, NasClient client, int id, boolean withMa) {
         if (freeCount == 0) {
             return -1;
         }
@@ -75,6 +82,7 @@ final class PendingTable {
         createdAt[slot] = now;
         readyAt[slot] = 0;
         sender[slot] = from;
+        route[slot] = via;
         nas[slot] = client;
         identifier[slot] = id;
         withMessageAuthenticator[slot] = withMa;
@@ -171,6 +179,10 @@ final class PendingTable {
 
     boolean withMessageAuthenticator(int slot) {
         return withMessageAuthenticator[slot];
+    }
+
+    long route(int slot) {
+        return route[slot];
     }
 
     InetSocketAddress sender(int slot) {

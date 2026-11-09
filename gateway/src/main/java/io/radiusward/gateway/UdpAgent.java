@@ -93,6 +93,9 @@ final class UdpAgent implements Agent {
     private int delayedHead;
     private int delayedCount;
 
+    private final RadsecLink radsec;
+    private final MessageHandler radsecHandler = this::onRadsec;
+
     private DatagramChannel channel;
     private long now;
     private long nextHousekeeping;
@@ -110,6 +113,20 @@ final class UdpAgent implements Agent {
             RingBuffer fromCluster,
             GatewayStats stats,
             NanoClock clock) {
+        this(config, registry, vendorFormats, toCluster, fromCluster, stats, clock, null);
+    }
+
+    /** @param radsec the link to the RadSec agent (ADR 0034), {@code null} without RadSec */
+    UdpAgent(
+            GatewayConfig config,
+            NasRegistry registry,
+            VendorFormats vendorFormats,
+            RingBuffer toCluster,
+            RingBuffer fromCluster,
+            GatewayStats stats,
+            NanoClock clock,
+            RadsecLink radsec) {
+        this.radsec = radsec;
         this.config = config;
         this.registry = registry;
         this.toCluster = toCluster;
@@ -158,6 +175,9 @@ final class UdpAgent implements Agent {
             onDatagram((InetSocketAddress) from, receiveBuffer.position());
             work++;
         }
+        if (radsec != null) {
+            work += radsec.toAccounting.read(radsecHandler, RECEIVE_BATCH);
+        }
         work += fromCluster.read(notificationHandler, 256);
         work += sendDelayed();
         if (now - nextHousekeeping >= 0) {
@@ -170,20 +190,36 @@ final class UdpAgent implements Agent {
     // ---- receive path ------------------------------------------------------------------------------
 
     private void onDatagram(InetSocketAddress from, int length) {
+        onPacket(from, null, RadsecLink.UDP, length);
+    }
+
+    /** An Accounting-Request from a RadSec connection (ADR 0034): copied in and handled like a datagram. */
+    private void onRadsec(int msgTypeId, DirectBuffer buffer, int index, int length) {
+        int packetLength = length - 12;
+        received.putBytes(0, buffer, index + 12, packetLength);
+        onPacket(null, radsec.clients[buffer.getInt(index + 8)], buffer.getLong(index), packetLength);
+    }
+
+    /**
+     * @param from the sender of a datagram, {@code null} for RadSec
+     * @param radsecNas the NAS entry of a RadSec connection, {@code null} for a datagram (looked up by address)
+     * @param route {@link RadsecLink#UDP} or the RadSec connection
+     */
+    private void onPacket(InetSocketAddress from, NasClient radsecNas, long route, int length) {
         stats.increment(Counter.RECEIVED);
         if (packet.wrap(received, 0, length) != DecodeStatus.OK) {
             stats.increment(Counter.MALFORMED);
             return;
         }
+        NasClient nas = radsecNas != null ? radsecNas : registry.lookup(from.getAddress());
         if (packet.code() == RadiusCode.STATUS_SERVER) {
-            statusServer(from);
+            statusServer(nas, from, route);
             return;
         }
         if (packet.code() != RadiusCode.ACCOUNTING_REQUEST) {
             stats.increment(Counter.NOT_ACCOUNTING);
             return;
         }
-        NasClient nas = registry.lookup(from.getAddress());
         if (nas == null) {
             stats.increment(Counter.UNKNOWN_NAS);
             return;
@@ -206,8 +242,8 @@ final class UdpAgent implements Agent {
 
         int auth = packet.authenticatorOffset();
         long cacheKey = ResponseCache.key(
-                from.getAddress().hashCode(),
-                from.getPort(),
+                route == RadsecLink.UDP ? from.getAddress().hashCode() : RadsecLink.generation(route),
+                route == RadsecLink.UDP ? from.getPort() : RadsecLink.connection(route),
                 packet.identifier(),
                 received.getLong(auth),
                 received.getLong(auth + 8));
@@ -215,7 +251,7 @@ final class UdpAgent implements Agent {
         if (ResponseCache.state(cached) == ResponseCache.COMMITTED) {
             stats.increment(Counter.CACHE_HITS);
             int responseLength = responses.encode(packet, sending, 0, secret, respondWithMa);
-            send(from, responseLength);
+            send(from, route, responseLength);
             return;
         }
         if (ResponseCache.state(cached) == ResponseCache.PENDING) {
@@ -273,7 +309,7 @@ final class UdpAgent implements Agent {
                 hasSessionId ? fields.sessionIdOffset() : 0,
                 hasSessionId ? fields.sessionIdLength() : 0);
 
-        long correlationId = pending.allocate(cacheKey, now, from, nas, packet.identifier(), respondWithMa);
+        long correlationId = pending.allocate(cacheKey, now, from, route, nas, packet.identifier(), respondWithMa);
         if (correlationId < 0) {
             stats.increment(Counter.PENDING_FULL);
             return;
@@ -438,7 +474,7 @@ final class UdpAgent implements Agent {
         int ma = pending.withMessageAuthenticator(slot) ? encoder.messageAuthenticator() : -1;
         int length = encoder.finish();
         authenticator.signResponse(sending, 0, length, ma, pending.authenticators(), slot * 16, nas.secret());
-        send(pending.sender(slot), length);
+        send(pending.sender(slot), pending.route(slot), length);
         cache.put(
                 pending.cacheKey(slot),
                 ResponseCache.COMMITTED,
@@ -451,8 +487,7 @@ final class UdpAgent implements Agent {
      * Message-Authenticator proves the NAS and the gateway is connected to the cluster — a NAS that sees no answer
      * fails over, exactly when it should. Never cached, never sent to the cluster.
      */
-    private void statusServer(InetSocketAddress from) {
-        NasClient nas = registry.lookup(from.getAddress());
+    private void statusServer(NasClient nas, InetSocketAddress from, long route) {
         if (nas == null) {
             stats.increment(Counter.UNKNOWN_NAS);
             return;
@@ -464,7 +499,7 @@ final class UdpAgent implements Agent {
             return;
         }
         stats.increment(Counter.STATUS_SERVER);
-        send(from, responses.encode(packet, sending, 0, nas.secret(), true));
+        send(from, route, responses.encode(packet, sending, 0, nas.secret(), true));
     }
 
     private int sendDelayed() {
@@ -487,7 +522,15 @@ final class UdpAgent implements Agent {
         return sent;
     }
 
-    private void send(InetSocketAddress to, int length) {
+    /** From this socket, or back to the RadSec connection the request came from. */
+    private void send(InetSocketAddress to, long route, int length) {
+        if (route != RadsecLink.UDP) {
+            stats.increment(
+                    RadsecLink.reply(radsec.fromAccounting, route, sending, 0, length)
+                            ? Counter.RESPONSES_SENT
+                            : Counter.SEND_FAILED);
+            return;
+        }
         sendBuffer.clear().limit(length);
         try {
             if (channel.send(sendBuffer, to) == length) {

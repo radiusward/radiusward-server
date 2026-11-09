@@ -75,6 +75,37 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
 | `debug.state.version.supported` | code's version | pretend the member's release knows another state version, to test upgrades (tests only; requires `debug.enabled=true`) |
 
+## RadSec (gateway)
+
+RADIUS over TLS (RFC 6614, [ADR 0034](adr/0034-radsec.md)): authentication and accounting on one TCP connection,
+client certificates required. A connection belongs to the NAS entry of its source address, which must allow it.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `radsec.enabled` | `false` | accept RadSec connections on `gateway.listen.host` |
+| `radsec.port` | `2083` | TCP port |
+| `radsec.certificate` / `radsec.key` | — | the server's certificate chain and unencrypted PKCS#8 key, PEM |
+| `radsec.ca` | — | CAs (PEM) that NAS client certificates must chain to; required |
+| `radsec.versions` | `TLSv1.2, TLSv1.3` | enabled TLS versions |
+| `radsec.revocation`, `radsec.crl`, `radsec.ocsp.url`, `radsec.ocsp.timeout`, `radsec.revocation.soft.fail`, `radsec.reload` | as `auth.eap.tls.*` | revocation of client certificates and reload of the files, as for EAP ([ADR 0033](adr/0033-client-certificates.md)) |
+| `radsec.connections` | `256` | connections at once; more are closed right after accepting |
+| `radsec.handshake.timeout` | `10s` | a connection that has not finished its TLS handshake by then is closed |
+| `radsec.idle.timeout` | `0s` (never) | close a connection without traffic for this long (TCP keep-alive is on regardless) |
+| `nas.<name>.radsec` | `false` | this NAS entry may connect over RadSec |
+| `nas.<name>.radsec.secret` | `radsec` | the shared secret inside TLS (RFC 6614 §2.3) |
+| `nas.<name>.radsec.identity` | — | a name the client certificate must carry (common name, DNS, e-mail or UPN); unset: any certificate of `radsec.ca` |
+
+```properties
+radsec.enabled     = true
+radsec.certificate = /etc/radiusward/tls/radsec.pem
+radsec.key         = /etc/radiusward/tls/radsec.key
+radsec.ca          = /etc/radiusward/tls/nas-ca.pem
+nas.branch-17.address         = 198.51.100.17
+nas.branch-17.secret          = ${env:BRANCH17_SECRET}    # still used over UDP
+nas.branch-17.radsec          = true
+nas.branch-17.radsec.identity = wlc.branch-17.corp.example
+```
+
 ## Identity stores
 
 Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.md)).

@@ -35,5 +35,6 @@
 | [0031](0031-peap-inner-methods.md) | PEAP inner methods: EAP-GTC (like PAP) and EAP-TLS, chosen by Nak | Accepted |
 | [0032](0032-peap-crypto-binding.md) | PEAP crypto-binding (optional by default), `eapol_test` interop for every TLS method | Accepted |
 | [0033](0033-client-certificates.md) | Client certificates: identity must match (or names the user), CRL/OCSP revocation, reload on change | Accepted |
+| [0034](0034-radsec.md) | RadSec (RFC 6614): TLS over TCP on `SSLEngine` (no Netty), NAS by address and certificate, same decision paths through rings | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

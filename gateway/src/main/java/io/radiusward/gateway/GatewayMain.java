@@ -29,8 +29,12 @@ public final class GatewayMain {
         NasRegistry registry = NasRegistry.from(config);
         AuthConfig auth = AuthConfig.from(config);
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
-                Gateway gateway =
-                        Gateway.launchWith(gatewayConfig, registry, auth, Gateway.storeHandler(config, auth));
+                Gateway gateway = Gateway.launchWith(
+                        gatewayConfig,
+                        registry,
+                        auth,
+                        Gateway.storeHandler(config, auth),
+                        RadsecConfig.from(config, gatewayConfig.listenHost()));
                 ManagementServer ignored = ManagementServer.start(
                         config,
                         9189 + gatewayConfig.gatewayId(),
