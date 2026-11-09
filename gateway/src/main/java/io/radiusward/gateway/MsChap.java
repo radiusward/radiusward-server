@@ -83,8 +83,13 @@ final class MsChap {
 
     /** MS-CHAPv2 GenerateAuthenticatorResponse: {@code S=} and 40 upper-case hex digits. */
     static String authenticatorResponse(byte[] ntHash, byte[] ntResponse, byte[] challengeHash) {
+        return authenticatorResponseFromKey(Md4.digest(ntHash), ntResponse, challengeHash);
+    }
+
+    /** As above, from the hash of the NT hash (the user session key a domain controller returns). */
+    static String authenticatorResponseFromKey(byte[] ntHashHash, byte[] ntResponse, byte[] challengeHash) {
         MessageDigest sha = sha1();
-        sha.update(Md4.digest(ntHash));
+        sha.update(ntHashHash);
         sha.update(ntResponse);
         sha.update(MAGIC_SIGN);
         byte[] digest = sha.digest();
@@ -96,8 +101,13 @@ final class MsChap {
 
     /** RFC 3079 MasterKey of an MS-CHAPv2 exchange. */
     static byte[] masterKey(byte[] ntHash, byte[] ntResponse) {
+        return masterKeyFromKey(Md4.digest(ntHash), ntResponse);
+    }
+
+    /** As above, from the hash of the NT hash. */
+    static byte[] masterKeyFromKey(byte[] ntHashHash, byte[] ntResponse) {
         MessageDigest sha = sha1();
-        sha.update(Md4.digest(ntHash));
+        sha.update(ntHashHash);
         sha.update(ntResponse);
         sha.update(MAGIC_MASTER);
         return Arrays.copyOf(sha.digest(), 16);

@@ -5,6 +5,7 @@
 package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.auth.CredentialVerifier;
 import io.radiusward.auth.IdentityStore;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
@@ -97,13 +98,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private static final class MsChapOutcome {
         boolean success;
         int ident;
-        byte[] ntHash;
+        byte[] ntHashHash;
         byte[] ntResponse;
         byte[] challengeHash;
 
         void reset() {
             success = false;
-            ntHash = null;
+            ntHashHash = null;
             ntResponse = null;
             challengeHash = null;
         }
@@ -191,8 +192,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (authType.equalsIgnoreCase("Reject")) {
             return REJECT;
         }
-        if (!authType.equalsIgnoreCase("Accept") && !authenticate(context, method, found, userName, passwords)) {
-            return REJECT;
+        if (!authType.equalsIgnoreCase("Accept")) {
+            String verifier = verifierFor(authType, found.store(), passwords);
+            int checked = verifier != null
+                    ? verify(context, method, verifier, userName)
+                    : authenticate(context, method, found, userName, passwords) ? ACCEPT : REJECT;
+            if (checked != ACCEPT) {
+                return checked;
+            }
         }
         if (limit != null) {
             int decision = limit(context, request, found.store(), limit);
@@ -398,42 +405,138 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                     found.store());
             return false;
         }
-        RadiusPacket request = context.request();
+        MsChapRequest r = msChapRequest(context.request(), method);
+        if (r == null
+                || !java.security.MessageDigest.isEqual(
+                        MsChap.challengeResponse(r.challenge(), ntHash), r.ntResponse())) {
+            return false;
+        }
+        succeeded(context, r, Md4.digest(ntHash));
+        return true;
+    }
+
+    /**
+     * The parts of an MS-CHAP request a check needs: the 8-byte challenge the NT response answers (v2: the challenge
+     * hash), the response, its ident; {@code null} if malformed.
+     */
+    private record MsChapRequest(byte[] challenge, byte[] ntResponse, int ident, byte[] challengeHash, boolean v2) {}
+
+    private static MsChapRequest msChapRequest(RadiusPacket request, int method) {
         byte[] challenge = vendorValue(request, MS_CHAP_CHALLENGE);
         boolean v2 = method == AccessRequests.METHOD_MS_CHAP2;
         byte[] response = vendorValue(request, v2 ? MS_CHAP2_RESPONSE : MS_CHAP_RESPONSE);
         if (challenge == null || response == null || response.length != RESPONSE_LENGTH) {
-            return false;
+            return null;
         }
         byte[] ntResponse = Arrays.copyOfRange(response, 26, 50);
-        byte[] expected;
-        byte[] challengeHash = null;
         if (v2) {
             if (challenge.length != 16) {
-                return false;
+                return null;
             }
             int at = request.findAttribute(USER_NAME);
             byte[] name = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
             request.buffer().getBytes(at + 2, name);
-            challengeHash =
-                    MsChap.challengeHash(Arrays.copyOfRange(response, 2, 18), challenge, MsChap.v2UserName(name));
-            expected = MsChap.challengeResponse(challengeHash, ntHash);
-        } else {
-            if (challenge.length != 8 || (response[1] & 1) == 0) {
-                return false; // without the NT-Response only the LAN Manager response remains: not supported
-            }
-            expected = MsChap.challengeResponse(challenge, ntHash);
+            byte[] hash = MsChap.challengeHash(Arrays.copyOfRange(response, 2, 18), challenge, MsChap.v2UserName(name));
+            return new MsChapRequest(hash, ntResponse, response[0] & 0xFF, hash, true);
         }
-        if (!java.security.MessageDigest.isEqual(expected, ntResponse)) {
-            return false;
+        if (challenge.length != 8 || (response[1] & 1) == 0) {
+            return null; // without the NT-Response only the LAN Manager response remains: not supported
         }
+        return new MsChapRequest(challenge, ntResponse, response[0] & 0xFF, null, false);
+    }
+
+    private void succeeded(AccessContext context, MsChapRequest r, byte[] ntHashHash) {
         MsChapOutcome outcome = cache(context).msChap;
         outcome.success = true;
-        outcome.ident = response[0] & 0xFF;
-        outcome.ntHash = ntHash;
-        outcome.ntResponse = ntResponse;
-        outcome.challengeHash = challengeHash;
-        return true;
+        outcome.ident = r.ident();
+        outcome.ntHashHash = ntHashHash;
+        outcome.ntResponse = r.ntResponse();
+        outcome.challengeHash = r.challengeHash();
+    }
+
+    // ---- credential verifiers (ADR 0025) -------------------------------------------------------
+
+    private static String methodName(int method) {
+        return switch (method) {
+            case AccessRequests.METHOD_PAP -> "PAP";
+            case AccessRequests.METHOD_CHAP -> "CHAP";
+            case AccessRequests.METHOD_MS_CHAP -> "MS-CHAP";
+            case AccessRequests.METHOD_MS_CHAP2 -> "MS-CHAPv2";
+            default -> "method " + method;
+        };
+    }
+
+    /**
+     * The verifier that checks this user's credential: the one {@code Auth-Type} names, else the store's ({@code
+     * auth.store.<name>.verifier}) for a user without a password of its own; {@code null} for a local check.
+     */
+    private String verifierFor(String authType, String store, List<AttributeItem> passwords) {
+        if (!authType.isEmpty() && stores.verifiers().containsKey(authType)) {
+            return authType;
+        }
+        String forStore = stores.storeVerifiers().get(store);
+        return forStore != null && passwords.isEmpty() ? forStore : null;
+    }
+
+    /** Asks a verifier: {@link #ACCEPT}, {@link #REJECT}, or {@link #DROP} when it cannot tell. */
+    private int verify(AccessContext context, int method, String name, String userName) {
+        CredentialVerifier verifier = stores.verifiers().get(name);
+        try {
+            CredentialVerifier.Result result;
+            MsChapRequest r = null;
+            if (isMsChap(method)) {
+                r = msChapRequest(context.request(), method);
+                if (r == null) {
+                    return REJECT;
+                }
+                result = verifier.verifyMsChap(userName, r.challenge(), r.ntResponse(), r.v2());
+            } else if (method == AccessRequests.METHOD_PAP) {
+                UnsafeBuffer buffer = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
+                int n = context.credentials()
+                        .decryptUserPassword(context.request(), context.nas().secret(), buffer, 0);
+                if (n < 0) {
+                    return REJECT;
+                }
+                byte[] password = Arrays.copyOf(buffer.byteArray(), n);
+                try {
+                    result = verifier.verifyPassword(userName, password);
+                } finally {
+                    Arrays.fill(password, (byte) 0);
+                    Arrays.fill(buffer.byteArray(), (byte) 0);
+                }
+            } else {
+                result = CredentialVerifier.Result.UNSUPPORTED; // CHAP needs a cleartext password
+            }
+            if (result.outcome() == CredentialVerifier.Outcome.UNSUPPORTED) {
+                warnOnce(
+                        "verifier-unsupported:" + name + ":" + method,
+                        "verifier {} cannot check this method ({}): rejected",
+                        name,
+                        methodName(method));
+                return REJECT;
+            }
+            if (!result.accepted()) {
+                return REJECT;
+            }
+            if (r != null) {
+                if (result.ntHashHash() == null || result.ntHashHash().length != 16) {
+                    warnOnce(
+                            "verifier-key:" + name,
+                            "verifier {} accepted MS-CHAP without a session key: rejected",
+                            name);
+                    return REJECT;
+                }
+                succeeded(context, r, result.ntHashHash());
+            }
+            return ACCEPT;
+        } catch (StoreUnavailableException e) {
+            warnOnce(
+                    "verifier-unavailable:" + name + ":" + e.getMessage(),
+                    "verifier {} unavailable, requests are not answered: {}",
+                    name,
+                    e.getMessage());
+            return DROP;
+        }
     }
 
     /** MS-CHAP2-Success and the MPPE keys (v2), or MS-CHAP-MPPE-Keys (v1). */
@@ -447,12 +550,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         byte[] authenticator = new byte[16];
         context.request().buffer().getBytes(context.request().authenticatorOffset(), authenticator);
         if (method == AccessRequests.METHOD_MS_CHAP2) {
-            String success = MsChap.authenticatorResponse(outcome.ntHash, outcome.ntResponse, outcome.challengeHash);
+            String success =
+                    MsChap.authenticatorResponseFromKey(outcome.ntHashHash, outcome.ntResponse, outcome.challengeHash);
             byte[] value = new byte[1 + success.length()];
             value[0] = (byte) outcome.ident;
             System.arraycopy(success.getBytes(StandardCharsets.US_ASCII), 0, value, 1, success.length());
             out.vendorAttribute(MICROSOFT, MS_CHAP2_SUCCESS, value);
-            byte[] master = MsChap.masterKey(outcome.ntHash, outcome.ntResponse);
+            byte[] master = MsChap.masterKeyFromKey(outcome.ntHashHash, outcome.ntResponse);
             int salt = saltRandom.nextInt(0x8000) & ~1; // two different salts, high bit set (RFC 2548)
             out.vendorAttribute(
                     MICROSOFT,
@@ -466,7 +570,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             out.vendorAttribute(
                     MICROSOFT,
                     MS_CHAP_MPPE_KEYS,
-                    MsChap.encryptV1Keys(new byte[8], Md4.digest(outcome.ntHash), secret, authenticator));
+                    MsChap.encryptV1Keys(new byte[8], outcome.ntHashHash, secret, authenticator));
         }
     }
 

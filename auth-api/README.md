@@ -12,3 +12,7 @@ The identity store plug-in API ([ADR 0021](../docs/adr/0021-identity-stores.md))
 | `UserRecord`, `AttributeItem` | check items, reply items and groups as attribute name, operator and text value |
 
 Stores contain no RADIUS logic: the gateway verifies passwords, evaluates check items and encodes reply items.
+
+**Credential verifiers** (`CredentialVerifierProvider`, `CredentialVerifier`, ADR 0025) check a password or an MS-CHAP
+response elsewhere — a directory, a domain controller — for users whose store holds no password; registered in
+`META-INF/services/io.radiusward.auth.CredentialVerifierProvider`. `ItemParser` reads items in the users-file syntax.

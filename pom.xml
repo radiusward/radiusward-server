@@ -37,6 +37,8 @@
         <module>auth-api</module>
         <module>stores/file</module>
         <module>stores/sql</module>
+        <module>stores/ldap</module>
+        <module>verifiers/netlogon</module>
         <module>gateway</module>
         <module>tools/radclient</module>
         <module>tools/admin-cli</module>
@@ -159,6 +161,16 @@
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
+                <artifactId>store-ldap</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>verifier-netlogon</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
                 <artifactId>exporter</artifactId>
                 <version>${project.version}</version>
             </dependency>
@@ -181,6 +193,11 @@
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-postgresql</artifactId>
+                <version>${testcontainers.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers</artifactId>
                 <version>${testcontainers.version}</version>
             </dependency>
             <dependency>

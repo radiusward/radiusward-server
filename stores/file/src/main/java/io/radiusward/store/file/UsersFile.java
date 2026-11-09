@@ -5,6 +5,7 @@
 package io.radiusward.store.file;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.auth.ItemParser;
 import io.radiusward.auth.UserRecord;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -29,8 +30,6 @@ import java.util.function.Function;
  * file never means something other than it seems.
  */
 final class UsersFile {
-
-    private static final String[] OPS = {":=", "==", "+=", "!=", ">=", "<=", "=~", "!~", "=*", "!*", "=", ">", "<"};
 
     private UsersFile() {}
 
@@ -58,7 +57,7 @@ final class UsersFile {
                 if (user != null) {
                     add(users, user, check, reply, entryLine);
                 }
-                Cursor c = new Cursor(raw, n + 1);
+                ItemParser c = new ItemParser(raw, n + 1);
                 user = c.word();
                 if (user.equals("DEFAULT")) {
                     throw c.error("DEFAULT entries are not supported");
@@ -72,7 +71,7 @@ final class UsersFile {
                     throw new IllegalArgumentException("line " + (n + 1) + ": reply item before any user");
                 }
                 int from = reply.size();
-                new Cursor(raw, n + 1).items(reply);
+                new ItemParser(raw, n + 1).items(reply);
                 for (AttributeItem item : reply.subList(from, reply.size())) {
                     String problem = replyCheck.apply(item);
                     if (problem != null) {
@@ -100,110 +99,6 @@ final class UsersFile {
         }
         if (users.putIfAbsent(user, new UserRecord(user, check, reply, List.of())) != null) {
             throw new IllegalArgumentException("line " + line + ": user " + user + " defined twice");
-        }
-    }
-
-    /** Reads words, operators and values from one line. */
-    private static final class Cursor {
-        private final String text;
-        private final int line;
-        private int at;
-
-        Cursor(String text, int line) {
-            this.text = text;
-            this.line = line;
-        }
-
-        IllegalArgumentException error(String message) {
-            return new IllegalArgumentException("line " + line + ": " + message);
-        }
-
-        private void skipSpaces() {
-            while (at < text.length() && Character.isWhitespace(text.charAt(at))) {
-                at++;
-            }
-        }
-
-        boolean end() {
-            skipSpaces();
-            return at >= text.length() || text.charAt(at) == '#';
-        }
-
-        String word() {
-            skipSpaces();
-            if (at < text.length() && text.charAt(at) == '"') {
-                return quoted();
-            }
-            int start = at;
-            while (at < text.length()
-                    && !Character.isWhitespace(text.charAt(at))
-                    && text.charAt(at) != ','
-                    && "=:!<>+".indexOf(text.charAt(at)) < 0) {
-                at++;
-            }
-            if (start == at) {
-                throw error("expected a name or value at column " + (at + 1));
-            }
-            return text.substring(start, at);
-        }
-
-        private String quoted() {
-            StringBuilder sb = new StringBuilder();
-            at++;
-            while (at < text.length()) {
-                char ch = text.charAt(at++);
-                if (ch == '"') {
-                    return sb.toString();
-                }
-                if (ch == '\\' && at < text.length()) {
-                    sb.append(text.charAt(at++));
-                } else {
-                    sb.append(ch);
-                }
-            }
-            throw error("unterminated string");
-        }
-
-        String op() {
-            skipSpaces();
-            for (String op : OPS) {
-                if (text.startsWith(op, at)) {
-                    at += op.length();
-                    return op;
-                }
-            }
-            throw error("expected an operator (:=, =, ==, +=, …) at column " + (at + 1));
-        }
-
-        /** {@code name op value} items separated by commas, until the end of the line. */
-        void items(List<AttributeItem> into) {
-            while (!end()) {
-                String name = word();
-                String op = op();
-                String value = valueToken();
-                into.add(new AttributeItem(name, op, value));
-                skipSpaces();
-                if (at < text.length() && text.charAt(at) == ',') {
-                    at++;
-                } else if (!end()) {
-                    throw error("expected ',' between items at column " + (at + 1));
-                }
-            }
-        }
-
-        private String valueToken() {
-            skipSpaces();
-            if (at < text.length() && text.charAt(at) == '"') {
-                return quoted();
-            }
-            int start = at;
-            while (at < text.length() && !Character.isWhitespace(text.charAt(at)) && text.charAt(at) != ',') {
-                at++;
-            }
-            if (start == at) {
-                throw error("expected a value at column " + (at + 1));
-            }
-            return text.substring(start, at);
         }
     }
 }

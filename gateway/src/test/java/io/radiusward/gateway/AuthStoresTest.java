@@ -71,6 +71,18 @@ class AuthStoresTest {
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("nas.lobby.auth.stores");
 
+        Map<String, String> unknownVerifier = base();
+        unknownVerifier.put("auth.verifiers", "ad");
+        unknownVerifier.put("auth.verifier.ad.type", "kerberos");
+        assertThatThrownBy(() -> AuthStores.from(Config.of(unknownVerifier), 1))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("auth.verifier.ad.type: no credential verifier of type kerberos");
+        Map<String, String> missingVerifier = base();
+        missingVerifier.put("auth.store.staff.verifier", "ad");
+        assertThatThrownBy(() -> AuthStores.from(Config.of(missingVerifier), 1))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("auth.store.staff.verifier: unknown verifier ad");
+
         Map<String, String> badCost = base();
         badCost.put("auth.bcrypt.max.cost", "40");
         assertThatThrownBy(() -> AuthStores.from(Config.of(badCost), 1))

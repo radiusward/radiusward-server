@@ -92,6 +92,10 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.store.<name>.timeout` | `1500ms` | `sql`: wait for a connection, and query timeout; beyond it the store counts as unavailable |
 | `auth.store.<name>.schema` | `radcheck` | `sql`: table layout (only `radcheck` so far) |
 | `auth.store.<name>.table.<table>` | the table's name | `sql`: other names for `radcheck`, `radreply`, `radusergroup`, `radgroupcheck`, `radgroupreply` (`[schema.]name`) |
+| `auth.store.<name>.verifier` | none | the credential verifier that checks users of this store without a password of their own ([ADR 0025](adr/0025-credential-verifiers-and-ldap.md)) |
+| `auth.verifiers` | none | credential verifiers by name; `Auth-Type := <name>` sends a user to one |
+| `auth.verifier.<name>.type` | — | `ldap` (PAP by binding as the user; settings as the LDAP store's, [stores/ldap](../stores/ldap/README.md)), or a plug-in's type |
+| `auth.store.<name>.*` for `type = ldap` | | `url`, `tls.ca`, `bind.dn`, `bind.password`, `base.dn`, `user.filter`, `group.attribute`, `group.nested`, `require.groups`, `policy.<id>.group/check/reply`, `check.<attribute>`, `reply.<attribute>`, `timeout`, `pool` ([stores/ldap](../stores/ldap/README.md)) |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |
 | `auth.bcrypt.max.cost` | `14` | highest bcrypt cost verified (4–31); a stored hash above it is rejected rather than tying up a worker (cost 14 ≈ 1 s of CPU) |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |

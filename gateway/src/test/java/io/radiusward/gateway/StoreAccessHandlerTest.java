@@ -69,6 +69,8 @@ class StoreAccessHandlerTest {
     private final AccessContext context = new AccessContext();
     private final Map<String, IntHashSet> replyVendors = new HashMap<>();
     private final Map<String, Boolean> mschap = new HashMap<>();
+    private final Map<String, io.radiusward.auth.CredentialVerifier> verifiers = new HashMap<>();
+    private final Map<String, String> storeVerifiers = new HashMap<>();
 
     private StoreAccessHandler handler(Map<String, Boolean> chap, Map<String, List<String>> perNas) {
         Map<String, IdentityStore> stores = new java.util.LinkedHashMap<>();
@@ -84,7 +86,9 @@ class StoreAccessHandlerTest {
                         1000,
                         12,
                         replyVendors,
-                        mschap),
+                        mschap,
+                        verifiers,
+                        storeVerifiers),
                 DICTIONARY,
                 () -> now[0]);
     }
@@ -616,6 +620,92 @@ class StoreAccessHandlerTest {
                 .isEqualTo(AccessHandler.REJECT);
     }
 
+    /** A directory knowing "User" with password "clientPass", as a domain controller would check it. */
+    static final class FakeVerifier implements io.radiusward.auth.CredentialVerifier {
+        boolean down;
+        int calls;
+        String lastUser;
+
+        @Override
+        public Result verifyPassword(String userName, byte[] password) throws StoreUnavailableException {
+            calls++;
+            lastUser = userName;
+            if (down) {
+                throw new StoreUnavailableException("dc down");
+            }
+            return new String(password, StandardCharsets.UTF_8).equals("clientPass")
+                    ? Result.accepted(null)
+                    : Result.REJECTED;
+        }
+
+        @Override
+        public Result verifyMsChap(String userName, byte[] challenge, byte[] ntResponse, boolean v2)
+                throws StoreUnavailableException {
+            calls++;
+            lastUser = userName;
+            if (down) {
+                throw new StoreUnavailableException("dc down");
+            }
+            byte[] hash = MsChap.ntHash("clientPass");
+            return Arrays.equals(MsChap.challengeResponse(challenge, hash), ntResponse)
+                    ? Result.accepted(Md4.digest(hash))
+                    : Result.REJECTED;
+        }
+
+        @Override
+        public void close() {}
+    }
+
+    @Test
+    void usersWithoutAPasswordAreCheckedByTheStoresVerifier() {
+        FakeVerifier ad = new FakeVerifier();
+        verifiers.put("ad", ad);
+        storeVerifiers.put("main", "ad");
+        main.user("User", List.of(), List.of(item("Session-Timeout", "=", "600")))
+                .user("local", List.of(item("Cleartext-Password", ":=", "pw")), List.of());
+        StoreAccessHandler h = handler();
+        assertThat(pap(h, "User", "clientPass")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(ad.lastUser).isEqualTo("User");
+        assertThat(reply().findAttribute(27)).as("the store's reply items").isPositive();
+        assertThat(pap(h, "User", "wrong")).isEqualTo(AccessHandler.REJECT);
+        int calls = ad.calls;
+        assertThat(pap(h, "local", "pw"))
+                .as("a local password is checked locally")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(ad.calls).isEqualTo(calls);
+
+        byte[] v2 = msChap2("User", "clientPass");
+        assertThat(handle(h, v2)).isEqualTo(AccessHandler.ACCEPT);
+        byte[] success = microsoft(26).get(0);
+        assertThat(new String(success, 1, success.length - 1, StandardCharsets.US_ASCII))
+                .as("built from the verifier's session key")
+                .isEqualTo("S=407A5589115FD0D6209F510FE9C04566932CDA56");
+        assertThat(microsoft(16)).hasSize(1);
+        assertThat(handle(h, msChap2("User", "other"))).isEqualTo(AccessHandler.REJECT);
+        assertThat(microsoft(2)).hasSize(1);
+        assertThat(handle(h, msChap1("User", "clientPass", true))).as("v1").isEqualTo(AccessHandler.ACCEPT);
+        assertThat(microsoft(12)).hasSize(1);
+
+        assertThat(handle(h, AccessRequestBuilder.chapSafe("User", "clientPass")))
+                .as("CHAP needs a cleartext password")
+                .isEqualTo(AccessHandler.REJECT);
+        ad.down = true;
+        assertThat(pap(h, "User", "clientPass"))
+                .as("no answer while the directory is down")
+                .isEqualTo(AccessHandler.DROP);
+    }
+
+    @Test
+    void authTypeNamesAVerifier() {
+        FakeVerifier ad = new FakeVerifier();
+        verifiers.put("ad", ad);
+        main.user("User", List.of(item("Cleartext-Password", ":=", "local"), item("Auth-Type", ":=", "ad")), List.of());
+        StoreAccessHandler h = handler();
+        assertThat(pap(h, "User", "clientPass")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "User", "local")).as("the local password is not used").isEqualTo(AccessHandler.REJECT);
+        assertThat(ad.calls).isEqualTo(2);
+    }
+
     @Test
     void bcryptAboveTheCostCeilingIsRejectedWithoutHashing() {
         String cost31 = "$2b$31$" + "DCq7YPn5Rq63x1Lad4cll.TV4S6ytwfsfvkgY8jIucDrjc8deX1s.";
@@ -672,6 +762,14 @@ class StoreAccessHandlerTest {
                     .attribute(1, user)
                     .finish();
             return Arrays.copyOf(buffer.byteArray(), length);
+        }
+
+        static byte[] chapSafe(String user, String password) {
+            try {
+                return chap(user, password);
+            } catch (Exception e) {
+                throw new IllegalStateException(e);
+            }
         }
 
         static byte[] chap(String user, String password) throws Exception {
