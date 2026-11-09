@@ -96,12 +96,16 @@ class LocalClusterIT {
     }
 
     static byte[] request(int id, int status, String sessionId, long sessionTime) {
+        return request(id, status, sessionId, sessionTime, 1_780_000_000L);
+    }
+
+    static byte[] request(int id, int status, String sessionId, long sessionTime, long eventTimestamp) {
         UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
         RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
         enc.header(RadiusCode.ACCOUNTING_REQUEST, id)
                 .uint32(40, status)
                 .attribute(44, sessionId)
-                .uint32(55, 1_780_000_000L);
+                .uint32(55, eventTimestamp);
         if (status != 1) {
             enc.uint32(46, sessionTime).uint32(42, sessionTime * 1000);
         }
@@ -162,6 +166,45 @@ class LocalClusterIT {
         }
         assertThat(cluster.gateway(0).stats().get(io.radiusward.gateway.GatewayStats.Counter.CACHE_HITS))
                 .isEqualTo(1);
+    }
+
+    @Test
+    void sessionWithoutStartAndLateStartAreAcknowledgedAndKeepTheProgress() throws Exception {
+        start();
+        long started = 1_780_000_000L;
+        // the Start is lost on the way (or delayed): the first interim creates the session
+        exchange(cluster.gateway(0).radiusPort(), request(1, 3, "s-4", 300, started + 300));
+        // the delayed Start arrives after the interim, through the other gateway: acknowledged, merged
+        byte[] lateStart = request(2, 1, "s-4", 0, started);
+        exchange(cluster.gateway(1).radiusPort(), lateStart);
+        exchange(cluster.gateway(0).radiusPort(), lateStart); // its retransmission is a duplicate
+        // the interim retransmitted after the late Start is still a duplicate: the counters were not reset
+        exchange(cluster.gateway(1).radiusPort(), request(3, 3, "s-4", 300, started + 300));
+        exchange(cluster.gateway(0).radiusPort(), request(4, 3, "s-4", 600, started + 600));
+        // a session that only ever sends interims and a Stop
+        exchange(cluster.gateway(0).radiusPort(), request(5, 3, "s-5", 60, started + 60));
+        exchange(cluster.gateway(0).radiusPort(), request(6, 2, "s-5", 120, started + 120));
+        exchange(cluster.gateway(1).radiusPort(), request(7, 1, "s-5", 0, started)); // too late: stale
+
+        cluster.awaitConverged();
+        try (AdminClient admin = cluster.admin()) {
+            AdminClient.Session s4 = admin.session(sessionKey("s-4")[0], sessionKey("s-4")[1]);
+            assertThat(s4.status()).isEqualTo(SessionStatus.ACTIVE);
+            assertThat(s4.statusType()).isEqualTo(3);
+            assertThat(s4.sessionTime()).isEqualTo(600);
+            assertThat(s4.inputOctets()).isEqualTo(600_000);
+            AdminClient.Session s5 = admin.session(sessionKey("s-5")[0], sessionKey("s-5")[1]);
+            assertThat(s5.status()).as("a late Start does not reopen it").isEqualTo(SessionStatus.STOPPED);
+            assertThat(s5.sessionTime()).isEqualTo(120);
+            AdminClient.State state = admin.state();
+            assertThat(state.applied())
+                    .as("interim, merged start, interim, interim, stop")
+                    .isEqualTo(5);
+            assertThat(state.duplicates()).isEqualTo(2);
+            assertThat(state.stale()).isEqualTo(1);
+            assertThat(state.active()).isEqualTo(1);
+            assertThat(state.stopped()).isEqualTo(1);
+        }
     }
 
     @Test

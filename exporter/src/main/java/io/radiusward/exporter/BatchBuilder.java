@@ -56,9 +56,10 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
             return;
         }
         lastEventTime = timestamp;
-        if (outcome != Outcomes.APPLIED && outcome != Outcomes.STALE) {
+        if (outcome != Outcomes.APPLIED && outcome != Outcomes.STALE && outcome != Outcomes.MERGED) {
             return;
         }
+        boolean created = replica.machine().lastCreated();
         AccountingCommandDecoder c = applier.command();
         int statusType = (int) c.statusType();
         boolean nasWide = statusType == AccountingStateMachine.STATUS_ACCOUNTING_ON
@@ -78,37 +79,94 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
                     sessionKey,
                     acctSessionId,
                     statusType,
-                    outcome == Outcomes.APPLIED ? ExportEvent.EventOutcome.APPLIED : ExportEvent.EventOutcome.STALE,
+                    switch (outcome) {
+                        case Outcomes.APPLIED -> ExportEvent.EventOutcome.APPLIED;
+                        case Outcomes.MERGED -> ExportEvent.EventOutcome.MERGED;
+                        default -> ExportEvent.EventOutcome.STALE;
+                    },
                     sessionTime,
                     c.flags().eventTimestampPresent() ? c.eventTimestamp() : null,
                     c.inputOctets(),
                     c.outputOctets(),
                     raw));
         }
-        if (outcome != Outcomes.APPLIED || sessionKey == null) {
+        if (sessionKey == null || (outcome != Outcomes.APPLIED && outcome != Outcomes.MERGED)) {
             return; // stale events do not change the session; NAS-wide events close sessions via the listener
         }
-        boolean stop = statusType == AccountingStateMachine.STATUS_STOP;
         SessionStore store = replica.machine().store();
         int slot = store.find(c.sessionKeyHi(), c.sessionKeyLo());
+        boolean start = statusType == AccountingStateMachine.STATUS_START;
+        long eventTime = c.flags().eventTimestampPresent() ? c.eventTimestamp() * 1000 : timestamp;
+        if (outcome == Outcomes.MERGED) {
+            // a late Start: the session keeps its progress; only its start time (when the NAS sent one) is new
+            boolean hasTime = (store.flags(slot) & AccountingStateMachine.FLAG_SESSION_TIME) != 0;
+            put(new SessionSnapshot(
+                    sessionKey,
+                    position,
+                    c.nasId(),
+                    acctSessionId,
+                    SessionSnapshot.State.ACTIVE,
+                    SessionSnapshot.CloseCause.NONE,
+                    store.statusType(slot),
+                    hasTime ? store.sessionTime(slot) : null,
+                    store.inputOctets(slot),
+                    store.outputOctets(slot),
+                    timestamp,
+                    c.flags().eventTimestampPresent() ? eventTime : null,
+                    null,
+                    raw));
+            return;
+        }
+        boolean stop = statusType == AccountingStateMachine.STATUS_STOP;
         boolean stopped = slot >= 0 ? store.state(slot) == SessionStore.STOPPED : stop;
-        sessions.put(
+        Long startedAt = null;
+        if (start) {
+            startedAt = eventTime;
+        } else if (created) {
+            // first seen by an Interim or Stop (Start lost or late): the start is the event time minus the session time
+            startedAt = sessionTime == null ? eventTime : eventTime - sessionTime * 1000;
+        }
+        put(new SessionSnapshot(
                 sessionKey,
-                new SessionSnapshot(
-                        sessionKey,
-                        position,
-                        c.nasId(),
-                        acctSessionId,
-                        stopped ? SessionSnapshot.State.STOPPED : SessionSnapshot.State.ACTIVE,
-                        stop ? SessionSnapshot.CloseCause.STOP : SessionSnapshot.CloseCause.NONE,
-                        statusType,
-                        sessionTime,
-                        c.inputOctets(),
-                        c.outputOctets(),
-                        timestamp,
-                        statusType == AccountingStateMachine.STATUS_START ? timestamp : null,
-                        stop ? timestamp : null,
-                        raw));
+                position,
+                c.nasId(),
+                acctSessionId,
+                stopped ? SessionSnapshot.State.STOPPED : SessionSnapshot.State.ACTIVE,
+                stop ? SessionSnapshot.CloseCause.STOP : SessionSnapshot.CloseCause.NONE,
+                statusType,
+                sessionTime,
+                c.inputOctets(),
+                c.outputOctets(),
+                timestamp,
+                startedAt,
+                stop ? timestamp : null,
+                raw));
+    }
+
+    /**
+     * Keeps the latest snapshot of a session in this batch. A start time known from an earlier snapshot of the same
+     * batch is carried over, since sinks keep their stored start time only when a snapshot has none.
+     */
+    private void put(SessionSnapshot s) {
+        SessionSnapshot previous = sessions.get(s.sessionKey());
+        if (s.startedAt() == null && previous != null && previous.startedAt() != null) {
+            s = new SessionSnapshot(
+                    s.sessionKey(),
+                    s.projectionVersion(),
+                    s.nasId(),
+                    s.acctSessionId(),
+                    s.state(),
+                    s.closeCause(),
+                    s.statusType(),
+                    s.sessionTime(),
+                    s.inputOctets(),
+                    s.outputOctets(),
+                    s.lastReceivedAt(),
+                    previous.startedAt(),
+                    s.stoppedAt(),
+                    s.rawAttributes());
+        }
+        sessions.put(s.sessionKey(), s);
     }
 
     @Override
@@ -120,25 +178,23 @@ public final class BatchBuilder implements StateMachineReplica.OutcomeListener, 
         SessionStore store = replica.machine().store();
         UUID key = new UUID(store.keyHi(slot), store.keyLo(slot));
         boolean hasTime = (store.flags(slot) & AccountingStateMachine.FLAG_SESSION_TIME) != 0;
-        sessions.put(
+        put(new SessionSnapshot(
                 key,
-                new SessionSnapshot(
-                        key,
-                        position,
-                        store.nasId(slot),
-                        null,
-                        SessionSnapshot.State.STOPPED,
-                        cause == CAUSE_NAS_RESTART
-                                ? SessionSnapshot.CloseCause.NAS_RESTART
-                                : SessionSnapshot.CloseCause.IDLE_TIMEOUT,
-                        store.statusType(slot),
-                        hasTime ? store.sessionTime(slot) : null,
-                        store.inputOctets(slot),
-                        store.outputOctets(slot),
-                        now,
-                        null,
-                        now,
-                        null));
+                position,
+                store.nasId(slot),
+                null,
+                SessionSnapshot.State.STOPPED,
+                cause == CAUSE_NAS_RESTART
+                        ? SessionSnapshot.CloseCause.NAS_RESTART
+                        : SessionSnapshot.CloseCause.IDLE_TIMEOUT,
+                store.statusType(slot),
+                hasTime ? store.sessionTime(slot) : null,
+                store.inputOctets(slot),
+                store.outputOctets(slot),
+                now,
+                null,
+                now,
+                null));
     }
 
     /** Rows waiting to be written (events plus distinct sessions). */

@@ -38,6 +38,8 @@ public record ExportEvent(
     public enum EventOutcome {
         APPLIED,
         /** older than the session's stored progress; kept as history, did not change the session */
-        STALE
+        STALE,
+        /** a Start that arrived after the session's Interim: completed the session (start time), kept its progress */
+        MERGED
     }
 }

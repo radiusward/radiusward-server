@@ -172,7 +172,7 @@ public final class AccountingService implements ClusteredService {
                         .correlationId(correlationId)
                         .outcome(
                                 switch (outcome) {
-                                    case Outcomes.APPLIED -> Outcome.APPLIED;
+                                    case Outcomes.APPLIED, Outcomes.MERGED -> Outcome.APPLIED;
                                     case Outcomes.DUPLICATE -> Outcome.DUPLICATE;
                                     default -> Outcome.STALE;
                                 })

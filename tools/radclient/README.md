@@ -35,6 +35,16 @@ sessions / interim. Several generators in parallel need distinct `--first-sessio
 
 - `--attr` takes dictionary names, including vendor paths (`Cisco.AVPair=...`); integers accept `VALUE`
   names (`NAS-Port-Type=Virtual`), any type accepts `0x` hex.
+- `Event-Timestamp` defaults to now; `--attr Event-Timestamp=<unix seconds>` replaces it, e.g. to send a delayed
+  Start after its Interim:
+
+  ```bash
+  now=$(date +%s)
+  radclient acct --server 127.0.0.1:1813 --secret testing123 --status interim --session-id s9 \
+      --attr Acct-Session-Time=300 --attr Event-Timestamp=$now        # session created without a Start
+  radclient acct --server 127.0.0.1:1813 --secret testing123 --status start --session-id s9 \
+      --attr Event-Timestamp=$((now - 300))                         # late Start: acknowledged, merged
+  ```
 - Retransmissions resend the identical datagram, like a NAS, which is what radiusward's deduplication
   has to handle.
 - `--dictionary-dir` adds operator dictionaries.

@@ -359,7 +359,7 @@ public final class PostgresSink implements AccountingSink {
             col(out, e.sessionKey() == null ? null : e.sessionKey().toString(), false);
             col(out, e.acctSessionId(), false);
             col(out, Integer.toString(e.statusType()), false);
-            col(out, e.outcome() == ExportEvent.EventOutcome.APPLIED ? "1" : "2", false);
+            col(out, Integer.toString(e.outcome().ordinal() + 1), false); // 1 applied, 2 stale, 3 merged
             col(out, e.sessionTime() == null ? null : e.sessionTime().toString(), false);
             col(out, Long.toString(e.inputOctets()), false);
             col(out, Long.toString(e.outputOctets()), false);
@@ -489,7 +489,7 @@ public final class PostgresSink implements AccountingSink {
                 session_seconds = COALESCE(EXCLUDED.session_seconds, accounting_session.session_seconds),
                 input_octets = EXCLUDED.input_octets,
                 output_octets = EXCLUDED.output_octets,
-                started_at = COALESCE(accounting_session.started_at, EXCLUDED.started_at),
+                started_at = COALESCE(EXCLUDED.started_at, accounting_session.started_at),
                 last_received_at = EXCLUDED.last_received_at,
                 stopped_at = EXCLUDED.stopped_at,
                 quality_flags = EXCLUDED.quality_flags,

@@ -14,8 +14,9 @@ package io.radiusward.cluster.service;
  * <table>
  *   <caption>Rules</caption>
  *   <tr><th>Event</th><th>Rule</th></tr>
- *   <tr><td>Start</td><td>same start key as the stored session → DUPLICATE; otherwise a new session instance
- *       → APPLIED</td></tr>
+ *   <tr><td>Start</td><td>unknown session → APPLIED; same start key as the stored session → DUPLICATE; a late
+ *       Start (see {@link #isLateStart}) → MERGED for an active session, STALE for a stopped one; otherwise a new
+ *       session instance → APPLIED</td></tr>
  *   <tr><td>Interim</td><td>progress equal → DUPLICATE, older → STALE, newer → APPLIED; unknown session →
  *       created implicitly; after Stop → STALE</td></tr>
  *   <tr><td>Stop</td><td>already stopped → DUPLICATE; otherwise APPLIED, kept as a tombstone</td></tr>
@@ -26,7 +27,7 @@ package io.radiusward.cluster.service;
 public final class AccountingStateMachine {
 
     /** Version of the state-machine behaviour, carried in snapshots (ADR 0005). */
-    public static final int STATE_VERSION = 2; // 2: export sinks (Phase 3)
+    public static final int STATE_VERSION = 3; // 2: export sinks (Phase 3); 3: late Start merged
 
     public static final int STATUS_START = 1;
     public static final int STATUS_STOP = 2;
@@ -66,6 +67,7 @@ public final class AccountingStateMachine {
     private long expired;
     private long digest;
     private boolean timerScheduled;
+    private boolean created;
 
     public AccountingStateMachine(Settings settings) {
         this.settings = settings;
@@ -107,18 +109,21 @@ public final class AccountingStateMachine {
             long inputOctets,
             long outputOctets,
             long now) {
+        created = false;
         int outcome = switch (statusType) {
-            case STATUS_START -> start(sessionHi, sessionLo, exactHi, exactLo, nasId, now);
+            case STATUS_START -> start(sessionHi, sessionLo, exactHi, exactLo, nasId, flags, eventTimestamp, now);
             case STATUS_INTERIM ->
                 interim(sessionHi, sessionLo, nasId, flags, sessionTime, eventTimestamp, inputOctets, outputOctets);
             case STATUS_STOP -> stop(sessionHi, sessionLo, nasId, now);
             case STATUS_ACCOUNTING_ON, STATUS_ACCOUNTING_OFF -> nasRestart(exactHi, exactLo, nasId, now);
             default -> exactOnly(exactHi, exactLo, now);
         };
-        if (outcome == Outcomes.APPLIED) {
-            int slot = statusType == STATUS_START || statusType == STATUS_INTERIM || statusType == STATUS_STOP
-                    ? store.find(sessionHi, sessionLo)
-                    : -1;
+        if (outcome == Outcomes.APPLIED || outcome == Outcomes.MERGED) {
+            int slot = outcome == Outcomes.MERGED
+                    ? -1 // a late Start keeps the session's progress
+                    : statusType == STATUS_START || statusType == STATUS_INTERIM || statusType == STATUS_STOP
+                            ? store.find(sessionHi, sessionLo)
+                            : -1;
             if (slot >= 0) {
                 store.statusType(slot, statusType);
                 store.flags(slot, (byte) flags);
@@ -145,7 +150,8 @@ public final class AccountingStateMachine {
         return outcome;
     }
 
-    private int start(long hi, long lo, long exactHi, long exactLo, int nasId, long now) {
+    private int start(
+            long hi, long lo, long exactHi, long exactLo, int nasId, int flags, long eventTimestamp, long now) {
         int key = fold(exactHi, exactLo);
         int slot = store.find(hi, lo);
         if (slot < 0) {
@@ -154,10 +160,19 @@ public final class AccountingStateMachine {
             }
             slot = store.insert(hi, lo, nasId, SessionStore.ACTIVE);
             store.startKey(slot, key);
+            created = true;
             return Outcomes.APPLIED;
         }
         if (store.startKey(slot) == key) {
             return Outcomes.DUPLICATE;
+        }
+        if (isLateStart(slot, flags, eventTimestamp)) {
+            if (store.state(slot) == SessionStore.STOPPED) {
+                return Outcomes.STALE; // the session is already closed; a late Start must not reopen it
+            }
+            store.startKey(slot, key); // retransmissions of this Start are duplicates from now on
+            store.lastSeen(slot, seconds(now));
+            return Outcomes.MERGED;
         }
         // a new instance of the session id (e.g. NAS rebooted without Accounting-On): start over
         store.state(slot, SessionStore.ACTIVE);
@@ -180,7 +195,8 @@ public final class AccountingStateMachine {
             if (store.size() >= settings.maxSessions()) {
                 return Outcomes.REJECTED_CAPACITY;
             }
-            store.insert(hi, lo, nasId, SessionStore.ACTIVE); // Start was lost: create implicitly
+            store.insert(hi, lo, nasId, SessionStore.ACTIVE); // Start lost or not yet here: create implicitly
+            created = true;
             return Outcomes.APPLIED;
         }
         if (store.state(slot) == SessionStore.STOPPED) {
@@ -197,6 +213,7 @@ public final class AccountingStateMachine {
             if (store.size() < settings.maxSessions()) {
                 slot = store.insert(hi, lo, nasId, SessionStore.STOPPED);
                 store.tombstoneUntil(slot, until);
+                created = true;
             }
             return Outcomes.APPLIED; // a Stop is never rejected; over capacity it is applied without a tombstone
         }
@@ -232,6 +249,20 @@ public final class AccountingStateMachine {
         }
         window.add(key, now + settings.exactKeyWindowMs());
         return Outcomes.APPLIED;
+    }
+
+    /**
+     * Whether a Start with a new start key belongs to the stored session instance and only arrived late (after its
+     * Interim or Stop), rather than starting a new instance of the session id (NAS rebooted without
+     * Accounting-On). With an Event-Timestamp on both sides the Start is late when it is not newer than the
+     * session's last event. Without one, only a session that never saw a Start (created by an Interim) and is
+     * still active takes it as its late Start; a stopped session is started over, as before.
+     */
+    private boolean isLateStart(int slot, int flags, long eventTimestamp) {
+        if ((flags & FLAG_EVENT_TIMESTAMP) != 0 && (store.flags(slot) & FLAG_EVENT_TIMESTAMP) != 0) {
+            return eventTimestamp <= store.eventTimestamp(slot);
+        }
+        return store.startKey(slot) == 0 && store.state(slot) == SessionStore.ACTIVE;
     }
 
     /**
@@ -375,6 +406,14 @@ public final class AccountingStateMachine {
     /** Running hash over every state change; equal on all replicas that applied the same log. */
     public long digest() {
         return digest;
+    }
+
+    /**
+     * Whether the last {@link #apply} created the session; for an Interim or Stop that means its Start was lost or
+     * has not arrived yet. Not replicated state: valid only right after the call.
+     */
+    public boolean lastCreated() {
+        return created;
     }
 
     public boolean timerScheduled() {

@@ -12,7 +12,10 @@ import java.util.UUID;
  *
  * @param projectionVersion log position of the change; increases with every change of the session
  * @param acctSessionId {@code null} when the change had no event of its own (closed by NAS restart or timeout)
- * @param startedAt commit time of the Start (ms), {@code null} when this change does not know it
+ * @param startedAt start of the session (ms): the Start's Event-Timestamp (its commit time without one); for a
+ *     session first seen by an Interim or Stop, that event's time minus its Acct-Session-Time until a late Start
+ *     with an Event-Timestamp replaces it. {@code null} when this change does not know it: a sink keeps its stored
+ *     value then, and replaces it otherwise
  * @param stoppedAt commit time of the change that closed the session, {@code null} while active
  * @param rawAttributes attributes of the event behind the change, {@code null} for closures
  */

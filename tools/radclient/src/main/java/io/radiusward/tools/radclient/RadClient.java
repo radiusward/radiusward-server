@@ -110,7 +110,10 @@ public final class RadClient {
             builder.add("User-Name", o.value("user"));
         }
         builder.add("NAS-IP-Address", o.value("nas-ip", "127.0.0.1"));
-        builder.add("Event-Timestamp", Long.toString(System.currentTimeMillis() / 1000));
+        if (o.values("attr").stream().noneMatch(a -> a.trim().startsWith("Event-Timestamp="))) {
+            // "now" unless given, e.g. an earlier one to replay a delayed Start
+            builder.add("Event-Timestamp", Long.toString(System.currentTimeMillis() / 1000));
+        }
         if (o.has("vendor")) {
             List<String> preset = VENDOR_PRESETS.get(o.value("vendor").toLowerCase(Locale.ROOT));
             if (preset == null) {

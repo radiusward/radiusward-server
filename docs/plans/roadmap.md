@@ -10,6 +10,10 @@
 | **4** | Helm chart (StatefulSet, PDB, anti-affinity, UDP LB with source IP preservation), systemd units, observability dashboards, chaos and load tests, ClusterBackup / DR runbooks | Kubernetes, bare metal | planned |
 | **5** | Authentication/authorization (external auth adapter → cluster decision), EAP design review, RadSec | | planned |
 
+Before the first release: the replicated `ActivateVersion` gate of [ADR 0005](../adr/0005-log-determinism-versioning.md).
+Until then nothing is released and behaviour changes bump the state version directly (2: export, 3: late Start
+merged); after the first release every such change must wait for the gate.
+
 ## Sinks
 
 Every target is a plug-in behind the same `AccountingSink` SPI ([ADR 0007](../adr/0007-sink-spi-lag-policy.md)):

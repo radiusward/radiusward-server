@@ -12,6 +12,7 @@ import static io.radiusward.cluster.service.AccountingStateMachine.STATUS_START;
 import static io.radiusward.cluster.service.AccountingStateMachine.STATUS_STOP;
 import static io.radiusward.cluster.service.Outcomes.APPLIED;
 import static io.radiusward.cluster.service.Outcomes.DUPLICATE;
+import static io.radiusward.cluster.service.Outcomes.MERGED;
 import static io.radiusward.cluster.service.Outcomes.REJECTED_CAPACITY;
 import static io.radiusward.cluster.service.Outcomes.STALE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,6 +130,100 @@ class AccountingStateMachineTest {
     }
 
     @Test
+    void interimWithoutStartCreatesTheSessionWithItsProgress() {
+        assertThat(event(3, STATUS_INTERIM, 300, 1000, 1000)).isEqualTo(APPLIED);
+        assertThat(sm.lastCreated()).as("start lost or late").isTrue();
+        int slot = session(3);
+        assertThat(sm.store().statusType(slot)).isEqualTo(STATUS_INTERIM);
+        assertThat(sm.store().sessionTime(slot)).isEqualTo(300);
+        assertThat(sm.store().inputOctets(slot)).isEqualTo(1000);
+        assertThat(sm.store().startKey(slot)).as("no start seen").isZero();
+        assertThat(event(3, STATUS_INTERIM, 600, 2000, 2000)).isEqualTo(APPLIED);
+        assertThat(sm.lastCreated()).isFalse();
+    }
+
+    @Test
+    void lateStartAfterInterimIsMergedAndKeepsTheProgress() {
+        event(3, STATUS_INTERIM, 300, 1000, 1000);
+        long digest = sm.digest();
+        // the Start (event timestamp 300 s before the interim's) arrives after the interim
+        assertThat(event(3, STATUS_START, 0, 0, 2000)).isEqualTo(MERGED);
+        assertThat(Outcomes.acknowledged(MERGED))
+                .as("the NAS gets its response")
+                .isTrue();
+        assertThat(sm.lastCreated()).isFalse();
+        int slot = session(3);
+        assertThat(sm.store().state(slot)).isEqualTo(SessionStore.ACTIVE);
+        assertThat(sm.store().statusType(slot)).as("progress kept").isEqualTo(STATUS_INTERIM);
+        assertThat(sm.store().sessionTime(slot)).isEqualTo(300);
+        assertThat(sm.store().inputOctets(slot)).isEqualTo(1000);
+        assertThat(sm.store().eventTimestamp(slot)).isEqualTo(1_780_000_300L);
+        assertThat(sm.store().startKey(slot)).as("start now known").isNotZero();
+        assertThat(sm.store().lastSeen(slot)).isEqualTo(2);
+        assertThat(sm.applied()).isEqualTo(2);
+        assertThat(sm.digest()).isNotEqualTo(digest);
+
+        assertThat(event(3, STATUS_START, 0, 0, 3000))
+                .as("retransmitted late start")
+                .isEqualTo(DUPLICATE);
+        assertThat(event(3, STATUS_INTERIM, 300, 1000, 4000))
+                .as("the counters were not reset: the same interim is still a duplicate")
+                .isEqualTo(DUPLICATE);
+        assertThat(event(3, STATUS_INTERIM, 600, 2000, 5000)).isEqualTo(APPLIED);
+        assertThat(event(3, STATUS_STOP, 900, 3000, 6000)).isEqualTo(APPLIED);
+        assertThat(sm.store().state(slot)).isEqualTo(SessionStore.STOPPED);
+    }
+
+    @Test
+    void lateStartInTheSameSecondAsTheInterimIsMerged() {
+        sm.apply(8, 8, 81, 0, NAS, STATUS_INTERIM, BOTH, 0, 1_780_000_000L, 5, 5, 1000);
+        assertThat(sm.apply(8, 8, 82, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_000L, 0, 0, 2000))
+                .isEqualTo(MERGED);
+        assertThat(sm.store().inputOctets(sm.store().find(8, 8))).isEqualTo(5);
+    }
+
+    @Test
+    void lateStartWithoutEventTimestampsIsMergedIntoASessionThatNeverSawAStart() {
+        sm.apply(7, 7, 71, 0, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 120, 0, 500, 0, 1000);
+        assertThat(sm.apply(7, 7, 72, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 2000))
+                .isEqualTo(MERGED);
+        int slot = sm.store().find(7, 7);
+        assertThat(sm.store().sessionTime(slot)).isEqualTo(120);
+        assertThat(sm.store().inputOctets(slot)).isEqualTo(500);
+        assertThat(sm.apply(7, 7, 72, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 3000))
+                .isEqualTo(DUPLICATE);
+        // a further, different Start: without timestamps it can only be a new instance of the session id
+        assertThat(sm.apply(7, 7, 73, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 4000))
+                .isEqualTo(APPLIED);
+        assertThat(sm.store().sessionTime(slot)).isZero();
+    }
+
+    @Test
+    void lateStartAfterStopIsStaleAndDoesNotReopenTheSession() {
+        event(3, STATUS_INTERIM, 300, 1000, 1000);
+        event(3, STATUS_STOP, 600, 2000, 2000);
+        assertThat(event(3, STATUS_START, 0, 0, 3000)).isEqualTo(STALE);
+        int slot = session(3);
+        assertThat(sm.store().state(slot)).isEqualTo(SessionStore.STOPPED);
+        assertThat(sm.store().sessionTime(slot)).isEqualTo(600);
+        // stop without any start or interim, then the late start
+        event(4, STATUS_STOP, 100, 10, 4000);
+        assertThat(event(4, STATUS_START, 0, 0, 5000)).isEqualTo(STALE);
+        assertThat(sm.store().state(session(4))).isEqualTo(SessionStore.STOPPED);
+    }
+
+    @Test
+    void newerStartForAnActiveSessionStartsANewInstance() {
+        event(3, STATUS_INTERIM, 300, 1000, 1000);
+        // same Acct-Session-Id, Start newer than the session's last event: the NAS reused the id
+        assertThat(sm.apply(3, ~3L, 999, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_900L, 0, 0, 2000))
+                .isEqualTo(APPLIED);
+        int slot = session(3);
+        assertThat(sm.store().statusType(slot)).isEqualTo(STATUS_START);
+        assertThat(sm.store().inputOctets(slot)).isZero();
+    }
+
+    @Test
     void stopDuplicatesAndStopWithoutStart() {
         assertThat(event(4, STATUS_STOP, 100, 10, 1000)).isEqualTo(APPLIED);
         assertThat(event(4, STATUS_STOP, 100, 10, 2000)).isEqualTo(DUPLICATE);
@@ -171,6 +266,7 @@ class AccountingStateMachineTest {
         assertThat(sm.rejected()).isEqualTo(2);
         assertThat(Outcomes.acknowledged(REJECTED_CAPACITY)).isFalse();
         assertThat(Outcomes.acknowledged(STALE)).isTrue();
+        assertThat(Outcomes.acknowledged(Outcomes.REJECTED_EXPORT_LAG)).isFalse();
     }
 
     @Test

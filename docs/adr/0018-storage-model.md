@@ -22,7 +22,9 @@ The same data has to fit MySQL, SQL Server, Oracle, Db2, Firebird, SQLite, Cassa
 - **Values:** counters as signed 64-bit (`bigint`), overflow flagged; missing values `NULL`, never 0.
 - **PostgreSQL:** one transaction per batch — `COPY` (text format) into temporary staging, `INSERT … ON CONFLICT
   DO NOTHING` into the history, `INSERT … ON CONFLICT DO UPDATE … WHERE projection_version <` into the sessions
-  (values a closure does not know are kept), epoch-fenced `sink_checkpoint`. No indexes on columns that change
+  (values a closure does not know are kept; `started_at` from the Start's Event-Timestamp, derived from the first
+  Interim when the Start is late or lost), epoch-fenced `sink_checkpoint`. History `outcome`: 1 applied, 2 stale,
+  3 merged (late Start). No indexes on columns that change
   with every Interim (so updates can stay HOT), partial index for online sessions, BRIN on time, no GIN by default.
   Daily partitions created ahead, expired ones `DETACH … CONCURRENTLY`; closed-session retention optional; rows
   with data errors go to `quarantine`. Schema by our own migration runner (`schema.manage`,

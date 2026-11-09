@@ -243,6 +243,61 @@ class PostgresSinkTest {
     }
 
     @Test
+    void lateStartReplacesTheDerivedStartTimeAndKeepsTheCounters() throws Exception {
+        long derived = T - 300_000;
+        long real = T - 302_000;
+        try (PostgresSink sink = open(Map.of())) {
+            // interim without a Start: the exporter derives the start from the event time and the session time
+            sink.write(batch(1, 0, 100, List.of(event(5, 100, T)), List.of(started(100, 300, 3, derived))));
+            assertThat(value("SELECT (extract(epoch FROM started_at) * 1000)::bigint FROM accounting_session"))
+                    .isEqualTo(Long.toString(derived));
+            // the late Start: merged, same counters, its own Event-Timestamp as the start
+            ExportEvent start = new ExportEvent(
+                    new UUID(9, 99),
+                    200,
+                    T + 5_000,
+                    7,
+                    1,
+                    SESSION,
+                    "s1",
+                    1,
+                    ExportEvent.EventOutcome.MERGED,
+                    null,
+                    real / 1000,
+                    0,
+                    0,
+                    ALICE);
+            sink.write(batch(1, 100, 200, List.of(start), List.of(started(200, 300, 3, real))));
+            // a later interim knows no start time: the stored one stays
+            sink.write(batch(1, 200, 300, List.of(), List.of(started(300, 600, 3, null))));
+        }
+        assertThat(value("SELECT (extract(epoch FROM started_at) * 1000)::bigint || ' ' || session_seconds || ' '"
+                        + " || input_octets || ' ' || status_type FROM accounting_session"))
+                .isEqualTo(real + " 600 6000 3");
+        assertThat(value("SELECT outcome FROM accounting_event WHERE status_type = 1"))
+                .as("1 applied, 2 stale, 3 merged")
+                .isEqualTo("3");
+    }
+
+    private static SessionSnapshot started(long version, long seconds, int statusType, Long startedAt) {
+        return new SessionSnapshot(
+                SESSION,
+                version,
+                7,
+                "s1",
+                SessionSnapshot.State.ACTIVE,
+                SessionSnapshot.CloseCause.NONE,
+                statusType,
+                seconds,
+                seconds * 10,
+                seconds * 20,
+                T + version,
+                startedAt,
+                null,
+                ALICE);
+    }
+
+    @Test
     void anOlderEpochIsFenced() throws Exception {
         try (PostgresSink newer = open(Map.of());
                 PostgresSink older = open(Map.of())) {

@@ -68,6 +68,69 @@ class DuplicatesPropertyTest {
         return sm;
     }
 
+    /** Like {@link #run}, with an Event-Timestamp on every event (session start + session time), as most NAS send. */
+    static AccountingStateMachine runWithTimestamps(List<Event> events) {
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000_000));
+        long now = 1_000;
+        for (Event e : events) {
+            now += 10;
+            int outcome = sm.apply(
+                    e.session(),
+                    e.session() * 7,
+                    e.session() * 31 + e.status(),
+                    e.sessionTime(),
+                    e.nas(),
+                    e.status(),
+                    AccountingStateMachine.FLAG_SESSION_TIME | AccountingStateMachine.FLAG_EVENT_TIMESTAMP,
+                    e.sessionTime(),
+                    1_780_000_000L + e.session() + e.sessionTime(),
+                    e.octets(),
+                    0,
+                    now);
+            assertThat(Outcomes.acknowledged(outcome)).isTrue();
+        }
+        return sm;
+    }
+
+    @Property(tries = 200)
+    void aLateStartNeverChangesTheSessionResult(
+            @ForAll @IntRange(min = 1, max = 60) int sessions,
+            @ForAll long seed,
+            @ForAll @IntRange(max = 30) int delayed) {
+        Random random = new Random(seed);
+        List<Event> clean = cleanStream(random, sessions);
+        List<Event> reordered = new ArrayList<>(clean);
+        for (int i = 0; i < delayed; i++) {
+            // move a Start behind a later event of its session (its interim or even its stop)
+            int from = random.nextInt(reordered.size());
+            Event start = reordered.get(from);
+            if (start.status() != AccountingStateMachine.STATUS_START) {
+                continue;
+            }
+            int to = from;
+            for (int j = from + 1; j < reordered.size(); j++) {
+                if (reordered.get(j).session() == start.session() && random.nextBoolean()) {
+                    to = j;
+                }
+            }
+            reordered.remove(from);
+            reordered.add(to, start);
+        }
+        AccountingStateMachine a = runWithTimestamps(clean);
+        AccountingStateMachine b = runWithTimestamps(reordered);
+        assertThat(b.store().size()).isEqualTo(a.store().size());
+        assertThat(b.store().activeCount()).isEqualTo(a.store().activeCount());
+        for (long session = 0; session < sessions; session++) {
+            int sa = a.store().find(session, session * 7);
+            int sb = b.store().find(session, session * 7);
+            assertThat(b.store().state(sb))
+                    .as("state of session %d", session)
+                    .isEqualTo(a.store().state(sa));
+            assertThat(b.store().sessionTime(sb)).isEqualTo(a.store().sessionTime(sa));
+            assertThat(b.store().inputOctets(sb)).isEqualTo(a.store().inputOctets(sa));
+        }
+    }
+
     @Property(tries = 200)
     void duplicatesDoNotChangeTheResult(
             @ForAll @IntRange(min = 1, max = 60) int sessions,

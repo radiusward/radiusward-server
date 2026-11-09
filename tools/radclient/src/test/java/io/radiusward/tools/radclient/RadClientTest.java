@@ -76,6 +76,27 @@ class RadClientTest {
     }
 
     @Test
+    void anEventTimestampGivenReplacesTheDefault() throws IOException {
+        try (LoopbackResponder server = new LoopbackResponder(SECRET, 0)) {
+            int code = run(
+                    "acct",
+                    "--server",
+                    server.address(),
+                    "--secret",
+                    "testing123",
+                    "--status",
+                    "start",
+                    "--session-id",
+                    "late",
+                    "--attr",
+                    "Event-Timestamp=1780000000");
+            assertThat(code).as(err()).isEqualTo(RadClient.EXIT_OK);
+            assertThat(out().split("Event-Timestamp = ", -1)).as("exactly one").hasSize(2);
+            assertThat(out()).contains("(1780000000)");
+        }
+    }
+
+    @Test
     void juniperErxPreset() throws IOException {
         try (LoopbackResponder server = new LoopbackResponder(SECRET, 0)) {
             int code = run(

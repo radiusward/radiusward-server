@@ -33,7 +33,10 @@ attributes: `common(raw)` for typed columns, `json(raw, exclude)` for the canoni
 | sessions | **update only if newer** by `projectionVersion` | replays and late batches must never move a session back |
 
 Values a session snapshot does not carry (`null`: a closure has no session id or attributes) keep what the store
-has. The JSON format is defined once (`Attributes.JSON_FORMAT`); store it as-is in the store's best JSON type.
+has; a value it carries replaces the stored one. That includes `startedAt`: the Start's Event-Timestamp, or for a
+session first seen by an Interim or Stop that event's time minus its session time, replaced when the late Start
+arrives. Events carry the state machine's outcome: `APPLIED`, `STALE` (older than the session's progress) or
+`MERGED` (a late Start that only completed the session). The JSON format is defined once (`Attributes.JSON_FORMAT`); store it as-is in the store's best JSON type.
 
 ## Checkpoints
 

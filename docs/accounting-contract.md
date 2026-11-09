@@ -51,6 +51,12 @@ or exported a second time.
 Identifier (8 bits, reused). Interim updates are deduplicated per session: an interim that is not newer
 than the last applied one is a duplicate.
 
+**Start lost or out of order.** An Interim (or Stop) whose Start never arrived creates the session from its own
+values. A Start that arrives after its session's Interim is answered with an Accounting-Response and merged: the
+session keeps its progress, and the Start's Event-Timestamp becomes the session's start time. After the session's
+Stop, a late Start is acknowledged and recorded as stale; it does not reopen the session
+([ADR 0012](adr/0012-session-store-dedup.md)).
+
 Dedup state is part of the snapshots and survives restarts. Retention: per-session state lives as long
 as the session (plus a Stop tombstone window); the exact-key window for events without a monotonic
 field is bounded (default 15 minutes, configurable). A retransmit older than that window can be applied
@@ -70,7 +76,8 @@ Implemented by `AccountingResponses` in `radius-codec`.
 Sinks are fed asynchronously from the committed log ([ADR 0017](adr/0017-exporter.md),
 [ADR 0018](adr/0018-storage-model.md)):
 
-- **What reaches a sink** is what the cluster applied: applied events (and stale ones, flagged, in the history),
+- **What reaches a sink** is what the cluster applied: applied events (and stale or merged late Starts, flagged, in
+  the history),
   and every session as the cluster holds it after each change — including sessions closed by Accounting-On/Off
   or the idle timeout. Duplicates and rejected events are never exported.
 - **Delivery** is at least once from the exporter's point of view and exactly once in the database: events are
