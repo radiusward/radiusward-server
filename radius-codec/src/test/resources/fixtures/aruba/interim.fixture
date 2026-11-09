@@ -1,0 +1,22 @@
+# Aruba Instant AP, interim update.
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+identifier: 31
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 0A28000200004F11
+  User-Name: carol@corp.example
+  NAS-IP-Address: 10.40.0.2
+  NAS-Identifier: iap-lobby
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: 000B86A1B2C3
+  Calling-Station-Id: AABBCCDDEE03
+  Acct-Session-Time: 300
+  Acct-Input-Octets: 1500000
+  Acct-Output-Octets: 24000000
+  Event-Timestamp: 1780000300
+  Aruba.Essid-Name: Corp
+packet: 041f0097bb6ea8f12eaf107884c74b9addff714e2806000000032c123041323830303032303030303446313101146361726f6c40636f72702e6578616d706c6504060a280002200b6961702d6c6f6262793d06000000131e0e3030304238364131423243331f0e4141424243434444454530332e060000012c2a060016e3602b06016e360037066a18a62c1a0c000039e70506436f7270
+expect:
+  statusType: 3
+  sessionTime: 300
+  outputOctets64: 24000000

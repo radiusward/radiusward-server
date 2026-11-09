@@ -1,0 +1,22 @@
+# Ubiquiti UniFi AP, WPA2-Enterprise client start.
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+# NAS-Identifier carries the AP MAC. IETF attributes only: the UBNT dictionary (41112) has reply attributes (rate limits).
+# Acct-Multi-Session-Id stays the same when the client roams to another AP.
+identifier: 70
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 8C2F1A6B3D4E5F70
+  User-Name: dave@corp.example
+  NAS-IP-Address: 192.168.1.20
+  NAS-Identifier: F09FC2112233
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: F0-9F-C2-11-22-33:Corp
+  Calling-Station-Id: AA-BB-CC-DD-EE-06
+  Acct-Multi-Session-Id: 8C2F1A6B3D4E0001
+  Framed-IP-Address: 192.168.1.140
+  Event-Timestamp: 1780000000
+packet: 044600a2562f90285b71dd18f31d7d6fdce66d102806000000012c123843324631413642334434453546373001136461766540636f72702e6578616d706c650406c0a80114200e4630394643323131323233333d06000000131e1846302d39462d43322d31312d32322d33333a436f72701f1341412d42422d43432d44442d45452d30363212384332463141364233443445303030310806c0a8018c37066a18a500
+expect:
+  statusType: 1
+  nasIdentifier: F09FC2112233
+  multiSessionId: 8C2F1A6B3D4E0001

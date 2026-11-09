@@ -95,7 +95,7 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 All 190+ vendors in the bundled FreeRADIUS dictionaries are decoded. Cisco, Juniper (Junos 2636 and
 ERX/Unisphere 4874 for MX subscriber management), MikroTik, Huawei, Meraki and Ruckus additionally
 have generated accessors, deduplication profiles (Phase 1)
-and test fixtures. Operators can add or override dictionaries in `/etc/radiusward/dictionary.d/`
+and test fixtures; Aruba, Ubiquiti UniFi, Open-Mesh and MikroTik hotspots have test fixtures too. Operators can add or override dictionaries in `/etc/radiusward/dictionary.d/`
 ([docs/dictionaries.md](docs/dictionaries.md)).
 
 ## License

@@ -11,7 +11,7 @@ java -jar tools/radclient/target/radclient.jar --help
 # build and send an Accounting-Request, wait for and verify the response
 radclient acct --server 127.0.0.1:1813 --secret testing123 \
                --status start|interim|stop|on|off --session-id abc123 \
-               [--vendor cisco|juniper|juniper-erx|mikrotik|huawei|meraki|ruckus] [--user alice] [--nas-ip 192.0.2.1] \
+               [--vendor aruba|cisco|huawei|juniper|juniper-erx|meraki|mikrotik|mikrotik-hotspot|open-mesh|ruckus|ubiquiti] [--user alice] [--nas-ip 192.0.2.1] \
                [--attr Name=Value]... [--message-authenticator] [--id N] [--retries 3] [--timeout 3s]
 
 # re-sign and send a recorded packet (fixture or hex file)

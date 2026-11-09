@@ -1,0 +1,23 @@
+# Ubiquiti UniFi AP, client roamed away (stop).
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+identifier: 72
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 8C2F1A6B3D4E5F70
+  User-Name: dave@corp.example
+  NAS-IP-Address: 192.168.1.20
+  NAS-Identifier: F09FC2112233
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: F0-9F-C2-11-22-33:Corp
+  Calling-Station-Id: AA-BB-CC-DD-EE-06
+  Acct-Multi-Session-Id: 8C2F1A6B3D4E0001
+  Acct-Session-Time: 1200
+  Acct-Input-Octets: 5000000
+  Acct-Output-Octets: 80000000
+  Acct-Terminate-Cause: Lost-Carrier
+  Event-Timestamp: 1780001200
+packet: 044800b475470eb7285232926b045b88fdfb16012806000000022c123843324631413642334434453546373001136461766540636f72702e6578616d706c650406c0a80114200e4630394643323131323233333d06000000131e1846302d39462d43322d31312d32322d33333a436f72701f1341412d42422d43432d44442d45452d30363212384332463141364233443445303030312e06000004b02a06004c4b402b0604c4b40031060000000237066a18a9b0
+expect:
+  statusType: 2
+  terminateCause: 2
+  multiSessionId: 8C2F1A6B3D4E0001

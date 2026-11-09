@@ -113,6 +113,17 @@ nas.meraki.identity = nas-ip-address      # the attribute these devices send in 
 nas.meraki.message-authenticator = required
 ```
 
+From the (synthetic) vendor fixtures — confirm with a capture of your own devices:
+
+| Devices | `identity` | Why |
+|---|---|---|
+| Aruba Instant / controller | `called-station-id` | the AP MAC in every packet (no separators) |
+| Ubiquiti UniFi | `nas-identifier` | the AP MAC |
+| Open-Mesh | `called-station-id` | NAS-Identifier is sent empty |
+| Meraki | `nas-ip-address` (one entry per site address) | no NAS-Identifier; Called-Station-Id (BSSID) only in the Start |
+| MikroTik hotspot | `nas-identifier` | Called-Station-Id is the hotspot server name |
+| Ruckus | `nas-ip-address` | NAS-Identifier only in the Start |
+
 Pick the attribute the devices send in every Start, Interim and Stop: a session whose packets resolve to different
 attributes splits (watch `identity_fallback`). Check with a capture (`radclient decode`). A private NAS-IP-Address
 can repeat across sites — one entry per site address, or NAS-Identifier. Changing `identity` changes session keys:

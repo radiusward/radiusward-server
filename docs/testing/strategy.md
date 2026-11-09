@@ -8,7 +8,7 @@
 | Property-based fuzzing | `CodecFuzzTest`, `Aaa4jDifferentialTest` (jqwik) | `./mvnw verify` | decoder never throws or reads out of bounds; agreement with aaa4j on random attribute sets |
 | Differential | `Aaa4jDifferentialTest` | `./mvnw verify` | our codec and aaa4j-radius accept each other's packets and authenticators |
 | Standard vectors | `RadiusAuthenticatorTest` | `./mvnw verify` | RFC 2865 §7.1 response authenticator, RFC 2104/2202 HMAC-MD5 |
-| Vendor fixtures | `VendorFixtureTest` | `./mvnw verify` | 21 packets (Cisco, Juniper, Juniper ERX, MikroTik, Huawei, Meraki, Ruckus × Start/Interim/Stop) encode byte-exactly, verify, extract correctly |
+| Vendor fixtures | `VendorFixtureTest` | `./mvnw verify` | 33 packets (BNG: Cisco, Juniper, Juniper ERX, MikroTik, Huawei; Wi-Fi: Aruba, Meraki, MikroTik hotspot, Open-Mesh, Ruckus, Ubiquiti UniFi × Start/Interim/Stop) encode byte-exactly, verify, extract correctly; aaa4j decodes them too |
 | Allocation | `HotPathAllocationIT` (Failsafe, no JaCoCo) | `./mvnw verify` | 1M accounting packets through the receive path allocate < 4 KB in total |
 | Interop | `FreeRadiusInteropIT` | `./mvnw -Pinterop verify` | a real FreeRADIUS accepts our requests and we verify its responses |
 | Loopback UDP | `RadClientTest` | `./mvnw verify` | radclient against a codec-based responder: retries, timeouts, Message-Authenticator |
@@ -79,7 +79,14 @@ the diff.
 
 ### Replacing synthetic fixtures with captures
 
-All current fixtures are **synthetic** (built from vendor documentation). Real captures are better; see
+All current fixtures are **synthetic** (built from vendor documentation). They encode what is known of each device:
+Aruba writes MACs without separators and sends no Class in accounting; Ubiquiti UniFi puts the AP MAC in
+NAS-Identifier and links roaming with Acct-Multi-Session-Id; Open-Mesh sends an **empty** NAS-Identifier (length 2 —
+decoded fine, treated as no identity); a MikroTik hotspot's Called-Station-Id is the hotspot server name, not a
+MAC. `UdpAgentTest` pins, per vendor, the attribute sent in every packet (for `nas.<name>.identity`) and fails when a
+fixture vendor has none. Open questions only captures can settle: whether MikroTik hotspot counts octets from the
+router's side (reported by deployments; radiusward stores the values as sent), and whether Meraki sends
+Called-Station-Id in Interim/Stop. Real captures are better; see
 [vendor-captures.md](vendor-captures.md) for capturing, `radclient decode --fixture --anonymise` and the
 review checklist.
 

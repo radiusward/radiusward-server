@@ -150,7 +150,7 @@ class LocalClusterIT {
             assertThat(state.applied()).isEqualTo(fixtures.size());
             assertThat(state.stopped())
                     .as("every fixture vendor ends with a Stop")
-                    .isEqualTo(7);
+                    .isEqualTo(fixtures.size() / 3);
             AdminClient.Session cisco = admin.session(sessionKey("00000A1B")[0], sessionKey("00000A1B")[1]);
             assertThat(cisco.status()).isEqualTo(SessionStatus.STOPPED);
             assertThat(cisco.sessionTime()).isEqualTo(7260);

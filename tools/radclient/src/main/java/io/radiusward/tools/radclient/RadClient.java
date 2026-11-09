@@ -48,22 +48,58 @@ public final class RadClient {
     static final int EXIT_USAGE = 64;
 
     /** Typical attributes per vendor, mirroring the synthetic fixtures in radius-codec. */
-    static final Map<String, List<String>> VENDOR_PRESETS = Map.of(
-            "cisco",
+    static final Map<String, List<String>> VENDOR_PRESETS = Map.ofEntries(
+            Map.entry(
+                    "aruba",
+                    List.of(
+                            "NAS-Port-Type=Wireless-802.11",
+                            "NAS-Identifier=iap-lobby",
+                            "Called-Station-Id=000B86A1B2C3",
+                            "Aruba.Essid-Name=Corp",
+                            "Aruba.Location-Id=lobby-ap")),
+            Map.entry(
+                    "ubiquiti",
+                    List.of(
+                            "NAS-Port-Type=Wireless-802.11",
+                            "NAS-Identifier=F09FC2112233",
+                            "Called-Station-Id=F0-9F-C2-11-22-33:Corp")),
+            Map.entry(
+                    "open-mesh",
+                    List.of(
+                            "NAS-Port-Type=Wireless-802.11",
+                            "NAS-Identifier=0x",
+                            "Called-Station-Id=AC-86-74-12-34-56:OpenMesh-Guest")),
+            Map.entry(
+                    "mikrotik-hotspot",
+                    List.of(
+                            "NAS-Port-Type=Wireless-802.11",
+                            "NAS-Identifier=hotspot-gw",
+                            "NAS-Port-Id=bridge-hotspot",
+                            "Called-Station-Id=hotspot1",
+                            "Mikrotik.Host-IP=10.5.50.2")),
+            Map.entry(
+                    "cisco",
                     List.of(
                             "NAS-Port-Type=Virtual",
                             "Cisco.AVPair=connect-progress=Call Up",
-                            "Cisco.NAS-Port=0/1/0/100"),
-            "juniper", List.of("Service-Type=Login-User", "Juniper.Local-User-Name=super-user"),
-            "juniper-erx",
+                            "Cisco.NAS-Port=0/1/0/100")),
+            Map.entry("juniper", List.of("Service-Type=Login-User", "Juniper.Local-User-Name=super-user")),
+            Map.entry(
+                    "juniper-erx",
                     List.of(
                             "NAS-Port-Type=Ethernet",
                             "Unisphere.Virtual-Router-Name=default:default",
-                            "Unisphere.Acct-Request-Reason=Periodic"),
-            "mikrotik", List.of("NAS-Port-Type=Ethernet", "NAS-Port-Id=ether2", "Mikrotik.Rate-Limit=20M/100M"),
-            "huawei", List.of("NAS-Port-Type=Ethernet", "Huawei.Input-Average-Rate=20480", "Huawei.Domain-Name=isp"),
-            "meraki", List.of("NAS-Port-Type=Wireless-802.11", "Meraki.Device-Name=ap-1", "Meraki.Network-Name=HQ"),
-            "ruckus", List.of("NAS-Port-Type=Wireless-802.11", "Ruckus.SSID=Guest", "Ruckus.Wlan-Id=4"));
+                            "Unisphere.Acct-Request-Reason=Periodic")),
+            Map.entry(
+                    "mikrotik",
+                    List.of("NAS-Port-Type=Ethernet", "NAS-Port-Id=ether2", "Mikrotik.Rate-Limit=20M/100M")),
+            Map.entry(
+                    "huawei",
+                    List.of("NAS-Port-Type=Ethernet", "Huawei.Input-Average-Rate=20480", "Huawei.Domain-Name=isp")),
+            Map.entry(
+                    "meraki",
+                    List.of("NAS-Port-Type=Wireless-802.11", "Meraki.Device-Name=ap-1", "Meraki.Network-Name=HQ")),
+            Map.entry("ruckus", List.of("NAS-Port-Type=Wireless-802.11", "Ruckus.SSID=Guest", "Ruckus.Wlan-Id=4")));
 
     private final PrintStream out;
     private final PrintStream err;
@@ -258,7 +294,7 @@ public final class RadClient {
         return """
                 usage:
                   radclient acct   --server host:port --secret s --status start|interim|stop|on|off --session-id id
-                                   [--vendor cisco|juniper|juniper-erx|mikrotik|huawei|meraki|ruckus] [--user name] [--nas-ip addr]
+                                   [--vendor aruba|cisco|huawei|juniper|juniper-erx|meraki|mikrotik|mikrotik-hotspot|open-mesh|ruckus|ubiquiti] [--user name] [--nas-ip addr]
                                    [--attr Name=Value]... [--message-authenticator]
                                    [--id n] [--retries 3] [--timeout 3s] [--dictionary-dir dir]
                   radclient replay <file.fixture|file.hex> --server host:port --secret s [--id n] [--retries n] [--timeout 3s]

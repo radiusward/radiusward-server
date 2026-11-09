@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HexFormat;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -94,6 +95,32 @@ class RadClientTest {
             assertThat(out().split("Event-Timestamp = ", -1)).as("exactly one").hasSize(2);
             assertThat(out()).contains("(1780000000)");
         }
+    }
+
+    @Test
+    void wifiPresetsIncludingOpenMeshsEmptyNasIdentifier() throws IOException {
+        for (String vendor : List.of("aruba", "ubiquiti", "open-mesh", "mikrotik-hotspot")) {
+            try (LoopbackResponder server = new LoopbackResponder(SECRET, 0)) {
+                int code = run(
+                        "acct",
+                        "--server",
+                        server.address(),
+                        "--secret",
+                        "testing123",
+                        "--status",
+                        "start",
+                        "--session-id",
+                        "s-" + vendor,
+                        "--vendor",
+                        vendor);
+                assertThat(code).as(vendor + ": " + err()).isEqualTo(RadClient.EXIT_OK);
+            }
+        }
+        assertThat(out())
+                .contains("Aruba.Location-Id = \"lobby-ap\"")
+                .contains("Called-Station-Id = \"F0-9F-C2-11-22-33:Corp\"")
+                .contains("Called-Station-Id = \"AC-86-74-12-34-56:OpenMesh-Guest\"")
+                .contains("Mikrotik.Host-IP = 10.5.50.2");
     }
 
     @Test

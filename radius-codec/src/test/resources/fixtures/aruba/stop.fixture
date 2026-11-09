@@ -1,0 +1,22 @@
+# Aruba Instant AP, client left (stop).
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+identifier: 32
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 0A28000200004F11
+  User-Name: carol@corp.example
+  NAS-IP-Address: 10.40.0.2
+  NAS-Identifier: iap-lobby
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: 000B86A1B2C3
+  Calling-Station-Id: AABBCCDDEE03
+  Acct-Session-Time: 900
+  Acct-Input-Octets: 4000000
+  Acct-Output-Octets: 91000000
+  Acct-Terminate-Cause: User-Request
+  Event-Timestamp: 1780000900
+packet: 0420009116b1911c7bdf4494d53df7a9d07920e72806000000022c123041323830303032303030303446313101146361726f6c40636f72702e6578616d706c6504060a280002200b6961702d6c6f6262793d06000000131e0e3030304238364131423243331f0e4141424243434444454530332e06000003842a06003d09002b06056c8cc031060000000137066a18a884
+expect:
+  statusType: 2
+  sessionTime: 900
+  terminateCause: 1

@@ -1,0 +1,25 @@
+# MikroTik RouterOS hotspot, logout (stop) with gigaword counters.
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+identifier: 82
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 81a00005
+  User-Name: guest01
+  NAS-IP-Address: 10.60.0.1
+  NAS-Identifier: hotspot-gw
+  NAS-Port-Type: Wireless-802.11
+  NAS-Port-Id: bridge-hotspot
+  Called-Station-Id: hotspot1
+  Calling-Station-Id: AA:BB:CC:DD:EE:05
+  Mikrotik.Host-IP: 10.5.50.2
+  Acct-Session-Time: 7200
+  Acct-Input-Octets: 705032704
+  Acct-Input-Gigawords: 1
+  Acct-Output-Octets: 30000000
+  Acct-Terminate-Cause: User-Request
+  Event-Timestamp: 1780007200
+packet: 045200a24c4c14320067db790aa6b1cb39ea0a872806000000022c0a383161303030303501096775657374303104060a3c0001200c686f7473706f742d67773d060000001357106272696467652d686f7473706f741e0a686f7473706f74311f1341413a42423a43433a44443a45453a30351a0c00003a8c0a060a0532022e0600001c202a062a05f2003406000000012b0601c9c38031060000000137066a18c120
+expect:
+  statusType: 2
+  inputOctets64: 5000000000
+  terminateCause: 1

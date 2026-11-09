@@ -618,14 +618,47 @@ class UdpAgentTest {
      * The attribute each vendor fixture sends in every accounting packet (Start, Interim, Stop); RFC 2866 only
      * requires NAS-IP-Address <em>or</em> NAS-Identifier, and the fixtures differ in which.
      */
-    static final java.util.Map<String, NasClient.Identity> EVERY_PACKET = java.util.Map.of(
-            "cisco", NasClient.Identity.NAS_IP_ADDRESS,
-            "huawei", NasClient.Identity.NAS_IP_ADDRESS,
-            "juniper", NasClient.Identity.NAS_IDENTIFIER,
-            "juniper-erx", NasClient.Identity.NAS_IP_ADDRESS,
-            "meraki", NasClient.Identity.NAS_IP_ADDRESS,
-            "mikrotik", NasClient.Identity.NAS_IDENTIFIER,
-            "ruckus", NasClient.Identity.NAS_IP_ADDRESS);
+    static final java.util.Map<String, NasClient.Identity> EVERY_PACKET = java.util.Map.ofEntries(
+            java.util.Map.entry("aruba", NasClient.Identity.CALLED_STATION_ID), // AP MAC without separators
+            java.util.Map.entry("cisco", NasClient.Identity.NAS_IP_ADDRESS),
+            java.util.Map.entry("huawei", NasClient.Identity.NAS_IP_ADDRESS),
+            java.util.Map.entry("juniper", NasClient.Identity.NAS_IDENTIFIER),
+            java.util.Map.entry("juniper-erx", NasClient.Identity.NAS_IP_ADDRESS),
+            java.util.Map.entry("meraki", NasClient.Identity.NAS_IP_ADDRESS),
+            java.util.Map.entry("mikrotik", NasClient.Identity.NAS_IDENTIFIER),
+            java.util.Map.entry("mikrotik-hotspot", NasClient.Identity.NAS_IDENTIFIER), // Called-Station-Id: a name
+            java.util.Map.entry("open-mesh", NasClient.Identity.CALLED_STATION_ID), // NAS-Identifier is empty
+            java.util.Map.entry("ruckus", NasClient.Identity.NAS_IP_ADDRESS),
+            java.util.Map.entry("ubiquiti", NasClient.Identity.NAS_IDENTIFIER)); // the AP MAC
+
+    @Test
+    void everyVendorFixtureHasItsIdentityAttribute() throws IOException {
+        try (Stream<Path> dirs = Files.list(Path.of("../radius-codec/src/test/resources/fixtures"))) {
+            assertThat(EVERY_PACKET.keySet())
+                    .as("add new fixture vendors to EVERY_PACKET")
+                    .containsExactlyInAnyOrderElementsOf(
+                            dirs.map(d -> d.getFileName().toString()).toList());
+        }
+    }
+
+    @Test
+    void openMeshEmptyNasIdentifierFallsBackToTheApMacInEveryPacket() throws Exception {
+        start(
+                config(Duration.ZERO, 1024),
+                natRegistry(NasClient.Identity.NAS_IDENTIFIER, NasClient.Identity.CALLED_STATION_ID));
+        for (String event : List.of("start", "interim", "stop")) {
+            send(fixture("open-mesh", event));
+        }
+        List<Command> c = commands();
+        assertThat(c).extracting(Command::nasDevice).containsOnly("ac8674123456");
+        assertThat(c).extracting(Command::sessionHi).containsOnly(c.get(0).sessionHi());
+        assertThat(stats.get(GatewayStats.Counter.IDENTITY_FALLBACK))
+                .as("consistent in every packet, so the session holds; the counter still shows the fallback")
+                .isEqualTo(3);
+        assertThat(stats.get(GatewayStats.Counter.MALFORMED))
+                .as("an empty attribute is not malformed")
+                .isZero();
+    }
 
     @Test
     void eachVendorKeepsItsSessionWithTheAttributeItSendsInEveryPacket() throws Exception {

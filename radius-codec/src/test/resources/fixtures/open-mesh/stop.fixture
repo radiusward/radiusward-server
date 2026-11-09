@@ -1,0 +1,21 @@
+# Open-Mesh AP, session timeout (stop).
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+identifier: 52
+attributes:
+  Acct-Status-Type: Stop
+  Acct-Session-Id: 5A1B0042
+  User-Name: guest-0042
+  NAS-IP-Address: 192.168.10.5
+  NAS-Identifier:
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: AC-86-74-12-34-56:OpenMesh-Guest
+  Calling-Station-Id: AA-BB-CC-DD-EE-04
+  Acct-Session-Time: 3600
+  Acct-Input-Octets: 6000000
+  Acct-Output-Octets: 70000000
+  Acct-Terminate-Cause: Session-Timeout
+  Event-Timestamp: 1780003600
+packet: 043400915ac009841f8f772ebc4817dca7671f392806000000022c0a3541314230303432010c67756573742d303034320406c0a80a0520023d06000000131e2241432d38362d37342d31322d33342d35363a4f70656e4d6573682d47756573741f1341412d42422d43432d44442d45452d30342e0600000e102a06005b8d802b06042c1d8031060000000537066a18b310
+expect:
+  statusType: 2
+  terminateCause: 5

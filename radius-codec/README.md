@@ -32,7 +32,7 @@ if (packet.wrap(buffer, 0, received) == DecodeStatus.OK
 
 **Guarantees, enforced by tests:** no allocation per packet (`HotPathAllocationIT`, 1M packets);
 the decoder never throws or reads outside the datagram (jqwik fuzzing); results match aaa4j-radius
-(differential tests) and the RFC 2865 / RFC 2104 vectors; 21 vendor fixtures round-trip byte-exactly.
+(differential tests) and the RFC 2865 / RFC 2104 vectors; 33 vendor fixtures (11 vendors) round-trip byte-exactly.
 Line coverage ≥ 90 % (generated code excluded).
 
 Not thread-safe by design: one set of instances per owning thread.

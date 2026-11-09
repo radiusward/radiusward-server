@@ -1,0 +1,23 @@
+# Aruba Instant AP, 802.1X client start.
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+# Aruba writes MACs without separators and sends no Class in accounting; Aruba-Location-Id names the AP.
+identifier: 30
+attributes:
+  Acct-Status-Type: Start
+  Acct-Session-Id: 0A28000200004F11
+  User-Name: carol@corp.example
+  NAS-IP-Address: 10.40.0.2
+  NAS-Identifier: iap-lobby
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: 000B86A1B2C3
+  Calling-Station-Id: AABBCCDDEE03
+  Framed-IP-Address: 10.40.10.23
+  Event-Timestamp: 1780000000
+  Aruba.Essid-Name: Corp
+  Aruba.Location-Id: lobby-ap
+  Aruba.AP-Group: default
+packet: 041e00aa68e664514a8b3fd01764b9bcfce6d5bf2806000000012c123041323830303032303030303446313101146361726f6c40636f72702e6578616d706c6504060a280002200b6961702d6c6f6262793d06000000131e0e3030304238364131423243331f0e41414242434344444545303308060a280a1737066a18a5001a0c000039e70506436f72701a10000039e7060a6c6f6262792d61701a0f000039e70a0964656661756c74
+expect:
+  statusType: 1
+  calledStationId: 000B86A1B2C3
+  nasIdentifier: iap-lobby

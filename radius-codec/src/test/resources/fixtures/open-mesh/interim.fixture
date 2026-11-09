@@ -1,0 +1,20 @@
+# Open-Mesh AP, interim update.
+# SYNTHETIC: built from the vendor's RADIUS documentation and common deployments, not a capture.
+identifier: 51
+attributes:
+  Acct-Status-Type: Interim-Update
+  Acct-Session-Id: 5A1B0042
+  User-Name: guest-0042
+  NAS-IP-Address: 192.168.10.5
+  NAS-Identifier:
+  NAS-Port-Type: Wireless-802.11
+  Called-Station-Id: AC-86-74-12-34-56:OpenMesh-Guest
+  Calling-Station-Id: AA-BB-CC-DD-EE-04
+  Acct-Session-Time: 300
+  Acct-Input-Octets: 800000
+  Acct-Output-Octets: 9000000
+  Event-Timestamp: 1780000300
+packet: 0433008b98afcb109f9d22000b8281ffefff51a22806000000032c0a3541314230303432010c67756573742d303034320406c0a80a0520023d06000000131e2241432d38362d37342d31322d33342d35363a4f70656e4d6573682d47756573741f1341412d42422d43432d44442d45452d30342e060000012c2a06000c35002b060089544037066a18a62c
+expect:
+  statusType: 3
+  sessionTime: 300
