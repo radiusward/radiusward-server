@@ -294,7 +294,9 @@ public final class LocalCluster implements AutoCloseable {
             int port = 10_000 + (int) (Math.random() * 10_000);
             try (java.net.ServerSocket tcp = new java.net.ServerSocket(port);
                     DatagramSocket udp = new DatagramSocket(port)) {
-                return port;
+                if (tcp.getLocalPort() == port && udp.getLocalPort() == port) {
+                    return port;
+                }
             } catch (Exception e) {
                 // taken, try another
             }
