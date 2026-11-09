@@ -14,6 +14,7 @@ import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -102,6 +103,7 @@ class GatewayAuthIT {
                         Reply-Message = "Welcome",
                         Session-Timeout = 3600,
                         Cisco-AVPair += "ip:inacl#1=permit ip any any"
+                User    NT-Password := 44EBBA8D5312B8D611474411F56989AE
                 """);
         Config settings = Config.of(Map.of(
                 "auth.stores", "local",
@@ -130,6 +132,15 @@ class GatewayAuthIT {
 
             byte[] chap = StoreAccessHandlerTest.AccessRequestBuilder.chap("nemo", "arctangent");
             assertThat(send(port, chap)[0]).isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
+
+            byte[] msChap2 = StoreAccessHandlerTest.msChap2("User", "clientPass");
+            byte[] accepted = send(port, msChap2);
+            assertThat(accepted[0]).as("MS-CHAPv2 from NT-Password").isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
+            assertThat(new String(accepted, StandardCharsets.ISO_8859_1))
+                    .contains("S=407A5589115FD0D6209F510FE9C04566932CDA56");
+            byte[] wrongMsChap2 = StoreAccessHandlerTest.msChap2("User", "other");
+            assertThat(new String(send(port, wrongMsChap2), StandardCharsets.ISO_8859_1))
+                    .contains("E=691");
         }
     }
 

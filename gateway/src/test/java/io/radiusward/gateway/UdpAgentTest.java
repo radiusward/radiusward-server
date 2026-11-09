@@ -595,6 +595,29 @@ class UdpAgentTest {
     }
 
     @Test
+    void statusServerIsAnsweredOnlyWhileConnectedToTheCluster() throws Exception {
+        start();
+        byte[] status = AuthAgentTest.statusServer(5, true, SECRET);
+        stats.connected(false);
+        send(status);
+        assertThat(receive()).as("no cluster: the NAS should fail over").isNull();
+        stats.connected(true);
+        send(status);
+        byte[] response = receive();
+        assertThat(response).isNotNull();
+        assertThat(wrap(response).code()).isEqualTo(RadiusCode.ACCOUNTING_RESPONSE);
+        assertThat(verifiesAgainst(response, status)).isTrue();
+        assertThat(new RadiusAuthenticator()
+                        .verifyResponseMessageAuthenticator(wrap(response), new UnsafeBuffer(status), 4, SECRET))
+                .isTrue();
+        send(AuthAgentTest.statusServer(6, false, SECRET));
+        assertThat(receive()).isNull();
+        assertThat(stats.get(GatewayStats.Counter.STATUS_SERVER)).isEqualTo(1);
+        assertThat(stats.get(GatewayStats.Counter.STATUS_SERVER_IGNORED)).isEqualTo(2);
+        assertThat(commands()).as("nothing for the cluster").isEmpty();
+    }
+
+    @Test
     void commandsCarryTheUserAndDeviceForSimultaneousUse() throws Exception {
         start();
         UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);

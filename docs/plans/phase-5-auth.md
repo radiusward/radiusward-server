@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: in progress (2026-11-09); decisions 1–6 taken; 5.1–5.5 done (ADR 0020–0023). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: in progress (2026-11-09); decisions 1–7 taken; 5.1–5.6 done (ADR 0020–0024). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -101,7 +101,8 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.3 ✅ | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option ([ADR 0021](../adr/0021-identity-stores.md)); bcrypt included, argon2 and yescrypt deferred | M |
 | 5.4 ✅ | Reply attributes | user and group reply items, vendor filter per NAS entry, reply items checked at load, encoded once, large replies cached ([ADR 0022](../adr/0022-reply-attributes.md)) | S |
 | 5.5 ✅ | Simultaneous use via the cluster | `AuthReservation` command, distinct devices per user, reservations until the Accounting-Start, same device always let in, state version 6 (`atLeast(6)`) ([ADR 0023](../adr/0023-simultaneous-use.md)) | M |
-| 5.6 | MS-CHAPv2 (non-EAP) | RFC 2759, NT-Password, MS-CHAP2-Success, RFC 2548 MPPE; RFC 3079 vectors | S |
+| 5.6 ✅ | MS-CHAPv1/v2 (non-EAP), Status-Server | RFC 2433/2759, NT-Password (or cleartext with `mschap` opt-in), MS-CHAP2-Success, RFC 3079 MPPE keys encrypted per RFC 2548, MS-CHAP-Error; Status-Server (RFC 5997) on both ports ([ADR 0024](../adr/0024-ms-chap-and-status-server.md)) | S |
+| 5.6b | Active Directory (Netlogon, pure Java) | a credential-verifier plug-in type next to identity stores; MS-NRPC over TCP: DC discovery (DNS SRV), secure channel with a machine account (NetrServerReqChallenge/Authenticate3, AES session key), Netlogon-signed and sealed RPC as DCs require since CVE-2020-1472, NetrLogonSamLogon network logon for MS-CHAPv1/v2 (and PAP) returning the user session key for MPPE; failover between DCs, timeouts (no answer → no answer to the NAS), machine password rotation; tests against a Samba AD DC container in `-Plinux` | L |
 | 5.7 | EAP framework | state machine, State tokens, conversation table, fragmentation, EAP-MD5 for the plumbing | L |
 | 5.8 | EAP-TLS, PEAP, TTLS | TLS engine + exporter, methods above, certificates, `eapol_test` interop | L |
 | 5.9 | RadSec (RFC 6614) | TLS over TCP transport for both ports (ADR 0006 named it as the place to revisit) | M |
@@ -147,3 +148,6 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    counts twice; sessions with a lost Stop count until their NAS entry's idle timeout; cluster unreachable → no answer
    for limited users only; before state version 6 is active the limit is ignored; users matched by User-Name (ASCII
    case folded) across all NAS entries.
+7. **MS-CHAP** (decided 2026-11-09, [ADR 0024](../adr/0024-ms-chap-and-status-server.md)): v1 and v2; `NT-Password`
+   always, cleartext only with `auth.store.<name>.mschap`; MPPE keys always on success; generic `E=691`. Status-Server
+   on both ports. Active Directory through a pure-Java Netlogon client (5.6b), not through Samba's `ntlm_auth`.

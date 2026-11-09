@@ -109,9 +109,9 @@ class PasswordCheckTest {
                         PASSWORD))
                 .as("argon2: not supported")
                 .isFalse();
-        assertThat(PasswordCheck.verify("NT-Password", "8846F7EAEE8FB117AD06BDD830B7586C", PASSWORD))
+        assertThat(PasswordCheck.verify("LM-Password", "E52CAC67419A9A224A3B108F3FA6CB6D", PASSWORD))
                 .isFalse();
-        assertThat(PasswordCheck.isPassword("NT-Password")).isFalse();
+        assertThat(PasswordCheck.isPassword("LM-Password")).isFalse();
         assertThat(PasswordCheck.isPassword("Crypt-Password")).isTrue();
         assertThat(PasswordCheck.verify("PBKDF2-Password", "HMACSHA2+256:AAAnEA==:AQID:AQID", new byte[] {(byte) 0xff}))
                 .as("not UTF-8")
@@ -124,5 +124,25 @@ class PasswordCheckTest {
         assertThat(PasswordCheck.verify("Crypt-Password", stored, PASSWORD)).isTrue();
         assertThat(PasswordCheck.verify("Crypt-Password", stored, "x".getBytes()))
                 .isFalse();
+    }
+
+    @Test
+    void ntPasswordForPap() {
+        byte[] password = "password".getBytes(StandardCharsets.UTF_8);
+        assertThat(PasswordCheck.verify("NT-Password", "8846F7EAEE8FB117AD06BDD830B7586C", password))
+                .isTrue();
+        assertThat(PasswordCheck.verify("NT-Password", "0x8846f7eaee8fb117ad06bdd830b7586c", password))
+                .isTrue();
+        assertThat(PasswordCheck.verify("NT-Password", "8846F7EAEE8FB117AD06BDD830B7586C", PASSWORD))
+                .isFalse();
+        assertThat(PasswordCheck.verify("NT-Password", "8846F7", password))
+                .as("malformed")
+                .isFalse();
+        assertThat(PasswordCheck.verify(
+                        "NT-Password",
+                        HexFormat.of().formatHex(MsChap.ntHash("pässwörd")),
+                        "pässwörd".getBytes(StandardCharsets.UTF_8)))
+                .as("non-ASCII in UTF-16LE")
+                .isTrue();
     }
 }

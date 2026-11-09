@@ -35,6 +35,8 @@ import org.agrona.collections.Object2ObjectHashMap;
  * entry ({@code nas.<name>.auth.stores}, default all, in order).
  *
  * @param chap stores where CHAP may use the cleartext password ({@code auth.store.<name>.chap = true})
+ * @param mschap stores where MS-CHAP may derive the NT hash from the cleartext password
+ *     ({@code auth.store.<name>.mschap = true}); {@code NT-Password} needs no opt-in
  * @param bcryptMaxCost the highest bcrypt cost verified ({@code auth.bcrypt.max.cost}); a stored hash above it is
  *     rejected instead of occupying a worker for seconds
  * @param replyVendors per NAS entry, the vendors whose attributes its replies may carry ({@code nas.<name>.reply.vendors},
@@ -48,7 +50,8 @@ record AuthStores(
         Duration cacheTtl,
         int cacheMax,
         int bcryptMaxCost,
-        Map<String, IntHashSet> replyVendors)
+        Map<String, IntHashSet> replyVendors,
+        Map<String, Boolean> mschap)
         implements AutoCloseable {
 
     /** Vendors whose attributes a NAS of this vendor also understands (Juniper's E-series / ERX attributes). */
@@ -70,6 +73,7 @@ record AuthStores(
         Map<String, IdentityStoreProvider> providers = providers(config);
         Map<String, IdentityStore> stores = new Object2ObjectHashMap<>();
         Map<String, Boolean> chap = new Object2ObjectHashMap<>();
+        Map<String, Boolean> mschap = new Object2ObjectHashMap<>();
         try {
             for (String name : names) {
                 String prefix = "auth.store." + name + ".";
@@ -82,6 +86,7 @@ record AuthStores(
                 Map<String, String> settings = new Object2ObjectHashMap<>();
                 settings.putAll(config.subset(prefix));
                 chap.put(name, Boolean.parseBoolean(settings.getOrDefault("chap", "false")));
+                mschap.put(name, Boolean.parseBoolean(settings.getOrDefault("mschap", "false")));
                 try {
                     stores.put(
                             name,
@@ -115,7 +120,8 @@ record AuthStores(
                 config.duration("auth.cache.ttl", Duration.ofSeconds(5)),
                 config.integer("auth.cache.max", 100_000),
                 bcryptMaxCost(config),
-                dictionary == null ? Map.of() : replyVendors(config, dictionary));
+                dictionary == null ? Map.of() : replyVendors(config, dictionary),
+                mschap);
     }
 
     /** Why {@code item} cannot be sent in a reply, or {@code null}. */

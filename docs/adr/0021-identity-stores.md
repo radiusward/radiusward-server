@@ -25,7 +25,7 @@ the NAS must never become Accept because of it.
   `radreply`, `radusergroup`, `radgroupcheck`, `radgroupreply` tables, table names configurable, our own small
   bounded connection pool — no pool library, no ORM).
 - **Credentials**: `Cleartext-Password`, `Crypt-Password` (`$5$`/`$6$` SHA-crypt, `$2a$`/`$2b$`/`$2y$` bcrypt),
-  `SSHA-Password`, `SSHA2-224/256/384/512-Password`, `PBKDF2-Password`. All are verified by our own code on JDK
+  `SSHA-Password`, `SSHA2-224/256/384/512-Password`, `PBKDF2-Password`, `NT-Password` (also for MS-CHAP, ADR 0024). All are verified by our own code on JDK
   primitives — no runtime dependency; radiusward only verifies, never creates hashes. bcrypt is checked against
   the published vectors and, in tests only, against Bouncy Castle over random passwords and salts. A bcrypt cost
   above `auth.bcrypt.max.cost` (14) is rejected without hashing, so one bad row cannot occupy a worker for minutes.

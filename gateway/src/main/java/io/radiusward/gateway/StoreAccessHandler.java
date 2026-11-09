@@ -90,6 +90,23 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         final Object2ObjectHashMap<String, Cached> users = new Object2ObjectHashMap<>();
         final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
         final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
+        final MsChapOutcome msChap = new MsChapOutcome();
+    }
+
+    /** What a successful MS-CHAP check leaves for the reply; per worker, reset for every request. */
+    private static final class MsChapOutcome {
+        boolean success;
+        int ident;
+        byte[] ntHash;
+        byte[] ntResponse;
+        byte[] challengeHash;
+
+        void reset() {
+            success = false;
+            ntHash = null;
+            ntResponse = null;
+            challengeHash = null;
+        }
     }
 
     private static WorkerCache cache(AccessContext context) {
@@ -112,11 +129,24 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     @Override
     public int handle(AccessContext context) {
+        int method = context.credentials().method(context.request());
+        WorkerCache cache = cache(context);
+        cache.msChap.reset();
+        int result = decide(context, method);
+        if (result == REJECT && isMsChap(method)) {
+            writeMsChapError(context, method); // the client shows a proper failure instead of a timeout
+        }
+        return result;
+    }
+
+    private static boolean isMsChap(int method) {
+        return method == AccessRequests.METHOD_MS_CHAP || method == AccessRequests.METHOD_MS_CHAP2;
+    }
+
+    private int decide(AccessContext context, int method) {
         RadiusPacket request = context.request();
-        AccessRequests credentials = context.credentials();
-        int method = credentials.method(request);
-        if (method != AccessRequests.METHOD_PAP && method != AccessRequests.METHOD_CHAP) {
-            return REJECT; // MS-CHAP (5.6) and EAP (5.7) come later; none or several methods are never valid
+        if (method != AccessRequests.METHOD_PAP && method != AccessRequests.METHOD_CHAP && !isMsChap(method)) {
+            return REJECT; // EAP (5.7) comes later; none or several methods are never valid
         }
         String userName = string(request, USER_NAME);
         if (userName == null || userName.isEmpty()) {
@@ -171,6 +201,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             }
         }
         encode(cache(context).encoded, reply, context.reply(), context.nas().name());
+        writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
         return ACCEPT;
     }
 
@@ -320,6 +351,172 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
     }
 
+    // ---- MS-CHAP (RFC 2433, RFC 2759, RFC 2548, RFC 3079) ---------------------------------------
+
+    private static final int MICROSOFT = 311;
+    private static final int MS_CHAP_RESPONSE = 1;
+    private static final int MS_CHAP_ERROR = 2;
+    private static final int MS_CHAP_CHALLENGE = 11;
+    private static final int MS_CHAP_MPPE_KEYS = 12;
+    private static final int MS_MPPE_SEND_KEY = 16;
+    private static final int MS_MPPE_RECV_KEY = 17;
+    private static final int MS_CHAP2_RESPONSE = 25;
+    private static final int MS_CHAP2_SUCCESS = 26;
+    private static final int RESPONSE_LENGTH = 50;
+
+    private final java.security.SecureRandom saltRandom = new java.security.SecureRandom();
+
+    /**
+     * Verifies MS-CHAPv1 or v2 from the user's NT hash: {@code NT-Password}, or the cleartext password where the
+     * store allows it ({@code auth.store.<name>.mschap}). The first usable credential decides.
+     */
+    private boolean msChap(AccessContext context, int method, Found found, List<AttributeItem> passwords) {
+        byte[] ntHash = null;
+        for (AttributeItem p : passwords) {
+            if (p.attribute().equalsIgnoreCase("NT-Password")) {
+                ntHash = MsChap.parseNtPassword(p.value());
+                if (ntHash == null) {
+                    warnOnce(
+                            "nt-password:" + found.store(),
+                            "store {}: NT-Password is not 32 hex digits;" + " such users are rejected",
+                            found.store());
+                    return false;
+                }
+                break;
+            }
+            if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)
+                    && stores.mschap().getOrDefault(found.store(), false)) {
+                ntHash = MsChap.ntHash(p.value());
+                break;
+            }
+        }
+        if (ntHash == null) {
+            warnOnce(
+                    "mschap:" + found.store(),
+                    "MS-CHAP request for store {} without NT-Password (or Cleartext-Password with"
+                            + " auth.store.<name>.mschap = true): rejected",
+                    found.store());
+            return false;
+        }
+        RadiusPacket request = context.request();
+        byte[] challenge = vendorValue(request, MS_CHAP_CHALLENGE);
+        boolean v2 = method == AccessRequests.METHOD_MS_CHAP2;
+        byte[] response = vendorValue(request, v2 ? MS_CHAP2_RESPONSE : MS_CHAP_RESPONSE);
+        if (challenge == null || response == null || response.length != RESPONSE_LENGTH) {
+            return false;
+        }
+        byte[] ntResponse = Arrays.copyOfRange(response, 26, 50);
+        byte[] expected;
+        byte[] challengeHash = null;
+        if (v2) {
+            if (challenge.length != 16) {
+                return false;
+            }
+            int at = request.findAttribute(USER_NAME);
+            byte[] name = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
+            request.buffer().getBytes(at + 2, name);
+            challengeHash =
+                    MsChap.challengeHash(Arrays.copyOfRange(response, 2, 18), challenge, MsChap.v2UserName(name));
+            expected = MsChap.challengeResponse(challengeHash, ntHash);
+        } else {
+            if (challenge.length != 8 || (response[1] & 1) == 0) {
+                return false; // without the NT-Response only the LAN Manager response remains: not supported
+            }
+            expected = MsChap.challengeResponse(challenge, ntHash);
+        }
+        if (!java.security.MessageDigest.isEqual(expected, ntResponse)) {
+            return false;
+        }
+        MsChapOutcome outcome = cache(context).msChap;
+        outcome.success = true;
+        outcome.ident = response[0] & 0xFF;
+        outcome.ntHash = ntHash;
+        outcome.ntResponse = ntResponse;
+        outcome.challengeHash = challengeHash;
+        return true;
+    }
+
+    /** MS-CHAP2-Success and the MPPE keys (v2), or MS-CHAP-MPPE-Keys (v1). */
+    private void writeMsChapSuccess(AccessContext context, int method) {
+        MsChapOutcome outcome = cache(context).msChap;
+        if (!outcome.success) {
+            return; // not MS-CHAP, or Auth-Type := Accept without a check: nothing to prove to the client
+        }
+        RadiusPacketEncoder out = context.reply();
+        byte[] secret = context.nas().secret();
+        byte[] authenticator = new byte[16];
+        context.request().buffer().getBytes(context.request().authenticatorOffset(), authenticator);
+        if (method == AccessRequests.METHOD_MS_CHAP2) {
+            String success = MsChap.authenticatorResponse(outcome.ntHash, outcome.ntResponse, outcome.challengeHash);
+            byte[] value = new byte[1 + success.length()];
+            value[0] = (byte) outcome.ident;
+            System.arraycopy(success.getBytes(StandardCharsets.US_ASCII), 0, value, 1, success.length());
+            out.vendorAttribute(MICROSOFT, MS_CHAP2_SUCCESS, value);
+            byte[] master = MsChap.masterKey(outcome.ntHash, outcome.ntResponse);
+            int salt = saltRandom.nextInt(0x8000) & ~1; // two different salts, high bit set (RFC 2548)
+            out.vendorAttribute(
+                    MICROSOFT,
+                    MS_MPPE_SEND_KEY,
+                    MsChap.encryptKey(MsChap.serverKey(master, true), secret, authenticator, salt(salt)));
+            out.vendorAttribute(
+                    MICROSOFT,
+                    MS_MPPE_RECV_KEY,
+                    MsChap.encryptKey(MsChap.serverKey(master, false), secret, authenticator, salt(salt | 1)));
+        } else {
+            out.vendorAttribute(
+                    MICROSOFT,
+                    MS_CHAP_MPPE_KEYS,
+                    MsChap.encryptV1Keys(new byte[8], Md4.digest(outcome.ntHash), secret, authenticator));
+        }
+    }
+
+    private static byte[] salt(int value) {
+        return new byte[] {(byte) (0x80 | (value >>> 8)), (byte) value};
+    }
+
+    /** MS-CHAP-Error "authentication failure" (E=691), no retry; the reason stays in the logs. */
+    private static void writeMsChapError(AccessContext context, int method) {
+        RadiusPacket request = context.request();
+        byte[] response =
+                vendorValue(request, method == AccessRequests.METHOD_MS_CHAP2 ? MS_CHAP2_RESPONSE : MS_CHAP_RESPONSE);
+        int ident = response == null || response.length == 0 ? 0 : response[0] & 0xFF;
+        String text = "E=691 R=0";
+        if (method == AccessRequests.METHOD_MS_CHAP2) {
+            byte[] challenge = vendorValue(request, MS_CHAP_CHALLENGE);
+            text += " C="
+                    + (challenge == null
+                            ? ""
+                            : HexFormat.of().formatHex(challenge).toUpperCase(Locale.ROOT)) + " V=3";
+        }
+        byte[] value = new byte[1 + text.length()];
+        value[0] = (byte) ident;
+        System.arraycopy(text.getBytes(StandardCharsets.US_ASCII), 0, value, 1, text.length());
+        context.reply().vendorAttribute(MICROSOFT, MS_CHAP_ERROR, value);
+    }
+
+    /** The value of a Microsoft vendor attribute (RFC 2548 layout), or {@code null}. */
+    private static byte[] vendorValue(RadiusPacket request, int vendorType) {
+        org.agrona.DirectBuffer b = request.buffer();
+        for (int pos = request.attributesOffset(); pos + 2 <= request.attributesEnd(); ) {
+            int type = b.getByte(pos) & 0xFF;
+            int length = b.getByte(pos + 1) & 0xFF;
+            if (length < 2) {
+                return null;
+            }
+            if (type == 26 && length >= 8 && b.getInt(pos + 2, java.nio.ByteOrder.BIG_ENDIAN) == MICROSOFT) {
+                int vType = b.getByte(pos + 6) & 0xFF;
+                int vLength = b.getByte(pos + 7) & 0xFF;
+                if (vType == vendorType && vLength >= 2 && 6 + vLength <= length) {
+                    byte[] value = new byte[vLength - 2];
+                    b.getBytes(pos + 8, value);
+                    return value;
+                }
+            }
+            pos += length;
+        }
+        return null;
+    }
+
     // ---- simultaneous use ----------------------------------------------------------------------
 
     private static final String SIMULTANEOUS_USE = "Simultaneous-Use";
@@ -378,6 +575,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private boolean authenticate(
             AccessContext context, int method, Found found, String userName, List<AttributeItem> passwords) {
         Object2LongHashMap<String> verified = cache(context).verified;
+        if (isMsChap(method)) {
+            return msChap(context, method, found, passwords);
+        }
         if (method == AccessRequests.METHOD_CHAP) {
             if (!stores.chap().getOrDefault(found.store(), false)) {
                 warnOnce(

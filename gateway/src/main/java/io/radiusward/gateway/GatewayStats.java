@@ -14,6 +14,10 @@ public final class GatewayStats {
         MALFORMED,
         UNKNOWN_NAS,
         NOT_ACCOUNTING,
+        /** Status-Server (RFC 5997) answered: the gateway is connected to the cluster */
+        STATUS_SERVER,
+        /** Status-Server not answered: no valid Message-Authenticator, or no cluster to acknowledge accounting */
+        STATUS_SERVER_IGNORED,
         AUTHENTICATOR_FAILED,
         MESSAGE_AUTHENTICATOR_FAILED,
         MISSING_SESSION_ID,

@@ -114,6 +114,9 @@ class FreeRadiusInteropIT {
                     secret = testing123
                 }
                 modules {
+                    always ok {
+                        rcode = ok
+                    }
                 }
                 server default {
                     listen {
@@ -152,7 +155,7 @@ class FreeRadiusInteropIT {
                 return Optional.of(candidate);
             }
         }
-        for (String dir : List.of("/opt/homebrew/sbin", "/usr/local/sbin", "/usr/sbin")) {
+        for (String dir : List.of("/opt/homebrew/sbin", "/opt/homebrew/bin", "/usr/local/sbin", "/usr/sbin")) {
             Path candidate = Path.of(dir, binary);
             if (Files.isExecutable(candidate)) {
                 return Optional.of(candidate);

@@ -273,6 +273,42 @@ class AuthAgentTest {
         assertThat(stats.get(AuthStats.Counter.ACCEPTED)).isEqualTo(2);
     }
 
+    /** A Status-Server (RFC 5997): random authenticator, Message-Authenticator computed as for an Access-Request. */
+    static byte[] statusServer(int identifier, boolean withMa, byte[] secret) {
+        byte[] authenticator = new byte[16];
+        ThreadLocalRandom.current().nextBytes(authenticator);
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[128]);
+        RadiusPacketEncoder enc = new RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(RadiusCode.STATUS_SERVER, identifier)
+                .authenticator(authenticator);
+        int ma = withMa ? enc.messageAuthenticator() : -1;
+        enc.attribute(33, "proxy-1");
+        int length = enc.finish();
+        if (ma >= 0) {
+            new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, secret);
+        }
+        return Arrays.copyOf(buffer.byteArray(), length);
+    }
+
+    @Test
+    void statusServerIsAnsweredWithAnAcceptOnlyWithAValidMessageAuthenticator() throws Exception {
+        start();
+        byte[] status = statusServer(9, true, SECRET);
+        send(status);
+        assertSignedReplyTo(receive(), status, RadiusCode.ACCESS_ACCEPT);
+        assertThat(stats.get(AuthStats.Counter.STATUS_SERVER)).isEqualTo(1);
+        send(status);
+        assertThat(receive()).as("never cached: answered again").isNotNull();
+
+        send(statusServer(10, false, SECRET));
+        send(statusServer(11, true, "wrong".getBytes(StandardCharsets.US_ASCII)));
+        assertThat(receive()).isNull();
+        assertThat(stats.get(AuthStats.Counter.MESSAGE_AUTHENTICATOR_MISSING)).isEqualTo(1);
+        assertThat(stats.get(AuthStats.Counter.MESSAGE_AUTHENTICATOR_FAILED)).isEqualTo(1);
+        assertThat(stats.get(AuthStats.Counter.STATUS_SERVER)).isEqualTo(2);
+    }
+
     @Test
     void otherPacketsAreCountedAndIgnored() throws Exception {
         start();

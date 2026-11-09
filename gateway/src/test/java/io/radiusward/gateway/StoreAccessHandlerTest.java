@@ -68,6 +68,7 @@ class StoreAccessHandlerTest {
     private final MemoryStore second = new MemoryStore();
     private final AccessContext context = new AccessContext();
     private final Map<String, IntHashSet> replyVendors = new HashMap<>();
+    private final Map<String, Boolean> mschap = new HashMap<>();
 
     private StoreAccessHandler handler(Map<String, Boolean> chap, Map<String, List<String>> perNas) {
         Map<String, IdentityStore> stores = new java.util.LinkedHashMap<>();
@@ -75,7 +76,15 @@ class StoreAccessHandlerTest {
         stores.put("second", second);
         return new StoreAccessHandler(
                 new AuthStores(
-                        stores, List.of("main", "second"), perNas, chap, Duration.ofSeconds(5), 1000, 12, replyVendors),
+                        stores,
+                        List.of("main", "second"),
+                        perNas,
+                        chap,
+                        Duration.ofSeconds(5),
+                        1000,
+                        12,
+                        replyVendors,
+                        mschap),
                 DICTIONARY,
                 () -> now[0]);
     }
@@ -442,6 +451,169 @@ class StoreAccessHandlerTest {
         assertThat(pap(h, "alice", "a")).as("no answer from the cluster").isEqualTo(AccessHandler.DROP);
         limits.answer = SessionLimits.UNSUPPORTED;
         assertThat(pap(h, "alice", "a")).as("before state version 6: ignored").isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    static final byte[] AUTH_CHALLENGE = MsChapTest.hex("5B5D7C7D7B3F2F3E3C2C602132262628");
+    static final byte[] PEER_CHALLENGE = MsChapTest.hex("21402324255E262A28295F2B3A337C7E");
+
+    /** An MS-CHAPv2 request as a client computes it (RFC 2759), for {@code user} with {@code password}. */
+    static byte[] msChap2(String user, String password) {
+        byte[] name = user.getBytes(StandardCharsets.US_ASCII);
+        byte[] hash = MsChap.challengeHash(PEER_CHALLENGE, AUTH_CHALLENGE, MsChap.v2UserName(name));
+        byte[] response = new byte[50];
+        response[0] = 7; // ident
+        System.arraycopy(PEER_CHALLENGE, 0, response, 2, 16);
+        System.arraycopy(MsChap.challengeResponse(hash, MsChap.ntHash(password)), 0, response, 26, 24);
+        return msChapRequest(user, AUTH_CHALLENGE, 25, response);
+    }
+
+    static byte[] msChap1(String user, String password, boolean useNt) {
+        byte[] challenge = MsChapTest.hex("102DB5DF085D3041");
+        byte[] response = new byte[50];
+        response[0] = 3;
+        response[1] = (byte) (useNt ? 1 : 0);
+        System.arraycopy(MsChap.challengeResponse(challenge, MsChap.ntHash(password)), 0, response, 26, 24);
+        return msChapRequest(user, challenge, 1, response);
+    }
+
+    private static byte[] msChapRequest(String user, byte[] challenge, int responseType, byte[] response) {
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
+        byte[] auth = new byte[16];
+        ThreadLocalRandom.current().nextBytes(auth);
+        int length = new RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(RadiusCode.ACCESS_REQUEST, 1)
+                .authenticator(auth)
+                .attribute(1, user)
+                .vendorAttribute(311, 11, challenge)
+                .vendorAttribute(311, responseType, response)
+                .finish();
+        return Arrays.copyOf(buffer.byteArray(), length);
+    }
+
+    /** The values of Microsoft attribute {@code type} in the reply. */
+    private List<byte[]> microsoft(int type) {
+        RadiusPacket p = reply();
+        List<byte[]> values = new java.util.ArrayList<>();
+        for (int pos = p.attributesOffset(); pos < p.attributesEnd(); ) {
+            int len = p.buffer().getByte(pos + 1) & 0xFF;
+            if ((p.buffer().getByte(pos) & 0xFF) == 26
+                    && p.buffer().getInt(pos + 2, java.nio.ByteOrder.BIG_ENDIAN) == 311
+                    && (p.buffer().getByte(pos + 6) & 0xFF) == type) {
+                byte[] v = new byte[(p.buffer().getByte(pos + 7) & 0xFF) - 2];
+                p.buffer().getBytes(pos + 8, v);
+                values.add(v);
+            }
+            pos += len;
+        }
+        return values;
+    }
+
+    /** RFC 2548 §2.4.2 in reverse, as the NAS does it. */
+    private static byte[] decryptKey(byte[] value, byte[] requestAuthenticator) throws Exception {
+        java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
+        byte[] plain = new byte[value.length - 2];
+        byte[] previous = null;
+        for (int block = 0; block < plain.length; block += 16) {
+            md5.update(SECRET);
+            if (previous == null) {
+                md5.update(requestAuthenticator);
+                md5.update(value, 0, 2);
+            } else {
+                md5.update(previous);
+            }
+            byte[] b = md5.digest();
+            for (int i = 0; i < 16; i++) {
+                plain[block + i] = (byte) (value[2 + block + i] ^ b[i]);
+            }
+            previous = Arrays.copyOfRange(value, 2 + block, 2 + block + 16);
+        }
+        return Arrays.copyOfRange(plain, 1, 1 + plain[0]);
+    }
+
+    @Test
+    void msChapV2AcceptsWithTheAuthenticatorResponseAndMppeKeys() throws Exception {
+        main.user(
+                "User",
+                List.of(item("NT-Password", ":=", "44EBBA8D5312B8D611474411F56989AE")),
+                List.of(item("Session-Timeout", "=", "600")));
+        IntHashSet mikrotik = new IntHashSet();
+        mikrotik.add(14988);
+        replyVendors.put("local", mikrotik); // method attributes are never filtered by vendor
+        StoreAccessHandler h = handler();
+        byte[] request = msChap2("User", "clientPass");
+        assertThat(handle(h, request)).isEqualTo(AccessHandler.ACCEPT);
+        byte[] success = microsoft(26).get(0);
+        assertThat(success[0]).as("ident of the response").isEqualTo((byte) 7);
+        assertThat(new String(success, 1, success.length - 1, StandardCharsets.US_ASCII))
+                .isEqualTo("S=407A5589115FD0D6209F510FE9C04566932CDA56");
+        byte[] auth = Arrays.copyOfRange(request, 4, 20);
+        byte[] send = microsoft(16).get(0);
+        byte[] recv = microsoft(17).get(0);
+        assertThat(send[0] & 0x80).as("salt high bit").isNotZero();
+        assertThat(new byte[] {send[0], send[1]}).isNotEqualTo(new byte[] {recv[0], recv[1]});
+        assertThat(MsChapTest.hex(decryptKey(send, auth))).isEqualTo("8B7CDC149B993A1BA118CB153F56DCCB");
+        byte[] master = MsChapTest.hex("FDECE3717A8C838CB388E527AE3CDD31");
+        assertThat(decryptKey(recv, auth)).isEqualTo(MsChap.serverKey(master, false));
+        assertThat(reply().findAttribute(27)).as("reply items too").isPositive();
+    }
+
+    @Test
+    void msChapV2FailuresCarryAnErrorAndCleartextNeedsTheOptIn() {
+        main.user("User", List.of(item("NT-Password", ":=", "44EBBA8D5312B8D611474411F56989AE")), List.of())
+                .user("CORP\\alice", List.of(item("Cleartext-Password", ":=", "secret")), List.of());
+        StoreAccessHandler h = handler();
+        assertThat(handle(h, msChap2("User", "wrongPass"))).isEqualTo(AccessHandler.REJECT);
+        byte[] error = microsoft(2).get(0);
+        assertThat(error[0]).isEqualTo((byte) 7);
+        assertThat(new String(error, 1, error.length - 1, StandardCharsets.US_ASCII))
+                .isEqualTo("E=691 R=0 C=5B5D7C7D7B3F2F3E3C2C602132262628 V=3");
+        assertThat(microsoft(26)).isEmpty();
+
+        assertThat(handle(h, msChap2("nobody", "x"))).as("unknown user").isEqualTo(AccessHandler.REJECT);
+        assertThat(microsoft(2)).hasSize(1);
+        assertThat(handle(h, msChap2("CORP\\alice", "secret")))
+                .as("cleartext without auth.store.main.mschap")
+                .isEqualTo(AccessHandler.REJECT);
+        mschap.put("main", true);
+        StoreAccessHandler allowed = handler();
+        assertThat(handle(allowed, msChap2("CORP\\alice", "secret")))
+                .as("the domain is not part of the challenge hash")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(handle(allowed, msChap2("CORP\\alice", "Secret"))).isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void msChapV1() throws Exception {
+        main.user("bob", List.of(item("NT-Password", ":=", "8846F7EAEE8FB117AD06BDD830B7586C")), List.of());
+        StoreAccessHandler h = handler();
+        byte[] request = msChap1("bob", "password", true);
+        assertThat(handle(h, request)).isEqualTo(AccessHandler.ACCEPT);
+        byte[] keys = microsoft(12).get(0);
+        assertThat(keys).hasSize(32);
+        byte[] auth = Arrays.copyOfRange(request, 4, 20);
+        java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5"); // RFC 2865 §5.2 in reverse
+        md5.update(SECRET);
+        md5.update(auth);
+        byte[] b1 = md5.digest();
+        md5.update(SECRET);
+        md5.update(keys, 0, 16);
+        byte[] b2 = md5.digest();
+        byte[] plain = new byte[32];
+        for (int i = 0; i < 16; i++) {
+            plain[i] = (byte) (keys[i] ^ b1[i]);
+            plain[16 + i] = (byte) (keys[16 + i] ^ b2[i]);
+        }
+        assertThat(Arrays.copyOf(plain, 8)).as("no LAN Manager key").containsOnly(0);
+        assertThat(Arrays.copyOfRange(plain, 8, 24)).isEqualTo(Md4.digest(MsChap.ntHash("password")));
+
+        assertThat(handle(h, msChap1("bob", "wrong", true))).isEqualTo(AccessHandler.REJECT);
+        byte[] error = microsoft(2).get(0);
+        assertThat(new String(error, 1, error.length - 1, StandardCharsets.US_ASCII))
+                .isEqualTo("E=691 R=0");
+        assertThat(handle(h, msChap1("bob", "password", false)))
+                .as("LAN Manager response only")
+                .isEqualTo(AccessHandler.REJECT);
     }
 
     @Test

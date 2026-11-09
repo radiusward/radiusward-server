@@ -26,11 +26,12 @@ import javax.crypto.spec.PBEKeySpec;
  *       {@code $2y$} bcrypt ({@link BCrypt})
  *   <li>{@code SSHA-Password}, {@code SSHA2-224/256/384/512-Password} — salted SHA: base64 or hex of
  *       {@code digest || salt}
+ *   <li>{@code NT-Password} — the NT hash (MD4 of the UTF-16LE password, 32 hex digits), as MS-CHAP uses it
  *   <li>{@code PBKDF2-Password} — {@code HMACSHA1|HMACSHA2+256|+384|+512 : iterations : salt : hash}, each part base64
  *       (iterations as a 4-byte big-endian number)
  * </ul>
  *
- * Other formats (argon2, yescrypt, MD5-crypt, NT-Password for PAP) are not verified: such a user is rejected.
+ * Other formats (argon2, yescrypt, MD5-crypt, LM-Password) are not verified: such a user is rejected.
  */
 final class PasswordCheck {
 
@@ -48,6 +49,7 @@ final class PasswordCheck {
                     "ssha2-256-password",
                     "ssha2-384-password",
                     "ssha2-512-password",
+                    "nt-password",
                     "pbkdf2-password" -> true;
             default -> false;
         };
@@ -75,6 +77,7 @@ final class PasswordCheck {
             case "ssha2-384-password" -> salted("SHA-384", stored, password);
             case "ssha2-512-password" -> salted("SHA-512", stored, password);
             case "pbkdf2-password" -> pbkdf2(stored, password);
+            case "nt-password" -> nt(stored, password);
             default -> false;
         };
     }
@@ -150,6 +153,23 @@ final class PasswordCheck {
         } catch (IllegalArgumentException | GeneralSecurityException e) {
             return false;
         }
+    }
+
+    private static boolean nt(String stored, byte[] password) {
+        byte[] expected = MsChap.parseNtPassword(stored);
+        char[] chars = utf8(password);
+        if (expected == null || chars == null) {
+            return false;
+        }
+        byte[] utf16 = new byte[chars.length * 2];
+        for (int i = 0; i < chars.length; i++) {
+            utf16[2 * i] = (byte) chars[i];
+            utf16[2 * i + 1] = (byte) (chars[i] >>> 8);
+        }
+        boolean match = MessageDigest.isEqual(Md4.digest(utf16), expected);
+        Arrays.fill(chars, '\0');
+        Arrays.fill(utf16, (byte) 0);
+        return match;
     }
 
     private static char[] utf8(byte[] password) {

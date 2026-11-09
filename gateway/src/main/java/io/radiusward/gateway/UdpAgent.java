@@ -175,6 +175,10 @@ final class UdpAgent implements Agent {
             stats.increment(Counter.MALFORMED);
             return;
         }
+        if (packet.code() == RadiusCode.STATUS_SERVER) {
+            statusServer(from);
+            return;
+        }
         if (packet.code() != RadiusCode.ACCOUNTING_REQUEST) {
             stats.increment(Counter.NOT_ACCOUNTING);
             return;
@@ -440,6 +444,27 @@ final class UdpAgent implements Agent {
                 ResponseCache.COMMITTED,
                 now + config.responseCacheTtl().toNanos());
         pending.release(slot);
+    }
+
+    /**
+     * Status-Server on the accounting port (RFC 5997): answered with an Accounting-Response only when a valid
+     * Message-Authenticator proves the NAS and the gateway is connected to the cluster — a NAS that sees no answer
+     * fails over, exactly when it should. Never cached, never sent to the cluster.
+     */
+    private void statusServer(InetSocketAddress from) {
+        NasClient nas = registry.lookup(from.getAddress());
+        if (nas == null) {
+            stats.increment(Counter.UNKNOWN_NAS);
+            return;
+        }
+        if (!packet.hasMessageAuthenticator()
+                || !authenticator.verifyRequestMessageAuthenticator(packet, nas.secret())
+                || !stats.connected()) {
+            stats.increment(Counter.STATUS_SERVER_IGNORED);
+            return;
+        }
+        stats.increment(Counter.STATUS_SERVER);
+        send(from, responses.encode(packet, sending, 0, nas.secret(), true));
     }
 
     private int sendDelayed() {

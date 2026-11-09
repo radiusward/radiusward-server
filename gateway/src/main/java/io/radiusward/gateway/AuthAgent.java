@@ -49,6 +49,8 @@ final class AuthAgent implements Agent {
     private final UnsafeBuffer sending = new UnsafeBuffer(sendBuffer);
     private final RadiusPacket packet = new RadiusPacket();
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
+    private final io.radiusward.radius.codec.AccessResponses statusResponses =
+            new io.radiusward.radius.codec.AccessResponses(new RadiusAuthenticator());
     private final ReplyCache cache;
 
     private DatagramChannel channel;
@@ -123,6 +125,10 @@ final class AuthAgent implements Agent {
             stats.increment(AuthStats.Counter.MALFORMED);
             return;
         }
+        if (packet.code() == RadiusCode.STATUS_SERVER) {
+            statusServer(from);
+            return;
+        }
         if (packet.code() != RadiusCode.ACCESS_REQUEST) {
             stats.increment(AuthStats.Counter.NOT_ACCESS_REQUEST);
             return;
@@ -194,6 +200,29 @@ final class AuthAgent implements Agent {
             cache.clearInFlight(key); // not answered: a retransmission is decided again
         }
         slots.release(slot);
+    }
+
+    /**
+     * Status-Server on the authentication port (RFC 5997): an Access-Accept without attributes when a valid
+     * Message-Authenticator proves the NAS; otherwise silence. Answered on this thread, never cached.
+     */
+    private void statusServer(InetSocketAddress from) {
+        NasClient nas = registry.lookup(from.getAddress());
+        if (nas == null) {
+            stats.increment(AuthStats.Counter.UNKNOWN_NAS);
+            return;
+        }
+        if (!packet.hasMessageAuthenticator()) {
+            stats.increment(AuthStats.Counter.MESSAGE_AUTHENTICATOR_MISSING);
+            return;
+        }
+        if (!authenticator.verifyRequestMessageAuthenticator(packet, nas.secret())) {
+            stats.increment(AuthStats.Counter.MESSAGE_AUTHENTICATOR_FAILED);
+            return;
+        }
+        stats.increment(AuthStats.Counter.STATUS_SERVER);
+        int length = statusResponses.encode(packet, RadiusCode.ACCESS_ACCEPT, received, 0, 0, sending, 0, nas.secret());
+        send(sendBuffer, length, from);
     }
 
     private void send(ByteBuffer buffer, int length, InetSocketAddress to) {

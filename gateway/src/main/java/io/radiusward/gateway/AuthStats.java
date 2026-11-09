@@ -13,6 +13,8 @@ public final class AuthStats {
         RECEIVED,
         MALFORMED,
         NOT_ACCESS_REQUEST,
+        /** Status-Server (RFC 5997) answered with an Access-Accept */
+        STATUS_SERVER,
         UNKNOWN_NAS,
         /** the NAS entry requires Message-Authenticator (default), or the request carries EAP, and it was absent */
         MESSAGE_AUTHENTICATOR_MISSING,

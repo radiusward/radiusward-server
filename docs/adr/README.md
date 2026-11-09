@@ -25,5 +25,6 @@
 | [0021](0021-identity-stores.md) | Identity stores: plug-in SPI in the gateway, ordered stores, outage means no answer, credential formats | Accepted |
 | [0022](0022-reply-attributes.md) | Reply attributes as data, vendor filter per NAS entry, large replies in the reply cache | Accepted |
 | [0023](0023-simultaneous-use.md) | Simultaneous use through the cluster: distinct devices per user, reservations committed before the Accept, state version 6 | Accepted |
+| [0024](0024-ms-chap-and-status-server.md) | MS-CHAPv1/v2 from NT hashes, MPPE keys, generic errors; Status-Server on both ports | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.
