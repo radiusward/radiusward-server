@@ -36,18 +36,21 @@ final class EapConversations {
 
     private record Key(long hi, long lo) {}
 
+    /** One lock stripe: a map and the lock that guards it (an array of it needs no generic array). */
+    private static final class Stripe {
+        final Object2ObjectHashMap<Key, Conversation> map = new Object2ObjectHashMap<>();
+    }
+
     private static final int STRIPES = 16;
-    private final Object2ObjectHashMap<Key, Conversation>[] stripes;
+    private final Stripe[] stripes = new Stripe[STRIPES];
     private final AtomicInteger size = new AtomicInteger();
     private final int capacity;
     private final SecureRandom random = new SecureRandom();
 
-    @SuppressWarnings("unchecked")
     EapConversations(int capacity) {
         this.capacity = capacity;
-        this.stripes = new Object2ObjectHashMap[STRIPES];
         for (int i = 0; i < STRIPES; i++) {
-            stripes[i] = new Object2ObjectHashMap<>();
+            stripes[i] = new Stripe();
         }
     }
 
@@ -60,18 +63,18 @@ final class EapConversations {
         random.nextBytes(state);
         Key key = key(state);
         if (size.get() >= capacity) {
-            for (Object2ObjectHashMap<Key, Conversation> s : stripes) {
+            for (Stripe s : stripes) {
                 synchronized (s) {
-                    sweep(s, now);
+                    sweep(s.map, now);
                 }
             }
             if (size.get() >= capacity) {
                 return null;
             }
         }
-        Object2ObjectHashMap<Key, Conversation> stripe = stripes[stripe(key)];
+        Stripe stripe = stripes[stripe(key)];
         synchronized (stripe) {
-            stripe.put(key, c);
+            stripe.map.put(key, c);
             size.incrementAndGet();
         }
         return state;
@@ -83,10 +86,10 @@ final class EapConversations {
             return null;
         }
         Key key = key(state);
-        Object2ObjectHashMap<Key, Conversation> stripe = stripes[stripe(key)];
+        Stripe stripe = stripes[stripe(key)];
         Conversation c;
         synchronized (stripe) {
-            c = stripe.remove(key);
+            c = stripe.map.remove(key);
             if (c != null) {
                 size.decrementAndGet();
             }

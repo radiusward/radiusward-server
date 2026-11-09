@@ -192,7 +192,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return DROP;
         }
         if (found == null) {
-            return REJECT;
+            if (method != AccessRequests.METHOD_EAP || !certificateOnly(context)) {
+                return REJECT;
+            }
+            // EAP-TLS: the client certificate is the credential; no store entry, no extra items (ADR 0028)
+            found = new Found("", new UserRecord(userName, List.of(), List.of(), List.of()));
         }
 
         List<AttributeItem> passwords = new ArrayList<>();
@@ -449,7 +453,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 new EapMethod.Credentials(passwords, stores.chap().getOrDefault(found.store(), false));
         EapMethod.Step step;
         if (c.method == null) {
-            c.method = EapConfig.create(EapConfig.type(stores.eap().methods().get(0)));
+            c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)));
             step = c.method.start(eap.identifier() + 1, credentials);
         } else if (eap.identifier() != c.identifier) {
             return DROP; // a response to an earlier request
@@ -459,7 +463,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 int type = t & 0xFF;
                 if (type != c.method.type()
                         && stores.eap().methods().stream().anyMatch(m -> EapConfig.type(m) == type)) {
-                    offered = EapConfig.create(type);
+                    offered = stores.eap().create(type);
                     break;
                 }
             }
@@ -491,6 +495,24 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         EapPacket.request(c.identifier, c.method.type(), step.request()).writeTo(context.reply());
         context.reply().attribute(STATE, state);
         return CHALLENGE;
+    }
+
+    /** Whether this conversation's method (or the one it will start, or a Nak asks for) needs no store entry. */
+    private boolean certificateOnly(AccessContext context) {
+        EapRound round = cache(context).eap;
+        EapConversations.Conversation c = round.conversation;
+        if (c.method != null) {
+            if (round.packet.type() == EapPacket.TYPE_NAK) {
+                for (byte t : round.packet.data()) {
+                    if (stores.eap().certificateOnly(t & 0xFF)) {
+                        return true;
+                    }
+                }
+            }
+            return stores.eap().certificateOnly(c.method.type());
+        }
+        return stores.eap()
+                .certificateOnly(EapConfig.type(stores.eap().methods().get(0)));
     }
 
     /** EAP-Success and, for methods that derive one, the MSK as MS-MPPE keys (RFC 3748 §7.10, RFC 2548). */

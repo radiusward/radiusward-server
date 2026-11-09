@@ -721,7 +721,7 @@ class StoreAccessHandlerTest {
 
     /** An Access-Request carrying one EAP response, with a State when the conversation goes on. */
     static byte[] eapRequest(EapPacket eap, byte[] state) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[1024]);
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
         RadiusPacketEncoder enc = new RadiusPacketEncoder()
                 .wrap(buffer, 0)
                 .header(RadiusCode.ACCESS_REQUEST, 1)

@@ -18,12 +18,13 @@ import java.util.Locale;
  * @param timeout how long a conversation waits for the peer's next response
  * @param conversations conversations held at once; beyond it new ones are not answered
  * @param maxRounds round trips a conversation may take
+ * @param tls the TLS side ({@code auth.eap.tls.*}), {@code null} without a certificate
  */
-record EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds) {
+record EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
 
-    static final List<String> KNOWN = List.of("md5");
+    static final List<String> KNOWN = List.of("md5", "tls");
 
-    static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50);
+    static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
     static EapConfig from(Config config) {
         List<String> methods = config.list("auth.eap.methods", List.of("md5")).stream()
@@ -38,23 +39,41 @@ record EapConfig(List<String> methods, Duration timeout, int conversations, int 
         if (conversations < 1) {
             throw new ConfigException("auth.eap.conversations: at least 1");
         }
+        EapTlsConfig tls = EapTlsConfig.from(config);
+        if (methods.contains("tls") && tls == null) {
+            throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.certificate and auth.eap.tls.key");
+        }
+        if (methods.contains("tls") && config.string("auth.eap.tls.ca", "").isBlank()) {
+            throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.ca, the CAs of client certificates");
+        }
         return new EapConfig(
-                List.copyOf(methods), config.duration("auth.eap.timeout", Duration.ofSeconds(30)), conversations, 50);
+                List.copyOf(methods),
+                config.duration("auth.eap.timeout", Duration.ofSeconds(30)),
+                conversations,
+                200, // a TLS handshake in small fragments takes many rounds
+                tls);
     }
 
     /** The EAP type number of a method name. */
     static int type(String method) {
         return switch (method) {
             case "md5" -> EapPacket.TYPE_MD5;
+            case "tls" -> EapTls.TYPE;
             default -> -1;
         };
     }
 
     /** A fresh method object for a conversation, or {@code null} for an unknown type. */
-    static EapMethod create(int type) {
+    EapMethod create(int type) {
         return switch (type) {
             case EapPacket.TYPE_MD5 -> new EapMd5();
+            case EapTls.TYPE -> tls == null ? null : new EapTls(tls);
             default -> null;
         };
+    }
+
+    /** Whether a peer known by its certificate alone may log in without an entry in a store. */
+    boolean certificateOnly(int type) {
+        return type == EapTls.TYPE && tls != null && !tls.requireUser();
     }
 }
