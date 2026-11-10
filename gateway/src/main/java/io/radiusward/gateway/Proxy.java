@@ -94,10 +94,17 @@ final class Proxy {
         long waitingSince; // first request sent since the last answer; 0 while answered
         long nextStatus;
         int statusId = -1;
+        final TlsClient tls; // RadSec home servers (milestone 4), null over UDP
 
         HomeState(ProxyConfig.Home config) {
             this.config = config;
             this.address = new InetSocketAddress(config.address(), config.port());
+            this.tls = config.tls()
+                    ? new TlsClient(
+                            TlsClient.context(config.certificate(), config.key(), config.ca()),
+                            config.serverName() != null ? config.serverName() : config.host(),
+                            address)
+                    : null;
             java.util.Arrays.fill(slotById, -1);
         }
 
@@ -159,7 +166,11 @@ final class Proxy {
     private final UnsafeBuffer statusAuth = new UnsafeBuffer(new byte[16]);
     private final byte[] authScratch = new byte[16];
     private DatagramChannel channel;
+    private java.nio.channels.Selector selector;
     private long nextTimeoutCheck;
+    private long now;
+    private HomeState reading; // the TLS home server whose packets are being read
+    private final TlsClient.Packets tlsPackets = this::onTlsPacket;
 
     Proxy(ProxyConfig config, Replies replies, boolean requireMessageAuthenticator) {
         this.config = config;
@@ -168,13 +179,12 @@ final class Proxy {
         List<HomeState> list = new ArrayList<>();
         Map<String, Integer> index = new HashMap<>();
         for (ProxyConfig.Home h : config.homes().values()) {
-            if (h.tls()) {
-                continue; // RadSec home servers: milestone 4 (TlsHomes)
-            }
             index.put(h.name(), list.size());
             HomeState s = new HomeState(h);
             list.add(s);
-            byAddress.put(s.address, s);
+            if (s.tls == null) {
+                byAddress.put(s.address, s);
+            }
         }
         homes = list.toArray(HomeState[]::new);
         for (ProxyConfig.Pool p : config.pools().values()) {
@@ -214,6 +224,7 @@ final class Proxy {
         channel = DatagramChannel.open();
         channel.bind(new InetSocketAddress(host, 0));
         channel.configureBlocking(false);
+        selector = java.nio.channels.Selector.open();
     }
 
     ProxyConfig config() {
@@ -408,6 +419,10 @@ final class Proxy {
 
     private void transmit(int slot, long now) {
         HomeState h = homes[home[slot]];
+        if (h.tls != null) {
+            transmitTls(h, slot, now);
+            return;
+        }
         sendBuffer.clear();
         sendBuffer.put(packets.byteArray(), slot * RadiusPacket.MAX_LENGTH, length[slot]);
         sendBuffer.flip();
@@ -425,9 +440,54 @@ final class Proxy {
         }
     }
 
+    /**
+     * Over TLS a request is written once (RFC 6613 §2.6.1: no retransmission on a connection) and waits as long as
+     * all tries over UDP would; the connection is opened by the first request or probe.
+     */
+    private void transmitTls(HomeState h, int slot, long now) {
+        sent[slot] = config.retries() + 1;
+        deadline[slot] = now + config.timeout().toNanos() * (config.retries() + 1);
+        if (h.waitingSince == 0) {
+            h.waitingSince = now;
+        }
+        try {
+            if (!h.tls.open()) {
+                h.tls.connect(selector);
+            }
+            h.tls.send(packets, slot * RadiusPacket.MAX_LENGTH, length[slot]);
+        } catch (IOException e) {
+            LOG.debug("RadSec to home server {} failed: {}", h.config.name(), e.toString());
+            h.tls.close();
+        }
+    }
+
+    private void onTlsPacket(UnsafeBuffer buffer, int offset, int len) {
+        received.putBytes(0, buffer, offset, len);
+        onAnswer(reading, len, now);
+    }
+
     /** Answers from home servers, timeouts, health; returns the work done. */
     int poll(long now) throws IOException {
+        this.now = now;
         int work = 0;
+        if (selector.selectNow() > 0) {
+            for (java.util.Iterator<java.nio.channels.SelectionKey> it =
+                            selector.selectedKeys().iterator();
+                    it.hasNext(); ) {
+                java.nio.channels.SelectionKey key = it.next();
+                it.remove();
+                work++;
+                if (key.isValid() && key.attachment() instanceof TlsClient client) {
+                    reading = homeOf(client);
+                    try {
+                        client.onSelected(tlsPackets);
+                    } catch (IOException e) {
+                        LOG.debug("RadSec to home server {}: {}", reading.config.name(), e.toString());
+                        client.close(); // waiting requests time out; the next request or probe reconnects
+                    }
+                }
+            }
+        }
         for (int i = 0; i < 64; i++) {
             receiveBuffer.clear();
             SocketAddress sender = channel.receive(receiveBuffer);
@@ -620,6 +680,15 @@ final class Proxy {
         }
     }
 
+    private HomeState homeOf(TlsClient client) {
+        for (HomeState h : homes) {
+            if (h.tls == client) {
+                return h;
+            }
+        }
+        throw new IllegalStateException("unknown connection");
+    }
+
     /** Status-Server (RFC 5997) with a Message-Authenticator; any valid answer means the server is up. */
     private void probe(HomeState h) {
         if (h.statusId >= 0) {
@@ -639,11 +708,21 @@ final class Proxy {
         sending.putByte(21, (byte) 18);
         sending.setMemory(22, 16, (byte) 0);
         authenticator.signAccessRequest(sending, 0, 38, RadiusPacket.HEADER_LENGTH, h.config.secret());
-        sendBuffer.clear().limit(38);
         try {
-            channel.send(sendBuffer, h.address);
+            if (h.tls != null) {
+                if (!h.tls.open()) {
+                    h.tls.connect(selector);
+                }
+                h.tls.send(sending, 0, 38);
+            } else {
+                sendBuffer.clear().limit(38);
+                channel.send(sendBuffer, h.address);
+            }
         } catch (IOException e) {
             LOG.debug("Status-Server to {} failed: {}", h.address, e.toString());
+            if (h.tls != null) {
+                h.tls.close();
+            }
         }
     }
 
@@ -688,7 +767,15 @@ final class Proxy {
     }
 
     void close() {
+        for (HomeState h : homes) {
+            if (h.tls != null) {
+                h.tls.close();
+            }
+        }
         try {
+            if (selector != null) {
+                selector.close();
+            }
             if (channel != null) {
                 channel.close();
             }

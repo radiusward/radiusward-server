@@ -148,7 +148,11 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `pool.<id>.servers` | — | home servers in order |
 | `pool.<id>.type` | `failover` | `failover` (the first one alive) or `load-balance` (by device, so an EAP conversation stays on one server) |
 | `home.<id>.address` | — | `host[:port]`; port 1812 |
-| `home.<id>.secret` | — | its shared secret; use `${env:...}` |
+| `home.<id>.secret` | — (`radsec` over TLS) | its shared secret; use `${env:...}` |
+| `home.<id>.transport` | `udp` | `udp`, or `tls`: RadSec (port 2083 by default) |
+| `home.<id>.tls.certificate` / `home.<id>.tls.key` | — | our client certificate and unencrypted PKCS#8 key (PEM) for RadSec |
+| `home.<id>.tls.ca` | — | CAs the home server's certificate must chain to; required with `tls` |
+| `home.<id>.tls.name` | the address's host | a name the home server's certificate must carry (and SNI) |
 | `proxy.timeout` / `proxy.retries` | `3s` / `2` | wait for an answer, then send again; afterwards the NAS gets none and asks again |
 | `proxy.dead.after` | `30s` | a home server without any answer for this long while requests wait is skipped |
 | `proxy.status.interval` | `10s` | Status-Server probes to every home server; an answer brings a dead one back |

@@ -1,7 +1,7 @@
 # ADR 0037: Proxying to home servers
 
 Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.13
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–3 (realms, UDP proxy, health) done.
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–4 (realms, UDP proxy, health, RadSec client) done.
 
 ## Context
 Roaming federations (eduroam-style), partners and migrations need users of some realms authenticated by other RADIUS
@@ -43,6 +43,16 @@ never lets one network's secret protect another's data.
   - Pools skip dead servers. If every server is dead, the first one is tried anyway.
   - Every home server gets a Status-Server (RFC 5997, with Message-Authenticator) every `proxy.status.interval`. Any
     valid answer makes it alive again.
+- **RadSec home servers** (milestone 4, `home.<id>.transport = tls`, port 2083, secret `radsec`):
+  - One TLS connection per home server, as a client, non-blocking on the same thread. Our certificate is
+    `home.<id>.tls.certificate`/`key`.
+  - The server's certificate must chain to `home.<id>.tls.ca` and name `home.<id>.tls.name` (else the configured
+    host); SNI is sent for host names.
+  - The connection is opened by the first request or probe, and again after a failure. Requests written before the
+    handshake finishes wait for it.
+  - A request is written once (RFC 6613 §2.6.1: no retransmission on a connection) and waits as long as all tries
+    over UDP would.
+  - Status-Server goes over the connection as well.
 - **Metrics**: `radiusward_gateway_proxy_requests_total{home,result}` and `radiusward_gateway_proxy_home_alive{home}`.
 
 ## Consequences
