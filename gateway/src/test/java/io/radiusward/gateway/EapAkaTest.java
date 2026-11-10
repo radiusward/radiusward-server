@@ -26,7 +26,7 @@ class EapAkaTest {
     static final byte[] WLAN = "WLAN".getBytes(StandardCharsets.US_ASCII);
 
     /** The gateway side: one subscriber, sequence numbers from a counter, or answers set by the test. */
-    static final class Side implements EapMethod.InnerAuth {
+    static class Side implements EapMethod.InnerAuth {
         int subscriberCode = AccessHandler.ACCEPT;
         long sqn = 0;
         long forced = 0; // non-zero: nextSqn answers this

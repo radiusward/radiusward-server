@@ -39,7 +39,8 @@ import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.MountableFile;
 
 /**
- * EAP-AKA and EAP-AKA′ against wpa_supplicant's {@code eapol_test} with its simulated USIM (ADR 0061): a three-member
+ * EAP-AKA, EAP-AKA′ and EAP-SIM against wpa_supplicant's {@code eapol_test} with its simulated SIM/USIM (ADR 0061): a
+ * three-member
  * cluster keeps the sequence numbers, one gateway computes the vectors from the subscribers' Ki and OPc (3GPP test set
  * 1). Covers both methods, a USIM ahead of the server (resynchronisation), an anonymous outer identity, a subscriber
  * stored with OP, a wrong key and an unknown IMSI. Skipped where Docker is missing, a failure where it is required.
@@ -76,7 +77,9 @@ class AkaEapolIT {
                 262011000000003  SIM-Ki := 0x%1$s, SIM-OPc := 0x%2$s
                 262011000000004  SIM-Ki := 0x%1$s, SIM-OPc := 0x%2$s
                 262011000000005  SIM-Ki := 0x%1$s, SIM-OPc := 0x%2$s
-                """.formatted(KI, OPC, OP));
+                262011000000006  SIM-Ki := 0x%1$s, SIM-OPc := 0x%2$s
+                262011000000007  %4$s
+                """.formatted(KI, OPC, OP, StoredTriplets.items()));
         cluster = LocalCluster.start(
                 dir.resolve("cluster").toFile(),
                 3,
@@ -91,7 +94,7 @@ class AkaEapolIT {
                 "auth.store.sims.type", "file",
                 "auth.store.sims.path", users.toString(),
                 "auth.plugins.dir", dir.resolve("plugins").toString(),
-                "auth.eap.methods", "aka, aka-prime"));
+                "auth.eap.methods", "aka, aka-prime, sim"));
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
         gateway = cluster.startGateway(
@@ -181,6 +184,55 @@ class AkaEapolIT {
                 password="%s:%s:000000000000"
                 """.formatted(REALM, KI, OPC));
         assertThat(unknown.getStdout()).contains("FAILURE").doesNotContain("(Access-Accept)");
+    }
+
+    @Test
+    void simWithGsmMilenage() throws Exception {
+        Container.ExecResult r = run("sim", """
+                eap=SIM
+                identity="1262011000000006%s"
+                password="%s:%s"
+                """.formatted(REALM, KI, OPC));
+        assertThat(r.getStdout()).contains("SUCCESS").contains("EAP-SIM");
+    }
+
+    @Test
+    void simWithStoredTripletsAndAnAnonymousIdentity() throws Exception {
+        Container.ExecResult r = run("sim-triplets", """
+                eap=SIM
+                anonymous_identity="anonymous%s"
+                identity="1262011000000007%s"
+                password="%s:%s"
+                """.formatted(REALM, REALM, KI, OPC));
+        assertThat(r.getStdout()).contains("SUCCESS");
+    }
+
+    /** Three triplets as an operator's AuC would have issued them: GSM-MILENAGE of the same Ki and OPc. */
+    static final class StoredTriplets {
+        static String items() {
+            StringBuilder b = new StringBuilder();
+            byte[] k = java.util.HexFormat.of().parseHex(KI);
+            byte[] opc = java.util.HexFormat.of().parseHex(OPC);
+            for (int i = 1; i <= 3; i++) {
+                byte[] rand = new byte[16];
+                rand[15] = (byte) i;
+                byte[][] t = io.radiusward.gateway.SimVectors.gsm(k, opc, rand);
+                b.append(i == 1 ? "" : ", ")
+                        .append("EAP-Sim-Rand")
+                        .append(i)
+                        .append(" := 0x")
+                        .append(java.util.HexFormat.of().formatHex(rand))
+                        .append(", EAP-Sim-SRES")
+                        .append(i)
+                        .append(" := 0x")
+                        .append(java.util.HexFormat.of().formatHex(t[0]))
+                        .append(", EAP-Sim-KC")
+                        .append(i)
+                        .append(" := 0x")
+                        .append(java.util.HexFormat.of().formatHex(t[1]));
+            }
+            return b.toString();
+        }
     }
 
     static Container.ExecResult run(String name, String network) throws Exception {

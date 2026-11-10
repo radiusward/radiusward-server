@@ -36,7 +36,7 @@ import org.testcontainers.utility.MountableFile;
  * <p>Profiles: PEAPv0 with MS-CHAPv2 (TLS 1.2 and 1.3) and GTC, a wrong password, a peer that lets the server choose
  * the PEAP version, a peer forced to PEAPv1 (neither server offers it: the peer gives up), TTLS with PAP and
  * MS-CHAPv2, EAP-TLS (TLS 1.2 and 1.3), each authenticated twice on one TLS session ({@code -r 1}); PEAP requiring a
- * client certificate with and without one. Skipped without the interop profile or an installed {@code radiusd}, and
+ * client certificate with and without one, and EAP-SIM with stored triplets (ADR 0061). Skipped without the interop profile or an installed {@code radiusd}, and
  * where Docker is missing (a failure where it is required).
  */
 class ExternalEapComparisonIT {
@@ -78,7 +78,13 @@ class ExternalEapComparisonIT {
                 dir.resolve("laptop.key"),
                 "PRIVATE KEY",
                 laptop.keys().getPrivate().getEncoded());
-        Path users = Files.writeString(dir.resolve("users"), "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n");
+        Path users = Files.writeString(
+                dir.resolve("users"),
+                "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n"
+                        // EAP-SIM with stored triplets (ADR 0061): the external server looks the subscriber up by
+                        // its identity with the hint, the gateway by the IMSI
+                        + "1" + SIM_IMSI + "  " + storedTriplets() + "\n"
+                        + SIM_IMSI + "  " + storedTriplets() + "\n");
 
         Path serverDir = Files.createDirectories(dir.resolve("external"));
         Path cache = Files.createDirectories(serverDir.resolve("tls-cache"));
@@ -95,7 +101,7 @@ class ExternalEapComparisonIT {
                 Map.entry("auth.store.local.mschap", "true"),
                 Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
-                Map.entry("auth.eap.methods", "peap, ttls, tls, teap, pwd"),
+                Map.entry("auth.eap.methods", "peap, ttls, tls, teap, pwd, sim"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc"),
                 Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
                 Map.entry("auth.eap.tls.key", pki.serverKey.toString()),
@@ -172,6 +178,8 @@ class ExternalEapComparisonIT {
                             virtual_server = inner-tunnel
                         }
                         mschapv2 {
+                        }
+                        sim {
                         }
                         md5 {
                         }
@@ -311,6 +319,42 @@ class ExternalEapComparisonIT {
                 """.formatted(password, TLS12, phase2);
     }
 
+    static final String SIM_IMSI = "262011000000007";
+
+    /** Three triplets for fixed RANDs, as an AuC would have issued them: GSM-MILENAGE of 3GPP test set 1's keys. */
+    static String storedTriplets() {
+        Milenage m = new Milenage(EapAkaTest.KI, EapAkaTest.OPC);
+        StringBuilder b = new StringBuilder();
+        for (int i = 1; i <= 3; i++) {
+            byte[] rand = new byte[16];
+            rand[15] = (byte) i;
+            Milenage.Triplet t = m.gsm(rand);
+            java.util.HexFormat hex = java.util.HexFormat.of();
+            b.append(i == 1 ? "" : ", ")
+                    .append("EAP-Sim-Rand")
+                    .append(i)
+                    .append(" := 0x")
+                    .append(hex.formatHex(rand))
+                    .append(", EAP-Sim-SRES")
+                    .append(i)
+                    .append(" := 0x")
+                    .append(hex.formatHex(t.sres()))
+                    .append(", EAP-Sim-KC")
+                    .append(i)
+                    .append(" := 0x")
+                    .append(hex.formatHex(t.kc()));
+        }
+        return b.toString();
+    }
+
+    static String sim(String ki) {
+        return """
+                eap=SIM
+                identity="1%s"
+                password="%s:cd63cb71954a9f4e48a5994e37a02baf"
+                """.formatted(SIM_IMSI, ki);
+    }
+
     static String tls(String phase1) {
         return """
                 eap=TLS
@@ -360,7 +404,9 @@ class ExternalEapComparisonIT {
                 new Profile("teap-mschapv2-wrong", Outcome.REJECTED, teap("auth=MSCHAPV2", "wrong")),
                 new Profile("ttls-eap-md5-wrong", Outcome.REJECTED, ttls("autheap=MD5", "wrong")),
                 new Profile("tls-tls12", Outcome.ACCEPTED, tls(TLS12)),
-                new Profile("tls-tls13", Outcome.ACCEPTED, tls(TLS13)));
+                new Profile("tls-tls13", Outcome.ACCEPTED, tls(TLS13)),
+                new Profile("sim-stored-triplets", Outcome.ACCEPTED, sim("465b5ce8b199b49faa5f0a2ee238a6bc")),
+                new Profile("sim-wrong-key", Outcome.REJECTED, sim("00000000000000000000000000000000")));
         List<String> differences = new ArrayList<>();
         for (Profile p : profiles) {
             Container.ExecResult theirs = run("external-" + p.name(), p.network(), externalPort);

@@ -125,7 +125,7 @@ record EapConfig(
 
     static final List<Integer> DEFAULT_TTLS_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
 
-    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap", "pwd", "aka", "aka-prime");
+    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap", "pwd", "sim", "aka", "aka-prime");
 
     static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
@@ -257,6 +257,7 @@ record EapConfig(
             case "ttls" -> Ttls.TYPE;
             case "teap" -> Teap.TYPE;
             case "pwd" -> EapPwd.TYPE;
+            case "sim" -> EapSim.TYPE;
             case "aka" -> EapAka.TYPE_AKA;
             case "aka-prime" -> EapAka.TYPE_AKA_PRIME;
             default -> -1;
@@ -276,6 +277,7 @@ record EapConfig(
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls, ttlsInner);
             case Teap.TYPE -> tls == null ? null : new Teap(tls, teapInner, teapAuthorityId, teapIdentity);
             case EapPwd.TYPE -> new EapPwd(pwdServerId);
+            case EapSim.TYPE -> new EapSim(identity);
             case EapAka.TYPE_AKA -> new EapAka(false, sim.networkName(), identity);
             case EapAka.TYPE_AKA_PRIME -> new EapAka(true, sim.networkName(), identity);
             default -> null;
@@ -293,7 +295,8 @@ record EapConfig(
                 || type == Peap.TYPE
                 || type == Ttls.TYPE
                 || type == Teap.TYPE
-                || type == EapAka.TYPE_AKA // the IMSI is authorized once the method knows it (ADR 0061)
+                || type == EapSim.TYPE // the IMSI is authorized once the method knows it (ADR 0061)
+                || type == EapAka.TYPE_AKA
                 || type == EapAka.TYPE_AKA_PRIME;
     }
 }
