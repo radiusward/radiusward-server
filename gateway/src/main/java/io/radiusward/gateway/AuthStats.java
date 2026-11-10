@@ -23,6 +23,8 @@ public final class AuthStats {
         CACHE_HITS,
         /** a retransmission of a request still being decided: dropped */
         RETRANSMIT_IN_FLIGHT,
+        /** sent on to a home server of a proxied realm (ADR 0037) */
+        PROXIED,
         /** no free slot or the work queue full: dropped, the NAS retransmits */
         BUSY,
         ACCEPTED,

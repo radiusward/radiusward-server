@@ -34,7 +34,7 @@ import org.apache.logging.log4j.Logger;
  * packet except the sender address the JDK creates: no free slot or a full queue means the request is dropped and
  * the NAS retransmits.
  */
-final class AuthAgent implements Agent {
+final class AuthAgent implements Agent, Proxy.Replies {
 
     private static final Logger LOG = LogManager.getLogger(AuthAgent.class);
     private static final int RECEIVE_BATCH = 64;
@@ -57,6 +57,7 @@ final class AuthAgent implements Agent {
             new io.radiusward.radius.codec.AccessResponses(new RadiusAuthenticator());
     private final ReplyCache cache;
     private final RadsecLink radsec;
+    private Proxy proxy;
     private final MessageHandler radsecHandler = this::onRadsec;
 
     private DatagramChannel channel;
@@ -92,9 +93,21 @@ final class AuthAgent implements Agent {
         this.cache = new ReplyCache(config.replyCacheEntries());
     }
 
+    /** Proxying of realms to home servers (ADR 0037); set before the agent starts. */
+    void proxy(ProxyConfig config) {
+        this.proxy = new Proxy(config, this, config.requireMessageAuthenticator());
+    }
+
+    Proxy proxy() {
+        return proxy;
+    }
+
     @Override
     public void onStart() {
         try {
+            if (proxy != null) {
+                proxy.open(gateway.listenHost());
+            }
             channel = DatagramChannel.open();
             channel.setOption(StandardSocketOptions.SO_RCVBUF, gateway.socketReceiveBuffer());
             channel.bind(new InetSocketAddress(gateway.listenHost(), config.port()));
@@ -131,6 +144,9 @@ final class AuthAgent implements Agent {
         }
         if (radsec != null) {
             work += radsec.toAuth.read(radsecHandler, RECEIVE_BATCH);
+        }
+        if (proxy != null) {
+            work += proxy.poll(now);
         }
         for (Integer id = slots.done.poll(); id != null; id = slots.done.poll()) {
             reply(id);
@@ -210,6 +226,21 @@ final class AuthAgent implements Agent {
             return;
         }
 
+        if (proxy != null) {
+            int at = packet.findAttribute(1); // User-Name: a proxied realm goes to its home servers (ADR 0037)
+            ProxyConfig.Realm realm =
+                    at < 0 ? null : proxy.config().realmOf(received, at + 2, (received.getByte(at + 1) & 0xFF) - 2);
+            if (realm != null) {
+                int taken = proxy.offer(packet, realm, nas, from, route, key, now);
+                if (taken == Proxy.TAKEN) {
+                    cache.markInFlight(key);
+                    stats.increment(AuthStats.Counter.PROXIED);
+                } else {
+                    stats.increment(AuthStats.Counter.BUSY);
+                }
+                return;
+            }
+        }
         int slot = slots.allocate();
         if (slot < 0) {
             stats.increment(AuthStats.Counter.BUSY);
@@ -284,8 +315,24 @@ final class AuthAgent implements Agent {
         }
     }
 
+    /** A home server's answer, signed for the NAS (ADR 0037): sent and cached like a worker's reply. */
+    @Override
+    public void reply(ByteBuffer buffer, UnsafeBuffer view, int length, InetSocketAddress to, long route, long key) {
+        send(buffer, view, length, to, route);
+        cache.put(key, view, 0, length, now + ttlNanos);
+    }
+
+    /** No answer from the home servers: the NAS's retransmission is proxied again. */
+    @Override
+    public void drop(long key) {
+        cache.clearInFlight(key);
+    }
+
     @Override
     public void onClose() {
+        if (proxy != null) {
+            proxy.close();
+        }
         stats.bound(false);
         try {
             if (channel != null) {

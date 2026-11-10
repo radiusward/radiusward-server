@@ -113,6 +113,21 @@ public final class Gateway implements AutoCloseable {
             java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
             RadsecConfig radsec,
             CoaConfig coa) {
+        return launchWith(config, registry, auth, handlerFactory, radsec, coa, ProxyConfig.DISABLED);
+    }
+
+    /** As above, also proxying realms to home servers when {@code proxy} is enabled (ADR 0037). */
+    public static Gateway launchWith(
+            GatewayConfig config,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
+            RadsecConfig radsec,
+            CoaConfig coa,
+            ProxyConfig proxy) {
+        if (proxy.enabled() && !auth.enabled()) {
+            throw new IllegalArgumentException("proxy.enabled needs gateway.auth.enabled");
+        }
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (config.dictionaryDir() != null) {
             dictionaries.addDirectory(config.dictionaryDir(), ParseMode.LENIENT);
@@ -169,6 +184,9 @@ public final class Gateway implements AutoCloseable {
             if (auth.enabled()) {
                 AccessSlots slots = new AccessSlots(auth.pending());
                 authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime, link);
+                if (proxy.enabled()) {
+                    authAgent.proxy(proxy);
+                }
                 socketAgents.add(authAgent);
                 for (int w = 0; w < auth.workers(); w++) {
                     // workers may wait on an identity store: a parking idle strategy, never a busy spin
@@ -455,6 +473,9 @@ public final class Gateway implements AutoCloseable {
         }
         if (sweep != null) {
             sweep.writeMetrics(w, id);
+        }
+        if (authAgent != null && authAgent.proxy() != null) {
+            authAgent.proxy().writeMetrics(w, id);
         }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());

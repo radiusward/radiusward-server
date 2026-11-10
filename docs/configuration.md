@@ -134,6 +134,27 @@ curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:919
 admin disconnect --gateway http://gw:9190 --user alice      # token from RADIUSWARD_COA_API_TOKEN
 ```
 
+## Proxying (gateway)
+
+Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0037-proxying.md)); needs
+`gateway.auth.enabled`. A user without a configured realm is decided locally.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `proxy.enabled` | `false` | proxy the configured realms |
+| `realm.<id>.name` | `<id>` | the realm (`user@realm`, `REALM\user`), case-insensitive; `*`: every realm no other entry names |
+| `realm.<id>.pool` | — | the pool its users go to |
+| `realm.<id>.strip` | `false` | send the user name without the realm |
+| `pool.<id>.servers` | — | home servers in order |
+| `pool.<id>.type` | `failover` | `failover` (the first one alive) or `load-balance` (by device, so an EAP conversation stays on one server) |
+| `home.<id>.address` | — | `host[:port]`; port 1812 |
+| `home.<id>.secret` | — | its shared secret; use `${env:...}` |
+| `proxy.timeout` / `proxy.retries` | `3s` / `2` | wait for an answer, then send again; afterwards the NAS gets none and asks again |
+| `proxy.dead.after` | `30s` | a home server without any answer for this long while requests wait is skipped |
+| `proxy.status.interval` | `10s` | Status-Server probes to every home server; an answer brings a dead one back |
+| `proxy.pending` | `1024` | proxied requests in flight |
+| `proxy.require.message-authenticator` | `true` | ignore answers without a valid Message-Authenticator (BlastRADIUS) |
+
 ## Identity stores
 
 Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.md)).

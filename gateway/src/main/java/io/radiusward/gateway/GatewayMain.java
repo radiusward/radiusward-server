@@ -35,7 +35,8 @@ public final class GatewayMain {
                         auth,
                         Gateway.storeHandler(config, auth),
                         RadsecConfig.from(config, gatewayConfig.listenHost()),
-                        CoaConfig.from(config));
+                        CoaConfig.from(config),
+                        ProxyConfig.from(config));
                 ManagementServer management = ManagementServer.start(
                         config,
                         9189 + gatewayConfig.gatewayId(),
