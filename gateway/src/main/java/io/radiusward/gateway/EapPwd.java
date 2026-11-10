@@ -167,19 +167,19 @@ final class EapPwd implements EapMethod {
         } while (scalar.compareTo(BigInteger.ONE) <= 0);
         element = P256.negate(P256.multiply(pwe, mask));
         state = State.COMMIT;
-        byte[] body = new byte[3 * P256.BYTES];
-        System.arraycopy(element.encode(), 0, body, 0, 2 * P256.BYTES);
-        System.arraycopy(P256.bytes(scalar), 0, body, 2 * P256.BYTES, P256.BYTES);
+        byte[] body = new byte[3 * P256.FIELD_BYTES];
+        System.arraycopy(element.encode(), 0, body, 0, 2 * P256.FIELD_BYTES);
+        System.arraycopy(P256.bytes(scalar), 0, body, 2 * P256.FIELD_BYTES, P256.FIELD_BYTES);
         return message(COMMIT, body);
     }
 
     /** The peer's element and scalar, checked; the shared secret k; our Confirm. */
     private Step commitResponse(byte[] d) {
-        if (d.length != 3 * P256.BYTES) {
+        if (d.length != 3 * P256.FIELD_BYTES) {
             return Step.FAILED;
         }
         peerElement = P256.decode(d, 0);
-        peerScalar = new BigInteger(1, Arrays.copyOfRange(d, 2 * P256.BYTES, 3 * P256.BYTES));
+        peerScalar = new BigInteger(1, Arrays.copyOfRange(d, 2 * P256.FIELD_BYTES, 3 * P256.FIELD_BYTES));
         if (peerElement == null
                 || peerScalar.compareTo(BigInteger.ONE) <= 0
                 || peerScalar.compareTo(P256.N) >= 0

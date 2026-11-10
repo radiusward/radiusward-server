@@ -44,7 +44,7 @@ final class AuthLog implements AutoCloseable {
 
     record Entry(Instant time, String nas, String user, String station, boolean accepted, String reason) {}
 
-    static final String TABLE = "CREATE TABLE IF NOT EXISTS %s (id bigserial PRIMARY KEY,"
+    static final String CREATE_TABLE = "CREATE TABLE IF NOT EXISTS %s (id bigserial PRIMARY KEY,"
             + " authdate timestamptz NOT NULL, nas text NOT NULL, username text, calling_station_id text,"
             + " reply text NOT NULL, reason text)";
 
@@ -171,7 +171,7 @@ final class AuthLog implements AutoCloseable {
         try (Connection c = DriverManager.getConnection(url, properties)) {
             if (!tableReady) {
                 try (Statement s = c.createStatement()) {
-                    s.execute(TABLE.formatted(table));
+                    s.execute(CREATE_TABLE.formatted(table));
                 }
                 tableReady = true;
             }

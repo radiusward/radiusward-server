@@ -35,7 +35,7 @@ class ResponseCacheAndPendingTest {
         assertThat(cache.size()).isEqualTo(2498);
         assertThat(ResponseCache.key(1, 2, 3, 4, 5)).isNotEqualTo(ResponseCache.key(1, 2, 4, 4, 5));
         long corr = (0x3FFF_FFFFL << 32) | 12345;
-        long value = ResponseCache.pending(corr);
+        long value = ResponseCache.pendingOf(corr);
         assertThat(ResponseCache.state(value)).isEqualTo(ResponseCache.PENDING);
         assertThat(ResponseCache.correlationId(value)).isEqualTo(corr);
         assertThat(ResponseCache.state(ResponseCache.COMMITTED)).isEqualTo(ResponseCache.COMMITTED);

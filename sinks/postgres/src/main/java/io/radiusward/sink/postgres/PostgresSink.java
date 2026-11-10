@@ -372,7 +372,9 @@ public final class PostgresSink implements AccountingSink {
             col(out, Integer.toString(Attributes.JSON_FORMAT), false);
             col(
                     out,
-                    attributeMode.startsWith("json") ? attributes.json(e.rawAttributes(), Attributes.COMMON) : null,
+                    attributeMode.startsWith("json")
+                            ? attributes.json(e.rawAttributes(), Attributes.COMMON_NAMES)
+                            : null,
                     false);
             col(out, attributeMode.equals("raw") ? "\\x" + HexFormat.of().formatHex(e.rawAttributes()) : null, false);
             col(out, e.nasDevice(), false);

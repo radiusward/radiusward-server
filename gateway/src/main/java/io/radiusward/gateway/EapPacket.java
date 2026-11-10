@@ -15,10 +15,10 @@ import org.agrona.DirectBuffer;
  */
 record EapPacket(int code, int identifier, int type, byte[] data) {
 
-    static final int REQUEST = 1;
-    static final int RESPONSE = 2;
-    static final int SUCCESS = 3;
-    static final int FAILURE = 4;
+    static final int CODE_REQUEST = 1;
+    static final int CODE_RESPONSE = 2;
+    static final int CODE_SUCCESS = 3;
+    static final int CODE_FAILURE = 4;
 
     static final int TYPE_IDENTITY = 1;
     static final int TYPE_NOTIFICATION = 2;
@@ -62,17 +62,17 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
         if (length != p.length) {
             return null;
         }
-        if (code == SUCCESS || code == FAILURE) {
+        if (code == CODE_SUCCESS || code == CODE_FAILURE) {
             return length == 4 ? new EapPacket(code, p[1] & 0xFF, 0, new byte[0]) : null;
         }
-        if ((code != REQUEST && code != RESPONSE) || length < 5) {
+        if ((code != CODE_REQUEST && code != CODE_RESPONSE) || length < 5) {
             return null;
         }
         return new EapPacket(code, p[1] & 0xFF, p[4] & 0xFF, Arrays.copyOfRange(p, 5, length));
     }
 
     byte[] encode() {
-        boolean typed = code == REQUEST || code == RESPONSE;
+        boolean typed = code == CODE_REQUEST || code == CODE_RESPONSE;
         byte[] p = new byte[(typed ? 5 : 4) + data.length];
         p[0] = (byte) code;
         p[1] = (byte) identifier;
@@ -86,15 +86,15 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
     }
 
     static EapPacket request(int identifier, int type, byte[] data) {
-        return new EapPacket(REQUEST, identifier & 0xFF, type, data);
+        return new EapPacket(CODE_REQUEST, identifier & 0xFF, type, data);
     }
 
     static EapPacket success(int identifier) {
-        return new EapPacket(SUCCESS, identifier & 0xFF, 0, new byte[0]);
+        return new EapPacket(CODE_SUCCESS, identifier & 0xFF, 0, new byte[0]);
     }
 
     static EapPacket failure(int identifier) {
-        return new EapPacket(FAILURE, identifier & 0xFF, 0, new byte[0]);
+        return new EapPacket(CODE_FAILURE, identifier & 0xFF, 0, new byte[0]);
     }
 
     /** Writes the packet as {@code EAP-Message} attributes of at most 253 bytes each. */

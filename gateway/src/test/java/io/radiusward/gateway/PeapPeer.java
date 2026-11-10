@@ -45,9 +45,9 @@ final class PeapPeer implements UnaryOperator<byte[]> {
             return null; // in PEAP the server speaks first inside the tunnel
         }
         EapPacket tlv = EapPacket.parse(in); // a full EAP packet of type 33 first: its code 1 looks like Identity
-        if (tlv != null && tlv.code() == EapPacket.REQUEST && tlv.type() == Peap.TLV) {
+        if (tlv != null && tlv.code() == EapPacket.CODE_REQUEST && tlv.type() == Peap.TLV) {
             byte[] out = echoBinding ? in.clone() : Arrays.copyOf(in, 11); // without crypto-binding support
-            out[0] = EapPacket.RESPONSE;
+            out[0] = EapPacket.CODE_RESPONSE;
             out[3] = (byte) out.length;
             return out; // echo the Result TLV with the same status
         }

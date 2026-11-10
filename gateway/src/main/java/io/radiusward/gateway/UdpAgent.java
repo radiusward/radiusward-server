@@ -374,7 +374,7 @@ final class UdpAgent implements Agent {
         }
         cache.put(
                 cacheKey,
-                ResponseCache.pending(correlationId),
+                ResponseCache.pendingOf(correlationId),
                 now + config.pendingTimeout().toNanos());
         stats.increment(Counter.SUBMITTED);
     }

@@ -1138,7 +1138,8 @@ class StoreAccessHandlerTest {
     }
 
     static EapPacket identity(int id, String name) {
-        return new EapPacket(EapPacket.RESPONSE, id, EapPacket.TYPE_IDENTITY, name.getBytes(StandardCharsets.UTF_8));
+        return new EapPacket(
+                EapPacket.CODE_RESPONSE, id, EapPacket.TYPE_IDENTITY, name.getBytes(StandardCharsets.UTF_8));
     }
 
     /** An EAP-MD5 response to {@code challenge} (RFC 3748 §5.4). */
@@ -1150,7 +1151,7 @@ class StoreAccessHandlerTest {
         byte[] data = new byte[17];
         data[0] = 16;
         System.arraycopy(md5.digest(), 0, data, 1, 16);
-        return new EapPacket(EapPacket.RESPONSE, challenge.identifier(), EapPacket.TYPE_MD5, data);
+        return new EapPacket(EapPacket.CODE_RESPONSE, challenge.identifier(), EapPacket.TYPE_MD5, data);
     }
 
     @Test
@@ -1163,7 +1164,7 @@ class StoreAccessHandlerTest {
         assertThat(handle(h, eapRequest(identity(5, "alice"), null))).isEqualTo(AccessHandler.CHALLENGE);
         EapPacket challenge = replyEap();
         byte[] state = replyState();
-        assertThat(challenge.code()).isEqualTo(EapPacket.REQUEST);
+        assertThat(challenge.code()).isEqualTo(EapPacket.CODE_REQUEST);
         assertThat(challenge.type()).isEqualTo(EapPacket.TYPE_MD5);
         assertThat(challenge.identifier()).isEqualTo(6);
         assertThat(state).hasSize(16);
@@ -1171,13 +1172,13 @@ class StoreAccessHandlerTest {
 
         byte[] answer = eapRequest(md5Response(challenge, "arctangent"), state);
         assertThat(handle(h, answer)).isEqualTo(AccessHandler.ACCEPT);
-        assertThat(replyEap().code()).isEqualTo(EapPacket.SUCCESS);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.CODE_SUCCESS);
         assertThat(replyEap().identifier()).isEqualTo(6);
         assertThat(reply().findAttribute(11)).as("Filter-Id").isPositive();
         assertThat(h.eapConversations()).isZero();
 
         assertThat(handle(h, answer)).as("a used State").isEqualTo(AccessHandler.REJECT);
-        assertThat(replyEap().code()).isEqualTo(EapPacket.FAILURE);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.CODE_FAILURE);
     }
 
     @Test
@@ -1191,15 +1192,16 @@ class StoreAccessHandlerTest {
         EapPacket challenge = replyEap();
         assertThat(handle(h, eapRequest(md5Response(challenge, "wrong"), replyState())))
                 .isEqualTo(AccessHandler.REJECT);
-        assertThat(replyEap().code()).as("EAP-Failure in every EAP Reject").isEqualTo(EapPacket.FAILURE);
+        assertThat(replyEap().code()).as("EAP-Failure in every EAP Reject").isEqualTo(EapPacket.CODE_FAILURE);
 
         assertThat(handle(h, eapRequest(identity(1, "nobody"), null))).isEqualTo(AccessHandler.REJECT);
-        assertThat(replyEap().code()).isEqualTo(EapPacket.FAILURE);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.CODE_FAILURE);
 
         handle(h, eapRequest(identity(1, "alice"), null));
         EapPacket c2 = replyEap();
         byte[] s2 = replyState();
-        EapPacket otherId = new EapPacket(EapPacket.RESPONSE, c2.identifier() + 1, EapPacket.TYPE_MD5, new byte[17]);
+        EapPacket otherId =
+                new EapPacket(EapPacket.CODE_RESPONSE, c2.identifier() + 1, EapPacket.TYPE_MD5, new byte[17]);
         assertThat(handle(h, eapRequest(otherId, s2)))
                 .as("an answer to another request")
                 .isEqualTo(AccessHandler.DROP);
@@ -1214,12 +1216,14 @@ class StoreAccessHandlerTest {
 
         handle(h, eapRequest(identity(1, "alice"), null));
         EapPacket c4 = replyEap();
-        EapPacket nak = new EapPacket(EapPacket.RESPONSE, c4.identifier(), EapPacket.TYPE_NAK, new byte[] {13});
+        EapPacket nak = new EapPacket(EapPacket.CODE_RESPONSE, c4.identifier(), EapPacket.TYPE_NAK, new byte[] {13});
         assertThat(handle(h, eapRequest(nak, replyState())))
                 .as("the peer wants EAP-TLS, which is not offered")
                 .isEqualTo(AccessHandler.REJECT);
 
-        assertThat(handle(h, eapRequest(new EapPacket(EapPacket.RESPONSE, 1, EapPacket.TYPE_MD5, new byte[17]), null)))
+        assertThat(handle(
+                        h,
+                        eapRequest(new EapPacket(EapPacket.CODE_RESPONSE, 1, EapPacket.TYPE_MD5, new byte[17]), null)))
                 .as("not Identity, no State")
                 .isEqualTo(AccessHandler.REJECT);
         byte[] broken = eapRequest(identity(1, "alice"), null);

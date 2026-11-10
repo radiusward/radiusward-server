@@ -156,7 +156,7 @@ public final class FileSink implements AccountingSink {
         field(out, "output_octets", e.outputOctets());
         common(out, common);
         field(out, "attribute_format", Attributes.JSON_FORMAT);
-        String json = attributes.json(e.rawAttributes(), Attributes.COMMON);
+        String json = attributes.json(e.rawAttributes(), Attributes.COMMON_NAMES);
         out.append(",\"attributes\":").append(json == null ? "null" : json).append("}\n");
     }
 

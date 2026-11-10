@@ -76,13 +76,13 @@ class InnerEapTest {
     }
 
     private static byte[] response(int identifier, int type, byte[] data) {
-        return new EapPacket(EapPacket.RESPONSE, identifier, type, data).encode();
+        return new EapPacket(EapPacket.CODE_RESPONSE, identifier, type, data).encode();
     }
 
     private static EapPacket request(Step step) {
         assertThat(step.done()).as("another inner request").isFalse();
         EapPacket p = EapPacket.parse(step.request());
-        assertThat(p.code()).isEqualTo(EapPacket.REQUEST);
+        assertThat(p.code()).isEqualTo(EapPacket.CODE_REQUEST);
         return p;
     }
 

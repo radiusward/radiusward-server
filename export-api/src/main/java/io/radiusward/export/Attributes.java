@@ -39,7 +39,7 @@ public final class Attributes {
     public static final int JSON_FORMAT = 1;
 
     /** Names of the attributes {@link #common} covers; sinks usually leave them out of the JSON. */
-    public static final Set<String> COMMON = Set.of(
+    public static final Set<String> COMMON_NAMES = Set.of(
             "Acct-Status-Type",
             "Acct-Session-Id",
             "Acct-Multi-Session-Id",

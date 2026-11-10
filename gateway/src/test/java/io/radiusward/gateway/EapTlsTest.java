@@ -157,7 +157,7 @@ class EapTlsTest {
             EapPacket request = EapPacket.from(reply());
             assertThat(request.type()).isEqualTo(type);
             byte[] answer = tamper.apply(client.answer(request.data()));
-            lastResponse = new EapPacket(EapPacket.RESPONSE, request.identifier(), type, answer);
+            lastResponse = new EapPacket(EapPacket.CODE_RESPONSE, request.identifier(), type, answer);
             lastState = state();
             code = handle(h, lastResponse, lastState);
         }
@@ -216,7 +216,7 @@ class EapTlsTest {
         EapTlsClient client =
                 new EapTlsClient(TestPki.clientContext(pki.client("alice@corp.test"), pki.ca), "TLSv1.3", 1024);
         assertThat(converse(h, "alice@corp.test", client)).isEqualTo(AccessHandler.ACCEPT);
-        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.SUCCESS);
+        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.CODE_SUCCESS);
         assertThat(reply().findAttribute(11))
                 .as("the store's reply items still apply")
                 .isPositive();
@@ -247,7 +247,7 @@ class EapTlsTest {
         EapTlsClient stranger =
                 new EapTlsClient(TestPki.clientContext(other.client("mallory"), pki.ca), "TLSv1.3", 1024);
         assertThat(converse(h, "mallory", stranger)).isEqualTo(AccessHandler.REJECT);
-        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.FAILURE);
+        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.CODE_FAILURE);
 
         EapTlsClient anonymous = new EapTlsClient(TestPki.clientContext(null, pki.ca), "TLSv1.2", 1024);
         assertThat(converse(h, "nobody", anonymous)).isEqualTo(AccessHandler.REJECT);
@@ -712,7 +712,7 @@ class EapTlsTest {
         assertThat(wrong.failureSeen)
                 .as("an MS-CHAPv2 Failure inside the tunnel first")
                 .isTrue();
-        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.FAILURE);
+        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.CODE_FAILURE);
         assertThat(converse(peap(), "anonymous", peapClient("TLSv1.2", new PeapPeer("nobody", "x")), Peap.TYPE))
                 .isEqualTo(AccessHandler.REJECT);
         assertThat(converse(peap(), "anonymous", peapClient("TLSv1.3", new PeapPeer("blocked", "pw")), Peap.TYPE))
@@ -798,7 +798,7 @@ class EapTlsTest {
                         ttlsClient("TLSv1.2", new TtlsPeer("dave", "wrong", false, false)),
                         Ttls.TYPE))
                 .isEqualTo(AccessHandler.REJECT);
-        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.FAILURE);
+        assertThat(EapPacket.from(reply()).code()).isEqualTo(EapPacket.CODE_FAILURE);
     }
 
     @Test

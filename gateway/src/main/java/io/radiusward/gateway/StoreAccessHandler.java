@@ -587,7 +587,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private int eapBegin(AccessContext context) {
         RadiusPacket request = context.request();
         EapPacket eap = EapPacket.from(request);
-        if (eap == null || eap.code() != EapPacket.RESPONSE) {
+        if (eap == null || eap.code() != EapPacket.CODE_RESPONSE) {
             return DROP; // RFC 3579 §2.6.2: silently discard
         }
         EapRound round = cache(context).eap;

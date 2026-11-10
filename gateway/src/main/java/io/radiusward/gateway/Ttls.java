@@ -213,7 +213,7 @@ final class Ttls extends TlsTunnel {
 
     private Step afterInnerEap(Step inner) {
         if (inner.unavailable()) {
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         if (!inner.done()) {
             return sendApplication(avp(EAP_MESSAGE, 0, inner.request()));
@@ -265,7 +265,7 @@ final class Ttls extends TlsTunnel {
         if (checked.code() == AccessHandler.DROP) {
             pending = values;
             pendingKind = kind;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pending = null;
         if (checked.code() != AccessHandler.ACCEPT) {
@@ -281,7 +281,7 @@ final class Ttls extends TlsTunnel {
         if (checked.code() == AccessHandler.DROP) {
             pending = new byte[][] {password};
             pendingKind = PAP;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pending = null;
         if (checked.code() != AccessHandler.ACCEPT) {
@@ -310,7 +310,7 @@ final class Ttls extends TlsTunnel {
         if (checked.code() == AccessHandler.DROP) {
             pending = new byte[][] {challenge, response};
             pendingKind = MS_CHAP_V2;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pending = null;
         if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {

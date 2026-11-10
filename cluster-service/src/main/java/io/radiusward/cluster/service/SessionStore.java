@@ -50,7 +50,7 @@ public final class SessionStore {
     private static final int NONE = -1;
 
     // core record
-    private static final int CORE = 72;
+    private static final int CORE_BYTES = 72;
     private static final int KEY_HI = 0;
     private static final int KEY_LO = 8;
     private static final int INPUT_OCTETS = 16;
@@ -69,7 +69,7 @@ public final class SessionStore {
     private static final int FLAGS = 68;
 
     // member record
-    private static final int MEMBER = 32;
+    private static final int MEMBER_BYTES = 32;
     private static final int USER_KEY = 0;
     private static final int DEVICE_KEY = 8;
     private static final int FIRST_SEEN = 16;
@@ -129,15 +129,15 @@ public final class SessionStore {
         }
         int slot = allocateSlot();
         UnsafeBuffer b = core[slot >>> CHUNK_SHIFT];
-        int at = (slot & CHUNK_MASK) * CORE;
-        b.setMemory(at, CORE, (byte) 0);
+        int at = (slot & CHUNK_MASK) * CORE_BYTES;
+        b.setMemory(at, CORE_BYTES, (byte) 0);
         b.putLong(at + KEY_HI, hi);
         b.putLong(at + KEY_LO, lo);
         b.putInt(at + NAS_ID, nas);
         b.putByte(at + STATE, initialState);
         UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
         if (m != null) {
-            m.setMemory((slot & CHUNK_MASK) * MEMBER, MEMBER, (byte) 0);
+            m.setMemory((slot & CHUNK_MASK) * MEMBER_BYTES, MEMBER_BYTES, (byte) 0);
         }
         UnsafeBuffer id = identity[slot >>> CHUNK_SHIFT];
         if (id != null) {
@@ -206,7 +206,7 @@ public final class SessionStore {
             untrack(slot);
         }
         UnsafeBuffer m = memberRecord(slot);
-        int at = (slot & CHUNK_MASK) * MEMBER;
+        int at = (slot & CHUNK_MASK) * MEMBER_BYTES;
         m.putLong(at + USER_KEY, user);
         m.putLong(at + DEVICE_KEY, device);
         if (active) {
@@ -217,12 +217,12 @@ public final class SessionStore {
 
     public long userKey(int slot) {
         UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
-        return m == null ? 0 : m.getLong((slot & CHUNK_MASK) * MEMBER + USER_KEY);
+        return m == null ? 0 : m.getLong((slot & CHUNK_MASK) * MEMBER_BYTES + USER_KEY);
     }
 
     public long deviceKey(int slot) {
         UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
-        return m == null ? 0 : m.getLong((slot & CHUNK_MASK) * MEMBER + DEVICE_KEY);
+        return m == null ? 0 : m.getLong((slot & CHUNK_MASK) * MEMBER_BYTES + DEVICE_KEY);
     }
 
     /** Distinct devices the user has online (sessions without a device each count once). */
@@ -278,7 +278,7 @@ public final class SessionStore {
             growUserIndex();
         }
         UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
-        int at = (slot & CHUNK_MASK) * MEMBER;
+        int at = (slot & CHUNK_MASK) * MEMBER_BYTES;
         int i = userBucket(user);
         while (userIndex[i] != 0) {
             int head = userIndex[i] - 1;
@@ -342,11 +342,11 @@ public final class SessionStore {
     }
 
     private int userLink(int slot, int field) {
-        return member[slot >>> CHUNK_SHIFT].getInt((slot & CHUNK_MASK) * MEMBER + field);
+        return member[slot >>> CHUNK_SHIFT].getInt((slot & CHUNK_MASK) * MEMBER_BYTES + field);
     }
 
     private void putUserLink(int slot, int field, int value) {
-        member[slot >>> CHUNK_SHIFT].putInt((slot & CHUNK_MASK) * MEMBER + field, value);
+        member[slot >>> CHUNK_SHIFT].putInt((slot & CHUNK_MASK) * MEMBER_BYTES + field, value);
     }
 
     private int userBucket(long user) {
@@ -449,11 +449,11 @@ public final class SessionStore {
     }
 
     public byte state(int slot) {
-        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE + STATE);
+        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE_BYTES + STATE);
     }
 
     public int statusType(int slot) {
-        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE + STATUS_TYPE) & 0xFF;
+        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE_BYTES + STATUS_TYPE) & 0xFF;
     }
 
     public void statusType(int slot, int value) {
@@ -461,7 +461,7 @@ public final class SessionStore {
     }
 
     public byte flags(int slot) {
-        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE + FLAGS);
+        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE_BYTES + FLAGS);
     }
 
     public void flags(int slot, byte value) {
@@ -520,11 +520,11 @@ public final class SessionStore {
 
     /** Idle timeout of the session's NAS entry in minutes; 0 = the cluster's default. */
     public int idleMinutes(int slot) {
-        return core[slot >>> CHUNK_SHIFT].getChar((slot & CHUNK_MASK) * CORE + IDLE_MINUTES);
+        return core[slot >>> CHUNK_SHIFT].getChar((slot & CHUNK_MASK) * CORE_BYTES + IDLE_MINUTES);
     }
 
     public void idleMinutes(int slot, int minutes) {
-        core[slot >>> CHUNK_SHIFT].putChar((slot & CHUNK_MASK) * CORE + IDLE_MINUTES, (char) minutes);
+        core[slot >>> CHUNK_SHIFT].putChar((slot & CHUNK_MASK) * CORE_BYTES + IDLE_MINUTES, (char) minutes);
     }
 
     /** Cluster time in seconds until which a stopped session is kept, or 0. */
@@ -539,11 +539,11 @@ public final class SessionStore {
     /** Cluster time in seconds of the session's first event (state version 7; 0 before). */
     public int firstSeen(int slot) {
         UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
-        return m == null ? 0 : m.getInt((slot & CHUNK_MASK) * MEMBER + FIRST_SEEN);
+        return m == null ? 0 : m.getInt((slot & CHUNK_MASK) * MEMBER_BYTES + FIRST_SEEN);
     }
 
     public void firstSeen(int slot, int seconds) {
-        memberRecord(slot).putInt((slot & CHUNK_MASK) * MEMBER + FIRST_SEEN, seconds);
+        memberRecord(slot).putInt((slot & CHUNK_MASK) * MEMBER_BYTES + FIRST_SEEN, seconds);
     }
 
     /** Length of the session's identifying attributes; 0 = none (ADR 0036). */
@@ -595,30 +595,30 @@ public final class SessionStore {
     // ---- internals -----------------------------------------------------------------------------
 
     private long getLong(int slot, int field) {
-        return core[slot >>> CHUNK_SHIFT].getLong((slot & CHUNK_MASK) * CORE + field);
+        return core[slot >>> CHUNK_SHIFT].getLong((slot & CHUNK_MASK) * CORE_BYTES + field);
     }
 
     private void putLong(int slot, int field, long value) {
-        core[slot >>> CHUNK_SHIFT].putLong((slot & CHUNK_MASK) * CORE + field, value);
+        core[slot >>> CHUNK_SHIFT].putLong((slot & CHUNK_MASK) * CORE_BYTES + field, value);
     }
 
     private int getInt(int slot, int field) {
-        return core[slot >>> CHUNK_SHIFT].getInt((slot & CHUNK_MASK) * CORE + field);
+        return core[slot >>> CHUNK_SHIFT].getInt((slot & CHUNK_MASK) * CORE_BYTES + field);
     }
 
     private void putInt(int slot, int field, int value) {
-        core[slot >>> CHUNK_SHIFT].putInt((slot & CHUNK_MASK) * CORE + field, value);
+        core[slot >>> CHUNK_SHIFT].putInt((slot & CHUNK_MASK) * CORE_BYTES + field, value);
     }
 
     private void putByte(int slot, int field, byte value) {
-        core[slot >>> CHUNK_SHIFT].putByte((slot & CHUNK_MASK) * CORE + field, value);
+        core[slot >>> CHUNK_SHIFT].putByte((slot & CHUNK_MASK) * CORE_BYTES + field, value);
     }
 
     /** The slot's member record, its chunk allocated on first use (never in the exporter's replica). */
     private UnsafeBuffer memberRecord(int slot) {
         UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
         if (m == null) {
-            m = member[slot >>> CHUNK_SHIFT] = offHeap(CHUNK_SIZE * MEMBER);
+            m = member[slot >>> CHUNK_SHIFT] = offHeap(CHUNK_SIZE * MEMBER_BYTES);
         }
         return m;
     }
@@ -644,7 +644,7 @@ public final class SessionStore {
         if (chunks == MAX_CHUNKS) {
             throw new IllegalStateException("session store full");
         }
-        core[chunks++] = offHeap(CHUNK_SIZE * CORE);
+        core[chunks++] = offHeap(CHUNK_SIZE * CORE_BYTES);
         // member and identity records: allocated with their chunk's first use, so stores that keep none (the
         // exporter's replica, a cluster below state version 6 or 7) do not pay for them
     }

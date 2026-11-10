@@ -110,7 +110,7 @@ final class PendingTable {
         inUse[slot] = false;
         sender[slot] = null;
         nas[slot] = null;
-        generation[slot] = (generation[slot] + 1) & 0x3FFF_FFFF; // fits ResponseCache.pending()
+        generation[slot] = (generation[slot] + 1) & 0x3FFF_FFFF; // fits ResponseCache.pendingOf()
         free[freeCount++] = slot;
         size--;
     }

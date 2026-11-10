@@ -77,16 +77,16 @@ final class IpPools {
             + " AND (s.framed_ip = p.address OR (p.device IS NOT NULL AND s.calling_station_id = p.device)))";
 
     /** Parameters: pool, device, device, device, device, lease seconds, user, pool. */
-    static final String ALLOCATE = "WITH pick AS (SELECT p.address FROM ip_pool p WHERE p.pool = ?"
+    static final String ALLOCATE_SQL = "WITH pick AS (SELECT p.address FROM ip_pool p WHERE p.pool = ?"
             + " AND (p.device = ? OR p.expires_at < now())"
             + IN_USE
             + " ORDER BY (p.device IS NOT DISTINCT FROM ?) DESC, p.expires_at LIMIT 1 FOR UPDATE SKIP LOCKED)"
             + " UPDATE ip_pool p SET device = ?, expires_at = now() + ? * interval '1 second', user_name = ?"
             + " FROM pick WHERE p.pool = ? AND p.address = pick.address RETURNING abbrev(p.address)";
 
-    /** {@link #ALLOCATE} without the look at {@code accounting_session}: the lease alone holds an address. */
-    static final String ALLOCATE_BY_LEASE =
-            ALLOCATE.replace(IN_USE, " AND (CAST(? AS text) IS NULL OR TRUE)"); // keeps the parameters in place
+    /** {@link #ALLOCATE_SQL} without the look at {@code accounting_session}: the lease alone holds an address. */
+    static final String ALLOCATE_BY_LEASE_SQL =
+            ALLOCATE_SQL.replace(IN_USE, " AND (CAST(? AS text) IS NULL OR TRUE)"); // keeps the parameters in place
 
     private final Map<String, Pool> pools;
     private final Allocator allocator;
@@ -304,7 +304,7 @@ final class IpPools {
     }
 
     static Allocator sql(String url, Properties properties, boolean sessions) {
-        String query = sessions ? ALLOCATE : ALLOCATE_BY_LEASE;
+        String query = sessions ? ALLOCATE_SQL : ALLOCATE_BY_LEASE_SQL;
         return (pool, user, device) -> {
             try (Connection c = DriverManager.getConnection(url, properties);
                     PreparedStatement s = c.prepareStatement(query)) {

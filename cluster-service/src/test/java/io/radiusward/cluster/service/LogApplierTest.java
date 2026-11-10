@@ -58,7 +58,7 @@ class LogApplierTest {
     @Test
     void commandsCheckpointsAndBlocking() {
         assertThat(command(1, 100, 1)).isEqualTo(Outcomes.APPLIED);
-        assertThat(checkpoint(0, 150, 2)).isEqualTo(LogApplier.CHECKPOINT);
+        assertThat(checkpoint(0, 150, 2)).isEqualTo(LogApplier.EXPORT_CHECKPOINT);
         assertThat(applier.leaseResult()).isEqualTo(ExportState.GRANTED);
         assertThat(applier.sinkSlot()).isZero();
 
@@ -129,11 +129,11 @@ class LogApplierTest {
         LogApplier logs = new LogApplier(sm);
         assertThat(report(logs, 0, b + 1, 2, true)).isEqualTo(LogApplier.MEMBER_POSITION);
         assertThat(logs.activatedVersion()).isZero();
-        assertThat(activate(logs, b + 1)).isEqualTo(LogApplier.ACTIVATION);
+        assertThat(activate(logs, b + 1)).isEqualTo(LogApplier.VERSION_ACTIVATION);
         assertThat(logs.activationResult()).as("member 1 has not reported").isEqualTo(StateVersions.MEMBERS_NOT_READY);
         report(logs, 1, b + 1, 2, false);
         assertThat(logs.activatedVersion()).as("held by member 0").isZero();
-        assertThat(activate(logs, b + 1)).isEqualTo(LogApplier.ACTIVATION);
+        assertThat(activate(logs, b + 1)).isEqualTo(LogApplier.VERSION_ACTIVATION);
         assertThat(logs.activationResult()).isEqualTo(StateVersions.ACTIVATED);
         assertThat(logs.activatedVersion()).isEqualTo(b + 1);
         assertThat(logs.activation().correlationId()).isEqualTo(77);

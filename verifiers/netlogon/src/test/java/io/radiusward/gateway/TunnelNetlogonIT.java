@@ -100,9 +100,10 @@ class TunnelNetlogonIT {
             byte[] state = new byte[(r.buffer().getByte(at + 1) & 0xFF) - 2];
             r.buffer().getBytes(at + 2, state);
             EapPacket response = request.type() == type
-                    ? new EapPacket(EapPacket.RESPONSE, request.identifier(), type, client.answer(request.data()))
+                    ? new EapPacket(EapPacket.CODE_RESPONSE, request.identifier(), type, client.answer(request.data()))
                     : new EapPacket(
-                            EapPacket.RESPONSE, request.identifier(), EapPacket.TYPE_NAK, new byte[] {(byte) type});
+                            EapPacket.CODE_RESPONSE, request.identifier(), EapPacket.TYPE_NAK, new byte[] {(byte) type
+                            });
             code = handle(response, state);
         }
         return code;

@@ -205,7 +205,8 @@ class GatewayAuthIT {
             EapPacket request = EapPacket.from(view);
             int at = view.findAttribute(24);
             state = java.util.Arrays.copyOfRange(reply, at + 2, at + (reply[at + 1] & 0xFF));
-            eap = new EapPacket(EapPacket.RESPONSE, request.identifier(), EapTls.TYPE, client.answer(request.data()));
+            eap = new EapPacket(
+                    EapPacket.CODE_RESPONSE, request.identifier(), EapTls.TYPE, client.answer(request.data()));
         }
         throw new AssertionError("no end to the conversation");
     }

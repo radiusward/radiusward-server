@@ -84,7 +84,7 @@ final class InnerEap {
     /** The peer's next inner EAP packet. */
     Step handle(byte[] packet, Credentials credentials) {
         EapPacket p = EapPacket.parse(packet);
-        if (p == null || p.code() != EapPacket.RESPONSE) {
+        if (p == null || p.code() != EapPacket.CODE_RESPONSE) {
             return Step.FAILED;
         }
         if (state == State.IDENTITY) {
@@ -183,7 +183,7 @@ final class InnerEap {
                         identity, new EapMethod.MsChapV2(hash, ntResponse, challenge.clone(), peerChallenge, msChapId));
         if (checked.code() == AccessHandler.DROP) {
             pending = data;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pending = null;
         if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {
@@ -200,7 +200,7 @@ final class InnerEap {
     private Step decided(Inner checked, byte[] data) {
         if (checked.code() == AccessHandler.DROP) {
             pending = data;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pending = null;
         return checked.code() == AccessHandler.ACCEPT ? Step.succeeded(null) : Step.FAILED;

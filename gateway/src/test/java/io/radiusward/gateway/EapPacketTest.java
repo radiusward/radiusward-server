@@ -45,12 +45,12 @@ class EapPacketTest {
         }
         assertThat(attributes).as("705 bytes in 253-byte pieces").isEqualTo(3);
         EapPacket back = EapPacket.from(p);
-        assertThat(back.code()).isEqualTo(EapPacket.REQUEST);
+        assertThat(back.code()).isEqualTo(EapPacket.CODE_REQUEST);
         assertThat(back.identifier()).isEqualTo(42);
         assertThat(back.type()).isEqualTo(13);
         assertThat(back.data()).isEqualTo(data);
         EapPacket success = EapPacket.parse(EapPacket.success(9).encode());
-        assertThat(success.code()).isEqualTo(EapPacket.SUCCESS);
+        assertThat(success.code()).isEqualTo(EapPacket.CODE_SUCCESS);
         assertThat(success.identifier()).isEqualTo(9);
     }
 

@@ -32,7 +32,7 @@ class TeapTest {
 
     @Test
     void tlvsAreParsed() {
-        byte[] eap = new EapPacket(EapPacket.RESPONSE, 7, EapPacket.TYPE_IDENTITY, new byte[] {'a'}).encode();
+        byte[] eap = new EapPacket(EapPacket.CODE_RESPONSE, 7, EapPacket.TYPE_IDENTITY, new byte[] {'a'}).encode();
         Teap.Tlvs t = Teap.Tlvs.parse(concat(
                 Teap.tlv(Teap.MANDATORY | Teap.TLV_RESULT, new byte[] {0, 1}),
                 Teap.tlv(Teap.MANDATORY | Teap.TLV_INTERMEDIATE_RESULT, new byte[] {0, 2}),
@@ -76,7 +76,7 @@ class TeapTest {
         set.put("auth.eap.teap.authority.id", "aaa.corp.example");
         EapConfig custom = EapConfig.from(Config.of(set));
         assertThat(custom.teapInner()).containsExactly(InnerEap.TLS, Teap.BASIC);
-        assertThat(custom.teapIdentity()).containsExactly(Teap.MACHINE, Teap.USER);
+        assertThat(custom.teapIdentity()).containsExactly(Teap.IDENTITY_MACHINE, Teap.IDENTITY_USER);
 
         for (String[] wrong : new String[][] {
             {"auth.eap.teap.inner", "pap", "auth.eap.teap.inner"},

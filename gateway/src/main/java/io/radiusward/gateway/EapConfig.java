@@ -178,8 +178,8 @@ record EapConfig(
         }
         List<Integer> teapIdentity = config.list("auth.eap.teap.identity", List.of()).stream()
                 .map(m -> switch (m.trim().toLowerCase(Locale.ROOT)) {
-                    case "user" -> Teap.USER;
-                    case "machine" -> Teap.MACHINE;
+                    case "user" -> Teap.IDENTITY_USER;
+                    case "machine" -> Teap.IDENTITY_MACHINE;
                     default ->
                         throw new ConfigException(
                                 "auth.eap.teap.identity: user and/or machine, in the order asked, got " + m);

@@ -29,7 +29,7 @@ import javax.net.ssl.SSLException;
 final class Teap extends TlsTunnel {
 
     static final int TYPE = 55;
-    static final int VERSION = 1;
+    static final int TEAP_VERSION = 1;
 
     static final int TLV_AUTHORITY_ID = 1;
     static final int TLV_IDENTITY_TYPE = 2;
@@ -45,8 +45,8 @@ final class Teap extends TlsTunnel {
     static final int SUCCESS = 1;
     static final int FAILURE = 2;
     static final int BASIC = -1; // in the inner list: Basic-Password-Auth instead of an EAP type
-    static final int USER = 1;
-    static final int MACHINE = 2;
+    static final int IDENTITY_USER = 1;
+    static final int IDENTITY_MACHINE = 2;
     private static final int BINDING_LENGTH = 4 + 4 + 32 + 20 + 20;
     private static final SecureRandom RANDOM = new SecureRandom();
 
@@ -86,7 +86,7 @@ final class Teap extends TlsTunnel {
         this(config, inner, authorityId, List.of());
     }
 
-    /** @param identityTypes the identity types asked for in turn ({@link #USER}, {@link #MACHINE}); empty: any */
+    /** @param identityTypes the identity types asked for in turn ({@link #IDENTITY_USER}, {@link #IDENTITY_MACHINE}); empty: any */
     Teap(EapTlsConfig config, List<Integer> inner, byte[] authorityId, List<Integer> identityTypes) {
         super(config);
         this.inner = List.copyOf(inner);
@@ -117,7 +117,7 @@ final class Teap extends TlsTunnel {
 
     @Override
     int version() {
-        return VERSION;
+        return TEAP_VERSION;
     }
 
     @Override
@@ -135,7 +135,7 @@ final class Teap extends TlsTunnel {
     byte[] startMessage() {
         serverOuterTlvs = tlv(TLV_AUTHORITY_ID, authorityId);
         byte[] start = new byte[1 + 4 + serverOuterTlvs.length];
-        start[0] = (byte) (FLAG_START | FLAG_OUTER_TLVS | VERSION);
+        start[0] = (byte) (FLAG_START | FLAG_OUTER_TLVS | TEAP_VERSION);
         int n = serverOuterTlvs.length;
         start[1] = (byte) (n >>> 24);
         start[2] = (byte) (n >>> 16);
@@ -254,7 +254,7 @@ final class Teap extends TlsTunnel {
         if (checked.code() == AccessHandler.DROP) {
             pendingBasicUser = name;
             pendingBasic = password;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pendingBasic = null;
         if (checked.code() != AccessHandler.ACCEPT) {
@@ -266,7 +266,7 @@ final class Teap extends TlsTunnel {
 
     /** The identity this round authenticated, by its type. */
     private void identified(String name) {
-        if (!identityTypes.isEmpty() && identityTypes.get(round) == MACHINE) {
+        if (!identityTypes.isEmpty() && identityTypes.get(round) == IDENTITY_MACHINE) {
             machineIdentity = name;
         } else {
             userIdentity = name;
@@ -275,7 +275,7 @@ final class Teap extends TlsTunnel {
 
     private Step afterInner(Step step) {
         if (step.unavailable()) {
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         if (!step.done()) {
             return sendApplication(tlv(MANDATORY | TLV_EAP_PAYLOAD, step.request()));
@@ -297,8 +297,8 @@ final class Teap extends TlsTunnel {
         binding[0] = (byte) ((MANDATORY | TLV_CRYPTO_BINDING) >>> 8);
         binding[1] = (byte) TLV_CRYPTO_BINDING;
         binding[3] = (byte) (BINDING_LENGTH - 4);
-        binding[5] = VERSION; // Version
-        binding[6] = VERSION; // Received-Ver: the peer's, which is 1
+        binding[5] = TEAP_VERSION; // Version
+        binding[6] = TEAP_VERSION; // Received-Ver: the peer's, which is 1
         binding[7] = (byte) (2 << 4); // Flags: MSK Compound MAC; Sub-Type 0: request
         System.arraycopy(nonce, 0, binding, 8, 32);
         byte[] mac = keys.compoundMac(compound.cmk(), binding, serverOuterTlvs, peerOuterTlvs);
@@ -330,8 +330,8 @@ final class Teap extends TlsTunnel {
         int flags = (b[7] & 0xFF) >>> 4;
         boolean nonceAnswered = Arrays.equals(Arrays.copyOf(b, 8 + 31), concat(Arrays.copyOf(b, 8), nonce, 31))
                 && (b[8 + 31] & 0xFF) == ((nonce[31] & 0xFF) | 1);
-        if (b[5] != VERSION
-                || b[6] != VERSION
+        if (b[5] != TEAP_VERSION
+                || b[6] != TEAP_VERSION
                 || (b[7] & 0x0F) != 1 // Sub-Type: response
                 || (flags != 2 && flags != 3) // the peer has no EMSK of ours to bind: the MSK Compound MAC
                 || !nonceAnswered) {

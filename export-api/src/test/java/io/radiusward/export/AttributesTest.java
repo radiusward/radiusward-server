@@ -50,7 +50,7 @@ class AttributesTest {
         assertThat(common.terminateCause()).isEqualTo(1);
         assertThat(common.callingStationId()).isNull();
         assertThat(common.acctMultiSessionId()).isEqualTo("ms-7f3a");
-        assertThat(ATTRIBUTES.json(section(), Attributes.COMMON)).doesNotContain("Acct-Multi-Session-Id");
+        assertThat(ATTRIBUTES.json(section(), Attributes.COMMON_NAMES)).doesNotContain("Acct-Multi-Session-Id");
         assertThat(ATTRIBUTES.common(null).userName()).isNull();
     }
 
@@ -69,7 +69,7 @@ class AttributesTest {
 
     @Test
     void residualJsonLeavesOutTypedColumns() {
-        String json = ATTRIBUTES.json(section(), Attributes.COMMON);
+        String json = ATTRIBUTES.json(section(), Attributes.COMMON_NAMES);
         assertThat(json)
                 .doesNotContain("User-Name")
                 .doesNotContain("Acct-Status-Type")

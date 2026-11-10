@@ -43,15 +43,15 @@ final class EapConversations {
         final Object2ObjectHashMap<Key, Conversation> map = new Object2ObjectHashMap<>();
     }
 
-    private static final int STRIPES = 16;
-    private final Stripe[] stripes = new Stripe[STRIPES];
+    private static final int STRIPE_COUNT = 16;
+    private final Stripe[] stripes = new Stripe[STRIPE_COUNT];
     private final AtomicInteger size = new AtomicInteger();
     private final int capacity;
     private final SecureRandom random = new SecureRandom();
 
     EapConversations(int capacity) {
         this.capacity = capacity;
-        for (int i = 0; i < STRIPES; i++) {
+        for (int i = 0; i < STRIPE_COUNT; i++) {
             stripes[i] = new Stripe();
         }
     }
@@ -133,6 +133,6 @@ final class EapConversations {
     }
 
     private static int stripe(Key key) {
-        return (int) ((key.hi() ^ key.lo()) >>> 60) & (STRIPES - 1);
+        return (int) ((key.hi() ^ key.lo()) >>> 60) & (STRIPE_COUNT - 1);
     }
 }

@@ -29,16 +29,16 @@ public final class LogApplier {
     public static final int NOT_A_COMMAND = -1;
 
     /** {@link #apply} result for an {@code ExportCheckpoint}; see {@link #leaseResult()}. */
-    public static final int CHECKPOINT = -2;
+    public static final int EXPORT_CHECKPOINT = -2;
 
     /** {@link #apply} result for a {@code SinkResync}. */
-    public static final int RESYNC = -4;
+    public static final int SINK_RESYNC = -4;
 
     /** {@link #apply} result for a {@code MemberLogPosition}. */
     public static final int MEMBER_POSITION = -3;
 
     /** An {@code ActivateVersion} request; {@link #activationResult()} holds the result. */
-    public static final int ACTIVATION = -5;
+    public static final int VERSION_ACTIVATION = -5;
 
     /** An {@code AuthReservation}; {@link #reservationResult()} holds the result (state version 6). */
     public static final int AUTH_RESERVATION = -6;
@@ -78,7 +78,7 @@ public final class LogApplier {
      * Applies one session message of the log entry at {@code position} with cluster time {@code timestamp}.
      *
      * @return an {@link Outcomes} value for an {@code AccountingCommand} (then {@link #command()} holds it),
-     *     {@link #CHECKPOINT} for an {@code ExportCheckpoint}, otherwise {@link #NOT_A_COMMAND}
+     *     {@link #EXPORT_CHECKPOINT} for an {@code ExportCheckpoint}, otherwise {@link #NOT_A_COMMAND}
      */
     public int apply(DirectBuffer buffer, int offset, long position, long timestamp) {
         headerDecoder.wrap(buffer, offset);
@@ -99,7 +99,7 @@ public final class LogApplier {
                         .resync(
                                 new String(sinkName, 0, end, java.nio.charset.StandardCharsets.US_ASCII),
                                 resyncDecoder.position());
-                yield RESYNC;
+                yield SINK_RESYNC;
             }
             case MemberLogPositionDecoder.TEMPLATE_ID -> {
                 memberPositionDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
@@ -117,7 +117,7 @@ public final class LogApplier {
                 activateDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
                 activationResult = machine.activateVersion(activateDecoder.version());
                 activatedVersion = activationResult == StateVersions.ACTIVATED ? activateDecoder.version() : 0;
-                yield ACTIVATION;
+                yield VERSION_ACTIVATION;
             }
             case io.radiusward.protocol.AuthReservationDecoder.TEMPLATE_ID -> {
                 reservationDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
@@ -220,7 +220,7 @@ public final class LogApplier {
                         : ExportState.ON_MAX_LAG_BLOCK,
                 timestamp);
         sinkSlot = export.find(name);
-        return CHECKPOINT;
+        return EXPORT_CHECKPOINT;
     }
 
     /** The command decoded by the last {@link #apply} that returned an outcome. */
@@ -228,27 +228,27 @@ public final class LogApplier {
         return commandDecoder;
     }
 
-    /** The {@code ActivateVersion} decoded by the last {@link #apply} that returned {@link #ACTIVATION}. */
+    /** The {@code ActivateVersion} decoded by the last {@link #apply} that returned {@link #VERSION_ACTIVATION}. */
     public io.radiusward.protocol.ActivateVersionDecoder activation() {
         return activateDecoder;
     }
 
-    /** {@link StateVersions} result of the last {@link #ACTIVATION}. */
+    /** {@link StateVersions} result of the last {@link #VERSION_ACTIVATION}. */
     public int activationResult() {
         return activationResult;
     }
 
-    /** Version activated by the last {@link #MEMBER_POSITION} or {@link #ACTIVATION}, 0 if none. */
+    /** Version activated by the last {@link #MEMBER_POSITION} or {@link #VERSION_ACTIVATION}, 0 if none. */
     public int activatedVersion() {
         return activatedVersion;
     }
 
-    /** The resync decoded by the last {@link #apply} that returned {@link #RESYNC}. */
+    /** The resync decoded by the last {@link #apply} that returned {@link #SINK_RESYNC}. */
     public SinkResyncDecoder resync() {
         return resyncDecoder;
     }
 
-    /** The checkpoint decoded by the last {@link #apply} that returned {@link #CHECKPOINT}. */
+    /** The checkpoint decoded by the last {@link #apply} that returned {@link #EXPORT_CHECKPOINT}. */
     public ExportCheckpointDecoder checkpoint() {
         return checkpointDecoder;
     }

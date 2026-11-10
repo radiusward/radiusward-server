@@ -22,7 +22,7 @@ final class P256 {
     static final Point G = new Point(
             new BigInteger("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296", 16),
             new BigInteger("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5", 16));
-    static final int BYTES = 32;
+    static final int FIELD_BYTES = 32;
 
     private static final BigInteger TWO = BigInteger.TWO;
     private static final BigInteger THREE = BigInteger.valueOf(3);
@@ -37,9 +37,9 @@ final class P256 {
 
         /** x and y, 32 bytes each. */
         byte[] encode() {
-            byte[] out = new byte[2 * BYTES];
-            System.arraycopy(bytes(x), 0, out, 0, BYTES);
-            System.arraycopy(bytes(y), 0, out, BYTES, BYTES);
+            byte[] out = new byte[2 * FIELD_BYTES];
+            System.arraycopy(bytes(x), 0, out, 0, FIELD_BYTES);
+            System.arraycopy(bytes(y), 0, out, FIELD_BYTES, FIELD_BYTES);
             return out;
         }
     }
@@ -47,16 +47,17 @@ final class P256 {
     /** A number as exactly 32 big-endian bytes. */
     static byte[] bytes(BigInteger v) {
         byte[] raw = v.toByteArray();
-        byte[] out = new byte[BYTES];
-        int n = Math.min(raw.length, BYTES);
-        System.arraycopy(raw, raw.length - n, out, BYTES - n, n);
+        byte[] out = new byte[FIELD_BYTES];
+        int n = Math.min(raw.length, FIELD_BYTES);
+        System.arraycopy(raw, raw.length - n, out, FIELD_BYTES - n, n);
         return out;
     }
 
     /** A point from x and y (32 bytes each), or {@code null} if a coordinate is out of range or it is off the curve. */
     static Point decode(byte[] data, int offset) {
-        BigInteger x = new BigInteger(1, java.util.Arrays.copyOfRange(data, offset, offset + BYTES));
-        BigInteger y = new BigInteger(1, java.util.Arrays.copyOfRange(data, offset + BYTES, offset + 2 * BYTES));
+        BigInteger x = new BigInteger(1, java.util.Arrays.copyOfRange(data, offset, offset + FIELD_BYTES));
+        BigInteger y =
+                new BigInteger(1, java.util.Arrays.copyOfRange(data, offset + FIELD_BYTES, offset + 2 * FIELD_BYTES));
         if (x.compareTo(P) >= 0 || y.compareTo(P) >= 0) {
             return null;
         }

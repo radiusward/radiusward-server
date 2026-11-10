@@ -28,13 +28,13 @@ import org.agrona.MutableDirectBuffer;
 public final class RadiusAuthenticator {
 
     private static final int BLOCK = 64;
-    private static final int DIGEST = 16;
+    private static final int DIGEST_LENGTH = 16;
 
     private final MessageDigest md5;
     private final byte[] scratch = new byte[RadiusPacket.MAX_LENGTH];
-    private final byte[] digest = new byte[DIGEST];
+    private final byte[] digest = new byte[DIGEST_LENGTH];
     private final byte[] pad = new byte[BLOCK];
-    private final byte[] hashedKey = new byte[DIGEST];
+    private final byte[] hashedKey = new byte[DIGEST_LENGTH];
 
     public RadiusAuthenticator() {
         try {
@@ -157,14 +157,14 @@ public final class RadiusAuthenticator {
     /** HMAC over {@code scratch[0, length)} with the Message-Authenticator value zeroed, compared to the packet. */
     private boolean verifyHmac(RadiusPacket packet, int length, byte[] secret) {
         int valueOffset = packet.messageAuthenticatorOffset() - packet.offset() + 2;
-        zero(scratch, valueOffset, DIGEST);
+        zero(scratch, valueOffset, DIGEST_LENGTH);
         hmacMd5(scratch, length, secret);
         return constantTimeEquals(digest, packet.buffer(), packet.messageAuthenticatorOffset() + 2);
     }
 
     /** Computes HMAC-MD5 over the packet as currently in {@code buffer} and writes it into the attribute. */
     private void writeHmac(MutableDirectBuffer buffer, int offset, int length, int attributeOffset, byte[] secret) {
-        buffer.setMemory(attributeOffset + 2, DIGEST, (byte) 0);
+        buffer.setMemory(attributeOffset + 2, DIGEST_LENGTH, (byte) 0);
         int copied = copyPacket(buffer, offset, length);
         hmacMd5(scratch, copied, secret);
         buffer.putBytes(attributeOffset + 2, digest);
@@ -192,7 +192,7 @@ public final class RadiusAuthenticator {
             md5.update(secret, 0, secret.length);
             finishDigestInto(hashedKey);
             key = hashedKey;
-            keyLength = DIGEST;
+            keyLength = DIGEST_LENGTH;
         }
         for (int i = 0; i < BLOCK; i++) {
             pad[i] = (byte) ((i < keyLength ? key[i] : 0) ^ 0x36);
@@ -204,7 +204,7 @@ public final class RadiusAuthenticator {
             pad[i] = (byte) ((i < keyLength ? key[i] : 0) ^ 0x5c);
         }
         md5.update(pad, 0, BLOCK);
-        md5.update(digest, 0, DIGEST);
+        md5.update(digest, 0, DIGEST_LENGTH);
         finishDigest();
     }
 
@@ -212,7 +212,7 @@ public final class RadiusAuthenticator {
     void hmacMd5(byte[] message, int length, byte[] key, byte[] out) {
         System.arraycopy(message, 0, scratch, 0, length);
         hmacMd5(scratch, length, key);
-        System.arraycopy(digest, 0, out, 0, DIGEST);
+        System.arraycopy(digest, 0, out, 0, DIGEST_LENGTH);
     }
 
     private void finishDigest() {
@@ -221,7 +221,7 @@ public final class RadiusAuthenticator {
 
     private void finishDigestInto(byte[] target) {
         try {
-            md5.digest(target, 0, DIGEST);
+            md5.digest(target, 0, DIGEST_LENGTH);
         } catch (DigestException e) {
             throw new IllegalStateException(e);
         }
@@ -235,7 +235,7 @@ public final class RadiusAuthenticator {
 
     private static boolean constantTimeEquals(byte[] expected, DirectBuffer actual, int actualOffset) {
         int diff = 0;
-        for (int i = 0; i < DIGEST; i++) {
+        for (int i = 0; i < DIGEST_LENGTH; i++) {
             diff |= expected[i] ^ actual.getByte(actualOffset + i);
         }
         return diff == 0;

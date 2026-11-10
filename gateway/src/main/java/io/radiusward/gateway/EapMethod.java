@@ -118,7 +118,7 @@ interface EapMethod {
 
         static final Step FAILED = new Step(null, false, null, false);
 
-        static final Step UNAVAILABLE = new Step(null, false, null, true);
+        static final Step STORE_UNAVAILABLE = new Step(null, false, null, true);
 
         boolean done() {
             return request == null;

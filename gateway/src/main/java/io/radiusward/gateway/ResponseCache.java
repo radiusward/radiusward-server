@@ -19,7 +19,7 @@ final class ResponseCache {
     static final long COMMITTED = 2;
 
     /** Value of a PENDING entry: the correlation id of the submission in flight, tagged as PENDING. */
-    static long pending(long correlationId) {
+    static long pendingOf(long correlationId) {
         return (correlationId << 2) | PENDING;
     }
 

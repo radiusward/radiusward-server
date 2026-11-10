@@ -244,7 +244,7 @@ final class Peap extends TlsTunnel {
         Inner checked = credentials.inner().password(identity, password);
         if (checked.code() == AccessHandler.DROP) {
             pendingPassword = password;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pendingPassword = null;
         if (checked.code() != AccessHandler.ACCEPT) {
@@ -309,7 +309,7 @@ final class Peap extends TlsTunnel {
         Inner checked = credentials.inner().msChapV2(identity, exchange);
         if (checked.code() == AccessHandler.DROP) {
             pendingExchange = exchange;
-            return Step.UNAVAILABLE;
+            return Step.STORE_UNAVAILABLE;
         }
         pendingExchange = null;
         byte[] ntResponse = exchange.ntResponse();
@@ -367,7 +367,7 @@ final class Peap extends TlsTunnel {
         }
         int length = 11 + (bound == null ? 0 : bound.length);
         byte[] p = new byte[length];
-        p[0] = EapPacket.REQUEST;
+        p[0] = EapPacket.CODE_REQUEST;
         p[1] = (byte) innerId;
         p[2] = (byte) (length >>> 8);
         p[3] = (byte) length;
@@ -388,7 +388,7 @@ final class Peap extends TlsTunnel {
      */
     private boolean resultAnswered(byte[] data) {
         EapPacket p = EapPacket.parse(data);
-        if (p == null || p.code() != EapPacket.RESPONSE || p.type() != TLV) {
+        if (p == null || p.code() != EapPacket.CODE_RESPONSE || p.type() != TLV) {
             return false;
         }
         byte[] tlvs = p.data();

@@ -246,15 +246,20 @@ final class InnerProxy {
         String serverName = home.serverName() != null ? home.serverName() : home.host();
         javax.net.ssl.SSLSocket tls =
                 (javax.net.ssl.SSLSocket) context.getSocketFactory().createSocket(plain, serverName, home.port(), true);
-        tls.setEnabledProtocols(new String[] {"TLSv1.2", "TLSv1.3"});
-        javax.net.ssl.SSLParameters params = tls.getSSLParameters();
-        params.setEndpointIdentificationAlgorithm("HTTPS"); // the certificate must name serverName
-        if (!serverName.isEmpty() && !Character.isDigit(serverName.charAt(0)) && serverName.indexOf(':') < 0) {
-            params.setServerNames(List.of(new javax.net.ssl.SNIHostName(serverName)));
+        try {
+            tls.setEnabledProtocols(new String[] {"TLSv1.2", "TLSv1.3"});
+            javax.net.ssl.SSLParameters params = tls.getSSLParameters();
+            params.setEndpointIdentificationAlgorithm("HTTPS"); // the certificate must name serverName
+            if (!serverName.isEmpty() && !Character.isDigit(serverName.charAt(0)) && serverName.indexOf(':') < 0) {
+                params.setServerNames(List.of(new javax.net.ssl.SNIHostName(serverName)));
+            }
+            tls.setSSLParameters(params);
+            tls.startHandshake();
+            return tls;
+        } catch (IOException | RuntimeException e) {
+            tls.close(); // closes the plain socket under it too
+            throw e;
         }
-        tls.setSSLParameters(params);
-        tls.startHandshake();
-        return tls;
     }
 
     /** The verdict in {@code in} if it answers this request; {@code null} if it is some other packet. */
