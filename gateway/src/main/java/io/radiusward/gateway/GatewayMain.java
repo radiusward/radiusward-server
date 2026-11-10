@@ -20,10 +20,53 @@ public final class GatewayMain {
 
     private GatewayMain() {}
 
+    /**
+     * SIGHUP reloads the configuration, as {@code systemctl reload} sends it; a failure keeps the running one. Through
+     * reflection: {@code sun.misc.Signal} has no public replacement.
+     */
+    private static void onHangUp(java.util.function.Supplier<String> reload) {
+        try {
+            Class<?> signalType = Class.forName("sun.misc.Signal");
+            Class<?> handlerType = Class.forName("sun.misc.SignalHandler");
+            Object handler = java.lang.reflect.Proxy.newProxyInstance(
+                    handlerType.getClassLoader(), new Class<?>[] {handlerType}, (proxy, method, arguments) -> {
+                        switch (method.getName()) {
+                            case "handle" -> {
+                                try {
+                                    reload.get();
+                                } catch (RuntimeException e) {
+                                    LogManager.getLogger(GatewayMain.class)
+                                            .error(
+                                                    "configuration not reloaded, the running one stays: {}",
+                                                    e.getMessage());
+                                }
+                                return null;
+                            }
+                            case "hashCode" -> {
+                                return System.identityHashCode(proxy);
+                            }
+                            case "equals" -> {
+                                return proxy == arguments[0];
+                            }
+                            default -> {
+                                return "SIGHUP reload";
+                            }
+                        }
+                    });
+            signalType
+                    .getMethod("handle", signalType, handlerType)
+                    .invoke(null, signalType.getConstructor(String.class).newInstance("HUP"), handler);
+        } catch (ReflectiveOperationException | RuntimeException e) { // no SIGHUP on this platform or JDK
+            LogManager.getLogger(GatewayMain.class)
+                    .info("no SIGHUP handler ({}): reload with POST /reload", e.toString());
+        }
+    }
+
     public static void main(String[] args) {
         TlsCredentials.statefulSessions(); // before anything loads the JDK's TLS classes
-        Config config = Config.load(
-                ConfigArgs.files(args, "gateway --config <file.properties> [--config ...]"), System.getenv());
+        java.util.List<java.nio.file.Path> files =
+                ConfigArgs.files(args, "gateway --config <file.properties> [--config ...]");
+        Config config = Config.load(files, System.getenv());
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));
         GatewayConfig gatewayConfig = GatewayConfig.from(config);
         NasRegistry registry = NasRegistry.from(config);
@@ -44,6 +87,13 @@ public final class GatewayMain {
                         gateway::ready,
                         gateway::stateJson,
                         gateway::metrics)) {
+            java.util.function.Supplier<String> reload =
+                    () -> gateway.reload(Config.load(files, System.getenv())); // ADR 0054
+            onHangUp(reload);
+            String reloadToken = config.string("reload.api.token", "").trim();
+            if (management != null && !reloadToken.isEmpty()) {
+                management.handle("/reload", new ReloadApi(reloadToken, reload));
+            }
             com.sun.net.httpserver.HttpHandler traceApi = gateway.trace(config); // ADR 0052
             if (management != null && traceApi != null) {
                 management.handle("/trace", traceApi);

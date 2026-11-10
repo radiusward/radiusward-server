@@ -72,6 +72,8 @@ stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per gateway.
 - **fsync**: keep `archive.file.sync.level=2`. Anything lower can lose acknowledged events on power loss
   (measured, `PowerLossIT`).
 - Health checks call `radiusward probe http://127.0.0.1:9090/ready`.
+- A gateway reloads its configuration on SIGHUP: `docker kill -s HUP <container>` (the entrypoint `exec`s Java, so
+  the signal reaches it). What is reloaded: [ADR 0054](../adr/0054-config-reload.md).
 
 ## PostgreSQL export
 

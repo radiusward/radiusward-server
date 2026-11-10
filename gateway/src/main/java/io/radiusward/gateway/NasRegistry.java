@@ -43,16 +43,27 @@ import org.agrona.collections.Int2ObjectHashMap;
  */
 public final class NasRegistry {
 
-    private final Int2ObjectHashMap<NasClient> exact = new Int2ObjectHashMap<>();
-    private final NasClient[] ranges;
-    private final NasClient[] ranges6; // IPv6 entries, longest prefix first
-    private final List<NasClient> all;
-    // the last IPv6 sender and its entry: the JDK hands out the same address object for a repeating sender
-    private volatile Inet6Address lastAddress6;
-    private volatile NasClient lastClient6;
+    /** The configured entries; replaced as a whole when the configuration is reloaded (ADR 0054). */
+    private static final class Table {
+        final Int2ObjectHashMap<NasClient> exact = new Int2ObjectHashMap<>();
+        NasClient[] ranges;
+        NasClient[] ranges6; // IPv6 entries, longest prefix first
+        List<NasClient> all;
+        // the last IPv6 sender and its entry: the JDK hands out the same address object for a repeating sender
+        volatile Inet6Address lastAddress6;
+        volatile NasClient lastClient6;
+    }
+
+    private volatile Table table;
     private volatile DynamicClients dynamic; // entries looked up on demand (ADR 0046), after the configured ones
 
     private NasRegistry(List<NasClient> clients) {
+        this.table = table(clients);
+    }
+
+    private static Table table(List<NasClient> clients) {
+        Table t = new Table();
+        Int2ObjectHashMap<NasClient> exact = t.exact;
         List<NasClient> rangeList = new ArrayList<>();
         List<NasClient> range6List = new ArrayList<>();
         Map<Integer, String> ids = new HashMap<>();
@@ -83,10 +94,19 @@ public final class NasRegistry {
                 rangeList.add(c);
             }
         }
-        this.ranges = rangeList.toArray(NasClient[]::new);
+        t.ranges = rangeList.toArray(NasClient[]::new);
         range6List.sort((a, b) -> Integer.compare(b.prefixLength(), a.prefixLength()));
-        this.ranges6 = range6List.toArray(NasClient[]::new);
-        this.all = List.copyOf(clients);
+        t.ranges6 = range6List.toArray(NasClient[]::new);
+        t.all = List.copyOf(clients);
+        return t;
+    }
+
+    /**
+     * Takes the configured entries of {@code other} (a registry from a reloaded configuration, ADR 0054); entries looked
+     * up on demand stay. Requests already received keep the entry they arrived with.
+     */
+    void replace(NasRegistry other) {
+        this.table = other.table;
     }
 
     public static NasRegistry of(List<NasClient> clients) {
@@ -99,6 +119,17 @@ public final class NasRegistry {
     }
 
     public static NasRegistry from(Config config) {
+        NasRegistry registry = configured(config);
+        DynamicClients dynamic = DynamicClients.from(config);
+        if (registry.clients().isEmpty() && dynamic == null) {
+            throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");
+        }
+        registry.dynamic(dynamic);
+        return registry;
+    }
+
+    /** The configured entries alone, without {@code nas.dynamic.*} (a reload keeps the running lookups). */
+    static NasRegistry configured(Config config) {
         List<NasClient> clients = new ArrayList<>();
         for (String name : config.names("nas")) {
             if (name.equals("dynamic")) {
@@ -149,13 +180,7 @@ public final class NasRegistry {
                             NasClient.MessageAuthenticatorPolicy.REQUIRED),
                     network6));
         }
-        DynamicClients dynamic = DynamicClients.from(config);
-        if (clients.isEmpty() && dynamic == null) {
-            throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");
-        }
-        NasRegistry registry = new NasRegistry(clients);
-        registry.dynamic(dynamic);
-        return registry;
+        return new NasRegistry(clients);
     }
 
     /**
@@ -163,31 +188,32 @@ public final class NasRegistry {
      * sending; IPv6 entries match longest prefix first.
      */
     public NasClient lookup(InetAddress address) {
+        Table t = table;
         if (address instanceof Inet6Address v6) {
-            if (v6 == lastAddress6) {
-                return lastClient6;
+            if (v6 == t.lastAddress6) {
+                return t.lastClient6;
             }
             byte[] bytes = v6.getAddress();
             NasClient found = null;
-            for (NasClient c : ranges6) {
+            for (NasClient c : t.ranges6) {
                 if (c.matches6(bytes)) {
                     found = c;
                     break;
                 }
             }
-            lastClient6 = found;
-            lastAddress6 = v6;
+            t.lastClient6 = found;
+            t.lastAddress6 = v6;
             return found;
         }
         if (!(address instanceof Inet4Address)) {
             return null;
         }
         int ip = address.hashCode();
-        NasClient client = exact.get(ip);
+        NasClient client = t.exact.get(ip);
         if (client != null) {
             return client;
         }
-        for (NasClient range : ranges) {
+        for (NasClient range : t.ranges) {
             if (range.matches(ip)) {
                 return range;
             }
@@ -216,7 +242,7 @@ public final class NasRegistry {
     }
 
     public Collection<NasClient> clients() {
-        return Collections.unmodifiableCollection(all);
+        return Collections.unmodifiableCollection(table.all);
     }
 
     static int fnv1a(String name) {

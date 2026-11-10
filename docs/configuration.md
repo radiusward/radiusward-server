@@ -5,6 +5,9 @@ Every key can be overridden by an environment variable — `cluster.node.id` →
 and values may reference the environment: `${env:NAS_SECRET}`, `${env:X:-default}` ([ADR 0010](adr/0010-configuration.md)).
 Durations: `500ms`, `10s`, `5m`, `2h`. Sizes: `512`, `64k`, `4m`, `1g`. Examples: [config/local](../config/local).
 
+Gateways reload NAS entries, identity stores, counters, pools, TOTP, rules and trace conditions on SIGHUP or
+`POST /reload` ([ADR 0054](adr/0054-config-reload.md)); everything else needs a restart.
+
 ## Common
 
 | Key | Default | Meaning |
@@ -290,6 +293,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.totp.mode` | `challenge` | users with `TOTP-Secret := <base32>` need a code ([ADR 0053](adr/0053-totp.md)): `challenge` (Access-Challenge after the right password; the code comes with the State) or `append` (the code follows the password) |
 | `auth.totp.digits` / `auth.totp.window` | `6` / `1` | code length (6 or 8); 30-second steps of clock drift accepted either way (0–10) |
 | `auth.totp.timeout` / `auth.totp.prompt` | `60s` / `Enter the code from your authenticator app` | how long a challenge waits; its Reply-Message |
+| `reload.api.token` | — | bearer token of `POST /reload` on the management port, which reloads the configuration files like SIGHUP ([ADR 0054](adr/0054-config-reload.md)); at least 16 characters |
 | `trace.users` / `trace.nas` / `trace.stations` | none | Access-Requests of these users, NAS entries or Calling-Station-Ids are logged with their decision steps to `io.radiusward.trace` ([ADR 0052](adr/0052-request-traces.md)); secrets are hidden |
 | `trace.api.token` | — | bearer token of `POST/GET/DELETE /trace` on the management port (temporary conditions, up to 24 h); at least 16 characters |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |

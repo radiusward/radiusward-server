@@ -185,6 +185,17 @@ final class ProcessCluster implements AutoCloseable {
         processes.put(name, process);
     }
 
+    /** {@code kill -HUP}: a gateway reloads its configuration files (ADR 0054). */
+    void hangUp(String name) throws IOException, InterruptedException {
+        Process kill = new ProcessBuilder(
+                        "kill", "-HUP", Long.toString(processes.get(name).pid()))
+                .inheritIO()
+                .start();
+        if (kill.waitFor() != 0) {
+            throw new IllegalStateException("kill -HUP " + name + " failed");
+        }
+    }
+
     /** {@code kill -9}. */
     void kill(String name) throws InterruptedException {
         Process p = processes.remove(name);

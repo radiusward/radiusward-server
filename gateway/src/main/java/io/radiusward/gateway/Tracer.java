@@ -79,7 +79,7 @@ final class Tracer {
     private final Dictionary dictionary;
     private final VendorFormats formats;
     private final LongSupplier clockMillis;
-    private final List<Condition> configured;
+    private volatile List<Condition> configured;
     private volatile List<Condition> conditions;
 
     Tracer(Dictionary dictionary, List<Condition> configured, LongSupplier clockMillis) {
@@ -92,6 +92,21 @@ final class Tracer {
 
     /** {@code trace.users}, {@code trace.nas}, {@code trace.stations}. */
     static Tracer from(Config config, Dictionary dictionary) {
+        return new Tracer(dictionary, configured(config), System::currentTimeMillis);
+    }
+
+    /** Takes the configured conditions of a reloaded configuration (ADR 0054); those from the API stay. */
+    synchronized void reconfigure(Config config) {
+        List<Condition> next = configured(config);
+        List<Condition> fromApi =
+                conditions().stream().filter(c -> c.until() != Long.MAX_VALUE).toList();
+        configured = List.copyOf(next);
+        List<Condition> all = new ArrayList<>(next);
+        all.addAll(fromApi);
+        conditions = List.copyOf(all);
+    }
+
+    private static List<Condition> configured(Config config) {
         List<Condition> configured = new ArrayList<>();
         for (String user : config.list("trace.users", List.of())) {
             configured.add(new Condition(Kind.USER, user.trim(), Long.MAX_VALUE));
@@ -102,7 +117,7 @@ final class Tracer {
         for (String station : config.list("trace.stations", List.of())) {
             configured.add(new Condition(Kind.STATION, normalized(station), Long.MAX_VALUE));
         }
-        return new Tracer(dictionary, configured, System::currentTimeMillis);
+        return configured;
     }
 
     /** A trace for this request if a condition matches, else {@code null}. */

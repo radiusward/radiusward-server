@@ -242,4 +242,25 @@ class NasRegistryTest {
                         "s"))))
                 .hasMessageContaining("duplicate address");
     }
+
+    @Test
+    void replaceTakesTheEntriesOfAReloadedConfiguration() throws Exception {
+        NasRegistry registry = NasRegistry.from(io.radiusward.common.config.Config.of(Map.of(
+                "nas.a.address",
+                "10.0.0.1",
+                "nas.a.secret",
+                "one",
+                "nas.v6.address",
+                "2001:db8::1",
+                "nas.v6.secret",
+                "x")));
+        java.net.InetAddress v6 = java.net.InetAddress.getByName("2001:db8::1");
+        assertThat(registry.lookup(v6).name()).isEqualTo("v6");
+        registry.replace(NasRegistry.configured(
+                io.radiusward.common.config.Config.of(Map.of("nas.b.address", "10.0.0.0/24", "nas.b.secret", "two"))));
+        assertThat(registry.lookup(java.net.InetAddress.getByName("10.0.0.1")).name())
+                .isEqualTo("b");
+        assertThat(registry.lookup(v6)).as("no stale IPv6 cache").isNull();
+        assertThat(registry.clients()).extracting(NasClient::name).containsExactly("b");
+    }
 }

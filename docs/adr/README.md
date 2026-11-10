@@ -55,5 +55,6 @@
 | [0051](0051-rules.md) | A small rule layer on Access-Accepts: request conditions, groups, reply changes, reject | Accepted |
 | [0052](0052-request-traces.md) | Per-request traces by user, NAS or station, configured or from the management API, secrets hidden | Accepted |
 | [0053](0053-totp.md) | TOTP second factor for PAP: Access-Challenge or appended code, codes used once | Accepted |
+| [0054](0054-config-reload.md) | SIGHUP and `POST /reload`: NAS entries, stores, counters, pools, TOTP, rules swapped after validation | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

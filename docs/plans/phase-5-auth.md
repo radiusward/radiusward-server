@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.29 done (ADR 0020–0053). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.30 done (ADR 0020–0054). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -126,6 +126,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.27 ✅ | Rules | `auth.rules`: `if <conditions> { reply/remove/reject/stop }` on Access-Accepts, request attributes and groups, `%{Attribute}`, reloaded on change ([ADR 0051](../adr/0051-rules.md)) | S |
 | 5.28 ✅ | Request traces | Access-Requests of a user, NAS or Calling-Station-Id logged with their decision steps and reply, secrets hidden; `trace.*` and `POST /trace` on the management port ([ADR 0052](../adr/0052-request-traces.md)) | S |
 | 5.29 ✅ | TOTP | `TOTP-Secret` users need an RFC 6238 code after the password: Access-Challenge with State, or appended; codes used once ([ADR 0053](../adr/0053-totp.md)) | S |
+| 5.30 ✅ | Configuration reload | SIGHUP and `POST /reload`: NAS entries, identity stores, counters, pools, TOTP, rules and trace conditions replaced after the whole configuration loaded; listeners and links need a restart ([ADR 0054](../adr/0054-config-reload.md)) | S |
 
 ## Tests
 

@@ -52,6 +52,8 @@ public final class Gateway implements AutoCloseable {
     private CoaApi coaApi;
     private java.util.List<AccessWorker> workers = java.util.List.of();
     private Dictionary dictionary;
+    private NasRegistry registry;
+    private Tracer tracer;
     private StoreSweep sweep;
     private CoaRelay coaRelay;
     private DynamicClients dynamicClients;
@@ -253,6 +255,7 @@ public final class Gateway implements AutoCloseable {
             Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
             gateway.radsecAgent = radsecAgent;
             gateway.workers = java.util.List.copyOf(workers);
+            gateway.registry = registry;
             gateway.dictionary = dictionary;
             gateway.dynamicClients = registry.dynamic();
             if (dynamic != null) {
@@ -487,11 +490,65 @@ public final class Gateway implements AutoCloseable {
             return null;
         }
         Tracer tracer = Tracer.from(raw, dictionary);
+        this.tracer = tracer;
         for (AccessWorker worker : workers) {
             worker.tracer(tracer);
         }
         String token = raw.string("trace.api.token", "").trim();
         return token.isEmpty() ? null : tracer.api(token);
+    }
+
+    /**
+     * Applies a reloaded configuration (ADR 0054): NAS entries, identity stores and their per-NAS settings, usage
+     * counters, IP pools, TOTP, rules and trace conditions. Everything is built first; a configuration that does not
+     * load changes nothing. Listeners, RadSec/DTLS/TCP clients, the cluster, proxying and CoA keep their settings
+     * until a restart.
+     *
+     * @return what was applied
+     * @throws io.radiusward.common.config.ConfigException if the configuration does not load
+     */
+    public synchronized String reload(io.radiusward.common.config.Config raw) {
+        NasRegistry fresh = NasRegistry.configured(raw);
+        if (fresh.clients().isEmpty() && registry.dynamic() == null) {
+            throw new io.radiusward.common.config.ConfigException(
+                    "no NAS configured: add nas.<name>.address and nas.<name>.secret");
+        }
+        StoreAccessHandler stores = handler instanceof StoreAccessHandler h ? h : null;
+        AuthStores nextStores = null;
+        UsageCounters counters = null;
+        java.time.ZoneId zone = null;
+        IpPools pools = null;
+        Totp totp = null;
+        RulesFile rules = null;
+        if (stores != null) {
+            nextStores = AuthStores.from(raw, workers.size(), dictionary);
+            try {
+                counters = UsageCounters.from(raw);
+                zone = UsageCounters.zone(raw);
+                pools = IpPools.from(raw);
+                totp = Totp.from(raw);
+                rules = RulesFile.from(raw, name -> dictionary.find(name) != null);
+            } catch (RuntimeException e) {
+                nextStores.close();
+                throw e;
+            }
+        }
+        int before = registry.clients().size();
+        registry.replace(fresh);
+        if (stores != null) {
+            stores.reload(nextStores, java.time.Duration.ofSeconds(30));
+            stores.limits(counters, zone);
+            stores.pools(pools);
+            stores.totp(totp);
+            stores.rules(rules);
+        }
+        if (tracer != null) {
+            tracer.reconfigure(raw);
+        }
+        String summary = "NAS entries: " + fresh.clients().size() + " (were " + before + ")"
+                + (stores != null ? ", stores: " + String.join(", ", nextStores.order()) : "");
+        LOG.info("configuration reloaded: {}", summary);
+        return summary;
     }
 
     public com.sun.net.httpserver.HttpHandler coaApi() {

@@ -29,6 +29,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
@@ -67,13 +68,15 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
     };
 
-    private final AuthStores stores;
+    private volatile AuthStores stores; // replaced by a reload (ADR 0054)
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
-    private final long ttlMillis;
+    private volatile long ttlMillis;
     private final ObjectHashSet<String> warned = new ObjectHashSet<>();
-    /** Per NAS entry with a vendor filter; filled at construction, only read afterwards. */
-    private final Object2ObjectHashMap<String, AtomicLong> filtered = new Object2ObjectHashMap<>();
+    /** Per NAS entry with a vendor filter; replaced as a whole by a reload, otherwise only read. */
+    private volatile Map<String, AtomicLong> filtered = Map.of();
+    /** Raised by a reload: workers then drop their caches. */
+    private volatile int generation;
 
     private final byte[] verifierSalt = new byte[16];
 
@@ -94,6 +97,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         final EapRound eap = new EapRound();
         /** What TOTP's append mode left of the PAP password (ADR 0053); {@code null}: the User-Password. */
         byte[] papPassword;
+        /** The handler's generation the caches belong to (ADR 0054). */
+        int generation;
     }
 
     /** The EAP state of the request being decided; per worker, reset for every request. */
@@ -142,7 +147,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.clockMillis = clockMillis;
         this.ttlMillis = stores.cacheTtl().toMillis();
         new java.security.SecureRandom().nextBytes(verifierSalt);
-        stores.replyVendors().keySet().forEach(nas -> filtered.put(nas, new AtomicLong()));
+        this.filtered = counters(stores, Map.of());
         this.conversations = new EapConversations(stores.eap().conversations());
     }
 
@@ -150,6 +155,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     public int handle(AccessContext context) {
         int method = context.credentials().method(context.request());
         WorkerCache cache = cache(context);
+        int current = generation;
+        if (cache.generation != current) { // the configuration was reloaded
+            cache.users.clear();
+            cache.verified.clear();
+            cache.encoded.clear();
+            cache.generation = current;
+        }
         cache.msChap.reset();
         cache.eap.reset();
         int result;
@@ -1739,7 +1751,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             } else if (vendors == null || vendors.contains(e.vendorId())) {
                 out.vendorAttribute(e.vendorId(), e.number(), e.value());
             } else {
-                filtered.get(nas).incrementAndGet(); // present: the entry has a vendor set
+                AtomicLong count = filtered.get(nas); // absent only for a moment around a reload
+                if (count != null) {
+                    count.incrementAndGet();
+                }
             }
         }
     }
@@ -1768,6 +1783,40 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** Vendor attributes left out of replies because the NAS entry is of another vendor, per NAS entry. */
+    private static Map<String, AtomicLong> counters(AuthStores stores, Map<String, AtomicLong> previous) {
+        Map<String, AtomicLong> next = new java.util.HashMap<>();
+        stores.replyVendors().keySet().forEach(nas -> next.put(nas, previous.getOrDefault(nas, new AtomicLong())));
+        return Map.copyOf(next);
+    }
+
+    /**
+     * Takes the stores of a reloaded configuration (ADR 0054): requests from now on use them, workers drop their
+     * caches, and the previous stores are closed after {@code grace} (requests still using them finish).
+     */
+    void reload(AuthStores next, java.time.Duration grace) {
+        AuthStores previous = stores;
+        filtered = counters(next, filtered);
+        ttlMillis = next.cacheTtl().toMillis();
+        stores = next;
+        generation++;
+        Thread closer = new Thread(
+                () -> {
+                    try {
+                        Thread.sleep(grace.toMillis());
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    previous.close();
+                },
+                "auth-stores-close");
+        closer.setDaemon(true);
+        closer.start();
+    }
+
+    AuthStores stores() {
+        return stores;
+    }
+
     long filtered(String nas) {
         AtomicLong count = filtered.get(nas);
         return count == null ? 0 : count.get();
