@@ -30,6 +30,7 @@ import java.util.Locale;
  * @param teapAuthorityId TEAP's Authority-ID ({@code auth.eap.teap.authority.id})
  * @param teapIdentity the identity types TEAP asks for in turn ({@code auth.eap.teap.identity}); empty: any
  * @param pwdServerId EAP-pwd's server identity ({@code auth.eap.pwd.server.id}, ADR 0042)
+ * @param sim EAP-SIM, EAP-AKA and EAP-AKA′ settings (ADR 0061)
  */
 record EapConfig(
         List<String> methods,
@@ -44,7 +45,39 @@ record EapConfig(
         List<Integer> teapInner,
         byte[] teapAuthorityId,
         List<Integer> teapIdentity,
-        byte[] pwdServerId) {
+        byte[] pwdServerId,
+        SimConfig sim) {
+
+    EapConfig(
+            List<String> methods,
+            Duration timeout,
+            int conversations,
+            int maxRounds,
+            EapTlsConfig tls,
+            List<Integer> peapInner,
+            Peap.Binding peapBinding,
+            boolean peapClientCertificate,
+            List<Integer> ttlsInner,
+            List<Integer> teapInner,
+            byte[] teapAuthorityId,
+            List<Integer> teapIdentity,
+            byte[] pwdServerId) {
+        this(
+                methods,
+                timeout,
+                conversations,
+                maxRounds,
+                tls,
+                peapInner,
+                peapBinding,
+                peapClientCertificate,
+                ttlsInner,
+                teapInner,
+                teapAuthorityId,
+                teapIdentity,
+                pwdServerId,
+                SimConfig.DEFAULT);
+    }
 
     EapConfig(
             List<String> methods,
@@ -92,7 +125,7 @@ record EapConfig(
 
     static final List<Integer> DEFAULT_TTLS_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
 
-    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap", "pwd");
+    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap", "pwd", "aka", "aka-prime");
 
     static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
@@ -211,7 +244,8 @@ record EapConfig(
                 teapInner,
                 authorityId,
                 teapIdentity,
-                pwdServerId);
+                pwdServerId,
+                SimConfig.from(config));
     }
 
     /** The EAP type number of a method name. */
@@ -223,6 +257,8 @@ record EapConfig(
             case "ttls" -> Ttls.TYPE;
             case "teap" -> Teap.TYPE;
             case "pwd" -> EapPwd.TYPE;
+            case "aka" -> EapAka.TYPE_AKA;
+            case "aka-prime" -> EapAka.TYPE_AKA_PRIME;
             default -> -1;
         };
     }
@@ -240,6 +276,8 @@ record EapConfig(
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls, ttlsInner);
             case Teap.TYPE -> tls == null ? null : new Teap(tls, teapInner, teapAuthorityId, teapIdentity);
             case EapPwd.TYPE -> new EapPwd(pwdServerId);
+            case EapAka.TYPE_AKA -> new EapAka(false, sim.networkName(), identity);
+            case EapAka.TYPE_AKA_PRIME -> new EapAka(true, sim.networkName(), identity);
             default -> null;
         };
     }
@@ -254,6 +292,8 @@ record EapConfig(
                         && (!tls.requireUser() || tls.identity() == CertificateIdentity.Check.CERTIFICATE))
                 || type == Peap.TYPE
                 || type == Ttls.TYPE
-                || type == Teap.TYPE;
+                || type == Teap.TYPE
+                || type == EapAka.TYPE_AKA // the IMSI is authorized once the method knows it (ADR 0061)
+                || type == EapAka.TYPE_AKA_PRIME;
     }
 }

@@ -15,6 +15,7 @@ RUN curl -fsSL -o wpa.tar.gz "https://w1.fi/releases/wpa_supplicant-${WPA_VERSIO
     && printf '%s\n' CONFIG_EAPOL_TEST=y CONFIG_IEEE8021X_EAPOL=y CONFIG_TLS=openssl CONFIG_TLSV12=y \
         CONFIG_EAP_MD5=y CONFIG_EAP_MSCHAPV2=y CONFIG_EAP_TLS=y CONFIG_EAP_PEAP=y CONFIG_EAP_TTLS=y CONFIG_EAP_GTC=y \
         CONFIG_EAP_TEAP=y CONFIG_EAP_PWD=y \
+        CONFIG_EAP_SIM=y CONFIG_EAP_AKA=y CONFIG_EAP_AKA_PRIME=y CONFIG_SIM_SIMULATOR=y CONFIG_USIM_SIMULATOR=y \
         > .config \
     && make -j"$(nproc)" eapol_test \
     && install -m 0755 eapol_test /usr/local/bin/eapol_test

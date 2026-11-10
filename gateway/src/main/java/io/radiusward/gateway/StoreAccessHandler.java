@@ -651,6 +651,18 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                     public EapMethod.Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
                         return innerMsChap(context, user, challenge, ntResponse, false);
                     }
+
+                    @Override
+                    public EapMethod.Subscriber subscriber(String imsi) {
+                        return simSubscriber(context, imsi);
+                    }
+
+                    @Override
+                    public long nextSqn(String imsi, long floor) {
+                        byte[] name = imsi.getBytes(StandardCharsets.US_ASCII);
+                        return context.sessionLimits()
+                                .nextSqn(UserKeys.user(new UnsafeBuffer(name), 0, name.length), floor);
+                    }
                 });
         EapMethod.Step step;
         if (c.method == null) {
@@ -1107,6 +1119,40 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private static String stateKey(org.agrona.DirectBuffer buffer, int offset, int length) {
         return io.radiusward.radius.codec.AttributeValues.hex(buffer, offset, length);
+    }
+
+    // ---- SIM subscribers (ADR 0061) ------------------------------------------------------------------------------
+
+    /** A SIM subscriber's check items by IMSI, from the stores of this NAS entry; keys are checked here once. */
+    private EapMethod.Subscriber simSubscriber(AccessContext context, String imsi) {
+        Found found;
+        try {
+            found = find(cache(context), context.nas().name(), imsi);
+        } catch (StoreUnavailableException e) {
+            warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
+            because(context, "identity store unavailable: ", e.getMessage());
+            return new EapMethod.Subscriber(DROP, List.of());
+        }
+        if (found == null) {
+            because(context, "SIM subscriber not in any store: ", imsi);
+            return new EapMethod.Subscriber(REJECT, List.of());
+        }
+        try {
+            if (!SimSubscriber.of(found.user().check()).gsm()) {
+                warnOnce(
+                        "sim-keys:" + found.store(),
+                        "store {}: SIM subscribers need SIM-Ki and SIM-OPc (or "
+                                + "SIM-OP), or three stored triplets; COMP128 is not supported",
+                        found.store());
+                because(context, "no usable SIM keys for ", imsi);
+                return new EapMethod.Subscriber(REJECT, List.of());
+            }
+        } catch (IllegalArgumentException e) {
+            warnOnce("sim-keys-bad:" + found.store(), "store {}: {}", found.store(), e.getMessage()); // never the value
+            because(context, "SIM keys not understood for ", imsi);
+            return new EapMethod.Subscriber(REJECT, List.of());
+        }
+        return new EapMethod.Subscriber(ACCEPT, found.user().check());
     }
 
     // ---- traces (ADR 0052) ---------------------------------------------------------------------------------------

@@ -50,7 +50,23 @@ interface EapMethod {
         default Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
             return new Inner(AccessHandler.REJECT, null);
         }
+
+        /** A SIM subscriber's check items (its keys), looked up by IMSI in the stores (ADR 0061). */
+        default Subscriber subscriber(String imsi) {
+            return new Subscriber(AccessHandler.REJECT, List.of());
+        }
+
+        /** The subscriber's next EAP-AKA sequence number from the cluster; see {@link SessionLimits#nextSqn}. */
+        default long nextSqn(String imsi, long floor) {
+            return SessionLimits.SQN_UNAVAILABLE;
+        }
     }
+
+    /**
+     * A SIM subscriber's store entry: {@link AccessHandler#ACCEPT} with its check items, {@link AccessHandler#REJECT}
+     * when no store knows it, {@link AccessHandler#DROP} when a store is unreachable.
+     */
+    record Subscriber(int code, List<AttributeItem> checks) {}
 
     /**
      * The answer of an inner check: {@link AccessHandler#ACCEPT} with the MS-CHAP session key (MD4 of the NT hash),

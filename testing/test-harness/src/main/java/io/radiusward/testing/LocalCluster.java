@@ -225,9 +225,23 @@ public final class LocalCluster implements AutoCloseable {
             RadsecConfig radsec,
             CoaConfig coa,
             ProxyConfig proxy) {
+        return startGateway(gatewayId, radiusPort, registry, auth, handler, radsec, coa, proxy, "127.0.0.1");
+    }
+
+    /** As above, listening on {@code listenHost} ({@code 0.0.0.0} for peers in containers). */
+    public Gateway startGateway(
+            int gatewayId,
+            int radiusPort,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler,
+            RadsecConfig radsec,
+            CoaConfig coa,
+            ProxyConfig proxy,
+            String listenHost) {
         GatewayConfig config = new GatewayConfig(
                 gatewayId,
-                "127.0.0.1",
+                listenHost,
                 radiusPort,
                 1 << 20,
                 members(),
