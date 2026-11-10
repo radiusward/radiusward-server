@@ -1,8 +1,7 @@
 # ADR 0036: CoA and Disconnect, and sessions' identifying attributes
 
-Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.12
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1 (session identity in the replicated state), 2 (sender, API), 3 (Simultaneous-Use) and 4 (store sweep)
-done.
+Status: Accepted (2026-11-10). Phase 5, work package 5.12 ([plans/phase-5-auth.md](../plans/phase-5-auth.md)): session
+identity in the replicated state, sender and API, Simultaneous-Use, store sweep, interop.
 
 ## Context
 RFC 5176 lets a server change (CoA-Request) or end (Disconnect-Request) a session on the NAS. The request must name
@@ -103,6 +102,13 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - A store outage changes nothing.
   - Running the sweep on two gateways only repeats requests: a NAS NAKs a session it no longer has.
   - `radiusward_gateway_store_sweep_total{result}` counts sweeps, users, disconnects, changes and outages.
+
+- **Interop** (milestone 5): `ExternalCoaReceiverIT` (`-Pinterop`, skipped without an installed `radiusd`) starts an
+  external RADIUS server with a configuration of its own: a CoA listener that requires Message-Authenticator and
+  refuses one user.
+  - It acknowledges our Disconnect-Request and our CoA-Request with a Session-Timeout, and NAKs the refused user.
+  - It drops a request with the wrong secret, which our sender reports as a timeout.
+  - Its log ends up in `gateway/target/external-coa-receiver`.
 
 ## Consequences
 - Any gateway can name any active session to its NAS, and that survives member restarts and snapshots.
