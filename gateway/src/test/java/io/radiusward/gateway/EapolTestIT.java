@@ -85,6 +85,7 @@ class EapolTestIT {
         Path users = Files.writeString(dir.resolve("users"), """
                 alice   Cleartext-Password := "Alice-Passw0rd!"
                 carol   Cleartext-Password := "Carol-Passw0rd!", Auth-Type := Reject
+                bob     NT-Password := "98c5d23f757cf4e1f9bdcd2582adb9cd"
                 """);
         Config settings = Config.of(Map.ofEntries(
                 Map.entry("auth.stores", "local"),
@@ -93,7 +94,7 @@ class EapolTestIT {
                 Map.entry("auth.store.local.mschap", "true"),
                 Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
-                Map.entry("auth.eap.methods", "peap, ttls, tls, teap"),
+                Map.entry("auth.eap.methods", "peap, ttls, tls, teap, pwd"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc, tls"),
                 Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
                 Map.entry("auth.eap.tls.key", pki.serverKey.toString()),
@@ -241,6 +242,26 @@ class EapolTestIT {
         assertThat(again.getStdout())
                 .as("two authentications in a row; the peer offers no resumption for TEAP")
                 .contains("MPPE keys OK: 2  mismatch: 0");
+    }
+
+    /**
+     * EAP-pwd (ADR 0042): no certificates; alice's cleartext (preparation none), bob's NT hash (preparation MS); wrong
+     * passwords rejected.
+     */
+    @Test
+    void pwd() throws Exception {
+        assertAccepted(run("pwd-cleartext", pwd("alice", "Alice-Passw0rd!")));
+        assertAccepted(run("pwd-nt-hash", pwd("bob", "Bob-Passw0rd!")));
+        assertRejected(run("pwd-wrong", pwd("alice", "wrong")));
+        assertRejected(run("pwd-nt-hash-wrong", pwd("bob", "wrong")));
+    }
+
+    static String pwd(String user, String password) {
+        return """
+                eap=PWD
+                identity="%s"
+                password="%s"
+                """.formatted(user, password);
     }
 
     /** A second gateway offering only TEAP with these settings. */

@@ -215,7 +215,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.verifiers` | none | credential verifiers by name; `Auth-Type := <name>` sends a user to one |
 | `auth.verifier.<name>.type` | — | `ldap` (PAP by binding as the user; settings as the LDAP store's, [stores/ldap](../stores/ldap/README.md)), `netlogon` (MS-CHAPv1/v2 and PAP against Active Directory: `server` or `dns.domain` (+ `dns.server`, `dns.refresh`), `domain`, `machine.account`, `machine.password`, `server.name`, `endpoint.mapper.port`, `netlogon.port`, `strip.realm`, `timeout`, `connections`; [verifiers/netlogon](../verifiers/netlogon/README.md)), or a plug-in's type |
 | `auth.store.<name>.*` for `type = ldap` | | `url`, `tls.ca`, `bind.dn`, `bind.password`, `base.dn`, `user.filter`, `strip.domain`, `group.attribute`, `group.nested`, `require.groups`, `policy.<id>.group/check/reply`, `check.<attribute>`, `reply.<attribute>`, `timeout`, `pool` ([stores/ldap](../stores/ldap/README.md)) |
-| `auth.eap.methods` | `md5` | EAP methods offered, in order of preference: `tls`, `peap`, `ttls`, `teap`, `md5`; a peer may Nak to another listed one ([ADR 0026](adr/0026-eap-framework.md)). EAP-MD5 needs the store's `chap` opt-in |
+| `auth.eap.methods` | `md5` | EAP methods offered, in order of preference: `tls`, `peap`, `ttls`, `teap`, `pwd`, `md5`; a peer may Nak to another listed one ([ADR 0026](adr/0026-eap-framework.md)). EAP-MD5 needs the store's `chap` opt-in |
 | `auth.eap.tls.certificate` / `auth.eap.tls.key` | — | the server's certificate chain and its unencrypted PKCS#8 key, PEM ([ADR 0028](adr/0028-eap-tls.md)) |
 | `auth.eap.tls.ca` | — | CA certificates (PEM) that client certificates must chain to; required for `tls`, not used by `peap` and `ttls` |
 | `auth.eap.tls.versions` | `TLSv1.2, TLSv1.3` | enabled TLS versions |
@@ -236,6 +236,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.teap.inner` | `mschapv2, gtc, md5` | TEAP's inner methods, first preferred: `mschapv2`, `gtc`, `md5`, `tls` (a client certificate of `auth.eap.tls.ca`), `basic` (Basic-Password-Auth, checked like PAP; a peer's NAK falls back to the EAP methods) ([ADR 0041](adr/0041-teap.md)) |
 | `auth.eap.teap.identity` | — (any, one round) | identity types asked for in turn and chained in one tunnel: `user`, `machine`, `machine, user` or `user, machine`; the user (else the machine) is the authenticated identity |
 | `auth.eap.teap.authority.id` | `radiusward` | TEAP's Authority-ID (sent in the Start) |
+| `auth.eap.pwd.server.id` | `radiusward` | EAP-pwd's server identity (method `pwd`, group 19; needs the cleartext of a store that allows it, or an NT-Password) ([ADR 0042](adr/0042-eap-pwd.md)) |
 | `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |

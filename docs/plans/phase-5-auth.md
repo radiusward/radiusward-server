@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.17 done (ADR 0020–0041). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.18 done (ADR 0020–0042). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -114,6 +114,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.15 ✅ | PEAP alignment | PEAPv0 only as other servers (PEAPv1 not planned until a user with old Cisco PEAP/GTC clients asks); PEAP and TTLS version bits checked; `auth.eap.peap.client.certificate`; `ExternalEapComparisonIT`: the same `eapol_test` profiles against an installed external RADIUS server and the gateway end the same way, resume alike ([ADR 0039](../adr/0039-peap-alignment.md)) | S |
 | 5.16 ✅ | TTLS inner methods | CHAP, MS-CHAPv1 and EAP inside TTLS (EAP-MSCHAPv2, EAP-GTC, EAP-MD5; `auth.eap.ttls.inner`); `eapol_test` and comparison profiles ([ADR 0040](../adr/0040-ttls-inner-methods.md)) | S |
 | 5.17 ✅ | TEAP | TEAPv1 (RFC 7170/9930) with inner EAP-MSCHAPv2, EAP-GTC, EAP-MD5, EAP-TLS or Basic-Password-Auth, Crypto-Binding, machine and user chaining; `eapol_test` 2.12 built from source; comparison profiles ([ADR 0041](../adr/0041-teap.md)) | M |
+| 5.18 ✅ | EAP-pwd | RFC 5931 with group 19, password preparation none (cleartext) or MS (NT hash), interop and comparison ([ADR 0042](../adr/0042-eap-pwd.md)) | M |
 
 ## Tests
 

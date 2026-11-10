@@ -29,6 +29,7 @@ import java.util.Locale;
  *     ({@code auth.eap.teap.inner}, ADR 0041)
  * @param teapAuthorityId TEAP's Authority-ID ({@code auth.eap.teap.authority.id})
  * @param teapIdentity the identity types TEAP asks for in turn ({@code auth.eap.teap.identity}); empty: any
+ * @param pwdServerId EAP-pwd's server identity ({@code auth.eap.pwd.server.id}, ADR 0042)
  */
 record EapConfig(
         List<String> methods,
@@ -42,7 +43,8 @@ record EapConfig(
         List<Integer> ttlsInner,
         List<Integer> teapInner,
         byte[] teapAuthorityId,
-        List<Integer> teapIdentity) {
+        List<Integer> teapIdentity,
+        byte[] pwdServerId) {
 
     EapConfig(
             List<String> methods,
@@ -66,7 +68,8 @@ record EapConfig(
                 ttlsInner,
                 DEFAULT_TEAP_INNER,
                 DEFAULT_AUTHORITY_ID,
-                List.of());
+                List.of(),
+                DEFAULT_AUTHORITY_ID);
     }
 
     static final List<Integer> DEFAULT_TEAP_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
@@ -89,7 +92,7 @@ record EapConfig(
 
     static final List<Integer> DEFAULT_TTLS_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
 
-    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap");
+    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap", "pwd");
 
     static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
@@ -185,6 +188,11 @@ record EapConfig(
         if (teapIdentity.size() > 2 || teapIdentity.stream().distinct().count() != teapIdentity.size()) {
             throw new ConfigException("auth.eap.teap.identity: user, machine, or both once each");
         }
+        byte[] pwdServerId =
+                config.string("auth.eap.pwd.server.id", "radiusward").getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (pwdServerId.length == 0 || pwdServerId.length > 253) {
+            throw new ConfigException("auth.eap.pwd.server.id: 1 to 253 bytes");
+        }
         byte[] authorityId = config.string("auth.eap.teap.authority.id", "radiusward")
                 .getBytes(java.nio.charset.StandardCharsets.UTF_8);
         if (authorityId.length == 0 || authorityId.length > 255) {
@@ -202,7 +210,8 @@ record EapConfig(
                 ttlsInner,
                 teapInner,
                 authorityId,
-                teapIdentity);
+                teapIdentity,
+                pwdServerId);
     }
 
     /** The EAP type number of a method name. */
@@ -213,6 +222,7 @@ record EapConfig(
             case "peap" -> Peap.TYPE;
             case "ttls" -> Ttls.TYPE;
             case "teap" -> Teap.TYPE;
+            case "pwd" -> EapPwd.TYPE;
             default -> -1;
         };
     }
@@ -229,6 +239,7 @@ record EapConfig(
             case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner, peapBinding, peapClientCertificate);
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls, ttlsInner);
             case Teap.TYPE -> tls == null ? null : new Teap(tls, teapInner, teapAuthorityId, teapIdentity);
+            case EapPwd.TYPE -> new EapPwd(pwdServerId);
             default -> null;
         };
     }
