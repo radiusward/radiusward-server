@@ -92,6 +92,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
         final MsChapOutcome msChap = new MsChapOutcome();
         final EapRound eap = new EapRound();
+        /** What TOTP's append mode left of the PAP password (ADR 0053); {@code null}: the User-Password. */
+        byte[] papPassword;
     }
 
     /** The EAP state of the request being decided; per worker, reset for every request. */
@@ -150,7 +152,15 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         WorkerCache cache = cache(context);
         cache.msChap.reset();
         cache.eap.reset();
-        int result = decide(context, method);
+        int result;
+        try {
+            result = decide(context, method);
+        } finally {
+            if (cache.papPassword != null) {
+                Arrays.fill(cache.papPassword, (byte) 0);
+                cache.papPassword = null;
+            }
+        }
         if (result == REJECT && isMsChap(method)) {
             writeMsChapError(context, method); // the client shows a proper failure instead of a timeout
         }
@@ -216,13 +226,31 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 }
                 found = a.found();
             }
-        } else if (!authType.equalsIgnoreCase("Accept")) {
-            String verifier = verifierFor(authType, found.store(), passwords);
-            int checked = verifier != null
-                    ? verify(context, method, verifier, userName)
-                    : authenticate(context, method, found, userName, passwords) ? ACCEPT : REJECT;
-            if (checked != ACCEPT) {
-                return checked;
+        } else {
+            boolean firstFactor = !authType.equalsIgnoreCase("Accept");
+            boolean challenge = false;
+            String secret = totpSecret(a);
+            if (secret != null) {
+                int second = totp(context, method, userName, secret);
+                if (second == TOTP_CODE_OK) {
+                    firstFactor = false; // the password was checked in the round that asked for the code
+                } else if (second == TOTP_ASK) {
+                    challenge = true;
+                } else if (second != ACCEPT) {
+                    return second;
+                }
+            }
+            if (firstFactor) {
+                String verifier = verifierFor(authType, found.store(), passwords);
+                int checked = verifier != null
+                        ? verify(context, method, verifier, userName)
+                        : authenticate(context, method, found, userName, passwords) ? ACCEPT : REJECT;
+                if (checked != ACCEPT) {
+                    return checked;
+                }
+            }
+            if (challenge) {
+                return totpChallenge(context, userName);
             }
         }
         if (a.limit() != null) {
@@ -787,7 +815,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             String name = item.attribute();
             if (name.equalsIgnoreCase("Expiration")
                     || name.equalsIgnoreCase("Login-Time")
-                    || name.equalsIgnoreCase("Pool-Name")) {
+                    || name.equalsIgnoreCase("Pool-Name")
+                    || name.equalsIgnoreCase(TOTP_SECRET)) {
                 into.add(item);
             } else if (c != null
                     && c.counters().stream().anyMatch(k -> k.check().equalsIgnoreCase(name))) {
@@ -819,8 +848,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 cap = Math.min(
                         cap,
                         Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
-            } else if (name.equalsIgnoreCase("Pool-Name")) {
-                continue; // #assignAddress
+            } else if (name.equalsIgnoreCase("Pool-Name") || name.equalsIgnoreCase(TOTP_SECRET)) {
+                continue; // #assignAddress, #totp
             } else if (name.equalsIgnoreCase("Login-Time")) {
                 LoginTime window = LoginTime.parse(item.value());
                 if (window == null) {
@@ -898,6 +927,163 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             note(context, "Session-Timeout capped to ", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
         }
         return ACCEPT;
+    }
+
+    // ---- TOTP second factor (ADR 0053) -----------------------------------------------------------------------
+
+    static final String TOTP_SECRET = "TOTP-Secret";
+    private static final int REPLY_MESSAGE = 18;
+    /** {@link #totp}: the code of a challenge was right; the password was checked before. */
+    private static final int TOTP_CODE_OK = -1;
+    /** {@link #totp}: check the password, then ask for the code. */
+    private static final int TOTP_ASK = -2;
+
+    private static final int MAX_CHALLENGES = 10_000;
+
+    private record Pending(String user, long expiresMillis) {}
+
+    private volatile Totp totp = Totp.DEFAULT;
+    private final java.util.concurrent.ConcurrentHashMap<String, Pending> challenges =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** The last time step used per user: a code is accepted once. */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> usedSteps =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    void totp(Totp totp) {
+        this.totp = totp;
+    }
+
+    private static String totpSecret(Authorization a) {
+        for (AttributeItem item : a.restrictions()) {
+            if (item.attribute().equalsIgnoreCase(TOTP_SECRET)) {
+                return item.value();
+            }
+        }
+        return null;
+    }
+
+    /** The PAP password: the decrypted User-Password, or what TOTP's append mode left of it; {@code null}: none. */
+    private byte[] papPassword(AccessContext context) {
+        byte[] override = cache(context).papPassword;
+        if (override != null) {
+            return override.clone();
+        }
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
+        int n = context.credentials()
+                .decryptUserPassword(context.request(), context.nas().secret(), buffer, 0);
+        if (n < 0) {
+            return null;
+        }
+        byte[] password = Arrays.copyOf(buffer.byteArray(), n);
+        Arrays.fill(buffer.byteArray(), (byte) 0);
+        return password;
+    }
+
+    /**
+     * The second factor of a user with a TOTP secret: {@link #ACCEPT} (append mode: the code was right, the password
+     * remains to be checked), {@link #TOTP_CODE_OK}, {@link #TOTP_ASK}, or {@link #REJECT}.
+     */
+    private int totp(AccessContext context, int method, String userName, String secret) {
+        Totp t = totp;
+        if (method != AccessRequests.METHOD_PAP) {
+            warnOnce("totp:" + method, "users with a TOTP-Secret need PAP; {} is rejected", methodName(method));
+            because(context, "TOTP needs PAP", "");
+            return REJECT;
+        }
+        byte[] key = Totp.base32(secret);
+        if (key == null) {
+            warnOnce("totp-secret:" + userName, "TOTP-Secret of user {} is not base32 of 10 bytes or more", userName);
+            because(context, "TOTP-Secret not understood", "");
+            return REJECT;
+        }
+        byte[] password = papPassword(context);
+        if (password == null) {
+            return REJECT;
+        }
+        try {
+            if (t.append()) {
+                if (password.length < t.digits()) {
+                    because(context, "no TOTP code after the password", "");
+                    return REJECT;
+                }
+                int split = password.length - t.digits();
+                if (!codeAccepted(
+                        context,
+                        t,
+                        key,
+                        userName,
+                        new String(password, split, t.digits(), StandardCharsets.US_ASCII))) {
+                    return REJECT;
+                }
+                cache(context).papPassword = Arrays.copyOf(password, split);
+                return ACCEPT;
+            }
+            RadiusPacket request = context.request();
+            int at = request.findAttribute(STATE);
+            Pending pending = null;
+            if (at >= 0) {
+                pending = challenges.remove(
+                        stateKey(request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2));
+            }
+            if (pending == null) {
+                return TOTP_ASK;
+            }
+            if (!pending.user().equals(userName) || pending.expiresMillis() < clockMillis.getAsLong()) {
+                because(context, "TOTP challenge expired or of another user", "");
+                return REJECT;
+            }
+            return codeAccepted(context, t, key, userName, new String(password, StandardCharsets.US_ASCII))
+                    ? TOTP_CODE_OK
+                    : REJECT;
+        } finally {
+            Arrays.fill(password, (byte) 0);
+            Arrays.fill(key, (byte) 0);
+        }
+    }
+
+    private boolean codeAccepted(AccessContext context, Totp t, byte[] key, String userName, String code) {
+        long step = t.match(key, code, clockMillis.getAsLong() / 1000);
+        if (step < 0) {
+            because(context, "wrong TOTP code", "");
+            return false;
+        }
+        boolean[] fresh = {false};
+        usedSteps.compute(userName, (u, last) -> {
+            if (last != null && last >= step) {
+                return last;
+            }
+            fresh[0] = true;
+            return step;
+        });
+        if (!fresh[0]) {
+            because(context, "TOTP code already used", "");
+        }
+        return fresh[0];
+    }
+
+    /** Asks for the code: an Access-Challenge with a fresh State and the prompt. */
+    private int totpChallenge(AccessContext context, String userName) {
+        long now = clockMillis.getAsLong();
+        if (challenges.size() >= MAX_CHALLENGES) {
+            challenges.values().removeIf(p -> p.expiresMillis() < now);
+            if (challenges.size() >= MAX_CHALLENGES) {
+                warnOnce("totp-full", "{} TOTP challenges open: further ones are not answered", MAX_CHALLENGES);
+                return DROP;
+            }
+        }
+        byte[] state = new byte[16];
+        saltRandom.nextBytes(state);
+        challenges.put(
+                stateKey(new UnsafeBuffer(state), 0, state.length),
+                new Pending(userName, now + totp.timeout().toMillis()));
+        context.reply().attribute(STATE, state);
+        context.reply().attribute(REPLY_MESSAGE, totp.prompt());
+        note(context, "password right, TOTP code asked for", "");
+        return CHALLENGE;
+    }
+
+    private static String stateKey(org.agrona.DirectBuffer buffer, int offset, int length) {
+        return io.radiusward.radius.codec.AttributeValues.hex(buffer, offset, length);
     }
 
     // ---- traces (ADR 0052) ---------------------------------------------------------------------------------------
@@ -1238,18 +1424,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 }
                 result = verifier.verifyMsChap(userName, r.challenge(), r.ntResponse(), r.v2());
             } else if (method == AccessRequests.METHOD_PAP) {
-                UnsafeBuffer buffer = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
-                int n = context.credentials()
-                        .decryptUserPassword(context.request(), context.nas().secret(), buffer, 0);
-                if (n < 0) {
+                byte[] password = papPassword(context);
+                if (password == null) {
                     return REJECT;
                 }
-                byte[] password = Arrays.copyOf(buffer.byteArray(), n);
                 try {
                     result = verifier.verifyPassword(userName, password);
                 } finally {
                     Arrays.fill(password, (byte) 0);
-                    Arrays.fill(buffer.byteArray(), (byte) 0);
                 }
             } else {
                 result = CredentialVerifier.Result.UNSUPPORTED; // CHAP needs a cleartext password
@@ -1447,18 +1629,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             }
             return false;
         }
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
-        int n = context.credentials()
-                .decryptUserPassword(context.request(), context.nas().secret(), buffer, 0);
-        if (n < 0) {
+        byte[] password = papPassword(context);
+        if (password == null) {
             return false;
         }
-        byte[] password = Arrays.copyOf(buffer.byteArray(), n);
         try {
             return checkPassword(context, found, userName, passwords, password);
         } finally {
             Arrays.fill(password, (byte) 0);
-            Arrays.fill(buffer.byteArray(), (byte) 0);
         }
     }
 

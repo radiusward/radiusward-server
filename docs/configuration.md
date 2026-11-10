@@ -287,6 +287,9 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.pool.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the pools; the gateway creates and fills `ip_pool`; unreachable = no answer |
 | `auth.rules` | none | a rules file applied to Access-Accepts: `if <conditions> { reply … / remove … / reject / stop }` ([ADR 0051](adr/0051-rules.md)); a file that does not parse stops the gateway |
 | `auth.rules.reload.interval` | `5s` | how often the rules file is checked for changes; a broken change keeps the previous rules; `0s` = never |
+| `auth.totp.mode` | `challenge` | users with `TOTP-Secret := <base32>` need a code ([ADR 0053](adr/0053-totp.md)): `challenge` (Access-Challenge after the right password; the code comes with the State) or `append` (the code follows the password) |
+| `auth.totp.digits` / `auth.totp.window` | `6` / `1` | code length (6 or 8); 30-second steps of clock drift accepted either way (0–10) |
+| `auth.totp.timeout` / `auth.totp.prompt` | `60s` / `Enter the code from your authenticator app` | how long a challenge waits; its Reply-Message |
 | `trace.users` / `trace.nas` / `trace.stations` | none | Access-Requests of these users, NAS entries or Calling-Station-Ids are logged with their decision steps to `io.radiusward.trace` ([ADR 0052](adr/0052-request-traces.md)); secrets are hidden |
 | `trace.api.token` | — | bearer token of `POST/GET/DELETE /trace` on the management port (temporary conditions, up to 24 h); at least 16 characters |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |

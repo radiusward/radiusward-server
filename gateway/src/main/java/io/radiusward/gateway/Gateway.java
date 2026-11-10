@@ -302,10 +302,12 @@ public final class Gateway implements AutoCloseable {
         UsageCounters counters = UsageCounters.from(config);
         java.time.ZoneId zone = UsageCounters.zone(config);
         IpPools pools = IpPools.from(config);
+        Totp totp = Totp.from(config);
         return dictionary -> {
             StoreAccessHandler handler = new StoreAccessHandler(
                     AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
             handler.limits(counters, zone); // ADR 0049
+            handler.totp(totp); // ADR 0053
             handler.pools(pools); // ADR 0050
             handler.rules(RulesFile.from(config, name -> dictionary.find(name) != null)); // ADR 0051
             return handler;
