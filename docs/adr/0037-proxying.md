@@ -91,3 +91,5 @@ never lets one network's secret protect another's data.
 - Accounting of proxied users is committed and answered by the cluster like any other; nothing the home server does
   can lose it or keep the NAS waiting.
 - Not covered: CoA from a home server back through the gateway to the NAS.
+
+CoA and Disconnect from home servers are relayed to the NAS since work package 5.19 ([ADR 0043](0043-coa-relay.md)).

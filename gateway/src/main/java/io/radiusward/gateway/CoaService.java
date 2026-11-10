@@ -155,6 +155,52 @@ public final class CoaService {
         return out;
     }
 
+    /**
+     * A CoA or Disconnect-Request a home server sent for one of its users (ADR 0043), its attributes as they came
+     * (without Proxy-State and Message-Authenticator): to the NAS of the user's active session (the one with its
+     * Acct-Session-Id, if given), else to the NAS entry of its NAS-IP-Address. {@code null} when no session or NAS
+     * is found.
+     */
+    CompletableFuture<DynamicAuthorization.Result> relay(int code, byte[] attributes) throws TimeoutException {
+        byte[] user = raw(attributes, 1);
+        byte[] sessionId = raw(attributes, 44);
+        if (user != null) {
+            for (ClusterQueries.Session s :
+                    queries.userSessions(UserKeys.user(new UnsafeBuffer(user), 0, user.length), QUERY_TIMEOUT)) {
+                String id = s.attribute(44);
+                if (sessionId == null || (id != null && id.equals(new String(sessionId, StandardCharsets.UTF_8)))) {
+                    NasClient nas = nasOf(s);
+                    return nas == null ? null : deliver(nas, s, code, attributes);
+                }
+            }
+        }
+        byte[] nasIp = raw(attributes, NAS_IP_ADDRESS);
+        if (nasIp == null || nasIp.length != 4) {
+            return null;
+        }
+        try {
+            NasClient nas = registry.lookup(InetAddress.getByAddress(nasIp));
+            return nas == null || nas.prefixLength() != 32 ? null : deliver(nas, null, code, attributes);
+        } catch (UnknownHostException e) {
+            return null;
+        }
+    }
+
+    /** The value of the first attribute of this type, {@code null} if there is none. */
+    static byte[] raw(byte[] attributes, int type) {
+        for (int at = 0; at + 2 <= attributes.length; ) {
+            int length = attributes[at + 1] & 0xFF;
+            if (length < 2 || at + length > attributes.length) {
+                return null;
+            }
+            if ((attributes[at] & 0xFF) == type) {
+                return java.util.Arrays.copyOfRange(attributes, at + 2, at + length);
+            }
+            at += length;
+        }
+        return null;
+    }
+
     /** Sends one request for a session; UNREACHABLE when it has no identity yet or no NAS to send to. */
     public CompletableFuture<DynamicAuthorization.Result> send(
             ClusterQueries.Session s, int code, List<AttributeItem> attributes) {
@@ -168,22 +214,33 @@ public final class CoaService {
         } catch (IllegalArgumentException e) {
             return CompletableFuture.failedFuture(e);
         }
+        return deliver(nas, s, code, attributes(s, nas, extra));
+    }
+
+    /**
+     * To the NAS: over its RadSec connection or DTLS association if it has one, else over UDP to its CoA target, or
+     * its address, or the session's NAS-IP-Address.
+     *
+     * @param s the session, {@code null} when the NAS entry has a single address
+     */
+    private CompletableFuture<DynamicAuthorization.Result> deliver(
+            NasClient nas, ClusterQueries.Session s, int code, byte[] attrs) {
         Integer index = connected(radsecIndex.get(nas.name()));
         if (index == null) {
             index = connected(dtlsIndex.get(nas.name())); // RFC 7360 §2.4: over its DTLS association
         }
         if (index != null) {
-            byte[] attrs = attributes(s, nas, extra);
             return sender.sendRadsec(code, attrs, index, radsecLink.clients[index].secret());
         }
         CoaConfig.Target target = config.target(nas.name());
-        InetAddress address = target.address() != null ? target.address() : address(nas, s);
+        InetAddress address =
+                target.address() != null ? target.address() : s == null ? ipv4(nas.network()) : address(nas, s);
         if (address == null) {
             return unreachable();
         }
         return sender.send(
                 code,
-                attributes(s, nas, extra),
+                attrs,
                 new InetSocketAddress(address, target.port()),
                 target.secret() != null ? target.secret() : nas.secret());
     }

@@ -86,4 +86,26 @@ class ProxyConfigTest {
         assertThatThrownBy(() -> ProxyConfig.from(Config.of(Map.of("proxy.enabled", "true"))))
                 .hasMessageContaining("realm");
     }
+
+    @Test
+    void coaRelayFromHomeServers() {
+        ProxyConfig none = ProxyConfig.from(Config.of(base()));
+        assertThat(none.coaRelay()).as("no home server sends CoA").isFalse();
+        assertThat(none.coaPort()).isEqualTo(3799);
+        Map<String, String> settings = base();
+        settings.put("home.a.coa", "true");
+        settings.put("proxy.coa.port", "13799");
+        ProxyConfig relay = ProxyConfig.from(Config.of(settings));
+        assertThat(relay.coaRelay()).isTrue();
+        assertThat(relay.coaPort()).isEqualTo(13799);
+        assertThat(relay.homes().get("a").relaysCoa()).isTrue();
+        assertThat(relay.homes().get("b").relaysCoa()).isFalse();
+        assertThat(ProxyConfig.DISABLED.coaRelay()).isFalse();
+
+        Map<String, String> tls = base();
+        tls.put("home.a.transport", "tls");
+        tls.put("home.a.tls.ca", "/dev/null");
+        tls.put("home.a.coa", "true");
+        assertThatThrownBy(() -> ProxyConfig.from(Config.of(tls))).hasMessageContaining("over UDP only");
+    }
 }

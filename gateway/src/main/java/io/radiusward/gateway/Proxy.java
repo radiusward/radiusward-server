@@ -378,7 +378,8 @@ final class Proxy {
                 d.certificate(),
                 d.key(),
                 d.ca(),
-                target.host());
+                target.host(),
+                false);
         homes.add(new HomeState(h, discoveryContext));
         return homes.size() - 1;
     }

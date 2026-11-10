@@ -193,6 +193,8 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `proxy.status.interval` | `10s` | Status-Server probes to every home server; an answer brings a dead one back |
 | `proxy.pending` | `1024` | proxied requests in flight |
 | `proxy.require.message-authenticator` | `true` | ignore answers without a valid Message-Authenticator (BlastRADIUS) |
+| `home.<id>.coa` | `false` | this (UDP) home server may send CoA and Disconnect-Requests for its users; they are relayed to the NAS of the user's session (needs `coa.enabled`; [ADR 0043](adr/0043-coa-relay.md)) |
+| `proxy.coa.port` | `3799` | where CoA from such home servers is received (on `gateway.listen.host`) |
 
 ## Identity stores
 

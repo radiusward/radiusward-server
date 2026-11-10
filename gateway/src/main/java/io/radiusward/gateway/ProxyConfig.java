@@ -42,6 +42,8 @@ import java.util.TreeMap;
  * @param pending proxied Access-Requests in flight at once ({@code proxy.pending})
  * @param requireMessageAuthenticator answers without a Message-Authenticator are ignored
  *     ({@code proxy.require.message-authenticator}, BlastRADIUS)
+ * @param coaPort where CoA and Disconnect-Requests from home servers with {@code home.<id>.coa = true} are received
+ *     and relayed to the NAS ({@code proxy.coa.port}, 3799; ADR 0043); no listener without such a home server
  */
 public record ProxyConfig(
         boolean enabled,
@@ -54,7 +56,8 @@ public record ProxyConfig(
         Map<String, Pool> pools,
         Map<String, Home> homes,
         Discovery discovery,
-        boolean requireMessageAuthenticator) {
+        boolean requireMessageAuthenticator,
+        int coaPort) {
 
     public static final ProxyConfig DISABLED = new ProxyConfig(
             false,
@@ -67,7 +70,8 @@ public record ProxyConfig(
             Map.of(),
             Map.of(),
             Discovery.OFF,
-            true);
+            true,
+            3799);
 
     /**
      * @param name the realm in lower case, {@code *} for every realm no other entry names
@@ -87,6 +91,7 @@ public record ProxyConfig(
      * @param certificate our client certificate and key (PEM) for TLS
      * @param ca the CAs the home server's certificate must chain to
      * @param serverName a name the home server's certificate must carry; {@code null}: the configured host name
+     * @param coa whether it may send CoA and Disconnect-Requests for its users to us ({@code home.<id>.coa}, UDP)
      */
     public record Home(
             String name,
@@ -98,7 +103,19 @@ public record ProxyConfig(
             Path certificate,
             Path key,
             Path ca,
-            String serverName) {}
+            String serverName,
+            boolean coa) {
+
+        /** Whether it is relayed CoA: a UDP home server allowed to send it. */
+        boolean relaysCoa() {
+            return coa && !tls;
+        }
+    }
+
+    /** Whether CoA from home servers is relayed: a home server allows it. */
+    boolean coaRelay() {
+        return enabled && homes.values().stream().anyMatch(Home::relaysCoa);
+    }
 
     /**
      * RFC 7585 dynamic discovery ({@code proxy.discovery.*}), for realms with {@code discover = true}: TLS home servers
@@ -183,7 +200,8 @@ public record ProxyConfig(
                 Map.copyOf(pools),
                 Map.copyOf(homes),
                 anyDiscovery ? discovery(config) : Discovery.OFF,
-                config.bool("proxy.require.message-authenticator", true));
+                config.bool("proxy.require.message-authenticator", true),
+                config.integer("proxy.coa.port", 3799));
     }
 
     private static Home home(Config config, String id) {
@@ -223,7 +241,16 @@ public record ProxyConfig(
                 path(config, prefix + "tls.certificate"),
                 path(config, prefix + "tls.key"),
                 path(config, prefix + "tls.ca"),
-                name.isEmpty() ? null : name);
+                name.isEmpty() ? null : name,
+                coa(config, prefix, tls));
+    }
+
+    private static boolean coa(Config config, String prefix, boolean tls) {
+        boolean coa = config.bool(prefix + "coa", false);
+        if (coa && tls) {
+            throw new ConfigException(prefix + "coa: CoA from home servers is relayed over UDP only");
+        }
+        return coa;
     }
 
     private static Discovery discovery(Config config) {

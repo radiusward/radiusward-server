@@ -51,6 +51,7 @@ public final class Gateway implements AutoCloseable {
     private CoaService coaService;
     private CoaApi coaApi;
     private StoreSweep sweep;
+    private CoaRelay coaRelay;
 
     private Gateway(
             GatewayConfig config,
@@ -255,6 +256,18 @@ public final class Gateway implements AutoCloseable {
                 if (coa.token() != null) {
                     gateway.coaApi = new CoaApi(gateway.coaService, coa.token());
                 }
+                if (proxy.coaRelay()) {
+                    gateway.coaRelay = new CoaRelay(proxy, gateway.coaService, config.listenHost());
+                    try {
+                        gateway.coaRelay.start();
+                    } catch (java.io.IOException e) {
+                        throw new IllegalStateException(
+                                "cannot bind the CoA relay to " + config.listenHost() + ":" + proxy.coaPort(), e);
+                    }
+                }
+            } else if (proxy.coaRelay()) {
+                throw new IllegalArgumentException("home.<id>.coa needs coa.enabled: the relay finds sessions and"
+                        + " sends to the NAS like the gateway's own CoA");
             }
             LOG.info(
                     "gateway {} started: {} NAS, cluster {}, {} threads",
@@ -402,6 +415,15 @@ public final class Gateway implements AutoCloseable {
         return radsecAgent.localDtlsPort();
     }
 
+    /** The CoA relay's port, -1 without it (ADR 0043). */
+    public int coaRelayPort() {
+        return coaRelay == null ? -1 : coaRelay.port();
+    }
+
+    CoaRelay coaRelay() {
+        return coaRelay;
+    }
+
     RadsecAgent radsecAgent() {
         return radsecAgent;
     }
@@ -504,6 +526,9 @@ public final class Gateway implements AutoCloseable {
         if (sweep != null) {
             sweep.writeMetrics(w, id);
         }
+        if (coaRelay != null) {
+            coaRelay.writeMetrics(w, id);
+        }
         if (authAgent != null && authAgent.proxy() != null) {
             authAgent.proxy().writeMetrics(w, id);
         }
@@ -520,6 +545,9 @@ public final class Gateway implements AutoCloseable {
         }
         if (sweep != null) {
             sweep.stop();
+        }
+        if (coaRelay != null) {
+            coaRelay.close();
         }
         CloseHelper.closeAll(runners);
         if (handler instanceof AutoCloseable closeable) {

@@ -44,5 +44,6 @@
 | [0040](0040-ttls-inner-methods.md) | TTLS with CHAP, MS-CHAPv1 and EAP inside (MS-CHAPv2, GTC, MD5); challenges from the tunnel, MS-CHAPv1 exported at its own length | Accepted |
 | [0041](0041-teap.md) | TEAP (RFC 7170/9930): inner EAP or Basic-Password-Auth, Crypto-Binding as wpa_supplicant/hostapd, machine and user chaining | Accepted |
 | [0042](0042-eap-pwd.md) | EAP-pwd (RFC 5931), group 19, cleartext or NT-hash preparation, own P-256 arithmetic | Accepted |
+| [0043](0043-coa-relay.md) | CoA and Disconnect from home servers relayed to the NAS of the user's session, answered with their Proxy-State | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

@@ -17,6 +17,7 @@ import io.radiusward.gateway.Gateway;
 import io.radiusward.gateway.GatewayConfig;
 import io.radiusward.gateway.NasClient;
 import io.radiusward.gateway.NasRegistry;
+import io.radiusward.gateway.ProxyConfig;
 import io.radiusward.gateway.RadsecConfig;
 import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
@@ -211,6 +212,19 @@ public final class LocalCluster implements AutoCloseable {
             java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler,
             RadsecConfig radsec,
             CoaConfig coa) {
+        return startGateway(gatewayId, radiusPort, registry, auth, handler, radsec, coa, ProxyConfig.DISABLED);
+    }
+
+    /** As above, also proxying realms and relaying CoA from their home servers (ADR 0037, ADR 0043). */
+    public Gateway startGateway(
+            int gatewayId,
+            int radiusPort,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler,
+            RadsecConfig radsec,
+            CoaConfig coa,
+            ProxyConfig proxy) {
         GatewayConfig config = new GatewayConfig(
                 gatewayId,
                 "127.0.0.1",
@@ -229,7 +243,7 @@ public final class LocalCluster implements AutoCloseable {
                 new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
                 null,
                 Duration.ZERO);
-        Gateway gateway = Gateway.launchWith(config, registry, auth, handler, radsec, coa);
+        Gateway gateway = Gateway.launchWith(config, registry, auth, handler, radsec, coa, proxy);
         gateways.add(gateway);
         return gateway;
     }
