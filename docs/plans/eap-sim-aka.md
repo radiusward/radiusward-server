@@ -1,6 +1,6 @@
 # Plan: EAP-SIM, EAP-AKA and EAP-AKA′ with local SIM keys
 
-Status: proposed (2026-11-10). Follows Phase 5 ([phase-5-auth.md](phase-5-auth.md)); work packages 5.37–5.41.
+Status: in progress (2026-11-10): 5.37 done. ADR [0061](../adr/0061-eap-sim-aka.md). Follows Phase 5 ([phase-5-auth.md](phase-5-auth.md)); work packages 5.37–5.41.
 
 ## Goal and scope
 
@@ -75,7 +75,7 @@ On the wire both servers follow the same RFCs, so devices see no difference; the
 
 | # | Work package | Content | Size |
 |---|---|---|---|
-| 5.37 | Algorithms | Milenage f1–f5, f1*, f5* and OPc; GSM-Milenage; FIPS 186-2 PRF; TS 33.402 KDF and PRF′; all against the 3GPP and RFC test vectors | M |
+| 5.37 ✅ | Algorithms | Milenage f1–f5, f1*, f5* and OPc; GSM-Milenage; FIPS 186-2 PRF; TS 33.402 KDF and PRF′; all against the 3GPP and RFC test vectors | M |
 | 5.38 | SQN in the cluster | `SqnNext`/`SqnResync` commands, state version 8, snapshot, rolling-upgrade gate, gateway client with a mailbox per worker | M |
 | 5.39 | EAP-AKA and EAP-AKA′ | identities and hints, negotiation and checkcode, challenge, resync, notifications, result indication, keys; store attributes of both naming schemes | L |
 | 5.40 | EAP-SIM | start/version negotiation, nonce, three triplets from GSM-Milenage or stored ones, keys | M |
