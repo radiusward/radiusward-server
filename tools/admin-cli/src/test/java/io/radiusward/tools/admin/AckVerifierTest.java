@@ -198,4 +198,10 @@ class AckVerifierTest {
         assertThat(last.values()).allMatch(e -> e.sessionTime() >= 1990);
         assertThat(last).isEqualTo(AckVerifier.lastAcknowledged(Files.readAllLines(log)));
     }
+
+    @Test
+    void anEmptyLogAcknowledgedNothing(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path empty = java.nio.file.Files.createFile(dir.resolve("acks.csv"));
+        assertThat(AckVerifier.lastAcknowledged(empty)).isEmpty();
+    }
 }

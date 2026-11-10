@@ -59,6 +59,11 @@ final class StoreSweep implements Runnable {
         thread.start();
     }
 
+    /** Whether the sweep thread still runs (tests). */
+    boolean alive() {
+        return thread != null && thread.isAlive();
+    }
+
     void stop() {
         running = false;
         if (thread != null) {

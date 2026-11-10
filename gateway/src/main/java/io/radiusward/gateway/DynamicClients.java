@@ -298,6 +298,11 @@ public final class DynamicClients implements AutoCloseable {
                 .sample(size(), "gateway", gateway);
     }
 
+    /** Whether the look-up thread still runs (tests). */
+    boolean alive() {
+        return thread.isAlive();
+    }
+
     @Override
     public void close() {
         closed = true;

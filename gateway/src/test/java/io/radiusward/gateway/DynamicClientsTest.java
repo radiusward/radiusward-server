@@ -196,4 +196,19 @@ class DynamicClientsTest {
             }
         }
     }
+
+    @Test
+    void closingInterruptsTheWaitingLookUpThread() throws Exception {
+        DynamicClients waiting = new DynamicClients(
+                List.of(new int[] {NET, 16}), source(), Duration.ofMinutes(1), Duration.ofMinutes(1), 1);
+        Thread.sleep(100); // the thread waits for addresses to look up
+        waiting.close();
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        while (waiting.alive() && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertThat(waiting.alive())
+                .as("stopped by the interrupt, not after its 1 s poll")
+                .isFalse();
+    }
 }
