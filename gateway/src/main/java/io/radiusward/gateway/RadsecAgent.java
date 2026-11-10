@@ -995,9 +995,9 @@ final class RadsecAgent implements Agent {
         reply.clear();
         buffer.getBytes(index + 8, reply, length - 8);
         reply.flip();
+        dtlsCounts.incrementAndGet(Counter.REPLIES.ordinal()); // before sending: the NAS may read it first
         try {
             send(a, reply);
-            dtlsCounts.incrementAndGet(Counter.REPLIES.ordinal());
         } catch (IOException e) {
             close(a);
         }
