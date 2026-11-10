@@ -47,5 +47,6 @@
 | [0043](0043-coa-relay.md) | CoA and Disconnect from home servers relayed to the NAS of the user's session, answered with their Proxy-State | Accepted |
 | [0044](0044-inner-tunnel-proxying.md) | Tunnels end here, the inner user of a proxied realm is checked by its home server (PAP, CHAP, MS-CHAPv2 with its keys) | Accepted |
 | [0045](0045-radius-over-tcp.md) | RADIUS over plain TCP (RFC 6613) in the RadSec agent: NAS by address, its own secret, ports keep their kind | Accepted |
+| [0046](0046-dynamic-clients.md) | NAS entries looked up on demand in SQL (`nas` table), off the packet path, copy-on-write table, lifetimes | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

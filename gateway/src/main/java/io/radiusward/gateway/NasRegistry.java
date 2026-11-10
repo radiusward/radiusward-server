@@ -45,6 +45,7 @@ public final class NasRegistry {
     private final Int2ObjectHashMap<NasClient> exact = new Int2ObjectHashMap<>();
     private final NasClient[] ranges;
     private final List<NasClient> all;
+    private volatile DynamicClients dynamic; // entries looked up on demand (ADR 0046), after the configured ones
 
     private NasRegistry(List<NasClient> clients) {
         List<NasClient> rangeList = new ArrayList<>();
@@ -82,6 +83,9 @@ public final class NasRegistry {
     public static NasRegistry from(Config config) {
         List<NasClient> clients = new ArrayList<>();
         for (String name : config.names("nas")) {
+            if (name.equals("dynamic")) {
+                continue; // nas.dynamic.*: entries looked up on demand, not one entry
+            }
             String prefix = "nas." + name + ".";
             String address = config.string(prefix + "address", "").trim();
             boolean byCertificate = address.isEmpty();
@@ -122,10 +126,13 @@ public final class NasRegistry {
                             NasClient.MessageAuthenticatorPolicy.class,
                             NasClient.MessageAuthenticatorPolicy.REQUIRED)));
         }
-        if (clients.isEmpty()) {
+        DynamicClients dynamic = DynamicClients.from(config);
+        if (clients.isEmpty() && dynamic == null) {
             throw new ConfigException("no NAS configured: add nas.<name>.address and nas.<name>.secret");
         }
-        return new NasRegistry(clients);
+        NasRegistry registry = new NasRegistry(clients);
+        registry.dynamic(dynamic);
+        return registry;
     }
 
     /** The NAS for a source address, or {@code null}. Allocation-free for IPv4. */
@@ -143,7 +150,27 @@ public final class NasRegistry {
                 return range;
             }
         }
-        return null;
+        DynamicClients d = dynamic;
+        return d == null ? null : d.find(ip, System.currentTimeMillis());
+    }
+
+    /** Entries looked up on demand for addresses no configured entry covers ({@code nas.dynamic.*}). */
+    void dynamic(DynamicClients clients) {
+        this.dynamic = clients;
+    }
+
+    DynamicClients dynamic() {
+        return dynamic;
+    }
+
+    static InetAddress inet(int address) {
+        try {
+            return InetAddress.getByAddress(
+                    new byte[] {(byte) (address >>> 24), (byte) (address >>> 16), (byte) (address >>> 8), (byte) address
+                    });
+        } catch (java.net.UnknownHostException e) {
+            throw new IllegalStateException(e); // four bytes are always an address
+        }
     }
 
     public Collection<NasClient> clients() {
@@ -214,7 +241,7 @@ public final class NasRegistry {
         }
     }
 
-    private static int ipv4(String key, String text) {
+    static int ipv4(String key, String text) {
         if (!text.matches("\\d{1,3}(\\.\\d{1,3}){3}")) {
             throw new ConfigException(key + ": expected an IPv4 address or CIDR range, got \"" + text + "\"");
         }

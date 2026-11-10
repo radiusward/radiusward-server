@@ -75,6 +75,22 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
 | `debug.state.version.supported` | code's version | pretend the member's release knows another state version, to test upgrades (tests only; requires `debug.enabled=true`) |
 
+## NAS entries from a database (gateway)
+
+[ADR 0046](adr/0046-dynamic-clients.md): a packet from an address no `nas.<name>` entry covers, inside the dynamic
+networks, makes the gateway look the address up (that packet is dropped; the NAS sends it again). Configured entries
+always win; none is needed.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `nas.dynamic.enabled` | `false` | look up unknown addresses |
+| `nas.dynamic.networks` | — | CIDRs (prefix 8 to 32) whose unknown addresses are looked up; required |
+| `nas.dynamic.sql.url` / `.user` / `.password` | — | JDBC connection (driver on the class path; PostgreSQL ships) |
+| `nas.dynamic.sql.query` | `SELECT nasname, shortname, secret, type FROM nas WHERE nasname = ?` | gets the address as text; returns name, short name, secret, type (vendor) |
+| `nas.dynamic.lifetime` | `1h` | how long a loaded entry is used before it is looked up again |
+| `nas.dynamic.negative.ttl` | `1m` | how long an unknown address is not asked for again |
+| `nas.dynamic.max` | `10000` | entries held at once |
+
 ## RadSec (gateway)
 
 RADIUS over TLS (RFC 6614, [ADR 0034](adr/0034-radsec.md)): authentication and accounting on one TCP connection,

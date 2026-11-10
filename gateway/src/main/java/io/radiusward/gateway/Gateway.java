@@ -52,6 +52,7 @@ public final class Gateway implements AutoCloseable {
     private CoaApi coaApi;
     private StoreSweep sweep;
     private CoaRelay coaRelay;
+    private DynamicClients dynamicClients;
 
     private Gateway(
             GatewayConfig config,
@@ -248,6 +249,7 @@ public final class Gateway implements AutoCloseable {
             }
             Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
             gateway.radsecAgent = radsecAgent;
+            gateway.dynamicClients = registry.dynamic();
             if (dynamic != null) {
                 gateway.dynamicAuthorization = dynamic;
                 gateway.coaService = new CoaService(
@@ -554,6 +556,9 @@ public final class Gateway implements AutoCloseable {
         if (coaRelay != null) {
             coaRelay.writeMetrics(w, id);
         }
+        if (dynamicClients != null) {
+            dynamicClients.writeMetrics(w, id);
+        }
         if (handler instanceof StoreAccessHandler stores && stores.innerProxy() != null) {
             stores.innerProxy().writeMetrics(w, id);
         }
@@ -576,6 +581,9 @@ public final class Gateway implements AutoCloseable {
         }
         if (coaRelay != null) {
             coaRelay.close();
+        }
+        if (dynamicClients != null) {
+            dynamicClients.close();
         }
         CloseHelper.closeAll(runners);
         if (handler instanceof AutoCloseable closeable) {
