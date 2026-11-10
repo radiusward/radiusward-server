@@ -4,9 +4,8 @@ Thanks for helping. This guide is the single source of truth for how the project
 rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
 [docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
 
-Current state: Phases 0–3 are done; **Phase 5** (authentication, EAP, RadSec, CoA/Disconnect, proxying) is done up
-to work package 5.13, with 5.14 (DTLS) open. Phase 3b (more sinks) and Phase 4 (Kubernetes) follow — see the
-[roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Plinux`) run nightly in CI.
+Current state: Phases 0–3 and **Phase 5** (authentication, EAP, RadSec, DTLS, CoA/Disconnect, proxying) are done.
+Phase 3b (more sinks) and Phase 4 (Kubernetes) follow — see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Plinux`) run nightly in CI.
 
 ## Setup
 
@@ -56,7 +55,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `verifiers/netlogon` | Credential verifier for Active Directory over Netlogon, pure Java (MS-CHAPv1/v2, PAP) |
 | `testing/samba-ad` | Samba AD domain controller image for the LDAP and Netlogon tests |
 | `testing/eapol-test` | wpa_supplicant's `eapol_test` image for the EAP interop test (`EapolTestIT`) |
-| `testing/radsec-client` | radsecproxy, `radclient` and `eapol_test` image for the RadSec interop test (`RadsecproxyIT`) |
+| `testing/radsec-client` | radsecproxy, `radclient` and `eapol_test` image for the RadSec and DTLS interop test (`RadsecproxyIT`) |
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
 | `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster`, `DevCluster` |
