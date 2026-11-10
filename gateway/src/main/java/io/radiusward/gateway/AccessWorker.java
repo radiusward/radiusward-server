@@ -67,7 +67,13 @@ final class AccessWorker implements Agent {
     private int decide(int slot) {
         NasClient nas = slots.nas[slot];
         context.reset(slots.requests, AccessSlots.requestOffset(slot), slots.requestLength[slot], nas);
+        Tracer t = tracer;
+        Tracer.Trace trace = t == null ? null : t.start(context.request(), nas);
+        context.trace(trace);
         int code = handler.handle(context);
+        if (trace != null) {
+            t.finish(trace, context.request(), nas, code, context.replyBuffer(), context.replyAttributesLength());
+        }
         switch (code) {
             case AccessHandler.ACCEPT -> stats.increment(AuthStats.Counter.ACCEPTED);
             case AccessHandler.REJECT -> stats.increment(AuthStats.Counter.REJECTED);
@@ -86,6 +92,13 @@ final class AccessWorker implements Agent {
                 slots.replyViews[slot],
                 0,
                 nas.secret());
+    }
+
+    private volatile Tracer tracer;
+
+    /** Per-request traces (ADR 0052); {@code null}: none. */
+    void tracer(Tracer tracer) {
+        this.tracer = tracer;
     }
 
     @Override

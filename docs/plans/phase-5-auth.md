@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.27 done (ADR 0020–0051). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.28 done (ADR 0020–0052). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -124,6 +124,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.25 ✅ | Login times and usage limits | `Login-Time`, daily/weekly/monthly time and octet counters over `accounting_session`, Session-Timeout cut to the expiry, window or quota ([ADR 0049](../adr/0049-time-and-usage-limits.md)) | S |
 | 5.26 ✅ | IP pools | `Pool-Name` → `Framed-IP-Address` from IPv4 pools in PostgreSQL, free after the lease and the exported Stop, same address per device ([ADR 0050](../adr/0050-ip-pools.md)) | S |
 | 5.27 ✅ | Rules | `auth.rules`: `if <conditions> { reply/remove/reject/stop }` on Access-Accepts, request attributes and groups, `%{Attribute}`, reloaded on change ([ADR 0051](../adr/0051-rules.md)) | S |
+| 5.28 ✅ | Request traces | Access-Requests of a user, NAS or Calling-Station-Id logged with their decision steps and reply, secrets hidden; `trace.*` and `POST /trace` on the management port ([ADR 0052](../adr/0052-request-traces.md)) | S |
 
 ## Tests
 

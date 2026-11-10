@@ -50,6 +50,8 @@ public final class Gateway implements AutoCloseable {
     private DynamicAuthorization dynamicAuthorization;
     private CoaService coaService;
     private CoaApi coaApi;
+    private java.util.List<AccessWorker> workers = java.util.List.of();
+    private Dictionary dictionary;
     private StoreSweep sweep;
     private CoaRelay coaRelay;
     private DynamicClients dynamicClients;
@@ -185,6 +187,7 @@ public final class Gateway implements AutoCloseable {
             java.util.List<AgentRunner> runnerList = new java.util.ArrayList<>();
             java.util.List<org.agrona.concurrent.Agent> socketAgents =
                     new java.util.ArrayList<>(java.util.List.of(udp));
+            java.util.List<AccessWorker> workers = new java.util.ArrayList<>();
             if (auth.enabled()) {
                 AccessSlots slots = new AccessSlots(auth.pending());
                 authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime, link);
@@ -197,21 +200,21 @@ public final class Gateway implements AutoCloseable {
                 socketAgents.add(authAgent);
                 for (int w = 0; w < auth.workers(); w++) {
                     // workers may wait on an identity store: a parking idle strategy, never a busy spin
+                    AccessWorker worker = new AccessWorker(
+                            w,
+                            slots,
+                            handler,
+                            authStats,
+                            coa.disconnectOldest()
+                                    ? new DisconnectOldest(
+                                            reservations.forWorker(w), coaHolder::get, coa.simultaneousUseWait())
+                                    : reservations.forWorker(w));
+                    workers.add(worker);
                     runnerList.add(new AgentRunner(
                             new org.agrona.concurrent.BackoffIdleStrategy(10, 20, 1_000, 1_000_000),
                             Gateway::error,
                             null,
-                            new AccessWorker(
-                                    w,
-                                    slots,
-                                    handler,
-                                    authStats,
-                                    coa.disconnectOldest()
-                                            ? new DisconnectOldest(
-                                                    reservations.forWorker(w),
-                                                    coaHolder::get,
-                                                    coa.simultaneousUseWait())
-                                            : reservations.forWorker(w))));
+                            worker));
                 }
             }
             RadsecAgent radsecAgent = null;
@@ -249,6 +252,8 @@ public final class Gateway implements AutoCloseable {
             }
             Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
             gateway.radsecAgent = radsecAgent;
+            gateway.workers = java.util.List.copyOf(workers);
+            gateway.dictionary = dictionary;
             gateway.dynamicClients = registry.dynamic();
             if (dynamic != null) {
                 gateway.dynamicAuthorization = dynamic;
@@ -470,6 +475,23 @@ public final class Gateway implements AutoCloseable {
     }
 
     /** The CoA HTTP API for the management server ({@code /coa/}), {@code null} without {@code coa.api.token}. */
+    /**
+     * Per-request traces of Access-Requests ({@code trace.*}, ADR 0052) on every worker.
+     *
+     * @return the {@code /trace} API for the management server, {@code null} without {@code trace.api.token}
+     */
+    public com.sun.net.httpserver.HttpHandler trace(io.radiusward.common.config.Config raw) {
+        if (dictionary == null) {
+            return null;
+        }
+        Tracer tracer = Tracer.from(raw, dictionary);
+        for (AccessWorker worker : workers) {
+            worker.tracer(tracer);
+        }
+        String token = raw.string("trace.api.token", "").trim();
+        return token.isEmpty() ? null : tracer.api(token);
+    }
+
     public com.sun.net.httpserver.HttpHandler coaApi() {
         return coaApi;
     }

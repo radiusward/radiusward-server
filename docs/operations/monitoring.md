@@ -71,6 +71,30 @@ Names carry the unit (`_bytes`, `_seconds`); counters end in `_total`. Members a
 `radiusward_jvm_gc_pause_seconds_total{gc}`, `radiusward_jvm_threads`, `radiusward_process_uptime_seconds`,
 `radiusward_log_messages_dropped_total` (logging ring full; the caller never blocks).
 
+## Tracing one user or NAS
+
+To see why a request is rejected, trace it ([ADR 0052](../adr/0052-request-traces.md)). With `trace.api.token` set
+on the gateway:
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:9190/trace?user=alice&for=10m"
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9190/trace          # conditions in force
+curl -X DELETE -H "Authorization: Bearer $TOKEN" http://127.0.0.1:9190/trace
+```
+
+Each matching Access-Request then appears once in the log (logger `io.radiusward.trace`):
+
+```
+trace: Access-Request id 17 from NAS edge-1 -> Access-Reject in 412 µs
+  request: User-Name = alice, User-Password = <16 bytes>, NAS-IP-Address = 10.0.0.1, ...
+  user found in store main
+  group applies: staff
+  outside Login-Time Wk0800-1700
+```
+
+`nas=<entry>` and `station=<Calling-Station-Id>` work the same; `trace.users`, `trace.nas` and `trace.stations` set
+conditions that last. Passwords, keys and EAP payloads are shown only as their length.
+
 ## Alerts
 
 [deploy/monitoring/alerts.yml](../../deploy/monitoring/alerts.yml), checked with `promtool` in

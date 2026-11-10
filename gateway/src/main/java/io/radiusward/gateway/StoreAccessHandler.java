@@ -228,19 +228,21 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (a.limit() != null) {
             int decision = limit(context, request, found.store(), a.limit());
             if (decision != ACCEPT) {
+                because(context, "Simultaneous-Use not granted: ", a.limit());
                 return decision;
             }
         }
-        int restricted = restrict(found.user().userName(), a);
+        int restricted = restrict(context, found.user().userName(), a);
         if (restricted != ACCEPT) {
             return restricted;
         }
-        int pooled = assignAddress(request, found.user().userName(), a);
+        int pooled = assignAddress(context, request, found.user().userName(), a);
         if (pooled != ACCEPT) {
             return pooled;
         }
         RulesFile r = rules;
         if (r != null && !r.current().apply(ruleRequest(request, found.user()), a.reply())) {
+            because(context, "rejected by a rule of ", "auth.rules");
             return REJECT;
         }
         encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
@@ -324,10 +326,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             found = find(cache(context), context.nas().name(), userName);
         } catch (StoreUnavailableException e) {
             warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
+            because(context, "identity store unavailable: ", e.getMessage());
             return Authorization.of(DROP);
         }
         if (found == null) {
             if (!optional) {
+                because(context, "user not in any store: ", userName);
                 return Authorization.of(REJECT);
             }
             // EAP-TLS: the certificate is the credential; tunnels: the inner user is looked up (ADR 0028, 0029)
@@ -335,8 +339,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         List<AttributeItem> passwords = new ArrayList<>();
         List<AttributeItem> reply = new ArrayList<>(found.user().reply());
+        note(
+                context,
+                "user found in store ",
+                found.store().isEmpty() ? "(none, certificate or tunnel)" : found.store());
         String authType = checks(found.user().check(), request, passwords);
         if (authType == null) {
+            because(context, "a check item of the user does not hold (Expiration or a comparison)", "");
             return Authorization.of(REJECT);
         }
         String limit = simultaneousUse(found.user().check());
@@ -344,9 +353,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             List<AttributeItem> groupPasswords = new ArrayList<>();
             String groupAuthType = checks(group.check(), request, groupPasswords);
             if (groupAuthType == null) {
+                note(context, "group does not apply: ", group.name());
                 continue; // the group's conditions do not hold: it does not apply
             }
+            note(context, "group applies: ", group.name());
             if (groupAuthType.equalsIgnoreCase("Reject")) {
+                because(context, "Auth-Type := Reject in group ", group.name());
                 return Authorization.of(REJECT);
             }
             if (authType.isEmpty()) {
@@ -359,7 +371,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             merge(reply, group.reply());
         }
         if (authType.equalsIgnoreCase("Reject")) {
+            because(context, "Auth-Type := Reject", "");
             return Authorization.of(REJECT);
+        }
+        if (!authType.isEmpty()) {
+            note(context, "Auth-Type: ", authType);
         }
         List<AttributeItem> restrictions = new ArrayList<>();
         collectRestrictions(found.user().check(), restrictions);
@@ -785,7 +801,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * reject; otherwise the Accept's Session-Timeout is cut to the earliest end (expiry, the window's end, the time
      * left on a time counter or its period). A counter that cannot be read leaves the request unanswered.
      */
-    private int restrict(String user, Authorization a) {
+    private int restrict(AccessContext context, String user, Authorization a) {
         if (a.restrictions().isEmpty()) {
             return ACCEPT;
         }
@@ -797,6 +813,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             if (name.equalsIgnoreCase("Expiration")) {
                 Instant expires = date(item.value());
                 if (expires == null || !now.isBefore(expires)) {
+                    because(context, "expired: ", item.value());
                     return REJECT;
                 }
                 cap = Math.min(
@@ -807,11 +824,16 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             } else if (name.equalsIgnoreCase("Login-Time")) {
                 LoginTime window = LoginTime.parse(item.value());
                 if (window == null) {
-                    warnOnce("login-time:" + item.value(), "Login-Time {}: not understood, the user is rejected", item);
+                    warnOnce(
+                            "login-time:" + item.value(),
+                            "Login-Time {}: not understood, the user is rejected",
+                            item.value());
+                    because(context, "Login-Time not understood: ", item.value());
                     return REJECT;
                 }
                 long left = window.secondsLeft(local);
                 if (left < 0) {
+                    because(context, "outside Login-Time ", item.value());
                     return REJECT;
                 }
                 cap = Math.min(cap, Math.max(1, left));
@@ -825,6 +847,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                         limit = Long.parseLong(item.value().trim());
                     } catch (NumberFormatException e) {
                         warnOnce("counter:" + name, "{}: {} is not a number, the user is rejected", name, item.value());
+                        because(context, name + " is not a number: ", item.value());
                         return REJECT;
                     }
                     long used;
@@ -836,9 +859,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                                 "usage counter {} unavailable, requests are not answered: {}",
                                 counter.name(),
                                 e.toString());
+                        because(context, "usage counter unavailable: ", counter.name());
                         return DROP;
                     }
+                    note(context, counter.name() + ": used " + used + " of ", item.value());
                     if (used >= limit) {
+                        because(context, "usage limit reached: ", counter.name());
                         return REJECT;
                     }
                     if (counter.kind() == UsageCounters.Kind.TIME) {
@@ -869,8 +895,25 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 }
             }
             replace(a.reply(), "Session-Timeout", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
+            note(context, "Session-Timeout capped to ", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
         }
         return ACCEPT;
+    }
+
+    // ---- traces (ADR 0052) ---------------------------------------------------------------------------------------
+
+    private static void note(AccessContext context, String step, String detail) {
+        Tracer.Trace trace = context.trace();
+        if (trace != null) {
+            trace.note(step + detail);
+        }
+    }
+
+    private static void because(AccessContext context, String step, String detail) {
+        Tracer.Trace trace = context.trace();
+        if (trace != null) {
+            trace.because(step + detail);
+        }
     }
 
     // ---- rules (ADR 0051) ---------------------------------------------------------------------------------------
@@ -921,7 +964,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * reply already has one. An empty pool rejects (or accepts without an address, per pool); a pool that cannot be
      * reached leaves the request unanswered.
      */
-    private int assignAddress(RadiusPacket request, String user, Authorization a) {
+    private int assignAddress(AccessContext context, RadiusPacket request, String user, Authorization a) {
         String name = null;
         for (AttributeItem item : a.restrictions()) {
             if (item.attribute().equalsIgnoreCase("Pool-Name")) {
@@ -936,6 +979,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         IpPools.Pool pool = p == null ? null : p.pool(name);
         if (pool == null) {
             warnOnce("pool:" + name, "Pool-Name {}: no such pool in auth.pools, the user is rejected", name);
+            because(context, "no such pool: ", name);
             return REJECT;
         }
         int station = request.findAttribute(CALLING_STATION_ID);
@@ -953,12 +997,15 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                     "IP pool {} unavailable, requests are not answered: {}",
                     pool.name(),
                     e.toString());
+            because(context, "IP pool unavailable: ", pool.name());
             return DROP;
         }
         if (address == null) {
             warnOnce("pool-empty:" + pool.name(), "IP pool {} has no free address", pool.name());
+            because(context, "IP pool has no free address: ", pool.name());
             return pool.exhausted() ? ACCEPT : REJECT;
         }
+        note(context, "address from pool " + pool.name() + ": ", address);
         a.reply().add(new AttributeItem("Framed-IP-Address", "=", address));
         return ACCEPT;
     }

@@ -21,6 +21,8 @@
     </Appenders>
     <Loggers>
         <Logger name="io.radiusward" level="${sys:radiusward.log.level:-INFO}"/>
+        <!-- per-request traces (ADR 0052): only requests matching trace.* conditions, whatever the level above -->
+        <Logger name="io.radiusward.trace" level="INFO"/>
         <Root level="INFO">
             <AppenderRef ref="console"/>
             <SystemPropertyArbiter propertyName="radiusward.log.dir">

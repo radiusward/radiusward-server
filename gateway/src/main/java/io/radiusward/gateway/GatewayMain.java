@@ -44,6 +44,10 @@ public final class GatewayMain {
                         gateway::ready,
                         gateway::stateJson,
                         gateway::metrics)) {
+            com.sun.net.httpserver.HttpHandler traceApi = gateway.trace(config); // ADR 0052
+            if (management != null && traceApi != null) {
+                management.handle("/trace", traceApi);
+            }
             if (management != null && gateway.coaApi() != null) {
                 management.handle("/coa/", gateway.coaApi()); // ADR 0036, with coa.api.token only
             }

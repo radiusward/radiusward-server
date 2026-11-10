@@ -417,6 +417,37 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void tracedRequestsRecordTheirDecisions() {
+        main.user(
+                "alice",
+                List.of(item("Cleartext-Password", ":=", "a"), item("Login-Time", ":=", "Sa")),
+                List.of(),
+                new UserRecord.Group("staff", List.of(), List.of()),
+                new UserRecord.Group("wifi", List.of(item("NAS-Port-Type", "==", "Wireless-802.11")), List.of()));
+        StoreAccessHandler h = handler();
+        h.limits(null, java.time.ZoneOffset.UTC);
+        byte[] request = AccessRequestBuilder.pap("alice", "a");
+        context.reset(
+                new UnsafeBuffer(request),
+                0,
+                request.length,
+                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF)
+                        .clients()
+                        .iterator()
+                        .next());
+        Tracer.Trace trace = new Tracer.Trace();
+        context.trace(trace);
+        assertThat(h.handle(context)).isEqualTo(AccessHandler.REJECT);
+        assertThat(trace.steps.toString())
+                .contains("user found in store main", "group applies: staff", "group does not apply: wifi")
+                .contains("outside Login-Time Sa");
+        assertThat(trace.reason).isTrue();
+
+        context.trace(null);
+        assertThat(pap(h, "nobody", "a")).isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
     void groupsApplyWhenTheirChecksMatch() {
         UserRecord.Group staff = new UserRecord.Group(
                 "staff", List.of(item("NAS-Port-Type", "==", "Ethernet")), List.of(item("Filter-Id", "=", "staff")));

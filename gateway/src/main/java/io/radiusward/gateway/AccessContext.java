@@ -27,7 +27,19 @@ public final class AccessContext {
 
     AccessContext() {}
 
+    private Tracer.Trace trace;
+
+    /** The trace of this request (ADR 0052), {@code null} when it is not traced. */
+    Tracer.Trace trace() {
+        return trace;
+    }
+
+    void trace(Tracer.Trace trace) {
+        this.trace = trace;
+    }
+
     void reset(DirectBuffer buffer, int offset, int length, NasClient nas) {
+        trace = null;
         request.wrap(buffer, offset, length);
         this.nas = nas;
         reply.wrap(replyBuffer, 0).header(0, 0); // only the attributes after the header are used
