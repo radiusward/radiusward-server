@@ -1,0 +1,11 @@
+# Keeps the workflows' actions current. Third-party actions are pinned to commit SHAs (a tag can be moved to other
+# code); Dependabot updates the SHA and its version comment together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
