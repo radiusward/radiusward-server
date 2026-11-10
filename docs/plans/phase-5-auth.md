@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.24 done (ADR 0020–0048). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.25 done (ADR 0020–0049). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -121,6 +121,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.22 ✅ | Dynamic clients | NAS entries looked up on demand in SQL (`nas` table) for unknown addresses of configured networks, off the packet path, with lifetimes and a negative cache ([ADR 0046](../adr/0046-dynamic-clients.md)) | M |
 | 5.23 ✅ | IPv6 NAS | IPv6 entries and ranges (longest prefix first), dual-stack listening, CoA by NAS-IPv6-Address ([ADR 0047](../adr/0047-ipv6-nas.md)) | S |
 | 5.24 ✅ | Password formats | yescrypt (`$y$`), MD5-crypt (`$1$`), MD5/SMD5, unsalted SHA and SHA-2, LM, for migrations ([ADR 0048](../adr/0048-password-formats.md)) | S |
+| 5.25 ✅ | Login times and usage limits | `Login-Time`, daily/weekly/monthly time and octet counters over `accounting_session`, Session-Timeout cut to the expiry, window or quota ([ADR 0049](../adr/0049-time-and-usage-limits.md)) | S |
 
 ## Tests
 

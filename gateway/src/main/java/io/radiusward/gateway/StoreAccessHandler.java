@@ -22,7 +22,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -232,6 +231,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 return decision;
             }
         }
+        int restricted = restrict(found.user().userName(), a);
+        if (restricted != ACCEPT) {
+            return restricted;
+        }
         encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
         writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
         writeEapSuccess(context, method);
@@ -248,10 +251,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             String authType,
             List<AttributeItem> passwords,
             List<AttributeItem> reply,
-            String limit) {
+            String limit,
+            List<AttributeItem> restrictions) {
 
         static Authorization of(int code) {
-            return new Authorization(code, null, null, null, null, null);
+            return new Authorization(code, null, null, null, null, null, List.of());
         }
     }
 
@@ -349,7 +353,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (authType.equalsIgnoreCase("Reject")) {
             return Authorization.of(REJECT);
         }
-        return new Authorization(ACCEPT, found, authType, passwords, reply, limit);
+        List<AttributeItem> restrictions = new ArrayList<>();
+        collectRestrictions(found.user().check(), restrictions);
+        for (UserRecord.Group group : found.user().groups()) {
+            if (checks(group.check(), request, new ArrayList<>()) != null) {
+                collectRestrictions(group.check(), restrictions);
+            }
+        }
+        return new Authorization(ACCEPT, found, authType, passwords, reply, limit, restrictions);
     }
 
     // ---- look-up -------------------------------------------------------------------------------
@@ -468,7 +479,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
     }
 
-    private static Instant date(String text) {
+    private Instant date(String text) {
         String t = text.trim().replaceAll("\\s+", " ");
         try {
             return Instant.parse(t);
@@ -477,22 +488,20 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         for (DateTimeFormatter f : DATES) {
             try {
-                return LocalDateTime.parse(t, f).atZone(ZoneId.systemDefault()).toInstant();
+                return LocalDateTime.parse(t, f).atZone(zone).toInstant();
             } catch (DateTimeParseException ignored) {
                 // next format
             }
         }
         for (DateTimeFormatter f : DAYS) {
             try {
-                return LocalDate.parse(t, f)
-                        .atStartOfDay(ZoneId.systemDefault())
-                        .toInstant();
+                return LocalDate.parse(t, f).atStartOfDay(zone).toInstant();
             } catch (DateTimeParseException ignored) {
                 // next format
             }
         }
         try {
-            return LocalDate.parse(t).atStartOfDay(ZoneId.systemDefault()).toInstant();
+            return LocalDate.parse(t).atStartOfDay(zone).toInstant();
         } catch (DateTimeParseException e) {
             return null; // fail closed
         }
@@ -735,6 +744,126 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                         + " auth.store.<name>.mschap = true): rejected",
                 found.store());
         return null;
+    }
+
+    // ---- time and usage restrictions (ADR 0049) ---------------------------------------------------------------
+
+    private volatile UsageCounters counters;
+    private volatile java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+
+    /** Usage counters ({@code auth.counters}) and the zone of Login-Time and counter periods. */
+    void limits(UsageCounters counters, java.time.ZoneId zone) {
+        this.counters = counters;
+        this.zone = zone;
+    }
+
+    private void collectRestrictions(List<AttributeItem> checks, List<AttributeItem> into) {
+        UsageCounters c = counters;
+        for (AttributeItem item : checks) {
+            String name = item.attribute();
+            if (name.equalsIgnoreCase("Expiration") || name.equalsIgnoreCase("Login-Time")) {
+                into.add(item);
+            } else if (c != null
+                    && c.counters().stream().anyMatch(k -> k.check().equalsIgnoreCase(name))) {
+                into.add(item);
+            }
+        }
+    }
+
+    /**
+     * Expiration, Login-Time and usage counters of the authorized user: outside a login window or over a limit is a
+     * reject; otherwise the Accept's Session-Timeout is cut to the earliest end (expiry, the window's end, the time
+     * left on a time counter or its period). A counter that cannot be read leaves the request unanswered.
+     */
+    private int restrict(String user, Authorization a) {
+        if (a.restrictions().isEmpty()) {
+            return ACCEPT;
+        }
+        Instant now = Instant.ofEpochMilli(clockMillis.getAsLong());
+        java.time.ZonedDateTime local = now.atZone(zone);
+        long cap = Long.MAX_VALUE;
+        for (AttributeItem item : a.restrictions()) {
+            String name = item.attribute();
+            if (name.equalsIgnoreCase("Expiration")) {
+                Instant expires = date(item.value());
+                if (expires == null || !now.isBefore(expires)) {
+                    return REJECT;
+                }
+                cap = Math.min(
+                        cap,
+                        Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
+            } else if (name.equalsIgnoreCase("Login-Time")) {
+                LoginTime window = LoginTime.parse(item.value());
+                if (window == null) {
+                    warnOnce("login-time:" + item.value(), "Login-Time {}: not understood, the user is rejected", item);
+                    return REJECT;
+                }
+                long left = window.secondsLeft(local);
+                if (left < 0) {
+                    return REJECT;
+                }
+                cap = Math.min(cap, Math.max(1, left));
+            } else {
+                for (UsageCounters.Counter counter : counters.counters()) {
+                    if (!counter.check().equalsIgnoreCase(name)) {
+                        continue;
+                    }
+                    long limit;
+                    try {
+                        limit = Long.parseLong(item.value().trim());
+                    } catch (NumberFormatException e) {
+                        warnOnce("counter:" + name, "{}: {} is not a number, the user is rejected", name, item.value());
+                        return REJECT;
+                    }
+                    long used;
+                    try {
+                        used = counters.usage(counter, user, UsageCounters.periodStart(counter.reset(), local));
+                    } catch (Exception e) {
+                        warnOnce(
+                                "counter-unavailable:" + counter.name(),
+                                "usage counter {} unavailable, requests are not answered: {}",
+                                counter.name(),
+                                e.toString());
+                        return DROP;
+                    }
+                    if (used >= limit) {
+                        return REJECT;
+                    }
+                    if (counter.kind() == UsageCounters.Kind.TIME) {
+                        cap = Math.min(cap, limit - used);
+                        Instant end = UsageCounters.periodEnd(counter.reset(), local);
+                        if (end != null) {
+                            cap = Math.min(
+                                    cap,
+                                    Math.max(
+                                            1,
+                                            java.time.Duration.between(now, end).getSeconds()));
+                        }
+                    } else if (counter.reply() != null) {
+                        replace(a.reply(), counter.reply(), Long.toString(limit - used));
+                    }
+                }
+            }
+        }
+        if (cap != Long.MAX_VALUE) {
+            long timeout = cap;
+            for (AttributeItem r : a.reply()) {
+                if (r.attribute().equalsIgnoreCase("Session-Timeout")) {
+                    try {
+                        timeout = Math.min(timeout, Long.parseLong(r.value().trim()));
+                    } catch (NumberFormatException e) {
+                        // a malformed value is replaced
+                    }
+                }
+            }
+            replace(a.reply(), "Session-Timeout", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
+        }
+        return ACCEPT;
+    }
+
+    private static void replace(List<AttributeItem> reply, String attribute, String value) {
+        reply.removeIf(r -> r.attribute().equalsIgnoreCase(attribute));
+        reply.add(new AttributeItem(attribute, "=", value));
     }
 
     /** Inner checks of proxied realms' users go to their home servers when set (ADR 0044). */

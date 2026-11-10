@@ -225,6 +225,110 @@ class StoreAccessHandlerTest {
                 .isEqualTo(AccessHandler.REJECT);
     }
 
+    private long sessionTimeout() {
+        RadiusPacket reply = reply();
+        int at = reply.findAttribute(27);
+        return at < 0 ? -1 : reply.buffer().getInt(at + 2, java.nio.ByteOrder.BIG_ENDIAN) & 0xFFFFFFFFL;
+    }
+
+    @Test
+    void loginTimeExpirationAndCountersCapTheSessionTimeout() {
+        // now: Friday 2027-01-15 08:00:00 UTC
+        java.util.Map<String, Long> used = new HashMap<>();
+        java.util.List<java.time.Instant> since = new java.util.ArrayList<>();
+        boolean[] down = {false};
+        UsageCounters counters = new UsageCounters(
+                List.of(
+                        new UsageCounters.Counter(
+                                "daily",
+                                "Max-Daily-Session",
+                                UsageCounters.Kind.TIME,
+                                UsageCounters.Reset.DAILY,
+                                "",
+                                null),
+                        new UsageCounters.Counter(
+                                "data",
+                                "Max-Monthly-Octets",
+                                UsageCounters.Kind.OCTETS,
+                                UsageCounters.Reset.MONTHLY,
+                                "",
+                                "Reply-Message")),
+                (counter, user, start) -> {
+                    if (down[0]) {
+                        throw new java.sql.SQLException("down");
+                    }
+                    since.add(start);
+                    return used.getOrDefault(counter.name() + ":" + user, 0L);
+                },
+                java.time.ZoneOffset.UTC);
+        main.user(
+                        "office",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Login-Time", ":=", "Wk0800-1000")),
+                        List.of(item("Session-Timeout", "=", "86400")))
+                .user(
+                        "weekend",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Login-Time", ":=", "Sa-Su")),
+                        List.of())
+                .user(
+                        "garbled",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Login-Time", ":=", "Xy99")),
+                        List.of())
+                .user(
+                        "leaving",
+                        List.of(
+                                item("Cleartext-Password", ":=", "a"),
+                                item("Expiration", ":=", "Jan 15 2027 09:00:00")),
+                        List.of(item("Session-Timeout", "=", "600")))
+                .user(
+                        "leavingLater",
+                        List.of(
+                                item("Cleartext-Password", ":=", "a"),
+                                item("Expiration", ":=", "Jan 15 2027 09:00:00")),
+                        List.of())
+                .user(
+                        "metered",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Max-Daily-Session", ":=", "3600")),
+                        List.of())
+                .user(
+                        "data",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Max-Monthly-Octets", ":=", "1000")),
+                        List.of())
+                .user(
+                        "nonsense",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Max-Daily-Session", ":=", "lots")),
+                        List.of());
+        StoreAccessHandler h = handler();
+        h.limits(counters, java.time.ZoneOffset.UTC);
+
+        assertThat(pap(h, "office", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout())
+                .as("until 10:00, below the user's own 86400")
+                .isEqualTo(7200);
+        assertThat(pap(h, "weekend", "a")).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "garbled", "a")).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "leaving", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout()).as("the user's own is shorter").isEqualTo(600);
+        assertThat(pap(h, "leavingLater", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout()).as("until the expiry").isEqualTo(3600);
+
+        used.put("daily:metered", 1000L);
+        assertThat(pap(h, "metered", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout()).isEqualTo(2600);
+        assertThat(since).containsExactly(java.time.Instant.parse("2027-01-15T00:00:00Z"));
+        used.put("daily:metered", 3600L);
+        assertThat(pap(h, "metered", "a")).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "nonsense", "a")).isEqualTo(AccessHandler.REJECT);
+
+        used.put("data:data", 400L);
+        assertThat(pap(h, "data", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout()).as("octets do not cap the time").isEqualTo(-1);
+        assertThat(reply().findAttribute(18)).as("the octets left").isPositive();
+        assertThat(since).last().isEqualTo(java.time.Instant.parse("2027-01-01T00:00:00Z"));
+
+        down[0] = true;
+        assertThat(pap(h, "data", "a")).as("no answer without the counter").isEqualTo(AccessHandler.DROP);
+    }
+
     @Test
     void groupsApplyWhenTheirChecksMatch() {
         UserRecord.Group staff = new UserRecord.Group(

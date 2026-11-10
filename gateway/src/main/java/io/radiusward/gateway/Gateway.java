@@ -294,8 +294,14 @@ public final class Gateway implements AutoCloseable {
      */
     public static java.util.function.Function<Dictionary, AccessHandler> storeHandler(
             io.radiusward.common.config.Config config, AuthConfig auth) {
-        return dictionary -> new StoreAccessHandler(
-                AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
+        UsageCounters counters = UsageCounters.from(config);
+        java.time.ZoneId zone = UsageCounters.zone(config);
+        return dictionary -> {
+            StoreAccessHandler handler = new StoreAccessHandler(
+                    AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
+            handler.limits(counters, zone); // ADR 0049
+            return handler;
+        };
     }
 
     static String ingressEndpoints(GatewayConfig config) {

@@ -272,6 +272,13 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |
 | `auth.bcrypt.max.cost` | `14` | highest bcrypt cost verified (4–31); a stored hash above it is rejected rather than tying up a worker (cost 14 ≈ 1 s of CPU) |
+| `auth.time.zone` | the system's | zone of `Login-Time` windows, counter periods and `Expiration` dates without a zone ([ADR 0049](adr/0049-time-and-usage-limits.md)) |
+| `auth.counters` | none | usage counters by name; a user whose check items hold a counter's `check` item is limited by it |
+| `auth.counter.<name>.check` | — | the check item with the user's limit (seconds or octets), e.g. `Max-Daily-Session` |
+| `auth.counter.<name>.kind` / `.reset` | `time` / `daily` | `time` or `octets`; `daily`, `weekly` (from Monday), `monthly`, `never` |
+| `auth.counter.<name>.query` | over `accounting_session` | SQL with two parameters, user name and period start, returning the usage; the default reads the PostgreSQL sink's table |
+| `auth.counter.<name>.reply` | none | `octets`: a reply attribute that gets the octets left |
+| `auth.counter.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the counters; unreachable = no answer |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |
 | `nas.<name>.auth.stores` | all of `auth.stores` | the stores asked for this NAS entry, in order |
 | `nas.<name>.reply.vendors` | from `nas.<name>.vendor` | vendors whose attributes this entry's Access-Accepts carry (dictionary vendor names, `all`, `none`); standard attributes are always sent ([ADR 0022](adr/0022-reply-attributes.md)). Without it: the vendor of `nas.<name>.vendor` if it names a dictionary vendor (`juniper` also gets `Unisphere`), else everything |
