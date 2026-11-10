@@ -13,8 +13,8 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * An EAP conversation inside a tunnel with whole EAP packets (TTLS, RFC 5281 §11.2.4; ADR 0040): the peer's
- * Identity response, then an inner method from the configured list (the peer may Nak to another) — EAP-MD5 (checked
+ * An EAP conversation inside a tunnel with whole EAP packets (TTLS, RFC 5281 §11.2.4, ADR 0040; TEAP's EAP-Payload
+ * TLV, ADR 0041): the peer's Identity response (unasked in TTLS, asked by {@link #requestIdentity()} in TEAP), then an inner method from the configured list (the peer may Nak to another) — EAP-MD5 (checked
  * like CHAP: cleartext of a store that allows it), EAP-MSCHAPv2 (as outside, ends with a Success request the peer
  * acknowledges) or EAP-GTC (a password, checked like PAP). Each step returns the next inner request
  * ({@link Step#request()}: a whole EAP packet), success, failure, or unavailable (the inner check could not be made;
@@ -26,6 +26,7 @@ final class InnerEap {
     static final int MD5 = EapPacket.TYPE_MD5;
     static final int GTC = 6;
     static final int MS_CHAP_V2 = 26;
+    static final int TLS = EapTls.TYPE;
     private static final byte[] GTC_PROMPT = "Password: ".getBytes(StandardCharsets.US_ASCII);
     private static final byte[] SERVER_NAME = "radiusward".getBytes(StandardCharsets.US_ASCII);
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -37,6 +38,8 @@ final class InnerEap {
     }
 
     private final List<Integer> types;
+    private final EapTlsConfig tlsConfig; // for EAP-TLS inside (TEAP); null where it is not offered
+    private EapTls innerTls;
     private State state = State.IDENTITY;
     private int type;
     private int identifier = RANDOM.nextInt(256);
@@ -45,15 +48,37 @@ final class InnerEap {
     private final byte[] challenge = new byte[16];
     private String identity;
     private byte[] pending; // the last response, when its check could not be made
+    private byte[] msk; // the inner method's MSK, for TEAP's crypto-binding (EAP-MSCHAPv2 only)
 
     /** @param types the inner EAP types offered, first preferred (MD5, MS-CHAPv2, GTC) */
     InnerEap(List<Integer> types) {
-        this.types = List.copyOf(types);
+        this(types, null);
     }
 
-    /** The inner identity, once the peer sent it. */
+    /** @param tlsConfig the TLS side for EAP-TLS inside (a client certificate of {@code auth.eap.tls.ca}) */
+    InnerEap(List<Integer> types, EapTlsConfig tlsConfig) {
+        this.types = List.copyOf(types);
+        this.tlsConfig = tlsConfig;
+    }
+
+    /** An EAP-Request/Identity, for a tunnel where the server asks first (TEAP). */
+    byte[] requestIdentity() {
+        identifier = (identifier + 1) & 0xFF;
+        return EapPacket.request(identifier, EapPacket.TYPE_IDENTITY, new byte[0])
+                .encode();
+    }
+
+    /**
+     * The inner method's MSK after success: EAP-MSCHAPv2's 32 bytes (the server's send key, then its receive key; the
+     * reverse of PEAP's ISK order), EAP-TLS's 64; {@code null} for EAP-GTC and EAP-MD5, which derive none.
+     */
+    byte[] msk() {
+        return msk;
+    }
+
+    /** The inner identity, once the peer sent it; for EAP-TLS the identity its certificate authenticated. */
     String identity() {
-        return identity;
+        return innerTls != null && innerTls.innerIdentity() != null ? innerTls.innerIdentity() : identity;
     }
 
     /** The peer's next inner EAP packet. */
@@ -67,7 +92,7 @@ final class InnerEap {
                 return Step.FAILED;
             }
             identity = new String(p.data(), StandardCharsets.UTF_8).trim();
-            identifier = p.identifier();
+            identifier = p.identifier(); // TTLS: the peer's own; TEAP: the one of our request
             return identity.isEmpty() ? Step.FAILED : start(types.get(0));
         }
         if (p.identifier() != identifier) {
@@ -91,7 +116,23 @@ final class InnerEap {
             return Step.FAILED;
         }
         begun = true;
+        if (type == TLS) {
+            return tls(p.data(), credentials);
+        }
         return check(p.data(), credentials);
+    }
+
+    /** EAP-TLS inside: the handshake in EAP-TLS messages; its MSK binds the tunnel. */
+    private Step tls(byte[] data, Credentials credentials) {
+        Step step = innerTls.process(identifier, data, credentials);
+        if (!step.done()) {
+            return request(TLS, step.request());
+        }
+        if (!step.success()) {
+            return Step.FAILED;
+        }
+        msk = step.msk();
+        return Step.succeeded(null);
     }
 
     /** The check of the last response again, after it was unavailable. */
@@ -145,6 +186,10 @@ final class InnerEap {
         if (checked.code() != AccessHandler.ACCEPT || checked.ntHashHash() == null) {
             return Step.FAILED;
         }
+        byte[] master = MsChap.masterKeyFromKey(checked.ntHashHash(), ntResponse);
+        msk = new byte[32]; // the server's send key, then its receive key (the peer's receive, then send)
+        System.arraycopy(MsChap.serverKey(master, true), 0, msk, 0, 16);
+        System.arraycopy(MsChap.serverKey(master, false), 0, msk, 16, 16);
         String success = MsChap.authenticatorResponseFromKey(checked.ntHashHash(), ntResponse, hash)
                 + " M=Authentication succeeded";
         state = State.MS_CHAP_SUCCESS;
@@ -175,6 +220,14 @@ final class InnerEap {
                 yield request(MD5, d);
             }
             case GTC -> request(GTC, GTC_PROMPT);
+            case TLS -> {
+                if (tlsConfig == null) {
+                    yield Step.FAILED;
+                }
+                innerTls = new EapTls(tlsConfig, identity);
+                Step first = innerTls.start(identifier + 1, null);
+                yield first.done() ? Step.FAILED : request(TLS, first.request());
+            }
             default -> {
                 msChapId = RANDOM.nextInt(256);
                 byte[] body = new byte[1 + 16 + SERVER_NAME.length];

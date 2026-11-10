@@ -25,6 +25,10 @@ import java.util.Locale;
  *     ({@code auth.eap.peap.client.certificate}, ADR 0039)
  * @param ttlsInner the EAP types TTLS offers when the client starts EAP inside, first preferred
  *     ({@code auth.eap.ttls.inner}, ADR 0040)
+ * @param teapInner TEAP's inner methods, first preferred: EAP types, or {@link Teap#BASIC} for Basic-Password-Auth
+ *     ({@code auth.eap.teap.inner}, ADR 0041)
+ * @param teapAuthorityId TEAP's Authority-ID ({@code auth.eap.teap.authority.id})
+ * @param teapIdentity the identity types TEAP asks for in turn ({@code auth.eap.teap.identity}); empty: any
  */
 record EapConfig(
         List<String> methods,
@@ -35,7 +39,38 @@ record EapConfig(
         List<Integer> peapInner,
         Peap.Binding peapBinding,
         boolean peapClientCertificate,
-        List<Integer> ttlsInner) {
+        List<Integer> ttlsInner,
+        List<Integer> teapInner,
+        byte[] teapAuthorityId,
+        List<Integer> teapIdentity) {
+
+    EapConfig(
+            List<String> methods,
+            Duration timeout,
+            int conversations,
+            int maxRounds,
+            EapTlsConfig tls,
+            List<Integer> peapInner,
+            Peap.Binding peapBinding,
+            boolean peapClientCertificate,
+            List<Integer> ttlsInner) {
+        this(
+                methods,
+                timeout,
+                conversations,
+                maxRounds,
+                tls,
+                peapInner,
+                peapBinding,
+                peapClientCertificate,
+                ttlsInner,
+                DEFAULT_TEAP_INNER,
+                DEFAULT_AUTHORITY_ID,
+                List.of());
+    }
+
+    static final List<Integer> DEFAULT_TEAP_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
+    static final byte[] DEFAULT_AUTHORITY_ID = "radiusward".getBytes(java.nio.charset.StandardCharsets.UTF_8);
 
     EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
         this(methods, timeout, conversations, maxRounds, tls, List.of(Peap.MS_CHAP_V2), Peap.Binding.OPTIONAL);
@@ -54,7 +89,7 @@ record EapConfig(
 
     static final List<Integer> DEFAULT_TTLS_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
 
-    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls");
+    static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls", "teap");
 
     static final EapConfig DEFAULT = new EapConfig(List.of("md5"), Duration.ofSeconds(30), 10_000, 50, null);
 
@@ -72,9 +107,13 @@ record EapConfig(
             throw new ConfigException("auth.eap.conversations: at least 1");
         }
         EapTlsConfig tls = EapTlsConfig.from(config);
-        if ((methods.contains("tls") || methods.contains("peap") || methods.contains("ttls")) && tls == null) {
+        if ((methods.contains("tls")
+                        || methods.contains("peap")
+                        || methods.contains("ttls")
+                        || methods.contains("teap"))
+                && tls == null) {
             throw new ConfigException(
-                    "auth.eap.methods: tls, peap and ttls need auth.eap.tls.certificate and auth.eap.tls.key");
+                    "auth.eap.methods: tls, peap, ttls and teap need auth.eap.tls.certificate and auth.eap.tls.key");
         }
         if (methods.contains("tls") && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException("auth.eap.methods: tls needs auth.eap.tls.ca, the CAs of client certificates");
@@ -115,6 +154,42 @@ record EapConfig(
                                 "auth.eap.ttls.inner: unknown inner EAP method " + m + " (mschapv2, gtc, md5)");
                 })
                 .toList();
+        List<Integer> teapInner = config.list("auth.eap.teap.inner", List.of("mschapv2", "gtc", "md5")).stream()
+                .map(m -> switch (m.trim().toLowerCase(Locale.ROOT)) {
+                    case "mschapv2" -> InnerEap.MS_CHAP_V2;
+                    case "gtc" -> InnerEap.GTC;
+                    case "md5" -> InnerEap.MD5;
+                    case "tls" -> InnerEap.TLS;
+                    case "basic" -> Teap.BASIC;
+                    default ->
+                        throw new ConfigException(
+                                "auth.eap.teap.inner: unknown inner method " + m + " (mschapv2, gtc, md5, tls, basic)");
+                })
+                .toList();
+        if (teapInner.isEmpty()) {
+            throw new ConfigException("auth.eap.teap.inner: at least one inner method");
+        }
+        if (teapInner.contains(InnerEap.TLS)
+                && config.string("auth.eap.tls.ca", "").isBlank()) {
+            throw new ConfigException("auth.eap.teap.inner: tls needs auth.eap.tls.ca, the CAs of client certificates");
+        }
+        List<Integer> teapIdentity = config.list("auth.eap.teap.identity", List.of()).stream()
+                .map(m -> switch (m.trim().toLowerCase(Locale.ROOT)) {
+                    case "user" -> Teap.USER;
+                    case "machine" -> Teap.MACHINE;
+                    default ->
+                        throw new ConfigException(
+                                "auth.eap.teap.identity: user and/or machine, in the order asked, got " + m);
+                })
+                .toList();
+        if (teapIdentity.size() > 2 || teapIdentity.stream().distinct().count() != teapIdentity.size()) {
+            throw new ConfigException("auth.eap.teap.identity: user, machine, or both once each");
+        }
+        byte[] authorityId = config.string("auth.eap.teap.authority.id", "radiusward")
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        if (authorityId.length == 0 || authorityId.length > 255) {
+            throw new ConfigException("auth.eap.teap.authority.id: 1 to 255 bytes");
+        }
         return new EapConfig(
                 List.copyOf(methods),
                 config.duration("auth.eap.timeout", Duration.ofSeconds(30)),
@@ -124,7 +199,10 @@ record EapConfig(
                 inner,
                 peapBinding,
                 peapCertificate,
-                ttlsInner);
+                ttlsInner,
+                teapInner,
+                authorityId,
+                teapIdentity);
     }
 
     /** The EAP type number of a method name. */
@@ -134,6 +212,7 @@ record EapConfig(
             case "tls" -> EapTls.TYPE;
             case "peap" -> Peap.TYPE;
             case "ttls" -> Ttls.TYPE;
+            case "teap" -> Teap.TYPE;
             default -> -1;
         };
     }
@@ -149,6 +228,7 @@ record EapConfig(
             case EapTls.TYPE -> tls == null ? null : new EapTls(tls, identity);
             case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner, peapBinding, peapClientCertificate);
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls, ttlsInner);
+            case Teap.TYPE -> tls == null ? null : new Teap(tls, teapInner, teapAuthorityId, teapIdentity);
             default -> null;
         };
     }
@@ -162,6 +242,7 @@ record EapConfig(
                         && tls != null
                         && (!tls.requireUser() || tls.identity() == CertificateIdentity.Check.CERTIFICATE))
                 || type == Peap.TYPE
-                || type == Ttls.TYPE;
+                || type == Ttls.TYPE
+                || type == Teap.TYPE;
     }
 }

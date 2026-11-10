@@ -27,8 +27,10 @@ abstract class TlsTunnel implements EapMethod {
     static final int FLAG_LENGTH = 0x80;
     static final int FLAG_MORE = 0x40;
     static final int FLAG_START = 0x20;
-    /** PEAP and TTLS carry their version in the low three flag bits; EAP-TLS keeps them reserved. */
+    /** PEAP, TTLS and TEAP carry their version in the low three flag bits; EAP-TLS keeps them reserved. */
     static final int VERSION_BITS = 0x07;
+    /** TEAP (RFC 7170 §4.1): an Outer TLV Length field follows, and Outer TLVs follow the TLS data. */
+    static final int FLAG_OUTER_TLVS = 0x10;
 
     final EapTlsConfig config;
     private SSLEngine engine;
@@ -122,6 +124,11 @@ abstract class TlsTunnel implements EapMethod {
         return step;
     }
 
+    /** The negotiated cipher suite (TEAP's key hierarchy follows its hash). */
+    final String cipherSuite() {
+        return engine.getSession().getCipherSuite();
+    }
+
     /** More keying material from the tunnel (TTLS's implicit challenge), without context. */
     final byte[] export(String label, int length) throws SSLException {
         return ((ExtendedSSLSession) engine.getSession()).exportKeyingMaterialData(label, null, length);
@@ -139,7 +146,20 @@ abstract class TlsTunnel implements EapMethod {
         } catch (SSLException e) {
             return Step.FAILED;
         }
-        return Step.next(new byte[] {(byte) FLAG_START});
+        return Step.next(startMessage());
+    }
+
+    /** The Start message's type data: the S flag and the method's version; TEAP adds its Outer TLVs. */
+    byte[] startMessage() {
+        return new byte[] {(byte) (FLAG_START | Math.max(0, version()))};
+    }
+
+    /** Outer TLVs of a peer's message (TEAP only; RFC 7170 §4.1); ignored by the other methods. */
+    void onOuterTlvs(byte[] tlvs) {}
+
+    /** The flags byte of a message to the peer: its own flags and the method's version. */
+    private byte flags(int bits) {
+        return (byte) (bits | Math.max(0, version()));
     }
 
     @Override
@@ -173,7 +193,23 @@ abstract class TlsTunnel implements EapMethod {
             }
             offset = 5;
         }
-        int payload = data.length - offset;
+        int end = data.length;
+        if ((flags & FLAG_OUTER_TLVS) != 0 && version() >= 1) {
+            if (data.length < offset + 4) {
+                return Step.FAILED;
+            }
+            int outer = ((data[offset] & 0xFF) << 24)
+                    | ((data[offset + 1] & 0xFF) << 16)
+                    | ((data[offset + 2] & 0xFF) << 8)
+                    | (data[offset + 3] & 0xFF);
+            offset += 4;
+            if (outer < 0 || outer > data.length - offset) {
+                return Step.FAILED;
+            }
+            end = data.length - outer;
+            onOuterTlvs(Arrays.copyOfRange(data, end, data.length));
+        }
+        int payload = end - offset;
         if (outgoing != null) {
             if (sent < outgoing.length) {
                 return payload == 0 ? nextFragment() : Step.FAILED; // the peer acknowledges our fragments
@@ -188,7 +224,7 @@ abstract class TlsTunnel implements EapMethod {
         }
         incoming.write(data, offset, payload);
         if ((flags & FLAG_MORE) != 0) {
-            return Step.next(new byte[] {0}); // acknowledge, wait for the rest
+            return Step.next(new byte[] {flags(0)}); // acknowledge, wait for the rest
         }
         byte[] message = incoming.toByteArray();
         incoming.reset();
@@ -237,7 +273,7 @@ abstract class TlsTunnel implements EapMethod {
             return settled(onAck(credentials)); // as if the client had acknowledged our Finished
         }
         if (out.size() == 0 && finished) {
-            return Step.next(new byte[] {0}); // nothing to say after the handshake: the client's turn
+            return Step.next(new byte[] {flags(0)}); // nothing to say after the handshake: the client's turn
         }
         return send(out.toByteArray());
     }
@@ -279,7 +315,7 @@ abstract class TlsTunnel implements EapMethod {
         boolean more = sent + length < outgoing.length;
         boolean announce = sent == 0 && more;
         byte[] data = new byte[1 + (announce ? 4 : 0) + length];
-        data[0] = (byte) ((announce ? FLAG_LENGTH : 0) | (more ? FLAG_MORE : 0));
+        data[0] = flags((announce ? FLAG_LENGTH : 0) | (more ? FLAG_MORE : 0));
         int at = 1;
         if (announce) {
             data[1] = (byte) (outgoing.length >>> 24);

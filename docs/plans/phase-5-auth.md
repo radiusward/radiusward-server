@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.16 done (ADR 0020–0040). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.17 done (ADR 0020–0041). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -113,6 +113,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.14 ✅ | DTLS (RFC 7360) | RADIUS over DTLS 1.2 on 2083/udp (the JDK has no DTLS 1.3); radsecproxy as the interop client. Milestones: 1 ✅ DTLS associations in the RadSec agent: NAS by address or certificate, secret `radius/dtls`, handshake retransmission, restarted NAS, idle timeout, accounting deduplicated across UDP/RadSec/DTLS, CoA over the association ([ADR 0038](../adr/0038-dtls.md)); 2 ✅ interop with radsecproxy as the DTLS client of `radclient` and `eapol_test`. Not covered: DTLS 1.3 (not in the JDK), the gateway as a DTLS client of home servers | M |
 | 5.15 ✅ | PEAP alignment | PEAPv0 only as other servers (PEAPv1 not planned until a user with old Cisco PEAP/GTC clients asks); PEAP and TTLS version bits checked; `auth.eap.peap.client.certificate`; `ExternalEapComparisonIT`: the same `eapol_test` profiles against an installed external RADIUS server and the gateway end the same way, resume alike ([ADR 0039](../adr/0039-peap-alignment.md)) | S |
 | 5.16 ✅ | TTLS inner methods | CHAP, MS-CHAPv1 and EAP inside TTLS (EAP-MSCHAPv2, EAP-GTC, EAP-MD5; `auth.eap.ttls.inner`); `eapol_test` and comparison profiles ([ADR 0040](../adr/0040-ttls-inner-methods.md)) | S |
+| 5.17 ✅ | TEAP | TEAPv1 (RFC 7170/9930) with inner EAP-MSCHAPv2, EAP-GTC, EAP-MD5, EAP-TLS or Basic-Password-Auth, Crypto-Binding, machine and user chaining; `eapol_test` 2.12 built from source; comparison profiles ([ADR 0041](../adr/0041-teap.md)) | M |
 
 ## Tests
 

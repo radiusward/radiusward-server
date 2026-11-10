@@ -93,7 +93,7 @@ class EapolTestIT {
                 Map.entry("auth.store.local.mschap", "true"),
                 Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
-                Map.entry("auth.eap.methods", "peap, ttls, tls"),
+                Map.entry("auth.eap.methods", "peap, ttls, tls, teap"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc, tls"),
                 Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
                 Map.entry("auth.eap.tls.key", pki.serverKey.toString()),
@@ -223,6 +223,124 @@ class EapolTestIT {
         }
     }
 
+    /** TEAP (ADR 0041) with inner EAP methods, over TLS 1.2 and 1.3; wrong passwords; two authentications in a row. */
+    @Test
+    void teap() throws Exception {
+        for (String tls : List.of(TLS12, TLS13)) {
+            for (String phase2 : List.of("auth=MSCHAPV2", "auth=GTC", "auth=MD5")) {
+                String name = "teap-" + phase2.substring(5).toLowerCase(java.util.Locale.ROOT) + "-" + tls.length();
+                assertAccepted(run(name, teap(tls, phase2, "Alice-Passw0rd!")));
+            }
+        }
+        for (String phase2 : List.of("auth=MSCHAPV2", "auth=GTC", "auth=MD5")) {
+            assertRejected(run(
+                    "teap-wrong-" + phase2.substring(5).toLowerCase(java.util.Locale.ROOT),
+                    teap(TLS12, phase2, "wrong")));
+        }
+        Container.ExecResult again = run("teap-twice", teap(TLS12, "auth=MSCHAPV2", "Alice-Passw0rd!"), 1);
+        assertThat(again.getStdout())
+                .as("two authentications in a row; the peer offers no resumption for TEAP")
+                .contains("MPPE keys OK: 2  mismatch: 0");
+    }
+
+    /** A second gateway offering only TEAP with these settings. */
+    private static Gateway teapGateway(String name, Map<String, String> extra) throws Exception {
+        Path users =
+                Files.writeString(dir.resolve(name + "-users"), "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n");
+        Map<String, String> settings = new java.util.HashMap<>(Map.ofEntries(
+                Map.entry("auth.stores", "local"),
+                Map.entry("auth.store.local.type", "file"),
+                Map.entry("auth.store.local.path", users.toString()),
+                Map.entry("auth.store.local.mschap", "true"),
+                Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
+                Map.entry("auth.eap.methods", "teap"),
+                Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
+                Map.entry("auth.eap.tls.key", pki.serverKey.toString()),
+                Map.entry("auth.eap.tls.ca", pki.caPem.toString()),
+                Map.entry("auth.eap.tls.fragment.size", "400")));
+        settings.putAll(extra);
+        Config config = Config.of(settings);
+        AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
+        GatewayConfig c = gatewayConfig();
+        GatewayConfig second = new GatewayConfig(
+                c.gatewayId(),
+                c.listenHost(),
+                0,
+                c.socketReceiveBuffer(),
+                c.clusterMembers(),
+                c.clusterBasePort(),
+                c.egressHost(),
+                c.profile(),
+                c.pendingCapacity(),
+                c.pendingTimeout(),
+                c.resubmitAfter(),
+                c.responseCacheTtl(),
+                c.dedicatedThreads(),
+                c.idleStrategy(),
+                c.aeronDir() + "-" + name,
+                c.dictionaryDir(),
+                c.debugResponseDelay());
+        return Gateway.launchWith(second, anyPrivateNas(), auth, Gateway.storeHandler(config, auth));
+    }
+
+    /** TEAP's Basic-Password-Auth (no inner EAP) from a gateway that offers it first; checked like PAP. */
+    @Test
+    void teapBasicPasswordAuth() throws Exception {
+        try (Gateway basic = teapGateway("basic", Map.of("auth.eap.teap.inner", "basic, mschapv2"))) {
+            for (String tls : List.of(TLS12, TLS13)) {
+                Container.ExecResult ok = run(
+                        "teap-basic-" + tls.length(),
+                        teap(tls, "auth=MSCHAPV2", "Alice-Passw0rd!"),
+                        0,
+                        basic.authPort());
+                assertAccepted(ok);
+                assertThat(ok.getStdout()).contains("Basic-Password-Auth");
+            }
+            assertRejected(run("teap-basic-wrong", teap(TLS12, "auth=MSCHAPV2", "wrong"), 0, basic.authPort()));
+        }
+    }
+
+    /**
+     * TEAP chaining (Identity-Type, ADR 0041): the machine with EAP-TLS and its certificate, then the user with
+     * EAP-MSCHAPv2, in one tunnel; keys chained through both. A wrong user password fails the whole.
+     */
+    @Test
+    void teapMachineThenUser() throws Exception {
+        String machine = """
+                machine_identity="host/laptop-1"
+                machine_ca_cert="/work/ca.pem"
+                machine_client_cert="/work/laptop.pem"
+                machine_private_key="/work/laptop.key"
+                machine_phase2="auth=TLS"
+                """;
+        try (Gateway chained = teapGateway(
+                "chained", Map.of("auth.eap.teap.identity", "machine, user", "auth.eap.teap.inner", "tls, mschapv2"))) {
+            for (String tls : List.of(TLS12, TLS13)) {
+                Container.ExecResult ok = run(
+                        "teap-machine-user-" + tls.length(),
+                        teap(tls, "auth=MSCHAPV2", "Alice-Passw0rd!") + machine,
+                        0,
+                        chained.authPort());
+                assertAccepted(ok);
+                assertThat(ok.getStdout()).contains("Identity-Type");
+            }
+            assertRejected(run(
+                    "teap-machine-user-wrong", teap(TLS12, "auth=MSCHAPV2", "wrong") + machine, 0, chained.authPort()));
+        }
+    }
+
+    static String teap(String tls, String phase2, String password) {
+        return """
+                eap=TEAP
+                identity="alice"
+                anonymous_identity="anonymous"
+                password="%s"
+                ca_cert="/work/ca.pem"
+                phase1="%s"
+                phase2="%s"
+                """.formatted(password, tls, phase2);
+    }
+
     static final String TLS12 = "tls_disable_tlsv1_3=1";
     static final String TLS13 = "tls_disable_tlsv1_3=0 tls_disable_tlsv1_2=1";
 
@@ -268,6 +386,10 @@ class EapolTestIT {
 
     /** @param reauthentications further authentications on the same TLS session (resumption, ADR 0035) */
     static Container.ExecResult run(String name, String network, int reauthentications) throws Exception {
+        return run(name, network, reauthentications, gateway.authPort());
+    }
+
+    static Container.ExecResult run(String name, String network, int reauthentications, int port) throws Exception {
         String conf = "network={\n    key_mgmt=WPA-EAP\n    fragment_size=400\n" + network.indent(4) + "}\n";
         Path file = Files.writeString(dir.resolve(name + ".conf"), conf, StandardCharsets.UTF_8);
         copy(file, name + ".conf");
@@ -275,7 +397,7 @@ class EapolTestIT {
                 "sh",
                 "-c",
                 "eapol_test -c /work/" + name + ".conf -a \"$(getent hosts host.docker.internal | cut -d' ' -f1)\""
-                        + " -p " + gateway.authPort() + " -s " + SECRET + " -t 20 -r " + reauthentications);
+                        + " -p " + port + " -s " + SECRET + " -t 20 -r " + reauthentications);
         Files.createDirectories(LOGS);
         Files.writeString(LOGS.resolve(name + ".log"), result.getStdout() + result.getStderr());
         return result;

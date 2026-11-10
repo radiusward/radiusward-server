@@ -95,7 +95,7 @@ class ExternalEapComparisonIT {
                 Map.entry("auth.store.local.mschap", "true"),
                 Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
-                Map.entry("auth.eap.methods", "peap, ttls, tls"),
+                Map.entry("auth.eap.methods", "peap, ttls, tls, teap"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc"),
                 Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
                 Map.entry("auth.eap.tls.key", pki.serverKey.toString()),
@@ -157,6 +157,12 @@ class ExternalEapComparisonIT {
                         }
                         ttls {
                             tls = tls-%1$s
+                            default_eap_type = mschapv2
+                            virtual_server = inner-tunnel
+                        }
+                        teap {
+                            tls = tls-%1$s
+                            authority_identity = "external"
                             default_eap_type = mschapv2
                             virtual_server = inner-tunnel
                         }
@@ -280,6 +286,18 @@ class ExternalEapComparisonIT {
                 """.formatted(password, TLS12, phase2);
     }
 
+    static String teap(String phase2, String password) {
+        return """
+                eap=TEAP
+                identity="alice"
+                anonymous_identity="anonymous"
+                password="%s"
+                ca_cert="/work/ca.pem"
+                phase1="%s"
+                phase2="%s"
+                """.formatted(password, TLS12, phase2);
+    }
+
     static String tls(String phase1) {
         return """
                 eap=TLS
@@ -323,6 +341,8 @@ class ExternalEapComparisonIT {
                 new Profile("ttls-eap-md5", Outcome.ACCEPTED, ttls("autheap=MD5", "Alice-Passw0rd!")),
                 new Profile("ttls-eap-gtc", Outcome.ACCEPTED, ttls("autheap=GTC", "Alice-Passw0rd!")),
                 new Profile("ttls-chap-wrong", Outcome.REJECTED, ttls("auth=CHAP", "wrong")),
+                new Profile("teap-mschapv2", Outcome.ACCEPTED, teap("auth=MSCHAPV2", "Alice-Passw0rd!")),
+                new Profile("teap-mschapv2-wrong", Outcome.REJECTED, teap("auth=MSCHAPV2", "wrong")),
                 new Profile("ttls-eap-md5-wrong", Outcome.REJECTED, ttls("autheap=MD5", "wrong")),
                 new Profile("tls-tls12", Outcome.ACCEPTED, tls(TLS12)),
                 new Profile("tls-tls13", Outcome.ACCEPTED, tls(TLS13)));
