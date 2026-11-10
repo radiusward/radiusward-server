@@ -46,8 +46,13 @@ final class FakeHomeServer implements AutoCloseable {
     private final Thread thread;
 
     FakeHomeServer(String secret) throws Exception {
+        this(secret, "127.0.0.1");
+    }
+
+    /** @param host where to listen: {@code 0.0.0.0} for clients in containers */
+    FakeHomeServer(String secret, String host) throws Exception {
         this.secret = secret.getBytes(StandardCharsets.US_ASCII);
-        channel = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
+        channel = DatagramChannel.open().bind(new InetSocketAddress(host, 0));
         thread = new Thread(this::serve, "fake-home");
         thread.setDaemon(true);
         thread.start();

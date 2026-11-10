@@ -1,7 +1,7 @@
 # ADR 0037: Proxying to home servers
 
-Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.13
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–6 (realms, UDP proxy, health, RadSec client, accounting forwarding, discovery) done.
+Status: Accepted (2026-11-10). Phase 5, work package 5.13 ([plans/phase-5-auth.md](../plans/phase-5-auth.md)):
+realms, UDP proxy, health, RadSec client, accounting forwarding, discovery, interop.
 
 ## Context
 Roaming federations (eduroam-style), partners and migrations need users of some realms authenticated by other RADIUS
@@ -77,6 +77,13 @@ never lets one network's secret protect another's data.
     `radsec`. Their certificate must carry the SRV target's name, the classic TLS name check. Matching it against
     the NAI realm instead is not covered.
 - **Metrics**: `radiusward_gateway_proxy_requests_total{home,result}` and `radiusward_gateway_proxy_home_alive{home}`.
+
+- **Interop** (milestone 7):
+  - `ProxyRadsecproxyIT` (Docker): the gateway proxies over RadSec to radsecproxy, which relays over UDP to a home
+    server. The MS-MPPE key, re-encrypted by radsecproxy and by the gateway, reaches the NAS intact; Status-Server
+    is answered.
+  - `ExternalHomeServerIT` (`-Pinterop`): an external RADIUS server as a UDP home server checks our re-encrypted
+    User-Password and Message-Authenticator. Its Accept and Reject pass our checks, and it answers our Status-Server.
 
 ## Consequences
 - Proxied users never reach the identity stores, the workers or Simultaneous-Use. The home server decides, and its

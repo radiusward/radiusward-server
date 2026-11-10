@@ -8,16 +8,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
-import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -39,47 +36,18 @@ class ExternalCoaReceiverIT {
     @TempDir
     static Path dir;
 
-    static Process server;
+    static ExternalRadiusServer server;
     static int port;
     static DynamicAuthorization sender;
 
     @BeforeAll
     static void start() throws Exception {
         assumeTrue(Boolean.getBoolean("radiusward.interop"), "interop profile not active");
-        Optional<Path> binary = binary();
+        Optional<Path> binary = ExternalRadiusServer.binary();
         assumeTrue(binary.isPresent(), "no radiusd installed");
-        Path prefix = binary.get().toRealPath().getParent().getParent();
-        Path dictionaries = find(prefix.resolve("share"), "dictionary", 2)
-                .map(Path::getParent)
-                .orElseThrow();
-        Path modules = Stream.of("rlm_always.so", "rlm_always.dylib")
-                .map(name -> find(prefix.resolve("lib"), name, 3))
-                .flatMap(Optional::stream)
-                .map(Path::getParent)
-                .findFirst()
-                .orElseThrow();
-        try (DatagramSocket probe = new DatagramSocket(0)) {
-            port = probe.getLocalPort();
-        }
-        Files.createDirectories(dir.resolve("run"));
-        Files.writeString(dir.resolve("radiusd.conf"), """
-                prefix = %1$s
-                raddbdir = %2$s
-                confdir = %2$s
-                run_dir = %2$s/run
-                logdir = %2$s
-                libdir = %3$s
-                pidfile = %2$s/run/radiusd.pid
-                max_request_time = 30
-                cleanup_delay = 5
-                max_requests = 1024
-                hostname_lookups = no
-                log {
-                    destination = stdout
-                }
-                security {
-                    allow_core_dumps = no
-                }
+        port = ExternalRadiusServer.freeUdpPort();
+        server = ExternalRadiusServer.start(
+                binary.get(), dir, """
                 modules {
                     always ok {
                         rcode = ok
@@ -90,13 +58,13 @@ class ExternalCoaReceiverIT {
                 }
                 client gateway {
                     ipaddr = 127.0.0.1
-                    secret = %4$s
+                    secret = %1$s
                     require_message_authenticator = yes
                 }
                 listen {
                     type = coa
                     ipaddr = 127.0.0.1
-                    port = %5$d
+                    port = %2$d
                     virtual_server = coa
                 }
                 server coa {
@@ -112,20 +80,7 @@ class ExternalCoaReceiverIT {
                         ok
                     }
                 }
-                """.formatted(
-                        prefix, dir, modules, new String(SECRET, StandardCharsets.US_ASCII), port));
-        server = new ProcessBuilder(binary.get().toString(), "-X", "-d", dir.toString(), "-D", dictionaries.toString())
-                .redirectErrorStream(true)
-                .redirectOutput(dir.resolve("server.log").toFile())
-                .start();
-        long deadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
-        while (!Files.readString(dir.resolve("server.log")).contains("Ready to process requests")) {
-            if (!server.isAlive() || System.nanoTime() > deadline) {
-                throw new IllegalStateException(
-                        "the external server did not start:\n" + Files.readString(dir.resolve("server.log")));
-            }
-            Thread.sleep(100);
-        }
+                """.formatted(new String(SECRET, StandardCharsets.US_ASCII), port));
         sender = new DynamicAuthorization(
                 new CoaConfig(true, Duration.ofMillis(500), 1, null, Map.of()), "127.0.0.1", null);
         sender.onStart();
@@ -137,38 +92,7 @@ class ExternalCoaReceiverIT {
             sender.onClose();
         }
         if (server != null) {
-            server.destroy();
-            Path logs = Path.of("target/external-coa-receiver");
-            Files.createDirectories(logs);
-            Files.copy(
-                    dir.resolve("server.log"),
-                    logs.resolve("server.log"),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        }
-    }
-
-    private static Optional<Path> binary() {
-        String configured = System.getProperty("radiusward.interop.radiusd", "");
-        if (!configured.isBlank()) {
-            return Optional.of(Path.of(configured)).filter(Files::isExecutable);
-        }
-        Stream<String> path = Stream.of(System.getenv().getOrDefault("PATH", "").split(java.io.File.pathSeparator));
-        return Stream.concat(path, Stream.of("/opt/homebrew/bin", "/usr/local/bin", "/usr/sbin"))
-                .filter(d -> !d.isBlank())
-                .map(d -> Path.of(d, "radiusd"))
-                .filter(Files::isExecutable)
-                .findFirst();
-    }
-
-    private static Optional<Path> find(Path root, String name, int depth) {
-        if (!Files.isDirectory(root)) {
-            return Optional.empty();
-        }
-        try (Stream<Path> files =
-                Files.find(root, depth, (p, a) -> p.getFileName().toString().equals(name))) {
-            return files.findFirst();
-        } catch (IOException e) {
-            return Optional.empty();
+            server.stop("external-coa-receiver");
         }
     }
 
