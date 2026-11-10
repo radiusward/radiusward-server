@@ -6,6 +6,12 @@
 |---|---|---|---|
 | FreeRADIUS RADIUS dictionaries | `radius-dictionary-freeradius` | [CC BY 4.0](radius-dictionary-freeradius/LICENSE-CC-BY-4.0.txt) | Copyright The FreeRADIUS Server project and contributors. Unmodified except the root `dictionary` (one `$INCLUDE` commented out, recorded in its header). Source commit: [`SOURCE.properties`](radius-dictionary-freeradius/src/main/resources/io/radiusward/radius/dictionary/freeradius/SOURCE.properties). Only files carrying the CC BY 4.0 header are bundled; `scripts/update-dictionaries.sh` enforces this. |
 
+## Ported code
+
+| Component | Where | License | Notes |
+|---|---|---|---|
+| yescrypt reference implementation (Openwall) | `gateway/.../Yescrypt.java` | BSD-2-Clause | Copyright 2009 Colin Percival, 2013-2018 Alexander Peslyak. Ported to Java; the notice is kept in the file. |
+
 ## Runtime dependencies
 
 | Dependency | License |

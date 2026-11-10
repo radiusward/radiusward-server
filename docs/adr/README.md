@@ -49,5 +49,6 @@
 | [0045](0045-radius-over-tcp.md) | RADIUS over plain TCP (RFC 6613) in the RadSec agent: NAS by address, its own secret, ports keep their kind | Accepted |
 | [0046](0046-dynamic-clients.md) | NAS entries looked up on demand in SQL (`nas` table), off the packet path, copy-on-write table, lifetimes | Accepted |
 | [0047](0047-ipv6-nas.md) | IPv6 NAS entries and ranges, longest prefix first, CoA by NAS-IPv6-Address | Accepted |
+| [0048](0048-password-formats.md) | yescrypt (ported reference), MD5-crypt, MD5/SMD5, unsalted SHA/SHA-2, LM: for migrations | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

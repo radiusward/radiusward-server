@@ -51,7 +51,6 @@ final class PeapCryptoBinding {
         return new PeapCryptoBinding(Arrays.copyOf(tunnelKey, 60));
     }
 
-    /** The ISK of EAP-MSCHAPv2: the server's receive key, then its send key (as wpa_supplicant and Windows). */
     /** The ISK of an inner MS-CHAPv2 the gateway or a home server accepted: receive key, then send key. */
     static byte[] msChapV2Isk(EapMethod.Inner checked, byte[] ntResponse) {
         byte[] isk = new byte[32];
@@ -60,6 +59,7 @@ final class PeapCryptoBinding {
         return isk;
     }
 
+    /** The ISK of EAP-MSCHAPv2: the server's receive key, then its send key (as wpa_supplicant and Windows). */
     static byte[] msChapV2Isk(byte[] ntHashHash, byte[] ntResponse) {
         byte[] master = MsChap.masterKeyFromKey(ntHashHash, ntResponse);
         byte[] isk = new byte[32];

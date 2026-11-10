@@ -23,3 +23,11 @@ not bundled) is commented out; the file header records this change.
 
 Java sources generated from these dictionaries (attribute numbers and value
 names) are marked "Derived from FreeRADIUS dictionaries (CC BY 4.0)".
+
+-------------------------------------------------------------------------------
+yescrypt
+
+gateway/src/main/java/io/radiusward/gateway/Yescrypt.java is a Java port of the
+yescrypt reference implementation (https://github.com/openwall/yescrypt):
+Copyright 2009 Colin Percival, Copyright 2013-2018 Alexander Peslyak.
+Licensed under the BSD 2-Clause License; the license text is kept in that file.

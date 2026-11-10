@@ -174,7 +174,7 @@ final class MsChap {
     }
 
     /** DES with a 56-bit key (7 bytes spread over 8, parity bits left to the cipher). */
-    private static byte[] des(byte[] key7, byte[] block) {
+    static byte[] des(byte[] key7, byte[] block) {
         byte[] key = new byte[8];
         key[0] = (byte) (key7[0] & 0xFE);
         key[1] = (byte) ((key7[0] << 7 | (key7[1] & 0xFF) >>> 1) & 0xFE);

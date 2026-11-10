@@ -737,10 +737,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return null;
     }
 
-    /**
-     * MS-CHAPv2 inside a tunnel (PEAP, TTLS): the inner user is looked up and checked like outside — a credential
-     * verifier, or the local NT hash.
-     */
     /** Inner checks of proxied realms' users go to their home servers when set (ADR 0044). */
     private volatile InnerProxy innerProxy;
 
@@ -766,6 +762,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return r.inner();
     }
 
+    /**
+     * MS-CHAPv2 inside a tunnel (PEAP, TTLS): the inner user is looked up and checked like outside — a credential
+     * verifier, or the local NT hash.
+     */
     private EapMethod.Inner innerMsChapV2(AccessContext context, String user, byte[] challengeHash, byte[] ntResponse) {
         return innerMsChap(context, user, challengeHash, ntResponse, true);
     }

@@ -29,7 +29,7 @@ the NAS must never become Accept because of it.
   primitives — no runtime dependency; radiusward only verifies, never creates hashes. bcrypt is checked against
   the published vectors and, in tests only, against Bouncy Castle over random passwords and salts. A bcrypt cost
   above `auth.bcrypt.max.cost` (14) is rejected without hashing, so one bad row cannot occupy a worker for minutes.
-  argon2 and yescrypt are not supported until there is demand; a user with only such a hash is rejected. CHAP uses `Cleartext-Password` and only for stores with
+  argon2 is not supported (yescrypt, MD5-crypt and the legacy digests followed in [ADR 0048](0048-password-formats.md)); a user with only such a hash is rejected. CHAP uses `Cleartext-Password` and only for stores with
   `auth.store.<name>.chap = true`.
 - **Check items** are conditions: `Auth-Type := Reject/Accept`, `Expiration` (an unparseable date fails closed),
   comparisons (`==`, `!=`, `<`, `>`, `<=`, `>=`, `=~`, `!~`) against request attributes. A group applies when its

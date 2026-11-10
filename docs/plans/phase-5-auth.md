@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.23 done (ADR 0020–0047). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.24 done (ADR 0020–0048). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -98,7 +98,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 |---|---|---|---|
 | 5.1 ✅ | Codec | Access-Request view, User-Password decrypt (RFC 2865 §5.2, length 16..128, ×16), CHAP verify (RFC 1994), Access-Accept/Reject/Challenge builder with Message-Authenticator first, attribute templates; zero allocation; RFC vectors | M |
 | 5.2 ✅ | AuthAgent | non-blocking NIO socket 1812, NAS entries (their secret, `access.message-authenticator` default required), reply cache with in-flight marks, bounded slots and worker pool, counters, `/metrics` | M |
-| 5.3 ✅ | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option ([ADR 0021](../adr/0021-identity-stores.md)); bcrypt included, argon2 and yescrypt deferred | M |
+| 5.3 ✅ | IdentityStore SPI + `file` + `sql` | credential formats and verification, caching, timeouts, radcheck-compatible schema option ([ADR 0021](../adr/0021-identity-stores.md)); bcrypt included; yescrypt and legacy formats in 5.24, argon2 not supported | M |
 | 5.4 ✅ | Reply attributes | user and group reply items, vendor filter per NAS entry, reply items checked at load, encoded once, large replies cached ([ADR 0022](../adr/0022-reply-attributes.md)) | S |
 | 5.5 ✅ | Simultaneous use via the cluster | `AuthReservation` command, distinct devices per user, reservations until the Accounting-Start, same device always let in, state version 6 (`atLeast(6)`) ([ADR 0023](../adr/0023-simultaneous-use.md)) | M |
 | 5.6 ✅ | MS-CHAPv1/v2 (non-EAP), Status-Server | RFC 2433/2759, NT-Password (or cleartext with `mschap` opt-in), MS-CHAP2-Success, RFC 3079 MPPE keys encrypted per RFC 2548, MS-CHAP-Error; Status-Server (RFC 5997) on both ports ([ADR 0024](../adr/0024-ms-chap-and-status-server.md)) | S |
@@ -120,6 +120,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.21 ✅ | RADIUS over TCP | plain TCP (RFC 6613) on 1812/1813 in the RadSec agent, NAS by address with its own secret, ports keep their kind ([ADR 0045](../adr/0045-radius-over-tcp.md)) | S |
 | 5.22 ✅ | Dynamic clients | NAS entries looked up on demand in SQL (`nas` table) for unknown addresses of configured networks, off the packet path, with lifetimes and a negative cache ([ADR 0046](../adr/0046-dynamic-clients.md)) | M |
 | 5.23 ✅ | IPv6 NAS | IPv6 entries and ranges (longest prefix first), dual-stack listening, CoA by NAS-IPv6-Address ([ADR 0047](../adr/0047-ipv6-nas.md)) | S |
+| 5.24 ✅ | Password formats | yescrypt (`$y$`), MD5-crypt (`$1$`), MD5/SMD5, unsalted SHA and SHA-2, LM, for migrations ([ADR 0048](../adr/0048-password-formats.md)) | S |
 
 ## Tests
 

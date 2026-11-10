@@ -111,7 +111,8 @@ class PasswordCheckTest {
                 .isFalse();
         assertThat(PasswordCheck.verify("LM-Password", "E52CAC67419A9A224A3B108F3FA6CB6D", PASSWORD))
                 .isFalse();
-        assertThat(PasswordCheck.isPassword("LM-Password")).isFalse();
+        assertThat(PasswordCheck.isPassword("LM-Password")).as("since ADR 0048").isTrue();
+        assertThat(PasswordCheck.isPassword("Argon2-Password")).isFalse();
         assertThat(PasswordCheck.isPassword("Crypt-Password")).isTrue();
         assertThat(PasswordCheck.verify("PBKDF2-Password", "HMACSHA2+256:AAAnEA==:AQID:AQID", new byte[] {(byte) 0xff}))
                 .as("not UTF-8")
@@ -144,5 +145,66 @@ class PasswordCheckTest {
                         "pässwörd".getBytes(StandardCharsets.UTF_8)))
                 .as("non-ASCII in UTF-16LE")
                 .isTrue();
+    }
+
+    /** The legacy formats of ADR 0048, with hashes from openssl, mkpasswd (Debian) and the usual test values. */
+    @Test
+    void legacyFormatsForMigration() throws Exception {
+        byte[] password = "password".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        assertThat(PasswordCheck.verify(
+                        "Crypt-Password", "$1$abcdefgh$gJuEE5kgk4GxZUtJo4ZFv1", "hello world".getBytes()))
+                .as("MD5-crypt by openssl passwd -1")
+                .isTrue();
+        assertThat(PasswordCheck.verify(
+                        "Crypt-Password", "$1$ZNG/8/fi$LZXPw4LGL8SCHhOLVyDtC.", "Alice-Passw0rd!".getBytes()))
+                .as("MD5-crypt by mkpasswd")
+                .isTrue();
+        assertThat(PasswordCheck.verify("Crypt-Password", "$1$abcdefgh$gJuEE5kgk4GxZUtJo4ZFv1", password))
+                .isFalse();
+        assertThat(PasswordCheck.verify(
+                        "Crypt-Password",
+                        "$y$j9T$y51woau7Tip9DgZxbPSuH1$rewuM6kL2JSqLpR0Qtu9t.zrnkDD4uHh3U60ETllJ66",
+                        "Alice-Passw0rd!".getBytes()))
+                .as("yescrypt by mkpasswd")
+                .isTrue();
+        assertThat(PasswordCheck.verify("MD5-Password", "5f4dcc3b5aa765d61d8327deb882cf99", password))
+                .isTrue();
+        assertThat(PasswordCheck.verify("MD5-Password", "X03MO1qnZdYdgyfeuILPmQ==", password))
+                .as("base64")
+                .isTrue();
+        assertThat(PasswordCheck.verify("SHA-Password", "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8", password))
+                .isTrue();
+        assertThat(PasswordCheck.verify("SHA1-Password", "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8", password))
+                .isTrue();
+        String sha256 = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
+        assertThat(PasswordCheck.verify("SHA2-Password", sha256, password))
+                .as("by length: SHA-256")
+                .isTrue();
+        assertThat(PasswordCheck.verify("SHA2-256-Password", sha256, password)).isTrue();
+        assertThat(PasswordCheck.verify("SHA2-512-Password", sha256, password))
+                .as("wrong length")
+                .isFalse();
+        assertThat(PasswordCheck.verify("SHA2-Password", "abcd", password)).isFalse();
+        byte[] salt = {9, 8, 7, 6};
+        java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
+        md5.update(password);
+        md5.update(salt);
+        byte[] smd5 = java.util.Arrays.copyOf(md5.digest(), 20);
+        System.arraycopy(salt, 0, smd5, 16, 4);
+        assertThat(PasswordCheck.verify(
+                        "SMD5-Password", java.util.Base64.getEncoder().encodeToString(smd5), password))
+                .isTrue();
+        assertThat(PasswordCheck.verify("LM-Password", "E52CAC67419A9A224A3B108F3FA6CB6D", password))
+                .as("LM hash of \"password\"")
+                .isTrue();
+        assertThat(PasswordCheck.verify("LM-Password", "E52CAC67419A9A224A3B108F3FA6CB6D", "Password".getBytes()))
+                .as("LM is case-insensitive")
+                .isTrue();
+        assertThat(PasswordCheck.verify(
+                        "LM-Password", "E52CAC67419A9A224A3B108F3FA6CB6D", "a longer password".getBytes()))
+                .as("more than 14 characters")
+                .isFalse();
+        assertThat(PasswordCheck.verify("LM-Password", "not hex", password)).isFalse();
+        assertThat(PasswordCheck.isSlow("Crypt-Password", "$y$j9T$a$b")).isTrue();
     }
 }
