@@ -206,13 +206,16 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `realm.<id>.name` | `<id>` | the realm (`user@realm`, `REALM\user`), case-insensitive; `*`: every realm no other entry names |
 | `realm.<id>.pool` | — | the pool its users go to |
 | `realm.<id>.strip` | `false` | send the user name without the realm |
+| `realm.<id>.pre-proxy.remove` | none | standard attributes left out of requests to its home servers ([ADR 0055](adr/0055-proxy-transports-and-rewriting.md)) |
+| `realm.<id>.pre-proxy.add` | none | attributes added to those requests, as items: `Operator-Name = "1example.net", Cisco-AVPair += "x=y"` |
+| `realm.<id>.post-proxy.remove` | none | standard attributes left out of the home servers' answers to the NAS |
 | `pool.<id>.servers` | — | home servers in order |
 | `pool.<id>.type` | `failover` | `failover` (the first one alive) or `load-balance` (by device, so an EAP conversation stays on one server) |
 | `home.<id>.address` | — | `host[:port]`; port 1812 |
-| `home.<id>.secret` | — (`radsec` over TLS) | its shared secret; use `${env:...}` |
-| `home.<id>.transport` | `udp` | `udp`, or `tls`: RadSec (port 2083 by default) |
+| `home.<id>.secret` | — (`radsec` over TLS, `radius/dtls` over DTLS) | its shared secret; use `${env:...}`; required over UDP and TCP |
+| `home.<id>.transport` | `udp` | `udp`; `tls`: RadSec (port 2083 by default); `tcp`: RADIUS over TCP (1812); `dtls`: RADIUS over DTLS (2083), sent again like UDP ([ADR 0055](adr/0055-proxy-transports-and-rewriting.md)) |
 | `home.<id>.tls.certificate` / `home.<id>.tls.key` | — | our client certificate and unencrypted PKCS#8 key (PEM) for RadSec |
-| `home.<id>.tls.ca` | — | CAs the home server's certificate must chain to; required with `tls` |
+| `home.<id>.tls.ca` | — | CAs the home server's certificate must chain to; required with `tls` and `dtls` |
 | `home.<id>.tls.name` | the address's host | a name the home server's certificate must carry (and SNI) |
 | `realm.<id>.discover` | `false` | find the realm's RadSec home servers in DNS (RFC 7585: NAPTR `aaa+auth:radius.tls.tcp`, SRV, address) instead of a pool |
 | `proxy.discovery.tls.ca` / `.certificate` / `.key` | — | CAs discovered servers must chain to (required), our client certificate and key; their certificate must carry the SRV target name |
@@ -226,7 +229,7 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `proxy.require.message-authenticator` | `true` | ignore answers without a valid Message-Authenticator (BlastRADIUS) |
 | `home.<id>.coa` | `false` | this (UDP) home server may send CoA and Disconnect-Requests for its users; they are relayed to the NAS of the user's session (needs `coa.enabled`; [ADR 0043](adr/0043-coa-relay.md)) |
 | `proxy.coa.port` | `3799` | where CoA from such home servers is received (on `gateway.listen.host`) |
-| `proxy.inner` | `false` | end PEAP, TTLS and TEAP here and send only the inner credential of a proxied realm's user to its UDP home servers (PAP, CHAP, MS-CHAPv2); their reply attributes become ours ([ADR 0044](adr/0044-inner-tunnel-proxying.md)) |
+| `proxy.inner` | `false` | end PEAP, TTLS and TEAP here and send only the inner credential of a proxied realm's user to its UDP, TCP or RadSec home servers (PAP, CHAP, MS-CHAPv2); their reply attributes become ours ([ADR 0044](adr/0044-inner-tunnel-proxying.md)) |
 
 ## Identity stores
 

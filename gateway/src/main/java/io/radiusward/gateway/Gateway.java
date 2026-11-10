@@ -194,7 +194,7 @@ public final class Gateway implements AutoCloseable {
                 AccessSlots slots = new AccessSlots(auth.pending());
                 authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime, link);
                 if (proxy.enabled()) {
-                    authAgent.proxy(proxy);
+                    authAgent.proxy(proxy, dictionary); // the dictionary resolves rewrites (ADR 0055)
                     if (proxy.inner() && handler instanceof StoreAccessHandler stores) {
                         stores.proxyInner(new InnerProxy(proxy)); // ADR 0044
                     }

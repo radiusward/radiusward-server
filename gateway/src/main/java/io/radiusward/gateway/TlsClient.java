@@ -35,7 +35,7 @@ import org.agrona.concurrent.UnsafeBuffer;
  * owner's selector. Our certificate is presented, the home server's must chain to the configured CAs and carry the
  * expected name. RADIUS packets are framed by their length field; until the handshake is done they wait.
  */
-final class TlsClient {
+final class TlsClient implements HomeConnection {
 
     /** A whole RADIUS packet read from the connection. */
     interface Packets {
@@ -66,6 +66,11 @@ final class TlsClient {
 
     /** A TLS client context: our certificate and key (optional), and the CAs the server must chain to. */
     static SSLContext context(Path certificate, Path key, Path ca) {
+        return context(certificate, key, ca, "TLS");
+    }
+
+    /** The same for {@code protocol} {@code TLS} or {@code DTLS}. */
+    static SSLContext context(Path certificate, Path key, Path ca, String protocol) {
         try {
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             KeyStore keys = KeyStore.getInstance("PKCS12");
@@ -89,7 +94,7 @@ final class TlsClient {
             }
             TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             tmf.init(trust);
-            SSLContext context = SSLContext.getInstance("TLS");
+            SSLContext context = SSLContext.getInstance(protocol);
             context.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
             return context;
         } catch (IOException | GeneralSecurityException e) {
@@ -97,7 +102,8 @@ final class TlsClient {
         }
     }
 
-    boolean open() {
+    @Override
+    public boolean open() {
         return channel != null && channel.isOpen();
     }
 
@@ -106,7 +112,8 @@ final class TlsClient {
     }
 
     /** Starts connecting; progress comes through {@link #onSelected}. */
-    void connect(Selector selector) throws IOException {
+    @Override
+    public void connect(Selector selector) throws IOException {
         close();
         channel = SocketChannel.open();
         channel.configureBlocking(false);
@@ -136,7 +143,8 @@ final class TlsClient {
     }
 
     /** Queues a packet; {@code false} if the connection cannot take more (the request is dropped). */
-    boolean send(DirectBuffer packet, int offset, int length) throws IOException {
+    @Override
+    public boolean send(DirectBuffer packet, int offset, int length) throws IOException {
         if (!open()) {
             return false;
         }
@@ -158,7 +166,8 @@ final class TlsClient {
     }
 
     /** The selector picked this connection: connect, read, write; whole packets go to {@code packets}. */
-    void onSelected(Packets packets) throws IOException {
+    @Override
+    public void onSelected(Packets packets) throws IOException {
         if (key.isConnectable()) {
             if (!channel.finishConnect()) {
                 return;
@@ -299,7 +308,8 @@ final class TlsClient {
         }
     }
 
-    void close() {
+    @Override
+    public void close() {
         established = false;
         if (channel != null) {
             try {

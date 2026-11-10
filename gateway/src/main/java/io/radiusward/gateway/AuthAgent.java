@@ -95,7 +95,11 @@ final class AuthAgent implements Agent, Proxy.Replies {
 
     /** Proxying of realms to home servers (ADR 0037); set before the agent starts. */
     void proxy(ProxyConfig config) {
-        this.proxy = new Proxy(config, this, config.requireMessageAuthenticator());
+        proxy(config, null);
+    }
+
+    void proxy(ProxyConfig config, io.radiusward.radius.dictionary.Dictionary dictionary) {
+        this.proxy = new Proxy(config, this, config.requireMessageAuthenticator(), dictionary);
     }
 
     Proxy proxy() {

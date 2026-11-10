@@ -27,7 +27,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 /**
  * The inner user of a tunnel checked by the home server of its realm (ADR 0044): the tunnel (PEAP, TTLS, TEAP) ends
  * here, its inner credential goes on as an Access-Request — PAP (User-Password), CHAP (CHAP-Password and
- * CHAP-Challenge) or MS-CHAPv2 (MS-CHAP-Challenge and MS-CHAP2-Response) — to the realm's UDP home servers in pool
+ * CHAP-Challenge) or MS-CHAPv2 (MS-CHAP-Challenge and MS-CHAP2-Response) — to the realm's UDP, TCP or RadSec home servers in pool
  * order, each tried {@code proxy.retries} more times after {@code proxy.timeout}. An Accept returns the home server's
  * MS-CHAP2-Success and MPPE keys for MS-CHAPv2 and its reply attributes, which our Accept carries; a Reject is a
  * reject; no answer at all leaves the request unanswered, so the NAS sends it again. Runs on the access workers, which
@@ -119,7 +119,7 @@ final class InnerProxy {
                 ? List.of()
                 : pool.servers().stream()
                         .map(config.homes()::get)
-                        .filter(h -> h != null && !h.tls())
+                        .filter(h -> h != null && h.transport() != ProxyConfig.Transport.DTLS)
                         .toList();
         String name = strip ? stripped(user) : user;
         for (ProxyConfig.Home home : homes) {
@@ -151,6 +151,23 @@ final class InnerProxy {
         int length = enc.finish();
         RadiusAuthenticator signer = new RadiusAuthenticator();
         signer.signAccessRequest(buffer, 0, length, ma, home.secret());
+        try {
+            return home.transport() == ProxyConfig.Transport.UDP
+                    ? overUdp(home, buffer, length, id, authenticator, signer)
+                    : overStream(home, buffer, length, id, authenticator, signer);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private Result overUdp(
+            ProxyConfig.Home home,
+            UnsafeBuffer buffer,
+            int length,
+            int id,
+            byte[] authenticator,
+            RadiusAuthenticator signer)
+            throws IOException {
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.setSoTimeout((int) Math.max(1, config.timeout().toMillis()));
             socket.send(new DatagramPacket(buffer.byteArray(), length, home.address(), home.port()));
@@ -159,30 +176,104 @@ final class InnerProxy {
             while (System.nanoTime() < deadline) {
                 DatagramPacket p = new DatagramPacket(in, in.length);
                 socket.receive(p);
-                RadiusPacket answer = new RadiusPacket();
-                if (answer.wrap(new UnsafeBuffer(in), 0, p.getLength()) != DecodeStatus.OK
-                        || answer.identifier() != id
-                        || !signer.verifyResponse(answer, buffer, RadiusPacket.AUTHENTICATOR_OFFSET, home.secret())
-                        || (config.requireMessageAuthenticator() && !answer.hasMessageAuthenticator())
-                        || (answer.hasMessageAuthenticator()
-                                && !signer.verifyResponseMessageAuthenticator(
-                                        answer, buffer, RadiusPacket.AUTHENTICATOR_OFFSET, home.secret()))) {
-                    continue; // not the answer to this request
+                Result r = answer(home, buffer, in, p.getLength(), id, authenticator, signer);
+                if (r != null) {
+                    return r;
                 }
-                if (answer.code() == RadiusCode.ACCESS_ACCEPT) {
-                    return accepted(Arrays.copyOf(in, p.getLength()), answer, authenticator, home.secret());
-                }
-                if (answer.code() == RadiusCode.ACCESS_REJECT) {
-                    return new Result(new EapMethod.Inner(AccessHandler.REJECT, null), new byte[0]);
-                }
-                return new Result(new EapMethod.Inner(AccessHandler.REJECT, null), new byte[0]); // a challenge
             }
             return null;
         } catch (SocketTimeoutException e) {
             return null;
-        } catch (IOException e) {
+        }
+    }
+
+    /**
+     * RadSec (TLS) or TCP (ADR 0055): a connection per request, closed after the answer; TLS sessions are resumed
+     * from the context's cache.
+     */
+    private Result overStream(
+            ProxyConfig.Home home,
+            UnsafeBuffer buffer,
+            int length,
+            int id,
+            byte[] authenticator,
+            RadiusAuthenticator signer)
+            throws IOException {
+        int timeout = (int) Math.max(1, config.timeout().toMillis());
+        try (java.net.Socket socket = connect(home, timeout)) {
+            socket.setSoTimeout(timeout);
+            java.io.OutputStream out = socket.getOutputStream();
+            out.write(buffer.byteArray(), 0, length);
+            out.flush();
+            java.io.DataInputStream in = new java.io.DataInputStream(socket.getInputStream());
+            byte[] packet = new byte[RadiusPacket.MAX_LENGTH];
+            long deadline = System.nanoTime() + config.timeout().toNanos();
+            while (System.nanoTime() < deadline) {
+                in.readFully(packet, 0, 4);
+                int n = ((packet[2] & 0xFF) << 8) | (packet[3] & 0xFF);
+                if (n < RadiusPacket.HEADER_LENGTH || n > RadiusPacket.MAX_LENGTH) {
+                    return null; // the stream is out of step: give up on this server
+                }
+                in.readFully(packet, 4, n - 4);
+                Result r = answer(home, buffer, packet, n, id, authenticator, signer);
+                if (r != null) {
+                    return r;
+                }
+            }
+            return null;
+        } catch (SocketTimeoutException | java.io.EOFException e) {
             return null;
         }
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, javax.net.ssl.SSLContext> contexts =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private java.net.Socket connect(ProxyConfig.Home home, int timeout) throws IOException {
+        java.net.Socket plain = new java.net.Socket();
+        plain.connect(new java.net.InetSocketAddress(home.address(), home.port()), timeout);
+        if (home.transport() == ProxyConfig.Transport.TCP) {
+            return plain;
+        }
+        javax.net.ssl.SSLContext context = contexts.computeIfAbsent(
+                home.name(), n -> TlsClient.context(home.certificate(), home.key(), home.ca()));
+        String serverName = home.serverName() != null ? home.serverName() : home.host();
+        javax.net.ssl.SSLSocket tls =
+                (javax.net.ssl.SSLSocket) context.getSocketFactory().createSocket(plain, serverName, home.port(), true);
+        tls.setEnabledProtocols(new String[] {"TLSv1.2", "TLSv1.3"});
+        javax.net.ssl.SSLParameters params = tls.getSSLParameters();
+        params.setEndpointIdentificationAlgorithm("HTTPS"); // the certificate must name serverName
+        if (!serverName.isEmpty() && !Character.isDigit(serverName.charAt(0)) && serverName.indexOf(':') < 0) {
+            params.setServerNames(List.of(new javax.net.ssl.SNIHostName(serverName)));
+        }
+        tls.setSSLParameters(params);
+        tls.startHandshake();
+        return tls;
+    }
+
+    /** The verdict in {@code in} if it answers this request; {@code null} if it is some other packet. */
+    private Result answer(
+            ProxyConfig.Home home,
+            UnsafeBuffer buffer,
+            byte[] in,
+            int length,
+            int id,
+            byte[] authenticator,
+            RadiusAuthenticator signer) {
+        RadiusPacket answer = new RadiusPacket();
+        if (answer.wrap(new UnsafeBuffer(in), 0, length) != DecodeStatus.OK
+                || answer.identifier() != id
+                || !signer.verifyResponse(answer, buffer, RadiusPacket.AUTHENTICATOR_OFFSET, home.secret())
+                || (config.requireMessageAuthenticator() && !answer.hasMessageAuthenticator())
+                || (answer.hasMessageAuthenticator()
+                        && !signer.verifyResponseMessageAuthenticator(
+                                answer, buffer, RadiusPacket.AUTHENTICATOR_OFFSET, home.secret()))) {
+            return null; // not the answer to this request
+        }
+        if (answer.code() == RadiusCode.ACCESS_ACCEPT) {
+            return accepted(Arrays.copyOf(in, length), answer, authenticator, home.secret());
+        }
+        return new Result(new EapMethod.Inner(AccessHandler.REJECT, null), new byte[0]); // a reject or a challenge
     }
 
     /** The Accept's MS-CHAP2-Success and MPPE keys, and the reply attributes to pass on. */

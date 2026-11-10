@@ -94,18 +94,28 @@ final class Proxy {
         long waitingSince; // first request sent since the last answer; 0 while answered
         long nextStatus;
         int statusId = -1;
-        final TlsClient tls; // RadSec home servers (milestone 4), null over UDP
+        final HomeConnection tls; // RadSec, TCP or DTLS home servers (ADR 0055); null over UDP
 
         HomeState(ProxyConfig.Home config) {
-            this(config, config.tls() ? TlsClient.context(config.certificate(), config.key(), config.ca()) : null);
+            this(
+                    config,
+                    switch (config.transport()) {
+                        case TLS -> TlsClient.context(config.certificate(), config.key(), config.ca());
+                        case DTLS -> TlsClient.context(config.certificate(), config.key(), config.ca(), "DTLS");
+                        default -> null;
+                    });
         }
 
         HomeState(ProxyConfig.Home config, javax.net.ssl.SSLContext context) {
             this.config = config;
             this.address = new InetSocketAddress(config.address(), config.port());
-            this.tls = config.tls()
-                    ? new TlsClient(context, config.serverName() != null ? config.serverName() : config.host(), address)
-                    : null;
+            String serverName = config.serverName() != null ? config.serverName() : config.host();
+            this.tls = switch (config.transport()) {
+                case TLS -> new TlsClient(context, serverName, address);
+                case DTLS -> new HomeDtlsClient(context, serverName, address);
+                case TCP -> new HomeTcpClient(address);
+                case UDP -> null;
+            };
             java.util.Arrays.fill(slotById, -1);
         }
 
@@ -153,6 +163,7 @@ final class Proxy {
     private final InetSocketAddress[] from;
     private final NasClient[] nas;
     private final boolean[] inUse;
+    private final ProxyConfig.Realm[] realmOfSlot; // for the answer's rewriting (ADR 0055)
     private final int[] free;
     private int freeCount;
 
@@ -174,6 +185,24 @@ final class Proxy {
     private final TlsClient.Packets tlsPackets = this::onTlsPacket;
 
     Proxy(ProxyConfig config, Replies replies, boolean requireMessageAuthenticator) {
+        this(config, replies, requireMessageAuthenticator, null);
+    }
+
+    /** @param dictionary resolves the realms' rewrite rules (ADR 0055); {@code null}: none may be configured */
+    Proxy(
+            ProxyConfig config,
+            Replies replies,
+            boolean requireMessageAuthenticator,
+            io.radiusward.radius.dictionary.Dictionary dictionary) {
+        for (ProxyConfig.Realm realm : config.realms()) {
+            if (realm.rewrite().any()) {
+                if (dictionary == null) {
+                    throw new io.radiusward.common.config.ConfigException(
+                            "realm " + realm.name() + ": rewriting needs the dictionary");
+                }
+                realm.rewrite().compile(dictionary, "realm " + realm.name() + ": ");
+            }
+        }
         this.config = config;
         this.replies = replies;
         this.requireMessageAuthenticator = requireMessageAuthenticator;
@@ -224,6 +253,7 @@ final class Proxy {
         from = new InetSocketAddress[capacity];
         nas = new NasClient[capacity];
         inUse = new boolean[capacity];
+        realmOfSlot = new ProxyConfig.Realm[capacity];
         free = new int[capacity];
         for (int i = 0; i < capacity; i++) {
             free[i] = capacity - 1 - i;
@@ -277,6 +307,7 @@ final class Proxy {
             return DROPPED;
         }
         inUse[slot] = true;
+        realmOfSlot[slot] = realm;
         home[slot] = indexOf(h);
         identifier[slot] = id;
         nasIdentifier[slot] = request.identifier();
@@ -439,7 +470,7 @@ final class Proxy {
         for (int at = request.attributesOffset(); at < request.attributesEnd(); ) {
             int type = in.getByte(at) & 0xFF;
             int l = in.getByte(at + 1) & 0xFF;
-            if (type == MESSAGE_AUTHENTICATOR) {
+            if (type == MESSAGE_AUTHENTICATOR || realm.rewrite().dropsFromRequest(type)) {
                 at += l;
                 continue;
             }
@@ -496,6 +527,14 @@ final class Proxy {
             out.putBytes(w + 2, in, request.authenticatorOffset(), 16);
             w += 18;
         }
+        byte[] added = realm.rewrite().added();
+        if (added.length > 0) {
+            if (w + added.length > end) {
+                return -1;
+            }
+            out.putBytes(w, added);
+            w += added.length;
+        }
         if (w + 10 > end) {
             return -1;
         }
@@ -513,17 +552,27 @@ final class Proxy {
 
     private void transmit(int slot, long now) {
         HomeState h = homes.get(home[slot]);
-        if (h.tls != null) {
+        if (h.tls != null && !h.tls.lossy()) {
             transmitTls(h, slot, now);
             return;
         }
-        sendBuffer.clear();
-        sendBuffer.put(packets.byteArray(), slot * RadiusPacket.MAX_LENGTH, length[slot]);
-        sendBuffer.flip();
         try {
-            channel.send(sendBuffer, h.address);
+            if (h.tls != null) { // DTLS: sent again like over UDP
+                if (!h.tls.open()) {
+                    h.tls.connect(selector);
+                }
+                h.tls.send(packets, slot * RadiusPacket.MAX_LENGTH, length[slot]);
+            } else {
+                sendBuffer.clear();
+                sendBuffer.put(packets.byteArray(), slot * RadiusPacket.MAX_LENGTH, length[slot]);
+                sendBuffer.flip();
+                channel.send(sendBuffer, h.address);
+            }
         } catch (IOException e) {
             LOG.debug("proxy send to {} failed: {}", h.address, e.toString());
+            if (h.tls != null) {
+                h.tls.close();
+            }
         }
         if (sent[slot]++ > 0) {
             h.counts.incrementAndGet(Counter.RESENT.ordinal());
@@ -571,7 +620,7 @@ final class Proxy {
                 java.nio.channels.SelectionKey key = it.next();
                 it.remove();
                 work++;
-                if (key.isValid() && key.attachment() instanceof TlsClient client) {
+                if (key.isValid() && key.attachment() instanceof HomeConnection client) {
                     reading = homeOf(client);
                     try {
                         client.onSelected(tlsPackets);
@@ -671,7 +720,9 @@ final class Proxy {
             int type = in.getByte(at) & 0xFF;
             int l = in.getByte(at + 1) & 0xFF;
             boolean ours = type == PROXY_STATE && l == 10 && sameToken(in, at + 2, slot);
-            if (type != MESSAGE_AUTHENTICATOR && !ours) {
+            ProxyConfig.Realm r = realmOfSlot[slot];
+            boolean dropped = r != null && r.rewrite().dropsFromAnswer(type);
+            if (type != MESSAGE_AUTHENTICATOR && !ours && !dropped) {
                 if (w + l > RadiusPacket.MAX_LENGTH) {
                     return -1;
                 }
@@ -771,10 +822,18 @@ final class Proxy {
                 h.nextStatus = now + config.statusInterval().toNanos();
                 probe(h);
             }
+            if (h.tls != null) {
+                try {
+                    h.tls.tick(now);
+                } catch (IOException e) {
+                    LOG.debug("home server {}: {}", h.config.name(), e.toString());
+                    h.tls.close();
+                }
+            }
         }
     }
 
-    private HomeState homeOf(TlsClient client) {
+    private HomeState homeOf(HomeConnection client) {
         for (HomeState h : homes) {
             if (h.tls == client) {
                 return h;
@@ -826,6 +885,7 @@ final class Proxy {
             h.slotById[identifier[slot]] = -1;
         }
         inUse[slot] = false;
+        realmOfSlot[slot] = null;
         from[slot] = null;
         nas[slot] = null;
         generation[slot] = (generation[slot] + 1) & 0xFFFF;

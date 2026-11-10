@@ -24,13 +24,14 @@ import java.util.TreeMap;
  *
  * <pre>
  * proxy.enabled = true
- * home.partner-a.address = 192.0.2.10        # port 1812 (2083 with transport = tls)
+ * home.partner-a.address = 192.0.2.10        # port 1812 (2083 with transport = tls or dtls)
  * home.partner-a.secret  = ${env:PARTNER_SECRET}
  * pool.partner.servers   = partner-a, partner-b
  * pool.partner.type      = failover          # or load-balance (per device, so an EAP conversation stays put)
  * realm.partner.name     = partner.example   # user@partner.example and PARTNER.EXAMPLE&#92;user
  * realm.partner.pool     = partner
  * realm.partner.strip    = false
+ * realm.partner.pre-proxy.add = Operator-Name = "1example.net"   # ADR 0055
  * </pre>
  *
  * @param enabled {@code proxy.enabled}
@@ -83,7 +84,14 @@ public record ProxyConfig(
      * @param strip whether the home server gets the user name without the realm
      * @param discover find the home servers in DNS (RFC 7585) instead of a pool ({@code realm.<id>.discover})
      */
-    public record Realm(String name, byte[] nameBytes, String pool, boolean strip, boolean discover) {}
+    /** @param rewrite attributes removed and added on the way to and from its home servers (ADR 0055) */
+    public record Realm(
+            String name, byte[] nameBytes, String pool, boolean strip, boolean discover, ProxyRewrite rewrite) {
+
+        public Realm(String name, byte[] nameBytes, String pool, boolean strip, boolean discover) {
+            this(name, nameBytes, pool, strip, discover, ProxyRewrite.NONE);
+        }
+    }
 
     /** @param loadBalance {@code pool.<id>.type = load-balance}: spread by device, else the first one alive */
     public record Pool(String name, List<String> servers, boolean loadBalance) {}
@@ -108,12 +116,49 @@ public record ProxyConfig(
             Path key,
             Path ca,
             String serverName,
-            boolean coa) {
+            boolean coa,
+            Transport transport) {
+
+        /** UDP or TLS, as before TCP and DTLS (ADR 0055). */
+        public Home(
+                String name,
+                InetAddress address,
+                String host,
+                int port,
+                byte[] secret,
+                boolean tls,
+                Path certificate,
+                Path key,
+                Path ca,
+                String serverName,
+                boolean coa) {
+            this(
+                    name,
+                    address,
+                    host,
+                    port,
+                    secret,
+                    tls,
+                    certificate,
+                    key,
+                    ca,
+                    serverName,
+                    coa,
+                    tls ? Transport.TLS : Transport.UDP);
+        }
 
         /** Whether it is relayed CoA: a UDP home server allowed to send it. */
         boolean relaysCoa() {
-            return coa && !tls;
+            return coa && transport == Transport.UDP;
         }
+    }
+
+    /** {@code home.<id>.transport} (ADR 0037, 0055). */
+    public enum Transport {
+        UDP,
+        TLS,
+        TCP,
+        DTLS
     }
 
     /** Whether CoA from home servers is relayed: a home server allows it. */
@@ -182,7 +227,8 @@ public record ProxyConfig(
                     name.getBytes(StandardCharsets.UTF_8),
                     discover ? null : pool,
                     config.bool(prefix + "strip", false),
-                    discover));
+                    discover,
+                    ProxyRewrite.from(config, prefix)));
         }
         if (realms.isEmpty()) {
             throw new ConfigException("proxy.enabled: no realm.<id>.name to proxy");
@@ -211,20 +257,28 @@ public record ProxyConfig(
 
     private static Home home(Config config, String id) {
         String prefix = "home." + id + ".";
-        boolean tls = switch (config.string(prefix + "transport", "udp").trim()) {
-            case "udp" -> false;
-            case "tls" -> true;
-            default -> throw new ConfigException(prefix + "transport: udp or tls");
+        Transport transport = switch (config.string(prefix + "transport", "udp").trim()) {
+            case "udp" -> Transport.UDP;
+            case "tls" -> Transport.TLS;
+            case "tcp" -> Transport.TCP;
+            case "dtls" -> Transport.DTLS;
+            default -> throw new ConfigException(prefix + "transport: udp, tls, tcp or dtls");
         };
+        boolean tls = transport == Transport.TLS;
+        boolean secured = tls || transport == Transport.DTLS;
         String address = config.string(prefix + "address").trim();
         int colon = address.lastIndexOf(':');
         String host = colon > 0 && address.indexOf(':') == colon ? address.substring(0, colon) : address;
         int port = colon > 0 && address.indexOf(':') == colon
                 ? Integer.parseInt(address.substring(colon + 1))
-                : config.integer(prefix + "port", tls ? 2083 : 1812);
-        String secret = config.string(prefix + "secret", tls ? RadsecConfig.DEFAULT_SECRET : "");
+                : config.integer(prefix + "port", secured ? 2083 : 1812);
+        String secret = config.string(
+                prefix + "secret",
+                tls
+                        ? RadsecConfig.DEFAULT_SECRET
+                        : transport == Transport.DTLS ? RadsecConfig.DEFAULT_DTLS_SECRET : "");
         if (secret.isEmpty()) {
-            throw new ConfigException(prefix + "secret: required over UDP");
+            throw new ConfigException(prefix + "secret: required over UDP and TCP");
         }
         InetAddress resolved;
         try {
@@ -232,7 +286,7 @@ public record ProxyConfig(
         } catch (UnknownHostException e) {
             throw new ConfigException(prefix + "address: unknown host " + host, e);
         }
-        if (tls && config.string(prefix + "tls.ca", "").isBlank()) {
+        if (secured && config.string(prefix + "tls.ca", "").isBlank()) {
             throw new ConfigException(prefix + "tls.ca: required, the home server's certificate must be checked");
         }
         String name = config.string(prefix + "tls.name", "").trim();
@@ -247,7 +301,8 @@ public record ProxyConfig(
                 path(config, prefix + "tls.key"),
                 path(config, prefix + "tls.ca"),
                 name.isEmpty() ? null : name,
-                coa(config, prefix, tls));
+                coa(config, prefix, transport != Transport.UDP),
+                transport);
     }
 
     private static boolean coa(Config config, String prefix, boolean tls) {

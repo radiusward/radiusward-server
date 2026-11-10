@@ -108,4 +108,85 @@ class ProxyConfigTest {
         tls.put("home.a.coa", "true");
         assertThatThrownBy(() -> ProxyConfig.from(Config.of(tls))).hasMessageContaining("over UDP only");
     }
+
+    @Test
+    void tcpAndDtlsHomeServers() {
+        Map<String, String> settings = base();
+        settings.put("home.t.address", "127.0.0.1");
+        settings.put("home.t.transport", "tcp");
+        settings.put("home.t.secret", "s");
+        settings.put("home.d.address", "127.0.0.1");
+        settings.put("home.d.transport", "dtls");
+        settings.put("home.d.tls.ca", "/ca.pem");
+        ProxyConfig c = ProxyConfig.from(Config.of(settings));
+        ProxyConfig.Home t = c.homes().get("t");
+        assertThat(t.transport()).isEqualTo(ProxyConfig.Transport.TCP);
+        assertThat(t.port()).isEqualTo(1812);
+        assertThat(t.tls()).isFalse();
+        ProxyConfig.Home d = c.homes().get("d");
+        assertThat(d.transport()).isEqualTo(ProxyConfig.Transport.DTLS);
+        assertThat(d.port()).isEqualTo(2083);
+        assertThat(new String(d.secret(), StandardCharsets.UTF_8)).isEqualTo("radius/dtls");
+        assertThat(c.homes().get("a").transport()).isEqualTo(ProxyConfig.Transport.UDP);
+
+        Map<String, String> noSecret = base();
+        noSecret.put("home.t.address", "127.0.0.1");
+        noSecret.put("home.t.transport", "tcp");
+        assertThatThrownBy(() -> ProxyConfig.from(Config.of(noSecret))).hasMessageContaining("home.t.secret");
+        Map<String, String> noCa = base();
+        noCa.put("home.d.address", "127.0.0.1");
+        noCa.put("home.d.transport", "dtls");
+        assertThatThrownBy(() -> ProxyConfig.from(Config.of(noCa))).hasMessageContaining("home.d.tls.ca");
+        Map<String, String> coa = new HashMap<>(settings);
+        coa.put("home.t.coa", "true");
+        assertThatThrownBy(() -> ProxyConfig.from(Config.of(coa))).hasMessageContaining("over UDP only");
+        Map<String, String> unknown = base();
+        unknown.put("home.a.transport", "sctp");
+        assertThatThrownBy(() -> ProxyConfig.from(Config.of(unknown))).hasMessageContaining("udp, tls, tcp or dtls");
+    }
+
+    @Test
+    void rewritesAreCheckedAgainstTheDictionary() {
+        io.radiusward.radius.dictionary.Dictionary dictionary = StoreAccessHandlerTest.DICTIONARY;
+        Map<String, String> settings = base();
+        settings.put("realm.partner.pre-proxy.remove", "Calling-Station-Id, NAS-Port");
+        settings.put("realm.partner.pre-proxy.add", "Operator-Name = \"1op.example\", Cisco-AVPair += \"a=b\"");
+        settings.put("realm.partner.post-proxy.remove", "Class");
+        ProxyConfig c = ProxyConfig.from(Config.of(settings));
+        ProxyRewrite r = realmNamed(c, "partner.example").rewrite();
+        assertThat(r.any()).isTrue();
+        r.compile(dictionary, "realm partner: ");
+        assertThat(r.dropsFromRequest(31)).isTrue();
+        assertThat(r.dropsFromRequest(5)).isTrue();
+        assertThat(r.dropsFromRequest(1)).isFalse();
+        assertThat(r.dropsFromAnswer(25)).isTrue();
+        assertThat(r.added()[0]).as("Operator-Name first").isEqualTo((byte) 126);
+        assertThat(r.added()).hasSizeGreaterThan(2 + 11 + 8);
+        assertThat(realmNamed(c, "*").rewrite().any()).isFalse();
+
+        for (String[] bad : new String[][] {
+            {"realm.partner.pre-proxy.remove", "No-Such-Attribute", "not a standard attribute"},
+            {"realm.partner.pre-proxy.remove", "Cisco-AVPair", "not a standard attribute"},
+            {"realm.partner.pre-proxy.remove", "Proxy-State", "managed by the proxy"},
+            {"realm.partner.post-proxy.remove", "Message-Authenticator", "managed by the proxy"},
+            {"realm.partner.pre-proxy.add", "No-Such = 1", "unknown attribute"},
+            {"realm.partner.pre-proxy.add", "NAS-Port = many", "cannot be"},
+            {"realm.partner.pre-proxy.add", "garbage", "pre-proxy.add"}
+        }) {
+            Map<String, String> s = base();
+            s.put(bad[0], bad[1]);
+            ProxyRewrite rewrite = realmNamed(ProxyConfig.from(Config.of(s)), "partner.example")
+                    .rewrite();
+            assertThatThrownBy(() -> rewrite.compile(dictionary, "realm partner: "))
+                    .as(bad[1])
+                    .hasMessageContaining(bad[2]);
+        }
+    }
+
+    private static ProxyConfig.Realm realmNamed(ProxyConfig c, String name) {
+        return c.realms().stream()
+                .filter(r -> r.name().equals(name))
+                .findFirst()
+                .orElseThrow();
+    }
 }
