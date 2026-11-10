@@ -157,6 +157,8 @@ public final class AdminClient implements AutoCloseable, EgressListener {
         CloseHelper.quietClose(cluster);
         cluster = AeronCluster.connect(new AeronCluster.Context()
                 .aeronDirectoryName(driver.aeronDirectoryName())
+                // a request then fails on its own; Aeron's default handler would exit the caller's JVM
+                .errorHandler(t -> System.err.println("admin client: " + t))
                 .ingressChannel("aeron:udp?term-length=1m")
                 .ingressEndpoints(ingressEndpoints)
                 .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")

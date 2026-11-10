@@ -127,6 +127,14 @@ class ExporterIT {
                 }
             }
         }
+        // a renewal thread left behind could connect again after its member's media driver stopped (and Aeron's
+        // default error handler would then exit the JVM)
+        assertThat(Thread.getAllStackTraces().keySet().stream()
+                        .filter(Thread::isAlive)
+                        .map(Thread::getName)
+                        .filter(name -> name.startsWith("exporter-") && name.endsWith("-lease")))
+                .as("lease renewal threads after the members stopped")
+                .isEmpty();
     }
 
     private static boolean caughtUp(ClusterNode node) {

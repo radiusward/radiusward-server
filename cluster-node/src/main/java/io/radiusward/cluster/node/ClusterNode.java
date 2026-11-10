@@ -44,6 +44,12 @@ public final class ClusterNode implements AutoCloseable {
 
     private static final Logger LOG = LogManager.getLogger(ClusterNode.class);
 
+    /**
+     * The error handler of the member's own Aeron clients (log purge, version reports): logged. Aeron's default exits
+     * the JVM when the media driver goes away, which the member's shutdown does.
+     */
+    static final org.agrona.ErrorHandler LOG_ERRORS = t -> LOG.warn("member Aeron client: {}", t.toString());
+
     private final ClusterNodeConfig config;
     private final AccountingService service;
     private final ClusteredMediaDriver clusteredMediaDriver;
@@ -252,7 +258,9 @@ public final class ClusterNode implements AutoCloseable {
         try {
             File clusterDir = new File(config.dataDir(), "cluster");
             if (purgeArchive == null) {
-                purgeAeron = Aeron.connect(new Aeron.Context().aeronDirectoryName(config.aeronDir()));
+                purgeAeron = Aeron.connect(new Aeron.Context()
+                        .aeronDirectoryName(config.aeronDir())
+                        .errorHandler(LOG_ERRORS));
                 purgeArchive = AeronArchive.connect(new AeronArchive.Context()
                         .aeron(purgeAeron)
                         .controlRequestChannel(LOCAL_CONTROL_CHANNEL)

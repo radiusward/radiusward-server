@@ -32,6 +32,7 @@ final class SinkRunner implements Runnable {
 
     private static final Logger LOG = LogManager.getLogger(SinkRunner.class);
     private static final Duration ACK_TIMEOUT = Duration.ofSeconds(3);
+    private volatile Thread renewals;
 
     private final SinkConfig config;
     private final AccountingSink sink;
@@ -84,7 +85,9 @@ final class SinkRunner implements Runnable {
     @Override
     public void run() {
         try {
-            aeron = Aeron.connect(new Aeron.Context().aeronDirectoryName(exporter.aeronDir()));
+            aeron = Aeron.connect(new Aeron.Context()
+                    .aeronDirectoryName(exporter.aeronDir())
+                    .errorHandler(LeaseClient.LOG_ERRORS)); // never Aeron's default, which exits the JVM
             archive = AeronArchive.connect(new AeronArchive.Context()
                     .aeron(aeron)
                     .controlRequestChannel(exporter.archiveControlChannel())
@@ -93,7 +96,7 @@ final class SinkRunner implements Runnable {
             reader = new ClusterLogReader(aeron, archive, exporter.clusterDir(), streamBase);
             builder = new BatchBuilder(
                     config.name(), context.mode() == io.radiusward.export.StorageMode.SESSIONS_AND_EVENTS);
-            Thread renewals = new Thread(this::renewLoop, "exporter-" + config.name() + "-lease");
+            renewals = new Thread(this::renewLoop, "exporter-" + config.name() + "-lease");
             renewals.setDaemon(true);
             renewals.start();
             while (running) {
@@ -137,9 +140,28 @@ final class SinkRunner implements Runnable {
             LOG.error("exporter for sink {} stopped", config.name(), e);
             status.error(e.toString());
         } finally {
+            running = false;
+            stopRenewals();
             loseLease();
             closeSink();
             CloseHelper.quietCloseAll(lease, renewalLease, reader, archive, aeron);
+        }
+    }
+
+    /**
+     * Waits for the renewal thread before its lease client is closed: otherwise a renewal under way could connect
+     * again after the close, leaving an Aeron client behind the member's media driver.
+     */
+    private void stopRenewals() {
+        Thread t = renewals;
+        if (t == null) {
+            return;
+        }
+        LockSupport.unpark(t);
+        try {
+            t.join(ACK_TIMEOUT.toMillis() + 1_000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

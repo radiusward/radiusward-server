@@ -33,6 +33,7 @@ final class MemberReporter implements AutoCloseable {
             if (cluster == null || cluster.isClosed()) {
                 cluster = AeronCluster.connect(new AeronCluster.Context()
                         .aeronDirectoryName(aeronDir)
+                        .errorHandler(ClusterNode.LOG_ERRORS)
                         .ingressChannel("aeron:udp")
                         .ingressEndpoints(ingressEndpoints)
                         .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")

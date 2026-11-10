@@ -26,6 +26,15 @@ import org.agrona.concurrent.UnsafeBuffer;
  */
 public final class LeaseClient implements AutoCloseable, EgressListener {
 
+    private static final org.apache.logging.log4j.Logger LOG =
+            org.apache.logging.log4j.LogManager.getLogger(LeaseClient.class);
+
+    /**
+     * The error handler of the exporter's Aeron clients: logged. Aeron's default exits the JVM when the media driver
+     * goes away, which a member's own shutdown does.
+     */
+    static final org.agrona.ErrorHandler LOG_ERRORS = t -> LOG.warn("exporter Aeron client: {}", t.toString());
+
     /** The cluster's answer. */
     public record Ack(LeaseResult result, int owner, long epoch, long checkpoint, boolean detached, boolean resync) {}
 
@@ -105,6 +114,7 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
         }
         cluster = AeronCluster.connect(new AeronCluster.Context()
                 .aeronDirectoryName(aeronDir)
+                .errorHandler(LOG_ERRORS)
                 .ingressChannel("aeron:udp")
                 .ingressEndpoints(ingressEndpoints)
                 .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")
