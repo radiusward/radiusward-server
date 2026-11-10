@@ -5,7 +5,7 @@ Every key can be overridden by an environment variable — `cluster.node.id` →
 and values may reference the environment: `${env:NAS_SECRET}`, `${env:X:-default}` ([ADR 0010](adr/0010-configuration.md)).
 Durations: `500ms`, `10s`, `5m`, `2h`. Sizes: `512`, `64k`, `4m`, `1g`. Examples: [config/local](../config/local).
 
-Gateways reload NAS entries, identity stores, counters, pools, TOTP, rules and trace conditions on SIGHUP or
+Gateways reload NAS entries, identity stores, counters, pools, TOTP, CUI, the reject delay, rules and trace conditions on SIGHUP or
 `POST /reload` ([ADR 0054](adr/0054-config-reload.md)); everything else needs a restart.
 
 ## Common
@@ -284,8 +284,10 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.counter.<name>.kind` / `.reset` | `time` / `daily` | `time` or `octets`; `daily`, `weekly` (from Monday), `monthly`, `never` |
 | `auth.counter.<name>.query` | over `accounting_session` | SQL with two parameters, user name and period start, returning the usage; the default reads the PostgreSQL sink's table |
 | `auth.counter.<name>.reply` | none | `octets`: a reply attribute that gets the octets left |
+| `auth.counter.first.query` | first session in `accounting_session` | SQL with one parameter, the user name, returning the first login time for `Expire-After := <seconds>` ([ADR 0060](adr/0060-expire-after.md)); uses the counters' connection, which works without `auth.counters` |
 | `auth.counter.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the counters; unreachable = no answer |
 | `auth.pools` | none | IPv4 address pools by name; `Pool-Name := <pool>` in a user's or group's check items gives a `Framed-IP-Address` ([ADR 0050](adr/0050-ip-pools.md)) |
+| `auth.pool.<name>.prefix` / `.length` / `.attribute` | — / `64` / `Delegated-IPv6-Prefix` | an IPv6 pool instead of `range`: the prefixes of `length` within `prefix` (65 536 at most), returned in `Delegated-IPv6-Prefix`, `Framed-IPv6-Prefix` or `Framed-IPv6-Address` (length 128) ([ADR 0059](adr/0059-ipv6-pools.md)); `Pool-Name` may name several pools, comma-separated |
 | `auth.pool.<name>.range` | — | ranges (`10.0.0.10-10.0.0.250`), CIDRs (network and broadcast left out) or addresses, comma-separated; 65 536 addresses at most |
 | `auth.pool.<name>.lease` | `5m` | how long an address stays taken without an open exported session (until the Accounting-Start reaches PostgreSQL) |
 | `auth.pool.<name>.exhausted` | `reject` | an empty pool: `reject`, or `accept` without an address |
@@ -296,6 +298,11 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.totp.mode` | `challenge` | users with `TOTP-Secret := <base32>` need a code ([ADR 0053](adr/0053-totp.md)): `challenge` (Access-Challenge after the right password; the code comes with the State) or `append` (the code follows the password) |
 | `auth.totp.digits` / `auth.totp.window` | `6` / `1` | code length (6 or 8); 30-second steps of clock drift accepted either way (0–10) |
 | `auth.totp.timeout` / `auth.totp.prompt` | `60s` / `Enter the code from your authenticator app` | how long a challenge waits; its Reply-Message |
+| `auth.cui.key` / `auth.cui.mode` | — / `requested` | Chargeable-User-Identity (RFC 4372) for Access-Accepts: an HMAC pseudonym of the user per Operator-Name, at least 16 characters of key; `requested` (the NAS sent the attribute) or `always` ([ADR 0056](adr/0056-chargeable-user-identity.md)) |
+| `auth.reject.delay` | `1s` | Access-Rejects decided here are held back this long (0s–5s), without blocking a worker ([ADR 0057](adr/0057-reject-delay.md)) |
+| `auth.log.dir` | — | daily `auth-YYYY-MM-DD.jsonl` files with every accept and reject and its cause ([ADR 0058](adr/0058-authentication-log.md)) |
+| `auth.log.sql.url` / `.user` / `.password` / `.table` | — / empty / empty / `auth_log` | the same into PostgreSQL; the table is created if missing |
+| `auth.log.queue` | `10000` | entries waiting to be written; beyond it they are dropped and counted |
 | `reload.api.token` | — | bearer token of `POST /reload` on the management port, which reloads the configuration files like SIGHUP ([ADR 0054](adr/0054-config-reload.md)); at least 16 characters |
 | `trace.users` / `trace.nas` / `trace.stations` | none | Access-Requests of these users, NAS entries or Calling-Station-Ids are logged with their decision steps to `io.radiusward.trace` ([ADR 0052](adr/0052-request-traces.md)); secrets are hidden |
 | `trace.api.token` | — | bearer token of `POST/GET/DELETE /trace` on the management port (temporary conditions, up to 24 h); at least 16 characters |

@@ -35,10 +35,31 @@ final class IpPools {
     /** The largest pool, in addresses. */
     static final int MAX_SIZE = 65536;
 
+    /** The reply attribute of an IPv4 pool. */
+    static final String FRAMED_IP = "Framed-IP-Address";
+
+    /** The reply attributes an IPv6 pool may fill (ADR 0059), and the delegated length each allows. */
+    static final List<String> IPV6_ATTRIBUTES =
+            List.of("Delegated-IPv6-Prefix", "Framed-IPv6-Prefix", "Framed-IPv6-Address");
+
     /**
      * @param exhausted {@code true}: an Accept without an address when the pool is empty; otherwise a reject
+     * @param attribute the reply attribute it fills: {@code Framed-IP-Address} for IPv4 ranges, one of
+     *     {@link #IPV6_ATTRIBUTES} for an IPv6 prefix
+     * @param prefixes an IPv6 pool's entries ({@code 2001:db8:0:100::/56}); empty for IPv4
      */
-    record Pool(String name, List<long[]> ranges, Duration lease, boolean exhausted) {}
+    record Pool(
+            String name,
+            List<long[]> ranges,
+            Duration lease,
+            boolean exhausted,
+            String attribute,
+            List<String> prefixes) {
+
+        Pool(String name, List<long[]> ranges, Duration lease, boolean exhausted) {
+            this(name, ranges, lease, exhausted, FRAMED_IP, List.of());
+        }
+    }
 
     /** Hands out addresses. */
     interface Allocator {
@@ -50,20 +71,22 @@ final class IpPools {
             + " device text, user_name text, expires_at timestamptz NOT NULL DEFAULT '-infinity',"
             + " PRIMARY KEY (pool, address))";
 
-    /** Parameters: pool, device, device, device, lease seconds, user, pool. */
+    /** An entry is taken while an open exported session uses it, or (prefixes) while its holder has one open. */
+    private static final String IN_USE = " AND NOT EXISTS (SELECT 1 FROM accounting_session s"
+            + " WHERE s.stopped_at IS NULL AND s.calling_station_id IS DISTINCT FROM ?"
+            + " AND (s.framed_ip = p.address OR (p.device IS NOT NULL AND s.calling_station_id = p.device)))";
+
+    /** Parameters: pool, device, device, device, device, lease seconds, user, pool. */
     static final String ALLOCATE = "WITH pick AS (SELECT p.address FROM ip_pool p WHERE p.pool = ?"
             + " AND (p.device = ? OR p.expires_at < now())"
-            + " AND NOT EXISTS (SELECT 1 FROM accounting_session s WHERE s.stopped_at IS NULL"
-            + " AND s.framed_ip = p.address AND s.calling_station_id IS DISTINCT FROM ?)"
+            + IN_USE
             + " ORDER BY (p.device IS NOT DISTINCT FROM ?) DESC, p.expires_at LIMIT 1 FOR UPDATE SKIP LOCKED)"
             + " UPDATE ip_pool p SET device = ?, expires_at = now() + ? * interval '1 second', user_name = ?"
-            + " FROM pick WHERE p.pool = ? AND p.address = pick.address RETURNING host(p.address)";
+            + " FROM pick WHERE p.pool = ? AND p.address = pick.address RETURNING abbrev(p.address)";
 
     /** {@link #ALLOCATE} without the look at {@code accounting_session}: the lease alone holds an address. */
-    static final String ALLOCATE_BY_LEASE = ALLOCATE.replace(
-            " AND NOT EXISTS (SELECT 1 FROM accounting_session s WHERE s.stopped_at IS NULL"
-                    + " AND s.framed_ip = p.address AND s.calling_station_id IS DISTINCT FROM ?)",
-            " AND (CAST(? AS text) IS NULL OR TRUE)"); // keeps the parameters in place
+    static final String ALLOCATE_BY_LEASE =
+            ALLOCATE.replace(IN_USE, " AND (CAST(? AS text) IS NULL OR TRUE)"); // keeps the parameters in place
 
     private final Map<String, Pool> pools;
     private final Allocator allocator;
@@ -92,14 +115,39 @@ final class IpPools {
             String name = raw.trim();
             String prefix = "auth.pool." + name + ".";
             List<long[]> ranges = new ArrayList<>();
-            long size = 0;
-            for (String range : config.list(prefix + "range", List.of())) {
-                long[] r = range(prefix + "range", range.trim());
-                ranges.add(r);
-                size += r[1] - r[0] + 1;
-            }
-            if (ranges.isEmpty() || size > MAX_SIZE) {
-                throw new ConfigException(prefix + "range: one or more ranges, " + MAX_SIZE + " addresses at most");
+            List<String> prefixes = List.of();
+            String attribute = FRAMED_IP;
+            String v6 = config.string(prefix + "prefix", "").trim();
+            if (!v6.isEmpty()) {
+                if (config.has(prefix + "range")) {
+                    throw new ConfigException(prefix + "range and " + prefix + "prefix: one or the other");
+                }
+                attribute = config.string(prefix + "attribute", "Delegated-IPv6-Prefix")
+                        .trim();
+                if (IPV6_ATTRIBUTES.stream().noneMatch(attribute::equalsIgnoreCase)) {
+                    throw new ConfigException(prefix + "attribute: one of " + IPV6_ATTRIBUTES);
+                }
+                attribute = IPV6_ATTRIBUTES.stream()
+                        .filter(attribute::equalsIgnoreCase)
+                        .findFirst()
+                        .orElseThrow();
+                boolean address = attribute.equals("Framed-IPv6-Address");
+                int length = config.integer(prefix + "length", address ? 128 : 64);
+                if (address && length != 128) {
+                    throw new ConfigException(prefix + "length: 128 for Framed-IPv6-Address");
+                }
+                prefixes = prefixes(prefix, v6, length);
+            } else {
+                long size = 0;
+                for (String range : config.list(prefix + "range", List.of())) {
+                    long[] r = range(prefix + "range", range.trim());
+                    ranges.add(r);
+                    size += r[1] - r[0] + 1;
+                }
+                if (ranges.isEmpty() || size > MAX_SIZE) {
+                    throw new ConfigException(
+                            prefix + "range: one or more ranges, " + MAX_SIZE + " addresses at most (or a prefix)");
+                }
             }
             String exhausted =
                     config.string(prefix + "exhausted", "reject").trim().toLowerCase(Locale.ROOT);
@@ -112,7 +160,9 @@ final class IpPools {
                             name,
                             List.copyOf(ranges),
                             config.duration(prefix + "lease", Duration.ofMinutes(5)),
-                            exhausted.equals("accept")));
+                            exhausted.equals("accept"),
+                            attribute,
+                            prefixes));
         }
         Properties properties = new Properties();
         properties.setProperty("user", config.string("auth.pool.sql.user", ""));
@@ -173,6 +223,52 @@ final class IpPools {
         return value;
     }
 
+    /**
+     * The prefixes of length {@code length} in {@code text} ({@code 2001:db8:100::/40}), as {@code address/length};
+     * at most {@link #MAX_SIZE}.
+     */
+    static List<String> prefixes(String key, String text, int length) {
+        int slash = text.indexOf('/');
+        int bits;
+        java.net.InetAddress base;
+        try {
+            bits = slash < 0 ? -1 : Integer.parseInt(text.substring(slash + 1).trim());
+            String literal = slash < 0 ? text : text.substring(0, slash).trim();
+            if (!literal.contains(":") || !literal.matches("[0-9A-Fa-f:.]+")) {
+                throw new NumberFormatException(literal);
+            }
+            base = java.net.InetAddress.getByName(literal); // a literal: no DNS look-up
+        } catch (NumberFormatException | java.net.UnknownHostException e) {
+            throw new ConfigException(key + "prefix: " + text + " is not an IPv6 prefix such as 2001:db8:100::/40", e);
+        }
+        if (!(base instanceof java.net.Inet6Address) || bits < 1 || bits > 128) {
+            throw new ConfigException(key + "prefix: " + text + " is not an IPv6 prefix such as 2001:db8:100::/40");
+        }
+        if (length < bits || length > 128 || length - bits > 16) {
+            throw new ConfigException(
+                    key + "length: from the prefix's /" + bits + " to /128, " + MAX_SIZE + " entries at most");
+        }
+        java.math.BigInteger first = new java.math.BigInteger(1, base.getAddress())
+                .shiftRight(128 - bits)
+                .shiftLeft(128 - bits);
+        java.math.BigInteger step = java.math.BigInteger.ONE.shiftLeft(128 - length);
+        int count = 1 << (length - bits);
+        List<String> out = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            byte[] raw =
+                    first.add(step.multiply(java.math.BigInteger.valueOf(i))).toByteArray();
+            byte[] address = new byte[16];
+            System.arraycopy(
+                    raw, Math.max(0, raw.length - 16), address, Math.max(0, 16 - raw.length), Math.min(16, raw.length));
+            try {
+                out.add(java.net.InetAddress.getByAddress(address).getHostAddress() + "/" + length);
+            } catch (java.net.UnknownHostException e) {
+                throw new IllegalStateException(e); // sixteen bytes are always an address
+            }
+        }
+        return List.copyOf(out);
+    }
+
     static String text(long address) {
         return (address >>> 24 & 0xFF) + "." + (address >>> 16 & 0xFF) + "." + (address >>> 8 & 0xFF) + "."
                 + (address & 0xFF);
@@ -188,6 +284,11 @@ final class IpPools {
             try (PreparedStatement insert = c.prepareStatement(
                     "INSERT INTO ip_pool (pool, address) VALUES (?, CAST(? AS inet)) ON CONFLICT DO NOTHING")) {
                 for (Pool pool : pools) {
+                    for (String p : pool.prefixes()) {
+                        insert.setString(1, pool.name());
+                        insert.setString(2, p);
+                        insert.addBatch();
+                    }
                     for (long[] r : pool.ranges()) {
                         for (long a = r[0]; a <= r[1]; a++) {
                             insert.setString(1, pool.name());

@@ -95,6 +95,9 @@ trace: Access-Request id 17 from NAS edge-1 -> Access-Reject in 412 µs
 `nas=<entry>` and `station=<Calling-Station-Id>` work the same; `trace.users`, `trace.nas` and `trace.stations` set
 conditions that last. Passwords, keys and EAP payloads are shown only as their length.
 
+Every decision, not only traced ones, can also be kept: `auth.log.dir` and/or `auth.log.sql.url`
+([ADR 0058](../adr/0058-authentication-log.md)) write each accept and reject with its cause.
+
 ## Alerts
 
 [deploy/monitoring/alerts.yml](../../deploy/monitoring/alerts.yml), checked with `promtool` in

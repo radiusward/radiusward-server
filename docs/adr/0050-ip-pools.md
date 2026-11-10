@@ -29,6 +29,6 @@ accounting goes to the cluster and reaches PostgreSQL through the exporter, and 
 ## Consequences
 - An address returns to the pool once the Stop is exported (plus the lease, if the session was short); sessions closed
   by the cluster's timeout free theirs the same way.
-- Only IPv4. `Framed-IPv6-Prefix` and delegated prefixes would need a pool of prefixes; not planned yet.
+- IPv6 prefixes and addresses: [ADR 0059](0059-ipv6-pools.md), which also holds an entry while its device is online.
 - Under heavy contention `SKIP LOCKED` may pass over addresses being allocated; a pool close to full can then answer
   "empty" a little early.

@@ -285,6 +285,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             because(context, "rejected by a rule of ", "auth.rules");
             return REJECT;
         }
+        Cui c = cui;
+        if (c != null) {
+            c.apply(request, found.user().userName(), a.reply()); // ADR 0056
+        }
         encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
         writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
         writeEapSuccess(context, method);
@@ -826,6 +830,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         for (AttributeItem item : checks) {
             String name = item.attribute();
             if (name.equalsIgnoreCase("Expiration")
+                    || name.equalsIgnoreCase("Expire-After")
                     || name.equalsIgnoreCase("Login-Time")
                     || name.equalsIgnoreCase("Pool-Name")
                     || name.equalsIgnoreCase(TOTP_SECRET)) {
@@ -860,6 +865,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 cap = Math.min(
                         cap,
                         Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
+            } else if (name.equalsIgnoreCase("Expire-After")) {
+                long after = expireAfter(context, user, item, now);
+                if (after < 0) {
+                    return after == -2 ? DROP : REJECT;
+                }
+                cap = Math.min(cap, Math.max(1, after));
             } else if (name.equalsIgnoreCase("Pool-Name") || name.equalsIgnoreCase(TOTP_SECRET)) {
                 continue; // #assignAddress, #totp
             } else if (name.equalsIgnoreCase("Login-Time")) {
@@ -1108,10 +1119,19 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     private static void because(AccessContext context, String step, String detail) {
+        context.reason(step); // a constant: nothing allocated for requests that are not traced
         Tracer.Trace trace = context.trace();
         if (trace != null) {
             trace.because(step + detail);
         }
+    }
+
+    // ---- Chargeable-User-Identity (ADR 0056) -------------------------------------------------------------------
+
+    private volatile Cui cui;
+
+    void cui(Cui cui) {
+        this.cui = cui;
     }
 
     // ---- rules (ADR 0051) ---------------------------------------------------------------------------------------
@@ -1163,22 +1183,30 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * reached leaves the request unanswered.
      */
     private int assignAddress(AccessContext context, RadiusPacket request, String user, Authorization a) {
-        String name = null;
         for (AttributeItem item : a.restrictions()) {
-            if (item.attribute().equalsIgnoreCase("Pool-Name")) {
-                name = item.value();
-                break;
+            if (!item.attribute().equalsIgnoreCase("Pool-Name")) {
+                continue;
+            }
+            for (String name : item.value().split(",")) { // e.g. an IPv4 pool and an IPv6 one (ADR 0059)
+                int decision = assignAddress(context, request, user, a, name.trim());
+                if (decision != ACCEPT) {
+                    return decision;
+                }
             }
         }
-        if (name == null || a.reply().stream().anyMatch(r -> r.attribute().equalsIgnoreCase("Framed-IP-Address"))) {
-            return ACCEPT;
-        }
+        return ACCEPT;
+    }
+
+    private int assignAddress(AccessContext context, RadiusPacket request, String user, Authorization a, String name) {
         IpPools p = pools;
         IpPools.Pool pool = p == null ? null : p.pool(name);
         if (pool == null) {
             warnOnce("pool:" + name, "Pool-Name {}: no such pool in auth.pools, the user is rejected", name);
             because(context, "no such pool: ", name);
             return REJECT;
+        }
+        if (a.reply().stream().anyMatch(r -> r.attribute().equalsIgnoreCase(pool.attribute()))) {
+            return ACCEPT; // the user's own address or prefix
         }
         int station = request.findAttribute(CALLING_STATION_ID);
         String device = station < 0
@@ -1204,8 +1232,54 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return pool.exhausted() ? ACCEPT : REJECT;
         }
         note(context, "address from pool " + pool.name() + ": ", address);
-        a.reply().add(new AttributeItem("Framed-IP-Address", "=", address));
+        a.reply().add(new AttributeItem(pool.attribute(), "=", address));
         return ACCEPT;
+    }
+
+    /**
+     * {@code Expire-After := <seconds>} (ADR 0060): the account ends that long after its first login, the start of
+     * its first exported session (the first Accept, if none yet). The seconds left, {@code -1} to reject, {@code -2}
+     * to leave the request unanswered (the database cannot be asked).
+     */
+    private long expireAfter(AccessContext context, String user, AttributeItem item, Instant now) {
+        long seconds;
+        try {
+            seconds = Long.parseLong(item.value().trim());
+        } catch (NumberFormatException e) {
+            seconds = -1;
+        }
+        if (seconds <= 0) {
+            warnOnce(
+                    "expire-after:" + item.value(), "Expire-After {}: not a number of seconds, rejected", item.value());
+            because(context, "Expire-After not understood: ", item.value());
+            return -1;
+        }
+        UsageCounters c = counters;
+        if (c == null) {
+            warnOnce(
+                    "expire-after-sql",
+                    "{} needs auth.counter.sql.url to find the first login: rejected",
+                    "Expire-After");
+            because(context, "Expire-After without auth.counter.sql.url", "");
+            return -1;
+        }
+        Instant first;
+        try {
+            first = c.firstLogin(user);
+        } catch (Exception e) {
+            warnOnce(
+                    "expire-after-unavailable",
+                    "first logins unavailable, requests are not answered: {}",
+                    e.toString());
+            because(context, "first login unavailable", "");
+            return -2;
+        }
+        Instant end = (first == null ? now : first).plusSeconds(seconds);
+        if (!now.isBefore(end)) {
+            because(context, "expired after the first login: ", end.toString());
+            return -1;
+        }
+        return java.time.Duration.between(now, end).getSeconds();
     }
 
     private static void replace(List<AttributeItem> reply, String attribute, String value) {
@@ -1761,7 +1835,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private static boolean perRequest(AttributeItem item) {
         return item.attribute().equalsIgnoreCase("Framed-IP-Address")
-                || item.attribute().equalsIgnoreCase("Session-Timeout");
+                || item.attribute().equalsIgnoreCase("Session-Timeout")
+                || item.attribute().equalsIgnoreCase("Chargeable-User-Identity")
+                || IpPools.IPV6_ATTRIBUTES.stream().anyMatch(item.attribute()::equalsIgnoreCase);
     }
 
     /** One reply item, encoded; {@code value == null} if it cannot be sent. */

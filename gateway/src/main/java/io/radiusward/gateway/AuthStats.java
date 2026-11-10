@@ -35,7 +35,9 @@ public final class AuthStats {
         /** the handler threw: dropped */
         HANDLER_ERRORS,
         RESPONSES_SENT,
-        SEND_FAILED
+        SEND_FAILED,
+        /** an Access-Reject held back for {@code auth.reject.delay} (ADR 0057) */
+        REJECTS_DELAYED
     }
 
     private static final Counter[] COUNTERS = Counter.values();

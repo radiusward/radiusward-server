@@ -121,6 +121,29 @@ class IpPoolsIT {
             executor.shutdown();
         }
 
+        // IPv6 (ADR 0059): delegated prefixes; a prefix stays with its holder while the holder's session is open
+        Map<String, String> v6 = new java.util.HashMap<>(values);
+        v6.put("auth.pools", "pd");
+        v6.put("auth.pool.pd.prefix", "2001:db8:100::/55");
+        v6.put("auth.pool.pd.length", "56");
+        v6.put("auth.pool.pd.lease", "1s");
+        IpPools prefixes = IpPools.from(Config.of(v6));
+        IpPools.Pool pd = prefixes.pool("pd");
+        String first = prefixes.allocate(pd, "ann", "a6");
+        String second = prefixes.allocate(pd, "ben", "b6");
+        assertThat(java.util.List.of(first, second))
+                .containsExactlyInAnyOrder("2001:db8:100::/56", "2001:db8:100:100::/56");
+        assertThat(prefixes.allocate(pd, "cat", "c6")).as("both delegated").isNull();
+        try (Connection conn = connect();
+                Statement s = conn.createStatement()) {
+            s.execute("INSERT INTO accounting_session VALUES ('a6', NULL, NULL)"); // ann's router online
+        }
+        Thread.sleep(1500);
+        assertThat(prefixes.allocate(pd, "cat", "c6"))
+                .as("ben's lease ran out, ann is online")
+                .isEqualTo(second);
+        assertThat(prefixes.allocate(pd, "ann", "a6")).as("ann keeps hers").isEqualTo(first);
+
         IpPools leaseOnly = new IpPools(Map.of("small", small), IpPools.sql(postgres.getJdbcUrl(), props(), false));
         Thread.sleep(2500);
         assertThat(leaseOnly.allocate(small, "erin", "ee-ee"))

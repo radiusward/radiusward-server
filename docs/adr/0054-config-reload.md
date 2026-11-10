@@ -18,7 +18,9 @@ themselves (users files, certificates, CRLs, rules), the properties did not. Oth
     in one volatile write; a packet already received keeps the entry it came with; dynamic clients keep running.
   - **Identity stores**, their per-NAS lists, reply vendors and verifiers: new requests use the new ones; worker
     caches are dropped; the old stores are closed 30 s later so requests still using them finish.
-  - Usage counters, IP pools, TOTP, the rules file and configured trace conditions; trace conditions from the API stay.
+  - Usage counters, IP pools, TOTP, CUI ([ADR 0056](0056-chargeable-user-identity.md)), the reject delay
+    ([ADR 0057](0057-reject-delay.md)), the rules file and configured trace conditions; trace conditions from the API
+    stay. The authentication log ([ADR 0058](0058-authentication-log.md)) is not reloaded.
 - **What does not**: listening ports and addresses, workers, RadSec/DTLS/TCP clients, the cluster connection,
   proxying and home servers, CoA, EAP methods and their TLS settings (certificate files reload on their own). They
   need a restart; a reload leaves them as they are.

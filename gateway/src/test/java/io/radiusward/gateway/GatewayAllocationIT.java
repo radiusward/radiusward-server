@@ -169,6 +169,16 @@ class GatewayAllocationIT {
     /** Access-Requests (Phase 5.2): receive, slot, worker decision, signed reply, send — no allocation per request. */
     @Test
     void accessRequestPathDoesNotAllocate() throws Exception {
+        accessPath("arctangent", 0, AuthStats.Counter.ACCEPTED);
+    }
+
+    /** Access-Rejects held back by the agent (ADR 0057): the delay queue allocates nothing either. */
+    @Test
+    void delayedRejectsDoNotAllocate() throws Exception {
+        accessPath("wrong-pass", 1_000_000, AuthStats.Counter.REJECTED);
+    }
+
+    private void accessPath(String passwordText, long rejectDelayNanos, AuthStats.Counter expected) throws Exception {
         long[] clock = {1_000_000_000L};
         AuthStats stats = new AuthStats();
         AccessSlots slots = new AccessSlots(64);
@@ -177,7 +187,7 @@ class GatewayAllocationIT {
             int n = context.credentials()
                     .decryptUserPassword(context.request(), context.nas().secret(), password, 0);
             context.reply().uint32(27, 3600);
-            return n == 10 ? AccessHandler.ACCEPT : AccessHandler.REJECT;
+            return n == 10 && password.getByte(0) == 'a' ? AccessHandler.ACCEPT : AccessHandler.REJECT;
         };
         AuthAgent agent = new AuthAgent(
                 UdpAgentTest.config(Duration.ZERO, 1024),
@@ -187,13 +197,14 @@ class GatewayAllocationIT {
                 stats,
                 () -> clock[0]);
         AccessWorker worker = new AccessWorker(0, slots, handler, stats);
+        agent.rejectDelay(Duration.ofNanos(rejectDelayNanos));
         agent.onStart();
         try (DatagramChannel client = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0))) {
             client.configureBlocking(false);
             client.connect(new InetSocketAddress("127.0.0.1", agent.localPort()));
             ByteBuffer[] requests = new ByteBuffer[2 * PACKETS];
             for (int i = 0; i < requests.length; i++) {
-                byte[] r = AuthAgentTest.accessRequest(i & 0xFF, "arctangent", true, false);
+                byte[] r = AuthAgentTest.accessRequest(i & 0xFF, passwordText, true, false);
                 requests[i] = ByteBuffer.allocateDirect(r.length).put(r).flip();
             }
             ByteBuffer response = ByteBuffer.allocateDirect(4096);
@@ -201,7 +212,10 @@ class GatewayAllocationIT {
             long before = THREADS.getCurrentThreadAllocatedBytes();
             runAccess(agent, worker, client, requests, PACKETS, PACKETS, response, clock);
             long allocated = THREADS.getCurrentThreadAllocatedBytes() - before;
-            assertThat(stats.get(AuthStats.Counter.ACCEPTED)).isEqualTo(2L * PACKETS);
+            assertThat(stats.get(expected)).isEqualTo(2L * PACKETS);
+            if (rejectDelayNanos > 0) {
+                assertThat(stats.get(AuthStats.Counter.REJECTS_DELAYED)).isEqualTo(2L * PACKETS);
+            }
             assertThat(allocated)
                     .as(
                             "bytes allocated for %d Access-Requests (%.3f per request)",
@@ -231,6 +245,7 @@ class GatewayAllocationIT {
                 agent.doWork();
                 worker.doWork();
                 agent.doWork();
+                clock[0] += 100_000; // 0.1 ms per round: delayed rejects come due
                 response.clear();
                 responses = client.read(response);
             }

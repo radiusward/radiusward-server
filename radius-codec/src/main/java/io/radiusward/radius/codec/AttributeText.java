@@ -38,6 +38,7 @@ public final class AttributeText {
             case UINT64, INT64 -> bytes(number(def, text), 8);
             case IPV4_ADDR -> address(def, text, 4);
             case IPV6_ADDR -> address(def, text, 16);
+            case IPV6_PREFIX -> prefix(def, text);
             case STRING, OCTETS -> text.getBytes(StandardCharsets.UTF_8);
             default ->
                 throw new IllegalArgumentException(
@@ -64,8 +65,44 @@ public final class AttributeText {
                         + (buffer.getByte(offset + 2) & 0xFF) + "." + (buffer.getByte(offset + 3) & 0xFF);
             }
             case STRING -> buffer.getStringWithoutLengthUtf8(offset, length);
+            case IPV6_PREFIX -> {
+                int bits = length >= 2 ? buffer.getByte(offset + 1) & 0xFF : -1;
+                if (bits < 0 || bits > 128 || length - 2 > 16 || length - 2 < (bits + 7) / 8) {
+                    yield hex(buffer, offset, length);
+                }
+                byte[] raw = new byte[16];
+                buffer.getBytes(offset + 2, raw, 0, length - 2);
+                try {
+                    yield InetAddress.getByAddress(raw).getHostAddress() + "/" + bits;
+                } catch (UnknownHostException e) {
+                    yield hex(buffer, offset, length); // sixteen bytes are always an address
+                }
+            }
             default -> hex(buffer, offset, length);
         };
+    }
+
+    /** RFC 3162 §2.3: a reserved byte, the prefix length, then the prefix in as many bytes as it needs. */
+    private static byte[] prefix(AttributeDef def, String text) {
+        int slash = text.indexOf('/');
+        int bits;
+        try {
+            bits = slash < 0 ? -1 : Integer.parseInt(text.substring(slash + 1).trim());
+        } catch (NumberFormatException e) {
+            bits = -1;
+        }
+        if (bits < 0 || bits > 128) {
+            throw new IllegalArgumentException(def.path() + ": expected an IPv6 prefix such as 2001:db8::/56: " + text);
+        }
+        byte[] address = address(def, text.substring(0, slash).trim(), 16);
+        int bytes = (bits + 7) / 8;
+        byte[] value = new byte[2 + bytes];
+        value[1] = (byte) bits;
+        System.arraycopy(address, 0, value, 2, bytes);
+        if (bits % 8 != 0) {
+            value[1 + bytes] &= (byte) (0xFF << (8 - bits % 8)); // bits beyond the prefix are zero
+        }
+        return value;
     }
 
     private static String hex(DirectBuffer buffer, int offset, int length) {

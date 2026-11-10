@@ -28,6 +28,19 @@ public final class AccessContext {
     AccessContext() {}
 
     private Tracer.Trace trace;
+    private String reason;
+
+    /** Why the request was rejected or not answered, as the handler recorded it (ADR 0058); {@code null}: unknown. */
+    String reason() {
+        return reason;
+    }
+
+    /** Records the first cause; later ones follow from it. */
+    void reason(String reason) {
+        if (this.reason == null) {
+            this.reason = reason;
+        }
+    }
 
     /** The trace of this request (ADR 0052), {@code null} when it is not traced. */
     Tracer.Trace trace() {
@@ -40,6 +53,7 @@ public final class AccessContext {
 
     void reset(DirectBuffer buffer, int offset, int length, NasClient nas) {
         trace = null;
+        reason = null;
         request.wrap(buffer, offset, length);
         this.nas = nas;
         reply.wrap(replyBuffer, 0).header(0, 0); // only the attributes after the header are used

@@ -91,6 +91,48 @@ final class AuthAgent implements Agent, Proxy.Replies {
         this.clock = clock;
         this.ttlNanos = config.replyCacheTtl().toNanos();
         this.cache = new ReplyCache(config.replyCacheEntries());
+        this.delayed = new int[slots.capacity];
+        this.delayedUntil = new long[slots.capacity];
+    }
+
+    // ---- reject delay (ADR 0057) --------------------------------------------------------------------------------
+
+    private volatile long rejectDelayNanos;
+    /** Slots whose Access-Reject waits: a FIFO (the delay is the same for all), at most one entry per slot. */
+    private final int[] delayed;
+
+    private final long[] delayedUntil;
+    private int delayedHead;
+    private int delayedCount;
+
+    /** {@code auth.reject.delay}: how long an Access-Reject decided here is held back; zero sends it at once. */
+    void rejectDelay(java.time.Duration delay) {
+        this.rejectDelayNanos = delay.toNanos();
+    }
+
+    private void done(int slot) {
+        long delay = rejectDelayNanos;
+        int length = slots.replyLength[slot];
+        if (delay > 0 && length > 0 && (slots.replyViews[slot].getByte(0) & 0xFF) == RadiusCode.ACCESS_REJECT) {
+            int tail = (delayedHead + delayedCount) % delayed.length;
+            delayed[tail] = slot;
+            delayedUntil[tail] = now + delay;
+            delayedCount++;
+            stats.increment(AuthStats.Counter.REJECTS_DELAYED);
+            return; // the slot stays taken and the request in flight: retransmissions wait too
+        }
+        reply(slot);
+    }
+
+    private int releaseDelayed() {
+        int work = 0;
+        while (delayedCount > 0 && now - delayedUntil[delayedHead] >= 0) {
+            reply(delayed[delayedHead]);
+            delayedHead = (delayedHead + 1) % delayed.length;
+            delayedCount--;
+            work++;
+        }
+        return work;
     }
 
     /** Proxying of realms to home servers (ADR 0037); set before the agent starts. */
@@ -153,9 +195,10 @@ final class AuthAgent implements Agent, Proxy.Replies {
             work += proxy.poll(now);
         }
         for (Integer id = slots.done.poll(); id != null; id = slots.done.poll()) {
-            reply(id);
+            done(id);
             work++;
         }
+        work += releaseDelayed();
         stats.inFlight(slots.inUse());
         stats.cached(cache.size());
         return work;

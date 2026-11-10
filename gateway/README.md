@@ -29,8 +29,9 @@ java -jar distribution/target/radiusward.jar gateway --config config/local/gatew
 | `EapPacket`, `EapConversations`, `EapMethod`, `EapMd5`, `EapConfig` | EAP: packets over `EAP-Message`, conversations by single-use State, methods ([ADR 0026](../docs/adr/0026-eap-framework.md)) |
 | `MsChap`, `Md4` | MS-CHAPv1/v2 verification, authenticator response, MPPE keys and their RFC 2548 encryption ([ADR 0024](../docs/adr/0024-ms-chap-and-status-server.md)) |
 | `PasswordCheck`, `ShaCrypt`, `BCrypt`, `Yescrypt`, `Md5Crypt` | stored credential formats: cleartext, `$5$`/`$6$` SHA-crypt, `$2a$`/`$2b$`/`$2y$` bcrypt, `$y$` yescrypt, `$1$` MD5-crypt, salted SHA, PBKDF2, legacy digests ([ADR 0048](../docs/adr/0048-password-formats.md)) |
-| `LoginTime`, `UsageCounters`, `IpPools` | Login-Time windows, usage counters over the exported sessions and the Session-Timeout cap ([ADR 0049](../docs/adr/0049-time-and-usage-limits.md)); IPv4 pools in PostgreSQL ([ADR 0050](../docs/adr/0050-ip-pools.md)) |
+| `LoginTime`, `UsageCounters`, `IpPools` | Login-Time windows, usage counters over the exported sessions and the Session-Timeout cap ([ADR 0049](../docs/adr/0049-time-and-usage-limits.md)); IPv4 and IPv6 pools in PostgreSQL ([ADR 0050](../docs/adr/0050-ip-pools.md), [0059](../docs/adr/0059-ipv6-pools.md)); Expire-After ([ADR 0060](../docs/adr/0060-expire-after.md)) |
 | `Rules`, `RulesFile`, `Totp` | the rule layer on Access-Accepts ([ADR 0051](../docs/adr/0051-rules.md)); TOTP second factor ([ADR 0053](../docs/adr/0053-totp.md)) |
+| `Cui`, `AuthLog` | Chargeable-User-Identity ([ADR 0056](../docs/adr/0056-chargeable-user-identity.md)); the authentication log ([ADR 0058](../docs/adr/0058-authentication-log.md)); delayed rejects live in `AuthAgent` ([ADR 0057](../docs/adr/0057-reject-delay.md)) |
 | `Tracer`, `ReloadApi` | per-request traces ([ADR 0052](../docs/adr/0052-request-traces.md)); configuration reload on SIGHUP or `POST /reload` ([ADR 0054](../docs/adr/0054-config-reload.md)) |
 | `Gateway`, `GatewayConfig`, `GatewayMain` | wiring, embedded media driver, threading, management |
 

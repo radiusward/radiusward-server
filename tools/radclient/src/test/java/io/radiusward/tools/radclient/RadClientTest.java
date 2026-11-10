@@ -373,7 +373,10 @@ class RadClientTest {
                 .isInstanceOf(UsageException.class);
         assertThatThrownBy(() -> PacketBuilder.encode(dictionary.require("NAS-IP-Address"), "2001:db8::1"))
                 .isInstanceOf(UsageException.class);
-        assertThatThrownBy(() -> PacketBuilder.encode(dictionary.require("Framed-IPv6-Prefix"), "2001:db8::/64"))
+        assertThat(PacketBuilder.encode(dictionary.require("Framed-IPv6-Prefix"), "2001:db8::/64"))
+                .as("RFC 3162 prefixes")
+                .containsExactly(0, 64, 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0);
+        assertThatThrownBy(() -> PacketBuilder.encode(dictionary.require("Framed-IPv6-Prefix"), "2001:db8::"))
                 .isInstanceOf(UsageException.class);
         assertThatThrownBy(() -> new PacketBuilder(dictionary, 1).add("Frag-Status=1"))
                 .isInstanceOf(UsageException.class);

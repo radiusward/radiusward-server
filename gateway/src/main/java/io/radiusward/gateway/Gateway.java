@@ -306,11 +306,13 @@ public final class Gateway implements AutoCloseable {
         java.time.ZoneId zone = UsageCounters.zone(config);
         IpPools pools = IpPools.from(config);
         Totp totp = Totp.from(config);
+        Cui cui = Cui.from(config);
         return dictionary -> {
             StoreAccessHandler handler = new StoreAccessHandler(
                     AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
             handler.limits(counters, zone); // ADR 0049
             handler.totp(totp); // ADR 0053
+            handler.cui(cui); // ADR 0056
             handler.pools(pools); // ADR 0050
             handler.rules(RulesFile.from(config, name -> dictionary.find(name) != null)); // ADR 0051
             return handler;
@@ -479,6 +481,36 @@ public final class Gateway implements AutoCloseable {
         return coaService;
     }
 
+    /** {@code auth.reject.delay} (ADR 0057): 1 s by default, at most 5 s. */
+    static java.time.Duration rejectDelay(io.radiusward.common.config.Config raw) {
+        java.time.Duration d = raw.duration("auth.reject.delay", java.time.Duration.ofSeconds(1));
+        if (d.isNegative() || d.compareTo(java.time.Duration.ofSeconds(5)) > 0) {
+            throw new io.radiusward.common.config.ConfigException("auth.reject.delay: 0s to 5s");
+        }
+        return d;
+    }
+
+    private AuthLog authLog;
+
+    /** The authentication log ({@code auth.log.*}, ADR 0058) for every worker; not changed by a reload. */
+    public void authLog(io.radiusward.common.config.Config raw) {
+        AuthLog log = AuthLog.from(raw);
+        if (log == null) {
+            return;
+        }
+        this.authLog = log;
+        for (AccessWorker worker : workers) {
+            worker.authLog(log);
+        }
+    }
+
+    /** Holds Access-Rejects decided here back for {@code delay} before they are sent (ADR 0057). */
+    public void rejectDelay(java.time.Duration delay) {
+        if (authAgent != null) {
+            authAgent.rejectDelay(delay);
+        }
+    }
+
     /**
      * Per-request traces of Access-Requests ({@code trace.*}, ADR 0052) on every worker.
      *
@@ -508,6 +540,7 @@ public final class Gateway implements AutoCloseable {
      */
     public synchronized String reload(io.radiusward.common.config.Config raw) {
         NasRegistry fresh = NasRegistry.configured(raw);
+        java.time.Duration delay = rejectDelay(raw);
         if (fresh.clients().isEmpty() && registry.dynamic() == null) {
             throw new io.radiusward.common.config.ConfigException(
                     "no NAS configured: add nas.<name>.address and nas.<name>.secret");
@@ -518,6 +551,7 @@ public final class Gateway implements AutoCloseable {
         java.time.ZoneId zone = null;
         IpPools pools = null;
         Totp totp = null;
+        Cui cui = null;
         RulesFile rules = null;
         if (stores != null) {
             nextStores = AuthStores.from(raw, workers.size(), dictionary);
@@ -526,6 +560,7 @@ public final class Gateway implements AutoCloseable {
                 zone = UsageCounters.zone(raw);
                 pools = IpPools.from(raw);
                 totp = Totp.from(raw);
+                cui = Cui.from(raw);
                 rules = RulesFile.from(raw, name -> dictionary.find(name) != null);
             } catch (RuntimeException e) {
                 nextStores.close();
@@ -534,11 +569,13 @@ public final class Gateway implements AutoCloseable {
         }
         int before = registry.clients().size();
         registry.replace(fresh);
+        rejectDelay(delay);
         if (stores != null) {
             stores.reload(nextStores, java.time.Duration.ofSeconds(30));
             stores.limits(counters, zone);
             stores.pools(pools);
             stores.totp(totp);
+            stores.cui(cui);
             stores.rules(rules);
         }
         if (tracer != null) {
@@ -655,6 +692,9 @@ public final class Gateway implements AutoCloseable {
         if (authAgent != null && authAgent.proxy() != null) {
             authAgent.proxy().writeMetrics(w, id);
         }
+        if (authLog != null) {
+            authLog.writeMetrics(w, id);
+        }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());
         JvmMetrics.write(w);
@@ -663,6 +703,9 @@ public final class Gateway implements AutoCloseable {
 
     @Override
     public void close() {
+        if (authLog != null) {
+            authLog.close();
+        }
         if (coaApi != null) {
             coaApi.close();
         }

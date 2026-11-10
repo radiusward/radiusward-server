@@ -66,14 +66,33 @@ final class UsageCounters {
     static final String OCTETS_QUERY = "SELECT COALESCE(SUM(s.input_octets + s.output_octets), 0)"
             + " FROM accounting_session s WHERE s.user_name = ? AND s.last_received_at >= ?";
 
+    /** When a user first logged in; {@code null} if never (ADR 0060). */
+    @FunctionalInterface
+    interface FirstLogin {
+        Instant first(String user) throws Exception;
+    }
+
+    /** The start of the user's first exported session. Parameter: user. */
+    static final String FIRST_QUERY = "SELECT MIN(started_at) FROM accounting_session WHERE user_name = ?";
+
     private final List<Counter> counters;
     private final Source source;
     private final ZoneId zone;
+    private final FirstLogin firstLogin;
 
     UsageCounters(List<Counter> counters, Source source, ZoneId zone) {
+        this(counters, source, zone, user -> null);
+    }
+
+    UsageCounters(List<Counter> counters, Source source, ZoneId zone, FirstLogin firstLogin) {
         this.counters = List.copyOf(counters);
         this.source = source;
         this.zone = zone;
+        this.firstLogin = firstLogin;
+    }
+
+    Instant firstLogin(String user) throws Exception {
+        return firstLogin.first(user);
     }
 
     List<Counter> counters() {
@@ -88,11 +107,11 @@ final class UsageCounters {
         return source.usage(counter, user, periodStart);
     }
 
-    /** {@code auth.counters} and {@code auth.counter.*}; {@code null} without counters. */
+    /** {@code auth.counters} and {@code auth.counter.*}; {@code null} without counters and connection. */
     static UsageCounters from(Config config) {
         List<String> names = config.list("auth.counters", List.of());
-        if (names.isEmpty()) {
-            return null;
+        if (names.isEmpty() && !config.has("auth.counter.sql.url")) {
+            return null; // without counters, the connection alone serves Expire-After
         }
         List<Counter> counters = new ArrayList<>();
         for (String raw : names) {
@@ -108,7 +127,26 @@ final class UsageCounters {
         Properties properties = new Properties();
         properties.setProperty("user", config.string("auth.counter.sql.user", ""));
         properties.setProperty("password", config.string("auth.counter.sql.password", ""));
-        return new UsageCounters(counters, sql(config.string("auth.counter.sql.url"), properties), zone(config));
+        String url = config.string("auth.counter.sql.url");
+        return new UsageCounters(
+                counters,
+                sql(url, properties),
+                zone(config),
+                first(url, properties, config.string("auth.counter.first.query", FIRST_QUERY)));
+    }
+
+    static FirstLogin first(String url, Properties properties, String query) {
+        return user -> {
+            try (Connection c = DriverManager.getConnection(url, properties);
+                    PreparedStatement s = c.prepareStatement(query)) {
+                s.setQueryTimeout(5);
+                s.setString(1, user);
+                try (ResultSet r = s.executeQuery()) {
+                    Timestamp t = r.next() ? r.getTimestamp(1) : null;
+                    return t == null ? null : t.toInstant();
+                }
+            }
+        };
     }
 
     /** {@code auth.time.zone}: the zone of Login-Time windows and counter periods; the system's by default. */

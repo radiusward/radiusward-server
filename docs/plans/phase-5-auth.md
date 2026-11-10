@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.31 done (ADR 0020–0055). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.36 done (ADR 0020–0060). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -128,6 +128,11 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.29 ✅ | TOTP | `TOTP-Secret` users need an RFC 6238 code after the password: Access-Challenge with State, or appended; codes used once ([ADR 0053](../adr/0053-totp.md)) | S |
 | 5.30 ✅ | Configuration reload | SIGHUP and `POST /reload`: NAS entries, identity stores, counters, pools, TOTP, rules and trace conditions replaced after the whole configuration loaded; listeners and links need a restart ([ADR 0054](../adr/0054-config-reload.md)) | S |
 | 5.31 ✅ | Proxy transports and rewriting | home servers over TCP and DTLS, `realm.<id>.pre-proxy.*` / `post-proxy.remove`, inner proxying over RadSec and TCP ([ADR 0055](../adr/0055-proxy-transports-and-rewriting.md)) | M |
+| 5.32 ✅ | Chargeable-User-Identity | RFC 4372 CUI as an HMAC pseudonym of the (inner) user per Operator-Name, on request or always ([ADR 0056](../adr/0056-chargeable-user-identity.md)) | S |
+| 5.33 ✅ | Reject delay | Access-Rejects held back `auth.reject.delay` (1 s) in the auth agent, allocation-free, retransmissions waiting ([ADR 0057](../adr/0057-reject-delay.md)) | S |
+| 5.34 ✅ | Authentication log | every accept and reject with its cause to daily JSON-lines files and/or a PostgreSQL table, through a bounded queue ([ADR 0058](../adr/0058-authentication-log.md)) | S |
+| 5.35 ✅ | IPv6 pools | delegated and framed IPv6 prefixes (or addresses) from pools, held while their device is online, several pools per user ([ADR 0059](../adr/0059-ipv6-pools.md)) | M |
+| 5.36 ✅ | Expire-After | accounts expire a set time after their first exported session ([ADR 0060](../adr/0060-expire-after.md)) | S |
 
 ## Tests
 

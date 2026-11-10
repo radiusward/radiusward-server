@@ -57,5 +57,10 @@
 | [0053](0053-totp.md) | TOTP second factor for PAP: Access-Challenge or appended code, codes used once | Accepted |
 | [0054](0054-config-reload.md) | SIGHUP and `POST /reload`: NAS entries, stores, counters, pools, TOTP, rules swapped after validation | Accepted |
 | [0055](0055-proxy-transports-and-rewriting.md) | Home servers over TCP and DTLS, pre-/post-proxy rewriting per realm, inner proxying over RadSec and TCP | Accepted |
+| [0056](0056-chargeable-user-identity.md) | Chargeable-User-Identity: HMAC pseudonym per user and operator, on request or always | Accepted |
+| [0057](0057-reject-delay.md) | Access-Rejects held back in the auth agent (1 s), no worker blocked, nothing allocated | Accepted |
+| [0058](0058-authentication-log.md) | Authentication log: every accept and reject with its cause, to daily JSON lines and/or PostgreSQL | Accepted |
+| [0059](0059-ipv6-pools.md) | IPv6 prefix pools (delegated, framed prefix or address), entries held while their device is online | Accepted |
+| [0060](0060-expire-after.md) | Expire-After: accounts end a set time after their first exported session | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

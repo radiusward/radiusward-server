@@ -37,6 +37,15 @@ class AttributeTextTest {
         assertThat(AttributeText.encode(DICTIONARY.require("NAS-IPv6-Address"), "2001:db8::1"))
                 .hasSize(16);
         assertThat(roundTrip("Acct-Input-Gigawords", "4294967295")).isEqualTo("4294967295");
+        assertThat(AttributeText.encode(DICTIONARY.require("Delegated-IPv6-Prefix"), "2001:db8:1200::/40"))
+                .as("RFC 3162: reserved, length, the prefix's bytes")
+                .containsExactly(0, 40, 0x20, 0x01, 0x0d, 0xb8, 0x12);
+        assertThat(AttributeText.encode(DICTIONARY.require("Framed-IPv6-Prefix"), "2001:db8:ffff::/33"))
+                .as("bits beyond the prefix cleared")
+                .containsExactly(0, 33, 0x20, 0x01, 0x0d, 0xb8, 0x80);
+        assertThat(roundTrip("Delegated-IPv6-Prefix", "2001:db8:1200:5600::/56"))
+                .isEqualTo("2001:db8:1200:5600:0:0:0:0/56");
+        assertThat(roundTrip("Framed-IPv6-Prefix", "::/0")).isEqualTo("0:0:0:0:0:0:0:0/0");
     }
 
     @Test
@@ -50,6 +59,11 @@ class AttributeTextTest {
                 .hasMessageContaining("IPv4");
         assertThatThrownBy(() -> AttributeText.encode(DICTIONARY.require("NAS-IPv6-Address"), "10.0.0.1"))
                 .hasMessageContaining("IPv6");
+        for (String bad : new String[] {"2001:db8::", "2001:db8::/129", "2001:db8::/x", "10.0.0.0/8"}) {
+            assertThatThrownBy(() -> AttributeText.encode(DICTIONARY.require("Delegated-IPv6-Prefix"), bad))
+                    .as(bad)
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
     }
 
     @Test
@@ -57,5 +71,11 @@ class AttributeTextTest {
         AttributeDef ip = DICTIONARY.require("Framed-IP-Address");
         assertThat(AttributeText.decode(ip, new UnsafeBuffer(new byte[] {1, 2, 3}), 0, 3))
                 .isEqualTo("0x010203");
+        AttributeDef prefix = DICTIONARY.require("Delegated-IPv6-Prefix");
+        assertThat(AttributeText.decode(prefix, new UnsafeBuffer(new byte[] {0, 64, 1}), 0, 3))
+                .as("shorter than its length says")
+                .isEqualTo("0x004001");
+        assertThat(AttributeText.decode(prefix, new UnsafeBuffer(new byte[] {0}), 0, 1))
+                .isEqualTo("0x00");
     }
 }

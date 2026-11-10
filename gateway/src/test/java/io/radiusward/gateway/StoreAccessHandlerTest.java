@@ -540,6 +540,79 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void ipv4AndIpv6PoolsAndTheCui() {
+        java.util.List<String> asked = new java.util.ArrayList<>();
+        IpPools pools = new IpPools(
+                Map.of(
+                        "v4",
+                        new IpPools.Pool("v4", List.of(), Duration.ofMinutes(5), false),
+                        "pd",
+                        new IpPools.Pool(
+                                "pd",
+                                List.of(),
+                                Duration.ofMinutes(5),
+                                false,
+                                "Delegated-IPv6-Prefix",
+                                List.of("2001:db8:100:100::/56"))),
+                (pool, user, device) -> {
+                    asked.add(pool.name());
+                    return pool.name().equals("v4") ? "10.0.0.9" : "2001:db8:100:100::/56";
+                });
+        main.user(
+                "alice", List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "v4, pd")), List.of());
+        StoreAccessHandler h = handler();
+        h.pools(pools);
+        h.cui(Cui.from(io.radiusward.common.config.Config.of(
+                Map.of("auth.cui.key", "a-key-of-sixteen-chars", "auth.cui.mode", "always"))));
+        assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(asked).containsExactly("v4", "pd");
+        RadiusPacket reply = reply();
+        assertThat(reply.findAttribute(8)).as("Framed-IP-Address").isPositive();
+        int pd = reply.findAttribute(123);
+        assertThat(pd).as("Delegated-IPv6-Prefix").isPositive();
+        assertThat(reply.buffer().getByte(pd + 3)).as("its length").isEqualTo((byte) 56);
+        assertThat(reply.findAttribute(89)).as("Chargeable-User-Identity").isPositive();
+    }
+
+    @Test
+    void expireAfterTheFirstLogin() {
+        // now: 2027-01-15T08:00:00Z
+        Map<String, java.time.Instant> first = new HashMap<>();
+        boolean[] down = {false};
+        UsageCounters counters =
+                new UsageCounters(List.of(), (counter, user, start) -> 0, java.time.ZoneOffset.UTC, user -> {
+                    if (down[0]) {
+                        throw new java.sql.SQLException("down");
+                    }
+                    return first.get(user);
+                });
+        for (String user : new String[] {"fresh", "used", "over", "bad"}) {
+            main.user(
+                    user,
+                    List.of(
+                            item("Cleartext-Password", ":=", "a"),
+                            item("Expire-After", ":=", user.equals("bad") ? "soon" : "86400")),
+                    List.of(item("Session-Timeout", "=", "100000")));
+        }
+        first.put("used", java.time.Instant.parse("2027-01-15T06:00:00Z"));
+        first.put("over", java.time.Instant.parse("2027-01-14T07:59:59Z"));
+        StoreAccessHandler h = handler();
+        h.limits(counters, java.time.ZoneOffset.UTC);
+        assertThat(pap(h, "fresh", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout()).as("a day from now: the first login").isEqualTo(86400);
+        assertThat(pap(h, "used", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(sessionTimeout()).isEqualTo(86400 - 7200);
+        assertThat(pap(h, "over", "a")).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "bad", "a")).isEqualTo(AccessHandler.REJECT);
+        down[0] = true;
+        assertThat(pap(h, "used", "a")).isEqualTo(AccessHandler.DROP);
+        StoreAccessHandler noSql = handler();
+        assertThat(pap(noSql, "fresh", "a"))
+                .as("no connection to find the first login")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
     void groupsApplyWhenTheirChecksMatch() {
         UserRecord.Group staff = new UserRecord.Group(
                 "staff", List.of(item("NAS-Port-Type", "==", "Ethernet")), List.of(item("Filter-Id", "=", "staff")));

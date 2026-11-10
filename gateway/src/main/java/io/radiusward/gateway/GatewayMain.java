@@ -94,6 +94,8 @@ public final class GatewayMain {
             if (management != null && !reloadToken.isEmpty()) {
                 management.handle("/reload", new ReloadApi(reloadToken, reload));
             }
+            gateway.rejectDelay(Gateway.rejectDelay(config)); // ADR 0057
+            gateway.authLog(config); // ADR 0058
             com.sun.net.httpserver.HttpHandler traceApi = gateway.trace(config); // ADR 0052
             if (management != null && traceApi != null) {
                 management.handle("/trace", traceApi);

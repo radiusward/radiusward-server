@@ -89,5 +89,39 @@ class UsageCountersIT {
         assertThat(counters.usage(data, "alice", Instant.parse("2027-01-01T00:00:00Z")))
                 .isEqualTo(100 + 200 + 1000 + 2000 + 10);
         assertThat(counters.usage(data, "alice", today)).isEqualTo(100 + 200 + 1000 + 2000);
+        assertThat(counters.firstLogin("alice"))
+                .as("Expire-After (ADR 0060)")
+                .isEqualTo(Instant.parse("2027-01-08T10:00:00Z"));
+        assertThat(counters.firstLogin("nobody")).isNull();
+        UsageCounters connectionOnly = UsageCounters.from(Config.of(Map.of(
+                "auth.counter.sql.url", postgres.getJdbcUrl(),
+                "auth.counter.sql.user", postgres.getUsername(),
+                "auth.counter.sql.password", postgres.getPassword())));
+        assertThat(connectionOnly.counters()).isEmpty();
+        assertThat(connectionOnly.firstLogin("bob")).isEqualTo(Instant.parse("2027-01-15T06:00:00Z"));
+
+        // the authentication log in the same database (ADR 0058)
+        try (AuthLog log = AuthLog.from(Config.of(Map.of(
+                "auth.log.sql.url", postgres.getJdbcUrl(),
+                "auth.log.sql.user", postgres.getUsername(),
+                "auth.log.sql.password", postgres.getPassword())))) {
+            log.record(new AuthLog.Entry(Instant.parse("2027-01-15T08:00:00Z"), "edge", "alice", "aa", true, null));
+            log.record(new AuthLog.Entry(
+                    Instant.parse("2027-01-15T08:00:01Z"), "edge", "bob", null, false, "outside Login-Time"));
+            AuthLogTest.await(() -> log.written() == 2);
+            assertThat(log.written()).isEqualTo(2);
+        }
+        try (Connection c = DriverManager.getConnection(
+                        postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
+                Statement s = c.createStatement();
+                java.sql.ResultSet r =
+                        s.executeQuery("SELECT username, reply, reason, nas FROM auth_log ORDER BY authdate")) {
+            assertThat(r.next()).isTrue();
+            assertThat(r.getString(1) + " " + r.getString(2) + " " + r.getString(3) + " " + r.getString(4))
+                    .isEqualTo("alice Access-Accept null edge");
+            assertThat(r.next()).isTrue();
+            assertThat(r.getString(1) + " " + r.getString(2) + " " + r.getString(3))
+                    .isEqualTo("bob Access-Reject outside Login-Time");
+        }
     }
 }
