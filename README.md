@@ -1,5 +1,9 @@
 # radiusward
 
+[![CI](https://github.com/radiusward/radiusward-server/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/radiusward/radiusward-server/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/radiusward/radiusward-server/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/radiusward/radiusward-server/security/code-scanning)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 A replicated RADIUS accounting server for Java, built on [Aeron Cluster](https://github.com/aeron-io/aeron).
 
 radiusward answers an Accounting-Request only after the record is **durably committed on a majority
