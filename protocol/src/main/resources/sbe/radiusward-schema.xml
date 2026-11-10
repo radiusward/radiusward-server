@@ -10,7 +10,7 @@
 <sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
                    package="io.radiusward.protocol"
                    id="7101"
-                   version="7"
+                   version="8"
                    semanticVersion="6.0"
                    description="radiusward cluster protocol"
                    byteOrder="littleEndian">
@@ -54,6 +54,11 @@
             <validValue name="DENIED" description="the user has as many devices online or reserved as the limit allows">1</validValue>
             <validValue name="UNSUPPORTED" description="state version 6 is not active yet: the limit cannot be counted">2</validValue>
             <validValue name="CAPACITY" description="no room for another reservation">3</validValue>
+        </enum>
+        <enum name="SqnOutcome" encodingType="uint8" sinceVersion="8">
+            <validValue name="OK" description="sqn holds the subscriber's next sequence number">0</validValue>
+            <validValue name="UNSUPPORTED" description="state version 8 is not active yet">1</validValue>
+            <validValue name="CAPACITY" description="no room for another subscriber">2</validValue>
         </enum>
         <enum name="OnMaxLag" encodingType="uint8" sinceVersion="2">
             <validValue name="BLOCK" description="stop acknowledging new accounting">0</validValue>
@@ -135,6 +140,21 @@
     <sbe:message name="AuthReservationResult" id="17" sinceVersion="6">
         <field name="correlationId" id="1" type="int64"/>
         <field name="result" id="2" type="ReservationResult"/>
+    </sbe:message>
+
+    <!-- gateway -> cluster -> gateway: SIM sequence numbers (ADR 0061) -->
+    <sbe:message name="SqnNext" id="29" sinceVersion="8"
+                 description="The next SQN of a SIM subscriber for an EAP-AKA challenge; answered after the commit">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="gatewayId" id="2" type="int32"/>
+        <field name="subscriberKey" id="3" type="int64" description="hash of the IMSI"/>
+        <field name="floor" id="4" type="int64"
+               description="an SQN the next one must exceed: the store's SIM-SQN, or the USIM's after a resynchronisation"/>
+    </sbe:message>
+    <sbe:message name="SqnResult" id="30" sinceVersion="8">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="outcome" id="2" type="SqnOutcome"/>
+        <field name="sqn" id="3" type="int64" description="48 bits; meaningful with OK"/>
     </sbe:message>
 
     <!-- exporter -> cluster -> exporter (Phase 3, ADR 0017) -->
@@ -295,6 +315,7 @@
         <field name="activeVersion" id="13" type="int32" sinceVersion="5" description="0 = never activated: the baseline"/>
         <field name="clusterSize" id="14" type="int32" sinceVersion="5"/>
         <field name="reservationCount" id="15" type="int32" sinceVersion="6"/>
+        <field name="sqnCount" id="16" type="int32" sinceVersion="8"/>
     </sbe:message>
     <sbe:message name="SessionChunk" id="21">
         <group name="sessions" id="1" dimensionType="groupSizeEncoding">
@@ -325,6 +346,13 @@
             <field name="userKey" id="1" type="int64"/>
             <field name="deviceKey" id="2" type="int64"/>
             <field name="expiry" id="3" type="int64" description="cluster time in ms"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="SqnChunk" id="31" sinceVersion="8"
+                 description="written only when subscribers have sequence numbers (after state version 8 is active)">
+        <group name="sqns" id="1" dimensionType="groupSizeEncoding">
+            <field name="subscriberKey" id="1" type="int64"/>
+            <field name="sqn" id="2" type="int64"/>
         </group>
     </sbe:message>
     <sbe:message name="ExactKeyChunk" id="22">

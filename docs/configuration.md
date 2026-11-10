@@ -45,6 +45,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.disk.min.free` | `1g` | below this free space in the data directory the member reports not ready (`/ready`, with the reason) and logs a warning; a full disk stops the member. `0` disables |
 | `snapshot.interval` | `1h` | automatic snapshot on the leader; `0` disables |
 | `service.max.sessions` | profile (small: 2,000,000) | session capacity; new sessions beyond it are rejected |
+| `service.sim.subscribers.max` | `100000` | SIM subscribers whose EAP-AKA sequence number the cluster keeps (state version 8, [ADR 0061](adr/0061-eap-sim-aka.md)); beyond it a new subscriber gets no answer. Same on every member |
 | `service.auth.reservations.max` | `65536` | simultaneous-use reservations held at once (state version 6, [ADR 0023](adr/0023-simultaneous-use.md)); beyond it limited users get no answer. Same on every member |
 | `service.tombstone` | `1h` | how long a stopped session is kept to recognise retransmitted Stops and late Interims; an Interim for an unknown session with an Event-Timestamp older than this is stale and creates no session |
 | `service.idle.timeout` | `2h` | remove sessions with no event for this long (lost Stop), unless their NAS entry sets `nas.<name>.idle.timeout`; the exported stop time is the session's last event |

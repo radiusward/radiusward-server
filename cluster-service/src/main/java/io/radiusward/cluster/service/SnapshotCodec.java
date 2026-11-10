@@ -38,6 +38,8 @@ public final class SnapshotCodec {
 
     static final int RESERVATIONS_PER_CHUNK = 512;
 
+    static final int SQNS_PER_CHUNK = 1024;
+
     /** Receives encoded snapshot messages; must not return until the bytes are written. */
     @FunctionalInterface
     public interface Sink {
@@ -60,6 +62,10 @@ public final class SnapshotCodec {
                                                     * ReservationChunkEncoder.ReservationsEncoder.sbeBlockLength()))
                             + 64]);
 
+    private final io.radiusward.protocol.SqnChunkEncoder sqnChunkEncoder = new io.radiusward.protocol.SqnChunkEncoder();
+    private final io.radiusward.protocol.SqnChunkDecoder sqnChunkDecoder = new io.radiusward.protocol.SqnChunkDecoder();
+    private long expectedSqns;
+    private long loadedSqns;
     private final ReservationChunkEncoder reservationChunkEncoder = new ReservationChunkEncoder();
     private final ReservationChunkDecoder reservationChunkDecoder = new ReservationChunkDecoder();
     private final MessageHeaderEncoder headerEncoder = new MessageHeaderEncoder();
@@ -111,7 +117,8 @@ public final class SnapshotCodec {
                 .memberPositionCount(reportedMembers(machine.export()))
                 .activeVersion(machine.versions().activeRaw())
                 .clusterSize(machine.versions().clusterSize())
-                .reservationCount(machine.reservations().size());
+                .reservationCount(machine.reservations().size())
+                .sqnCount(machine.sqns().size());
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + snapshotHeaderEncoder.encodedLength());
 
         int slot = 0;
@@ -179,6 +186,7 @@ public final class SnapshotCodec {
         writeSinks(machine.export(), sink);
         writeMemberPositions(machine.export(), machine.versions(), sink);
         writeReservations(machine.reservations(), sink);
+        writeSqns(machine.sqns(), sink);
 
         footerEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
@@ -279,6 +287,33 @@ public final class SnapshotCodec {
         }
     }
 
+    /**
+     * Only when subscribers have sequence numbers: they exist once state version 8 is active. Sorted by key, so every
+     * member writes the same bytes.
+     */
+    private void writeSqns(org.agrona.collections.Long2LongHashMap sqns, Sink sink) {
+        if (sqns.isEmpty()) {
+            return;
+        }
+        long[] keys = new long[sqns.size()];
+        int n = 0;
+        for (org.agrona.collections.Long2LongHashMap.KeyIterator it =
+                        sqns.keySet().iterator();
+                it.hasNext(); ) {
+            keys[n++] = it.nextValue();
+        }
+        java.util.Arrays.sort(keys);
+        for (int from = 0; from < keys.length; from += SQNS_PER_CHUNK) {
+            int count = Math.min(SQNS_PER_CHUNK, keys.length - from);
+            io.radiusward.protocol.SqnChunkEncoder.SqnsEncoder group =
+                    sqnChunkEncoder.wrapAndApplyHeader(buffer, 0, headerEncoder).sqnsCount(count);
+            for (int i = from; i < from + count; i++) {
+                group.next().subscriberKey(keys[i]).sqn(sqns.get(keys[i]));
+            }
+            sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sqnChunkEncoder.encodedLength());
+        }
+    }
+
     private void writeKeys(long[] keys, long[] expiries, int count, Sink sink) {
         ExactKeyChunkEncoder.KeysEncoder group = exactKeyChunkEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
@@ -323,6 +358,9 @@ public final class SnapshotCodec {
                 }
                 if (headerDecoder.version() >= 6) {
                     expectedReservations = snapshotHeaderDecoder.reservationCount();
+                }
+                if (headerDecoder.version() >= 8) {
+                    expectedSqns = snapshotHeaderDecoder.sqnCount();
                 }
             }
             case SessionChunkDecoder.TEMPLATE_ID -> {
@@ -406,17 +444,25 @@ public final class SnapshotCodec {
                     loadedReservations++;
                 }
             }
+            case io.radiusward.protocol.SqnChunkDecoder.TEMPLATE_ID -> {
+                sqnChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                for (io.radiusward.protocol.SqnChunkDecoder.SqnsDecoder q : sqnChunkDecoder.sqns()) {
+                    machine.restoreSqn(q.subscriberKey(), q.sqn());
+                    loadedSqns++;
+                }
+            }
             case SnapshotFooterDecoder.TEMPLATE_ID -> {
                 footerDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
                 if (loadedSessions != expectedSessions
                         || loadedKeys != expectedKeys
                         || loadedSinks != expectedSinks
                         || loadedMembers != expectedMembers
-                        || loadedReservations != expectedReservations) {
+                        || loadedReservations != expectedReservations
+                        || loadedSqns != expectedSqns) {
                     throw new IllegalStateException("snapshot incomplete: sessions " + loadedSessions + "/"
                             + expectedSessions + ", keys " + loadedKeys + "/" + expectedKeys + ", sinks "
                             + loadedSinks + "/" + expectedSinks + ", reservations " + loadedReservations + "/"
-                            + expectedReservations);
+                            + expectedReservations + ", sqns " + loadedSqns + "/" + expectedSqns);
                 }
                 complete = true;
             }

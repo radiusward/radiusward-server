@@ -132,7 +132,8 @@ public record ClusterNodeConfig(
                         .toMillis(),
                 supportedStateVersion(config),
                 config.integer(
-                        "service.auth.reservations.max", AccountingStateMachine.Settings.DEFAULT_MAX_RESERVATIONS));
+                        "service.auth.reservations.max", AccountingStateMachine.Settings.DEFAULT_MAX_RESERVATIONS),
+                config.integer("service.sim.subscribers.max", AccountingStateMachine.Settings.DEFAULT_MAX_SUBSCRIBERS));
         return new ClusterNodeConfig(
                 nodeId,
                 members,

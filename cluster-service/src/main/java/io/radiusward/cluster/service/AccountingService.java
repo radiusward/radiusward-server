@@ -65,6 +65,7 @@ public final class AccountingService implements ClusteredService {
     private final StateReportEncoder stateReportEncoder = new StateReportEncoder();
     private final io.radiusward.protocol.ActivateVersionResultEncoder activationEncoder =
             new io.radiusward.protocol.ActivateVersionResultEncoder();
+    private final io.radiusward.protocol.SqnResultEncoder sqnEncoder = new io.radiusward.protocol.SqnResultEncoder();
     private final io.radiusward.protocol.AuthReservationResultEncoder reservationEncoder =
             new io.radiusward.protocol.AuthReservationResultEncoder();
     private boolean holdWarned;
@@ -222,6 +223,23 @@ public final class AccountingService implements ClusteredService {
                                 });
                 if (session != null) {
                     reply(session, MessageHeaderEncoder.ENCODED_LENGTH + reservationEncoder.encodedLength());
+                }
+            }
+            case io.radiusward.protocol.SqnNextDecoder.TEMPLATE_ID -> {
+                applier.apply(buffer, offset, header.position(), timestamp);
+                long sqn = applier.sqnResult();
+                sqnEncoder
+                        .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                        .correlationId(applier.sqnRequest().correlationId())
+                        .outcome(
+                                sqn >= 0
+                                        ? io.radiusward.protocol.SqnOutcome.OK
+                                        : sqn == AccountingStateMachine.SQN_UNSUPPORTED
+                                                ? io.radiusward.protocol.SqnOutcome.UNSUPPORTED
+                                                : io.radiusward.protocol.SqnOutcome.CAPACITY)
+                        .sqn(Math.max(sqn, 0));
+                if (session != null) {
+                    reply(session, MessageHeaderEncoder.ENCODED_LENGTH + sqnEncoder.encodedLength());
                 }
             }
             case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);

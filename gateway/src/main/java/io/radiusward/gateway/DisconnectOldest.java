@@ -38,6 +38,11 @@ final class DisconnectOldest implements SessionLimits {
     }
 
     @Override
+    public long nextSqn(long subscriberKey, long floor) {
+        return limits.nextSqn(subscriberKey, floor);
+    }
+
+    @Override
     public int reserve(long userKey, long deviceKey, int maxDevices) {
         int result = limits.reserve(userKey, deviceKey, maxDevices);
         CoaService service = coa.get();

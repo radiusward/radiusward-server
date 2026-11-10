@@ -43,6 +43,7 @@ final class ClusterClientAgent implements Agent, EgressListener {
     private final GatewayStats stats;
     private final ClusterReservations reservations;
     private ClusterQueries queries;
+    private final io.radiusward.protocol.SqnResultDecoder sqnResult = new io.radiusward.protocol.SqnResultDecoder();
     private final io.radiusward.protocol.AuthReservationResultDecoder reservationResult =
             new io.radiusward.protocol.AuthReservationResultDecoder();
     private final BufferClaim claim = new BufferClaim();
@@ -161,6 +162,14 @@ final class ClusterClientAgent implements Agent, EgressListener {
                 reservations.deliver(
                         reservationResult.correlationId(),
                         reservationResult.result().value());
+            }
+            return;
+        }
+        if (headerDecoder.templateId() == io.radiusward.protocol.SqnResultDecoder.TEMPLATE_ID) {
+            if (reservations != null) {
+                sqnResult.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                reservations.deliverSqn(
+                        sqnResult.correlationId(), sqnResult.outcome().value(), sqnResult.sqn());
             }
             return;
         }

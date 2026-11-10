@@ -2,7 +2,7 @@
 
 SBE messages between gateways, the cluster and tools, plus the snapshot format. Schema:
 [`protocol/src/main/resources/sbe/radiusward-schema.xml`](../protocol/src/main/resources/sbe/radiusward-schema.xml)
-(schema id 7101, version 7, little endian); Java codecs are generated at build time into
+(schema id 7101, version 8, little endian); Java codecs are generated at build time into
 `io.radiusward.protocol`.
 
 ## Messages
@@ -20,9 +20,11 @@ SBE messages between gateways, the cluster and tools, plus the snapshot format. 
 | 14 / 15 | `ActivateVersion` / `ActivateVersionResult` | admin → cluster → admin | v5: state versions (ADR 0005) |
 | 16 / 17 | `AuthReservation` / `AuthReservationResult` | gateway → cluster → gateway | v6: simultaneous use (ADR 0023) |
 | 18 / 19 | `UserSessionsQuery` / `UserSessionsReport` | admin, gateway → cluster | v7: a user's active sessions with their identifying attributes (ADR 0036) |
+| 29 / 30 | `SqnNext` / `SqnResult` | gateway → cluster → gateway | v8: the next EAP-AKA sequence number of a SIM subscriber (ADR 0061) |
 | 27 / 28 | `SessionPageQuery` / `SessionPageReport` | gateway → cluster | v7: a page of active sessions with a user (the store sweep) |
 | 20–23 | `SnapshotHeader`, `SessionChunk`, `ExactKeyChunk`, `SnapshotFooter` | snapshot | state machine snapshot |
 | 24 / 25 | `SinkChunk`, `MemberPositionChunk` | snapshot | v2: sinks, member positions |
+| 31 | `SqnChunk` | snapshot | v8: subscribers' sequence numbers, sorted by key, only when there are any |
 | 26 | `ReservationChunk` | snapshot | v6: reservations, only when there are any; `SessionChunk` v7: first event and identifying attributes per session |
 
 ### AccountingCommand
@@ -63,6 +65,10 @@ compute keys the dedup state has never seen.
 
 ### Simultaneous use (v6, ADR 0023)
 
+- `SqnNext` (`correlationId`, `gatewayId`, `subscriberKey`, `floor`) → `SqnResult` (`correlationId`, `outcome`
+  `OK` \| `UNSUPPORTED` \| `CAPACITY`, `sqn`), sent after the commit (state version 8, ADR 0061): the next SEQ above
+  the subscriber's last SQN and above `floor` (the store's `SIM-SQN`, or the USIM's after a resynchronisation), with
+  IND = 0, at most 48 bits; `service.sim.subscribers.max` bounds the table.
 - `AuthReservation` (`correlationId`, `gatewayId`, `userKey`, `deviceKey`, `maxDevices`, `ttlSeconds`) →
   `AuthReservationResult` (`correlationId`, `result` `GRANTED` \| `DENIED` \| `UNSUPPORTED` \| `CAPACITY`), sent after
   the commit. Correlation ids of reservations carry bit 62 and the worker index.

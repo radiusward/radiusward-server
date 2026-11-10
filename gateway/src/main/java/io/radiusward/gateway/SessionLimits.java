@@ -23,8 +23,26 @@ public interface SessionLimits {
     /** No answer in time, the cluster unreachable or full: the request must not be answered. */
     int UNAVAILABLE = 3;
 
+    /** {@link #nextSqn}: no answer in time, the cluster unreachable or full. */
+    long SQN_UNAVAILABLE = -1;
+
+    /** {@link #nextSqn}: the cluster does not keep sequence numbers yet (state version 8 not active). */
+    long SQN_UNSUPPORTED = -2;
+
     /** Without a cluster (tests): every request is {@link #UNAVAILABLE}. */
     SessionLimits NONE = (userKey, deviceKey, maxDevices) -> UNAVAILABLE;
+
+    /**
+     * The next SQN of a SIM subscriber for an EAP-AKA challenge, from the cluster (state version 8, ADR 0061): above
+     * the last one any gateway used and above {@code floor}.
+     *
+     * @param subscriberKey {@link UserKeys#user} of the IMSI
+     * @param floor the store's {@code SIM-SQN}, or after a resynchronisation the USIM's SQN
+     * @return the SQN, {@link #SQN_UNAVAILABLE} or {@link #SQN_UNSUPPORTED}
+     */
+    default long nextSqn(long subscriberKey, long floor) {
+        return SQN_UNAVAILABLE;
+    }
 
     /**
      * @param userKey {@link UserKeys#user}

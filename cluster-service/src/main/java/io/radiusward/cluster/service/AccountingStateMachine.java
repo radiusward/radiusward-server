@@ -42,7 +42,7 @@ public final class AccountingStateMachine {
      * devices of sessions, {@code AuthReservation} (simultaneous use); 7 identifying attributes and first event of
      * sessions.
      */
-    public static final int STATE_VERSION = 7;
+    public static final int STATE_VERSION = 8;
 
     /** {@link #reserve} results, matching the protocol's {@code ReservationResult}. */
     public static final int RESERVATION_GRANTED = 0;
@@ -81,6 +81,8 @@ public final class AccountingStateMachine {
      *     tests of upgrades, {@code debug.state.version.supported})
      * @param maxReservations reservations held at once; beyond it a request is answered {@code CAPACITY}. Like
      *     {@code maxSessions}, equal on every member.
+     * @param maxSubscribers SIM subscribers with a sequence number (state version 8, ADR 0061); beyond it a new one is
+     *     answered {@code CAPACITY}. Equal on every member.
      */
     public record Settings(
             int maxSessions,
@@ -88,9 +90,28 @@ public final class AccountingStateMachine {
             long idleTimeoutMs,
             long exactKeyWindowMs,
             int supportedVersion,
-            int maxReservations) {
+            int maxReservations,
+            int maxSubscribers) {
 
         public static final int DEFAULT_MAX_RESERVATIONS = 65_536;
+        public static final int DEFAULT_MAX_SUBSCRIBERS = 100_000;
+
+        public Settings(
+                int maxSessions,
+                long tombstoneMs,
+                long idleTimeoutMs,
+                long exactKeyWindowMs,
+                int supportedVersion,
+                int maxReservations) {
+            this(
+                    maxSessions,
+                    tombstoneMs,
+                    idleTimeoutMs,
+                    exactKeyWindowMs,
+                    supportedVersion,
+                    maxReservations,
+                    DEFAULT_MAX_SUBSCRIBERS);
+        }
 
         public Settings(
                 int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs, int supportedVersion) {
@@ -112,6 +133,9 @@ public final class AccountingStateMachine {
     private final ExportState export = new ExportState();
     private final StateVersions versions;
     private final Reservations reservations;
+    /** The last SQN handed out per SIM subscriber (state version 8, ADR 0061); -1 = none. */
+    private final org.agrona.collections.Long2LongHashMap sqns = new org.agrona.collections.Long2LongHashMap(-1);
+
     private SessionListener sessionListener;
 
     private long applied;
@@ -713,6 +737,51 @@ public final class AccountingStateMachine {
                 store.identity(slot, identity, offset, length);
             }
         }
+    }
+
+    /** {@link #nextSqn} result: state version 8 is not active yet. */
+    public static final long SQN_UNSUPPORTED = -1;
+
+    /** {@link #nextSqn} result: no room for another subscriber. */
+    public static final long SQN_CAPACITY = -2;
+
+    private static final long SQN_MAX = (1L << 48) - 1;
+
+    /**
+     * The next sequence number of a SIM subscriber for an EAP-AKA challenge (state version 8, ADR 0061): the next SEQ
+     * above both the last one handed out and {@code floor}, with IND = 0 (3GPP TS 33.102 Annex C: SQN = SEQ ‖ IND, IND
+     * of 5 bits). {@code floor} is the store's {@code SIM-SQN}, or after a resynchronisation the SQN the USIM reported,
+     * so the next challenge is fresh to it. Every member hands out the same numbers: the log decides.
+     *
+     * @return the SQN (48 bits), {@link #SQN_UNSUPPORTED} or {@link #SQN_CAPACITY}
+     */
+    public long nextSqn(long subscriberKey, long floor) {
+        if (!atLeast(8)) {
+            return SQN_UNSUPPORTED;
+        }
+        long last = sqns.get(subscriberKey);
+        if (last == -1 && sqns.size() >= settings.maxSubscribers()) {
+            return SQN_CAPACITY;
+        }
+        long base = Math.max(last, Math.max(0, Math.min(floor, SQN_MAX)));
+        long next = Math.min(((base >>> 5) + 1) << 5, SQN_MAX & ~31L);
+        sqns.put(subscriberKey, next);
+        digest = mix(digest, 0x5_19_0008L, subscriberKey, next, 0);
+        return next;
+    }
+
+    /** The last SQN of a subscriber, -1 if none (tests, the snapshot). */
+    public long sqn(long subscriberKey) {
+        return sqns.get(subscriberKey);
+    }
+
+    public org.agrona.collections.Long2LongHashMap sqns() {
+        return sqns;
+    }
+
+    /** From a snapshot. */
+    public void restoreSqn(long subscriberKey, long sqn) {
+        sqns.put(subscriberKey, sqn);
     }
 
     public void restoreReservation(long userKey, long deviceKey, long expiry) {

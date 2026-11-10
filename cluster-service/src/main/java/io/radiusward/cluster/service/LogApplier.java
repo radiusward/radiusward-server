@@ -43,6 +43,9 @@ public final class LogApplier {
     /** An {@code AuthReservation}; {@link #reservationResult()} holds the result (state version 6). */
     public static final int AUTH_RESERVATION = -6;
 
+    /** An {@code SqnNext}; {@link #sqnResult()} holds the result (state version 8, ADR 0061). */
+    public static final int SQN_NEXT = -7;
+
     private final AccountingStateMachine machine;
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final AccountingCommandDecoder commandDecoder = new AccountingCommandDecoder();
@@ -60,6 +63,8 @@ public final class LogApplier {
     private final io.radiusward.protocol.AuthReservationDecoder reservationDecoder =
             new io.radiusward.protocol.AuthReservationDecoder();
     private int reservationResult;
+    private final io.radiusward.protocol.SqnNextDecoder sqnDecoder = new io.radiusward.protocol.SqnNextDecoder();
+    private long sqnResult;
     private int activationResult;
     private int activatedVersion;
     private final byte[] sinkName = new byte[ExportState.NAME_LENGTH];
@@ -129,6 +134,11 @@ public final class LogApplier {
                         timestamp);
                 yield AUTH_RESERVATION;
             }
+            case io.radiusward.protocol.SqnNextDecoder.TEMPLATE_ID -> {
+                sqnDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+                sqnResult = machine.nextSqn(sqnDecoder.subscriberKey(), sqnDecoder.floor());
+                yield SQN_NEXT;
+            }
             default -> NOT_A_COMMAND;
         };
     }
@@ -136,6 +146,16 @@ public final class LogApplier {
     /** The {@code AuthReservation} decoded by the last {@link #apply} that returned {@link #AUTH_RESERVATION}. */
     public io.radiusward.protocol.AuthReservationDecoder reservation() {
         return reservationDecoder;
+    }
+
+    /** The {@code SqnNext} decoded by the last {@link #apply} that returned {@link #SQN_NEXT}. */
+    public io.radiusward.protocol.SqnNextDecoder sqnRequest() {
+        return sqnDecoder;
+    }
+
+    /** {@link AccountingStateMachine#nextSqn} result of the last {@link #SQN_NEXT}. */
+    public long sqnResult() {
+        return sqnResult;
     }
 
     /** {@link AccountingStateMachine#reserve} result of the last {@link #AUTH_RESERVATION}. */
