@@ -285,6 +285,8 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.pool.<name>.exhausted` | `reject` | an empty pool: `reject`, or `accept` without an address |
 | `auth.pool.sessions` | `true` | an address of an open session in `accounting_session` is taken; `false`: the lease alone (no PostgreSQL sink) |
 | `auth.pool.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the pools; the gateway creates and fills `ip_pool`; unreachable = no answer |
+| `auth.rules` | none | a rules file applied to Access-Accepts: `if <conditions> { reply … / remove … / reject / stop }` ([ADR 0051](adr/0051-rules.md)); a file that does not parse stops the gateway |
+| `auth.rules.reload.interval` | `5s` | how often the rules file is checked for changes; a broken change keeps the previous rules; `0s` = never |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |
 | `nas.<name>.auth.stores` | all of `auth.stores` | the stores asked for this NAS entry, in order |
 | `nas.<name>.reply.vendors` | from `nas.<name>.vendor` | vendors whose attributes this entry's Access-Accepts carry (dictionary vendor names, `all`, `none`); standard attributes are always sent ([ADR 0022](adr/0022-reply-attributes.md)). Without it: the vendor of `nas.<name>.vendor` if it names a dictionary vendor (`juniper` also gets `Unisphere`), else everything |

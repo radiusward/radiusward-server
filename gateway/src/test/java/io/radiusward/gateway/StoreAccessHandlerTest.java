@@ -392,6 +392,31 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void rulesChangeTheReplyOrReject(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        java.nio.file.Path file = dir.resolve("rules");
+        java.nio.file.Files.writeString(file, """
+                if Group == staff {
+                    reply Reply-Message := "staff of %{NAS-Identifier}"
+                }
+                if User-Name == mallory {
+                    reject
+                }
+                """);
+        main.user(
+                        "alice",
+                        List.of(item("Cleartext-Password", ":=", "a")),
+                        List.of(),
+                        new UserRecord.Group("staff", List.of(), List.of()))
+                .user("mallory", List.of(item("Cleartext-Password", ":=", "a")), List.of());
+        StoreAccessHandler h = handler();
+        h.rules(new RulesFile(file, Duration.ZERO, name -> DICTIONARY.find(name) != null, () -> now[0]));
+        assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(reply().findAttribute(18)).as("Reply-Message").isPositive();
+        assertThat(pap(h, "mallory", "a")).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "mallory", "wrong")).isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
     void groupsApplyWhenTheirChecksMatch() {
         UserRecord.Group staff = new UserRecord.Group(
                 "staff", List.of(item("NAS-Port-Type", "==", "Ethernet")), List.of(item("Filter-Id", "=", "staff")));

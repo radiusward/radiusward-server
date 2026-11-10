@@ -302,6 +302,7 @@ public final class Gateway implements AutoCloseable {
                     AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
             handler.limits(counters, zone); // ADR 0049
             handler.pools(pools); // ADR 0050
+            handler.rules(RulesFile.from(config, name -> dictionary.find(name) != null)); // ADR 0051
             return handler;
         };
     }

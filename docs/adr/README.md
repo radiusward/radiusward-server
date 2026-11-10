@@ -52,5 +52,6 @@
 | [0048](0048-password-formats.md) | yescrypt (ported reference), MD5-crypt, MD5/SMD5, unsalted SHA/SHA-2, LM: for migrations | Accepted |
 | [0049](0049-time-and-usage-limits.md) | Login-Time windows, usage counters over the exported sessions, Session-Timeout cut to the earliest end | Accepted |
 | [0050](0050-ip-pools.md) | IPv4 pools in PostgreSQL, free after the lease and the exported Stop, sticky per device | Accepted |
+| [0051](0051-rules.md) | A small rule layer on Access-Accepts: request conditions, groups, reply changes, reject | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

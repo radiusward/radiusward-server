@@ -239,6 +239,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (pooled != ACCEPT) {
             return pooled;
         }
+        RulesFile r = rules;
+        if (r != null && !r.current().apply(ruleRequest(request, found.user()), a.reply())) {
+            return REJECT;
+        }
         encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
         writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
         writeEapSuccess(context, method);
@@ -867,6 +871,41 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             replace(a.reply(), "Session-Timeout", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
         }
         return ACCEPT;
+    }
+
+    // ---- rules (ADR 0051) ---------------------------------------------------------------------------------------
+
+    private volatile RulesFile rules;
+
+    void rules(RulesFile rules) {
+        this.rules = rules;
+    }
+
+    private Rules.Request ruleRequest(RadiusPacket request, UserRecord user) {
+        return new Rules.Request() {
+            @Override
+            public String value(String attribute) {
+                AttributeDef def = dictionary.find(attribute);
+                if (def == null || def.vendorId() != 0) {
+                    return null;
+                }
+                int at = request.findAttribute(def.number());
+                return at < 0
+                        ? null
+                        : AttributeText.decode(
+                                def, request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
+            }
+
+            @Override
+            public boolean inGroup(String group) {
+                for (UserRecord.Group g : user.groups()) {
+                    if (g.name().equalsIgnoreCase(group) && checks(g.check(), request, new ArrayList<>()) != null) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        };
     }
 
     // ---- IP pools (ADR 0050) ------------------------------------------------------------------------------------
