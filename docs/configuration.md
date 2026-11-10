@@ -120,6 +120,9 @@ Sessions are found in the replicated state, so any gateway reaches any session.
 | `coa.api.token` | — | bearer token of the HTTP API on the management port (`POST /coa/disconnect`, `/coa/update`); at least 16 characters, use `${env:...}`; without it there is no API |
 | `coa.simultaneous.use` | `reject` | over a user's `Simultaneous-Use`: `reject` the new device, or `disconnect-oldest`: the user's oldest session gets a Disconnect-Request and the new device is let in once the NAS's Accounting-Stop freed the place |
 | `coa.simultaneous.use.wait` | `3s` | how long the new device's Access-Request waits for that Stop (keep below the NAS's timeout × retries) |
+| `coa.sweep.enabled` | `false` | the store sweep, on one gateway: users with active sessions looked up again; rejected now → Disconnect, changed reply items → CoA |
+| `coa.sweep.interval` / `coa.sweep.rate` | `15m` / `20` | time between sweeps; store lookups per second at most (spare the directory) |
+| `coa.sweep.missing` | `keep` | a user no store has any more: `keep` (EAP-TLS devices with a certificate alone are in no store) or `disconnect` |
 | `nas.<name>.coa.address` | the entry's address, else the session's NAS-IP-Address | where the NAS's dynamic-authorization server listens (a NAS on RadSec gets the request on its connection instead) |
 | `nas.<name>.coa.port` | `3799` | its UDP port |
 | `nas.<name>.coa.secret` | `nas.<name>.secret` | its shared secret |

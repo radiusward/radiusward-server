@@ -1,7 +1,8 @@
 # ADR 0036: CoA and Disconnect, and sessions' identifying attributes
 
 Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.12
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1 (session identity in the replicated state), 2 (sender, API) and 3 (Simultaneous-Use) done.
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1 (session identity in the replicated state), 2 (sender, API), 3 (Simultaneous-Use) and 4 (store sweep)
+done.
 
 ## Context
 RFC 5176 lets a server change (CoA-Request) or end (Disconnect-Request) a session on the NAS. The request must name
@@ -87,6 +88,21 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - `radiusward_gateway_simultaneous_use_disconnects_total{result}` counts the disconnects.
   - The cluster keeps deciding alone: it frees the place only when the Stop is applied, so the limit is never
     exceeded, even while a NAS is slow to send the Stop.
+
+- **Store sweep** (milestone 4, `coa.sweep.enabled` on one gateway): every `coa.sweep.interval` (15 min) the
+  gateway pages through the active sessions with a user (`SessionPageQuery`) and looks each user up again, at most
+  `coa.sweep.rate` (20) lookups per second.
+  - The lookup is the login's authorization, checks and groups included, against a request made of the session's
+    identifying attributes. Conditions on other attributes do not match there.
+  - A user the stores now reject (disabled, `Auth-Type := Reject`) gets a Disconnect-Request on every session, and
+    again at every sweep while a session is still active (its NAS refused, or sent no Stop).
+  - A user whose reply items, filtered for the NAS's vendors, changed since the previous sweep gets a CoA-Request
+    with all of them. The first sweep only records them.
+  - A user no store has any more is kept, because EAP-TLS devices with a certificate alone are in no store, unless
+    `coa.sweep.missing = disconnect`.
+  - A store outage changes nothing.
+  - Running the sweep on two gateways only repeats requests: a NAS NAKs a session it no longer has.
+  - `radiusward_gateway_store_sweep_total{result}` counts sweeps, users, disconnects, changes and outages.
 
 ## Consequences
 - Any gateway can name any active session to its NAS, and that survives member restarts and snapshots.

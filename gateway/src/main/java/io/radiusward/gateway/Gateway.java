@@ -50,6 +50,7 @@ public final class Gateway implements AutoCloseable {
     private DynamicAuthorization dynamicAuthorization;
     private CoaService coaService;
     private CoaApi coaApi;
+    private StoreSweep sweep;
 
     private Gateway(
             GatewayConfig config,
@@ -227,6 +228,10 @@ public final class Gateway implements AutoCloseable {
                 gateway.coaService =
                         new CoaService(coa, registry, queries, dynamic, dictionary, link, radsecIndex, radsecAgent);
                 coaHolder.set(gateway.coaService);
+                if (coa.sweep().enabled() && handler instanceof StoreAccessHandler stores) {
+                    gateway.sweep = new StoreSweep(coa.sweep(), gateway.coaService, stores);
+                    gateway.sweep.start();
+                }
                 if (coa.token() != null) {
                     gateway.coaApi = new CoaApi(gateway.coaService, coa.token());
                 }
@@ -448,6 +453,9 @@ public final class Gateway implements AutoCloseable {
             dynamicAuthorization.writeMetrics(w, id);
             coaService.writeMetrics(w, id);
         }
+        if (sweep != null) {
+            sweep.writeMetrics(w, id);
+        }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());
         JvmMetrics.write(w);
@@ -458,6 +466,9 @@ public final class Gateway implements AutoCloseable {
     public void close() {
         if (coaApi != null) {
             coaApi.close();
+        }
+        if (sweep != null) {
+            sweep.stop();
         }
         CloseHelper.closeAll(runners);
         if (handler instanceof AutoCloseable closeable) {

@@ -245,6 +245,55 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
     }
 
+    /**
+     * What the store sweep learns about a user with active sessions (ADR 0036).
+     *
+     * @param code {@link #ACCEPT} (still let in), {@link #REJECT} (rejected now: disabled, or {@code Auth-Type :=
+     *     Reject}), {@link #DROP} (no store answered); {@code found}: whether a store has the user
+     * @param reply the reply items the user would get now, for the NAS entry's vendors
+     */
+    record Review(int code, boolean found, List<AttributeItem> reply) {}
+
+    private final AccessContext sweepContext = new AccessContext();
+    private final UnsafeBuffer sweepRequest = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
+
+    /**
+     * Looks a user with active sessions up again, as at login: its checks and groups evaluated against a request
+     * made of the session's identifying attributes (conditions on other attributes do not match). One caller at a
+     * time: the sweep has its own context and caches.
+     */
+    synchronized Review review(NasClient nas, String userName, byte[] identity) {
+        int length = RadiusPacket.HEADER_LENGTH + identity.length;
+        sweepRequest.putByte(0, (byte) io.radiusward.radius.codec.RadiusCode.ACCESS_REQUEST);
+        sweepRequest.putByte(1, (byte) 0);
+        sweepRequest.putShort(2, (short) length, java.nio.ByteOrder.BIG_ENDIAN);
+        sweepRequest.setMemory(4, 16, (byte) 0);
+        sweepRequest.putBytes(RadiusPacket.HEADER_LENGTH, identity);
+        sweepContext.reset(sweepRequest, 0, length, nas);
+        Found found;
+        try {
+            found = find(cache(sweepContext), nas.name(), userName);
+        } catch (StoreUnavailableException e) {
+            return new Review(DROP, false, List.of());
+        }
+        if (found == null) {
+            return new Review(REJECT, false, List.of());
+        }
+        Authorization a = authorize(sweepContext, userName, false);
+        if (a.code() != ACCEPT) {
+            return new Review(a.code(), true, List.of());
+        }
+        IntHashSet vendors = stores.replyVendors().get(nas.name());
+        List<AttributeItem> reply = new ArrayList<>();
+        for (AttributeItem item : a.reply()) {
+            AttributeDef def = dictionary.find(item.attribute());
+            if (def != null && (def.vendorId() == 0 || vendors == null || vendors.contains(def.vendorId()))) {
+                reply.add(item);
+            }
+        }
+        return new Review(ACCEPT, true, reply);
+    }
+
     /** Looks {@code userName} up and evaluates its checks and groups; {@code optional}: a missing user is empty. */
     private Authorization authorize(AccessContext context, String userName, boolean optional) {
         RadiusPacket request = context.request();

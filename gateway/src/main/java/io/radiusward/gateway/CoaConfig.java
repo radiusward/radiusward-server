@@ -25,6 +25,7 @@ import java.util.TreeMap;
  * @param disconnectOldest {@code coa.simultaneous.use = disconnect-oldest}: over the Simultaneous-Use limit, the
  *     user's oldest session is disconnected instead of the new one rejected
  * @param simultaneousUseWait how long the new one waits for the disconnected session's Accounting-Stop
+ * @param sweep the store sweep
  */
 public record CoaConfig(
         boolean enabled,
@@ -33,10 +34,23 @@ public record CoaConfig(
         String token,
         Map<String, Target> targets,
         boolean disconnectOldest,
-        Duration simultaneousUseWait) {
+        Duration simultaneousUseWait,
+        Sweep sweep) {
 
     public CoaConfig(boolean enabled, Duration timeout, int retries, String token, Map<String, Target> targets) {
-        this(enabled, timeout, retries, token, targets, false, Duration.ofSeconds(3));
+        this(enabled, timeout, retries, token, targets, false, Duration.ofSeconds(3), Sweep.OFF);
+    }
+
+    /**
+     * The store sweep ({@code coa.sweep.*}): users with active sessions looked up again, disabled ones disconnected,
+     * changed reply items sent as CoA.
+     *
+     * @param interval time between the starts of two sweeps
+     * @param rate store lookups per second at most
+     * @param disconnectMissing whether a user no store has any more is disconnected ({@code coa.sweep.missing})
+     */
+    public record Sweep(boolean enabled, Duration interval, int rate, boolean disconnectMissing) {
+        public static final Sweep OFF = new Sweep(false, Duration.ofMinutes(15), 20, false);
     }
 
     public static final int DEFAULT_PORT = 3799;
@@ -91,7 +105,24 @@ public record CoaConfig(
                 token.isEmpty() ? null : token,
                 Map.copyOf(targets),
                 overLimit.equals("disconnect-oldest"),
-                config.duration("coa.simultaneous.use.wait", Duration.ofSeconds(3)));
+                config.duration("coa.simultaneous.use.wait", Duration.ofSeconds(3)),
+                sweep(config));
+    }
+
+    private static Sweep sweep(Config config) {
+        int rate = config.integer("coa.sweep.rate", 20);
+        if (rate < 1) {
+            throw new ConfigException("coa.sweep.rate: at least 1 lookup per second");
+        }
+        String missing = config.string("coa.sweep.missing", "keep").trim();
+        if (!missing.equals("keep") && !missing.equals("disconnect")) {
+            throw new ConfigException("coa.sweep.missing: keep or disconnect, got " + missing);
+        }
+        return new Sweep(
+                config.bool("coa.sweep.enabled", false),
+                config.duration("coa.sweep.interval", Duration.ofMinutes(15)),
+                rate,
+                missing.equals("disconnect"));
     }
 
     Target target(String nas) {
