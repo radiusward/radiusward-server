@@ -22,8 +22,22 @@ import java.util.TreeMap;
  * @param retries how many times a request is sent again ({@code coa.retries})
  * @param token the bearer token of the HTTP API ({@code coa.api.token}); {@code null}: no HTTP API
  * @param targets per NAS entry name: where its dynamic-authorization server listens
+ * @param disconnectOldest {@code coa.simultaneous.use = disconnect-oldest}: over the Simultaneous-Use limit, the
+ *     user's oldest session is disconnected instead of the new one rejected
+ * @param simultaneousUseWait how long the new one waits for the disconnected session's Accounting-Stop
  */
-public record CoaConfig(boolean enabled, Duration timeout, int retries, String token, Map<String, Target> targets) {
+public record CoaConfig(
+        boolean enabled,
+        Duration timeout,
+        int retries,
+        String token,
+        Map<String, Target> targets,
+        boolean disconnectOldest,
+        Duration simultaneousUseWait) {
+
+    public CoaConfig(boolean enabled, Duration timeout, int retries, String token, Map<String, Target> targets) {
+        this(enabled, timeout, retries, token, targets, false, Duration.ofSeconds(3));
+    }
 
     public static final int DEFAULT_PORT = 3799;
 
@@ -66,7 +80,18 @@ public record CoaConfig(boolean enabled, Duration timeout, int retries, String t
                 throw new ConfigException(prefix + "address: unknown host " + address, e);
             }
         }
-        return new CoaConfig(true, timeout, retries, token.isEmpty() ? null : token, Map.copyOf(targets));
+        String overLimit = config.string("coa.simultaneous.use", "reject").trim();
+        if (!overLimit.equals("reject") && !overLimit.equals("disconnect-oldest")) {
+            throw new ConfigException("coa.simultaneous.use: reject or disconnect-oldest, got " + overLimit);
+        }
+        return new CoaConfig(
+                true,
+                timeout,
+                retries,
+                token.isEmpty() ? null : token,
+                Map.copyOf(targets),
+                overLimit.equals("disconnect-oldest"),
+                config.duration("coa.simultaneous.use.wait", Duration.ofSeconds(3)));
     }
 
     Target target(String nas) {

@@ -131,6 +131,8 @@ public final class Gateway implements AutoCloseable {
                 .dirDeleteOnStart(true)
                 .dirDeleteOnShutdown(true));
         try {
+            java.util.concurrent.atomic.AtomicReference<CoaService> coaHolder =
+                    new java.util.concurrent.atomic.AtomicReference<>();
             GatewayStats stats = new GatewayStats();
             OneToOneRingBuffer toCluster = ring();
             OneToOneRingBuffer fromCluster = ring();
@@ -173,7 +175,17 @@ public final class Gateway implements AutoCloseable {
                             new org.agrona.concurrent.BackoffIdleStrategy(10, 20, 1_000, 1_000_000),
                             Gateway::error,
                             null,
-                            new AccessWorker(w, slots, handler, authStats, reservations.forWorker(w))));
+                            new AccessWorker(
+                                    w,
+                                    slots,
+                                    handler,
+                                    authStats,
+                                    coa.disconnectOldest()
+                                            ? new DisconnectOldest(
+                                                    reservations.forWorker(w),
+                                                    coaHolder::get,
+                                                    coa.simultaneousUseWait())
+                                            : reservations.forWorker(w))));
                 }
             }
             RadsecAgent radsecAgent = null;
@@ -214,6 +226,7 @@ public final class Gateway implements AutoCloseable {
                 gateway.dynamicAuthorization = dynamic;
                 gateway.coaService =
                         new CoaService(coa, registry, queries, dynamic, dictionary, link, radsecIndex, radsecAgent);
+                coaHolder.set(gateway.coaService);
                 if (coa.token() != null) {
                     gateway.coaApi = new CoaApi(gateway.coaService, coa.token());
                 }
@@ -433,6 +446,7 @@ public final class Gateway implements AutoCloseable {
         }
         if (dynamicAuthorization != null) {
             dynamicAuthorization.writeMetrics(w, id);
+            coaService.writeMetrics(w, id);
         }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());

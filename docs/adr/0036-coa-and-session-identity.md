@@ -1,7 +1,7 @@
 # ADR 0036: CoA and Disconnect, and sessions' identifying attributes
 
 Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.12
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1 (session identity in the replicated state) and 2 (sender, API) done.
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1 (session identity in the replicated state), 2 (sender, API) and 3 (Simultaneous-Use) done.
 
 ## Context
 RFC 5176 lets a server change (CoA-Request) or end (Disconnect-Request) a session on the NAS. The request must name
@@ -75,6 +75,18 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - `admin disconnect` and `admin coa` call it.
 - **Metrics**: `radiusward_gateway_coa_requests_total{result}`, and RadSec's `coa_sent`, `coa_no_connection` and
   `coa_answers`.
+
+- **Simultaneous-Use** (milestone 3, `coa.simultaneous.use = disconnect-oldest`; default `reject`): when the
+  cluster denies a new device its place, the access worker asks for the user's sessions and sends the oldest one, by
+  first event, a Disconnect-Request.
+  - Once the NAS acknowledged, the worker asks for the place again every 100 ms while the NAS's Accounting-Stop is
+    on its way, for at most `coa.simultaneous.use.wait` (3 s).
+  - Up to 3 sessions, oldest first.
+  - The NAS's retransmissions of the new Access-Request meanwhile are dropped as in flight.
+  - Sessions without an identity (from before version 7) are skipped.
+  - `radiusward_gateway_simultaneous_use_disconnects_total{result}` counts the disconnects.
+  - The cluster keeps deciding alone: it frees the place only when the Stop is applied, so the limit is never
+    exceeded, even while a NAS is slow to send the Stop.
 
 ## Consequences
 - Any gateway can name any active session to its NAS, and that survives member restarts and snapshots.

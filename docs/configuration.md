@@ -118,6 +118,8 @@ Sessions are found in the replicated state, so any gateway reaches any session.
 | `coa.enabled` | `false` | send CoA and Disconnect-Requests |
 | `coa.timeout` / `coa.retries` | `2s` / `2` | wait for an ACK or NAK, then send again; after the retries the result is `timeout` |
 | `coa.api.token` | — | bearer token of the HTTP API on the management port (`POST /coa/disconnect`, `/coa/update`); at least 16 characters, use `${env:...}`; without it there is no API |
+| `coa.simultaneous.use` | `reject` | over a user's `Simultaneous-Use`: `reject` the new device, or `disconnect-oldest`: the user's oldest session gets a Disconnect-Request and the new device is let in once the NAS's Accounting-Stop freed the place |
+| `coa.simultaneous.use.wait` | `3s` | how long the new device's Access-Request waits for that Stop (keep below the NAS's timeout × retries) |
 | `nas.<name>.coa.address` | the entry's address, else the session's NAS-IP-Address | where the NAS's dynamic-authorization server listens (a NAS on RadSec gets the request on its connection instead) |
 | `nas.<name>.coa.port` | `3799` | its UDP port |
 | `nas.<name>.coa.secret` | `nas.<name>.secret` | its shared secret |

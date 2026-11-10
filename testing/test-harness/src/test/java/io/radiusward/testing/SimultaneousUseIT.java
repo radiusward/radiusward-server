@@ -114,6 +114,94 @@ class SimultaneousUseIT {
         cluster.awaitConverged(); // every member counted alike
     }
 
+    /**
+     * {@code coa.simultaneous.use = disconnect-oldest} (ADR 0036): over the limit, the oldest session gets a
+     * Disconnect-Request; its NAS acknowledges and sends the Accounting-Stop, and the new device is let in.
+     */
+    @Test
+    void theOldestSessionIsDisconnectedInsteadOfTheNewOneRejected() throws Exception {
+        Path users =
+                Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"pw\", Simultaneous-Use := 1\n");
+        DatagramChannel coaNas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
+        java.util.List<String> disconnected = new java.util.concurrent.CopyOnWriteArrayList<>();
+        cluster = LocalCluster.start(
+                dir.resolve("cluster").toFile(),
+                3,
+                0,
+                LocalCluster.freePortBase(3),
+                new int[0],
+                Duration.ZERO,
+                id -> io.radiusward.exporter.ExportConfig.NONE,
+                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        Config settings = Config.of(Map.of(
+                "auth.stores",
+                "local",
+                "auth.store.local.type",
+                "file",
+                "auth.store.local.path",
+                users.toString(),
+                "auth.plugins.dir",
+                dir.resolve("plugins").toString(),
+                "coa.enabled",
+                "true",
+                "coa.simultaneous.use",
+                "disconnect-oldest",
+                "coa.timeout",
+                "500ms",
+                "nas." + LocalCluster.NAS_NAME + ".coa.port",
+                Integer.toString(((InetSocketAddress) coaNas.getLocalAddress()).getPort())));
+        AuthConfig auth = new AuthConfig(
+                true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
+        Gateway g0 = cluster.startGateway(
+                1,
+                0,
+                LocalCluster.registry(),
+                auth,
+                Gateway.storeHandler(settings, auth),
+                io.radiusward.gateway.RadsecConfig.DISABLED,
+                io.radiusward.gateway.CoaConfig.from(settings));
+        cluster.awaitLeader();
+        cluster.awaitGatewaysConnected();
+        exchangeAccounting(g0, accounting(1, "warm-up", "nobody", null));
+        try (AdminClient admin = cluster.admin()) {
+            LocalCluster.await(
+                    Duration.ofSeconds(30),
+                    "state version 7",
+                    () -> admin.state().activeVersion() >= 7);
+        }
+
+        // the NAS: acknowledges a Disconnect-Request, then reports the session's end like a real one
+        java.util.concurrent.CompletableFuture<Void> nasThread = java.util.concurrent.CompletableFuture.runAsync(() -> {
+            try (DatagramChannel accounting = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0))) {
+                ByteBuffer in = ByteBuffer.allocate(4096);
+                InetSocketAddress from = (InetSocketAddress) coaNas.receive(in);
+                byte[] request = Arrays.copyOf(in.array(), in.position());
+                String session = CoaIT.attribute(request, 44);
+                disconnected.add(session);
+                coaNas.send(ByteBuffer.wrap(CoaIT.ack(request, SECRET)), from);
+                byte[] stop = accounting(2, session, "alice", A);
+                accounting.send(ByteBuffer.wrap(stop), new InetSocketAddress("127.0.0.1", g0.radiusPort()));
+                accounting.receive(ByteBuffer.allocate(4096));
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+        });
+        try {
+            assertThat(access(g0, "alice", "pw", A)).isEqualTo(RadiusCode.ACCESS_ACCEPT);
+            exchangeAccounting(g0, accounting(1, "s-alice-a", "alice", A)); // A online
+            assertThat(access(g0, "alice", "pw", B))
+                    .as("B gets in: A was disconnected")
+                    .isEqualTo(RadiusCode.ACCESS_ACCEPT);
+            nasThread.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            assertThat(disconnected).containsExactly("s-alice-a");
+            assertThat(g0.metrics())
+                    .contains("radiusward_gateway_simultaneous_use_disconnects_total{gateway=\"1\","
+                            + "result=\"acknowledged\"} 1");
+        } finally {
+            coaNas.close();
+        }
+    }
+
     private int access(Gateway gateway, String user, String password, String station) throws Exception {
         byte[] auth = new byte[16];
         ThreadLocalRandom.current().nextBytes(auth);

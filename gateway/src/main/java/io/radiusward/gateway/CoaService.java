@@ -66,8 +66,30 @@ public final class CoaService {
         this.radsec = radsec;
     }
 
+    private final java.util.concurrent.atomic.AtomicLong simultaneousUseDisconnected =
+            new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong simultaneousUseFailed =
+            new java.util.concurrent.atomic.AtomicLong();
+
     CoaConfig config() {
         return config;
+    }
+
+    ClusterQueries queries() {
+        return queries;
+    }
+
+    /** A Simultaneous-Use disconnect (ADR 0036): acknowledged, or not. */
+    void countSimultaneousUse(boolean acknowledged) {
+        (acknowledged ? simultaneousUseDisconnected : simultaneousUseFailed).incrementAndGet();
+    }
+
+    void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String gateway) {
+        w.counter(
+                "radiusward_gateway_simultaneous_use_disconnects_total",
+                "Oldest sessions disconnected to make room for a new one (coa.simultaneous.use = disconnect-oldest)");
+        w.sample(simultaneousUseDisconnected.get(), "gateway", gateway, "result", "acknowledged");
+        w.sample(simultaneousUseFailed.get(), "gateway", gateway, "result", "failed");
     }
 
     /** Disconnect-Request to every active session of the user. */
