@@ -2,6 +2,9 @@
 
 [![CI](https://github.com/radiusward/radiusward-server/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/radiusward/radiusward-server/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/radiusward/radiusward-server/actions/workflows/github-code-scanning/codeql/badge.svg)](https://github.com/radiusward/radiusward-server/security/code-scanning)
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=radiusward_radiusward-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=radiusward_radiusward-server)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=radiusward_radiusward-server&metric=coverage)](https://sonarcloud.io/component_measures?id=radiusward_radiusward-server&metric=coverage)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=radiusward_radiusward-server&metric=sqale_rating)](https://sonarcloud.io/project/overview?id=radiusward_radiusward-server)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A replicated RADIUS accounting server for Java, built on [Aeron Cluster](https://github.com/aeron-io/aeron).

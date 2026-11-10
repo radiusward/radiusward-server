@@ -101,6 +101,15 @@
         <jacoco.minimum.coverage>0.00</jacoco.minimum.coverage>
         <skipITs>false</skipITs>
         <radiusward.interop>false</radiusward.interop>
+
+        <!-- SonarQube Cloud (CI only, with SONAR_TOKEN): coverage comes from the aggregate report of -Pcoverage -->
+        <sonar-plugin.version>5.8.0.7211</sonar-plugin.version>
+        <sonar.organization>radiusward</sonar.organization>
+        <sonar.projectKey>radiusward_radiusward-server</sonar.projectKey>
+        <sonar.host.url>https://sonarcloud.io</sonar.host.url>
+        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/testing/coverage/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
+        <sonar.exclusions>**/target/generated-sources/**</sonar.exclusions>
+        <sonar.coverage.exclusions>testing/**,distribution/**</sonar.coverage.exclusions>
     </properties>
 
     <dependencyManagement>
@@ -340,6 +349,11 @@
     <build>
         <pluginManagement>
             <plugins>
+                <plugin>
+                    <groupId>org.sonarsource.scanner.maven</groupId>
+                    <artifactId>sonar-maven-plugin</artifactId>
+                    <version>${sonar-plugin.version}</version>
+                </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>

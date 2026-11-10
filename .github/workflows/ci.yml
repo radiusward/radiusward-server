@@ -59,13 +59,20 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # Sonar needs the history to tell new code from old
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '25'
           cache: maven
       - name: Unit and integration tests with coverage, module floors
-        run: ./mvnw -B -ntp -Pcoverage verify -Dradiusward.require.docker=true
+        env:
+          # SonarQube Cloud analysis when the token is there (not for pull requests from forks)
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ]; then SONAR=sonar:sonar; else SONAR=; fi
+          ./mvnw -B -ntp -Pcoverage verify $SONAR -Dradiusward.require.docker=true
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7

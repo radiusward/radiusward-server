@@ -80,6 +80,11 @@ reached by the integration tests, so a second, honest measurement covers both:
   have their own tests.
 - `-Pe2e` processes are not instrumented, so `distribution` (the `main` entry points) shows 0 % here and has no
   floor; `test-harness` is test support and has none either.
+- With the repository secret `SONAR_TOKEN`, the CI `coverage` job also sends the analysis and this aggregate
+  report to SonarQube Cloud ([dashboard](https://sonarcloud.io/project/overview?id=radiusward_radiusward-server)):
+  quality gate, coverage of new code, duplication and maintainability, on `main` and on pull requests from the
+  repository. Pull requests from forks have no token and are not analysed; the floors below still apply to them.
+  Generated sources, `testing/**` and `distribution/**` (coverage) are excluded, as here.
 - `testing/coverage/floors.properties` holds a line floor per module and for the total, a few points below the
   measured value; `check-floors.sh` fails the build below any of them. Raise a floor when a module gains
   tests; never lower one to let a change pass.
