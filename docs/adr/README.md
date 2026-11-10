@@ -37,5 +37,6 @@
 | [0033](0033-client-certificates.md) | Client certificates: identity must match (or names the user), CRL/OCSP revocation, reload on change | Accepted |
 | [0034](0034-radsec.md) | RadSec (RFC 6614): TLS over TCP on `SSLEngine` (no Netty), NAS by address and certificate, same decision paths through rings | Accepted |
 | [0035](0035-eap-session-resumption.md) | EAP session resumption per gateway, PEAP/TTLS fast reconnect with the inner user authorized again | Accepted |
+| [0036](0036-coa-and-session-identity.md) | CoA/Disconnect; sessions' identifying attributes in the replicated state (version 7), off-heap, 2M sessions still in 1 GiB | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

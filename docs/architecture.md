@@ -140,7 +140,7 @@ member.
 
 | Profile | Cluster node | Gateway | Aeron terms | Threading |
 |---|---|---|---|---|
-| small (default) | 1 GiB (heap 384 MB; measured ≤ 448 MiB at 2M sessions) | 384 MiB (measured ≤ 321 MiB) | 2 MB | SHARED, backoff idle |
+| small (default) | 1 GiB (heap 256 MB + 576 MB direct for sessions; measured ≤ 883 MiB at 2M sessions with CoA identities, the exporter's member highest) | 384 MiB (measured ≤ 320 MiB) | 2 MB | SHARED, backoff idle |
 | standard | 2 GiB | 768 MiB | 8 MB | SHARED_NETWORK |
 | large | 4 GiB+ | 1 GiB | 16–64 MB | DEDICATED, busy-spin |
 

@@ -10,9 +10,10 @@ component="${1:-version}"
 profile="${RADIUSWARD_PROFILE:-small}"
 
 case "$component:$profile" in
-    cluster-node:small)    heap=384m ;;
-    cluster-node:standard) heap=1g ;;
-    cluster-node:large)    heap=2560m ;;
+    # session state lives off-heap (ADR 0004, 0036): ~240 bytes per session for the member and its exporter replica
+    cluster-node:small)    heap=256m;  direct=576m ;;    # 2M sessions, measured (OverloadIT)
+    cluster-node:standard) heap=768m;  direct=1536m ;;   # 5M sessions, estimated
+    cluster-node:large)    heap=2g;    direct=5g ;;      # 20M sessions, estimated
     gateway:small)         heap=192m ;;
     gateway:standard)      heap=384m ;;
     gateway:large)         heap=768m ;;
@@ -30,7 +31,7 @@ export RADIUSWARD_MANAGEMENT_HTTP_HOST="${RADIUSWARD_MANAGEMENT_HTTP_HOST:-0.0.0
 
 # shellcheck disable=SC2086
 exec java \
-    -Xms$heap -Xmx$heap \
+    -Xms$heap -Xmx$heap ${direct:+-XX:MaxDirectMemorySize=$direct} \
     -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k \
     -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError \
     ${JAVA_OPTS:-} \

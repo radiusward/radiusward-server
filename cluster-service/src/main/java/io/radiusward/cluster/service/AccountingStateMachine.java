@@ -4,6 +4,8 @@
  */
 package io.radiusward.cluster.service;
 
+import org.agrona.DirectBuffer;
+
 /**
  * The replicated accounting state: per-session progress, deduplication and housekeeping (ADR 0003, 0012).
  *
@@ -28,7 +30,8 @@ package io.radiusward.cluster.service;
  * </table>
  *
  * <p>From state version 6 an applied event also records the session's user and device (simultaneous use, ADR 0023);
- * a session newly online for its user ends a reservation the user held.
+ * a session newly online for its user ends a reservation the user held. From state version 7 it also keeps the
+ * attributes that name the session to its NAS and the time of its first event (CoA and Disconnect, ADR 0036).
  */
 public final class AccountingStateMachine {
 
@@ -36,9 +39,10 @@ public final class AccountingStateMachine {
      * Newest behaviour this code knows (ADR 0005); the cluster applies {@link StateVersions#active()}. History before
      * the first release (no gate yet): 2 export sinks, 3 late Start merged, 4 old Interim stale, 5 idle timeout per
      * NAS entry = {@link StateVersions#BASELINE}. From 6 on, new rules check {@link #atLeast(int)}: 6 users and
-     * devices of sessions, {@code AuthReservation} (simultaneous use).
+     * devices of sessions, {@code AuthReservation} (simultaneous use); 7 identifying attributes and first event of
+     * sessions.
      */
-    public static final int STATE_VERSION = 6;
+    public static final int STATE_VERSION = 7;
 
     /** {@link #reserve} results, matching the protocol's {@code ReservationResult}. */
     public static final int RESERVATION_GRANTED = 0;
@@ -278,6 +282,50 @@ public final class AccountingStateMachine {
             long userKey,
             long deviceKey,
             long now) {
+        return apply(
+                sessionHi,
+                sessionLo,
+                exactHi,
+                exactLo,
+                nasId,
+                statusType,
+                flags,
+                sessionTime,
+                eventTimestamp,
+                inputOctets,
+                outputOctets,
+                idleMinutes,
+                userKey,
+                deviceKey,
+                null,
+                0,
+                0,
+                now);
+    }
+
+    /**
+     * As above, with the attributes that name the session to its NAS ({@link SessionIdentity}); kept from state
+     * version 7 on ({@link #atLeast(int)}), replaced by every applied event of the session.
+     */
+    public int apply(
+            long sessionHi,
+            long sessionLo,
+            long exactHi,
+            long exactLo,
+            int nasId,
+            int statusType,
+            int flags,
+            long sessionTime,
+            long eventTimestamp,
+            long inputOctets,
+            long outputOctets,
+            int idleMinutes,
+            long userKey,
+            long deviceKey,
+            DirectBuffer identity,
+            int identityOffset,
+            int identityLength,
+            long now) {
         created = false;
         int outcome = switch (statusType) {
             case STATUS_START -> start(sessionHi, sessionLo, exactHi, exactLo, nasId, flags, eventTimestamp, now);
@@ -313,7 +361,16 @@ public final class AccountingStateMachine {
                 store.outputOctets(slot, outputOctets);
                 store.lastSeen(slot, seconds(now));
             }
-            if (slot >= 0 && userKey != 0 && atLeast(6)) {
+            if (slot >= 0 && atLeast(7) && memberState) {
+                if (store.firstSeen(slot) == 0) {
+                    store.firstSeen(slot, seconds(now));
+                }
+                if (identityLength > 0 && memberState) {
+                    store.identity(slot, identity, identityOffset, identityLength);
+                }
+                digest = mix(digest, 0x1d_0007L, store.identityHash(slot), store.firstSeen(slot), sessionHi);
+            }
+            if (slot >= 0 && userKey != 0 && atLeast(6) && memberState) {
                 if (store.user(slot, userKey, deviceKey)) {
                     reservations.consume(userKey, deviceKey, now); // the device came online: its place is taken
                 }
@@ -516,7 +573,7 @@ public final class AccountingStateMachine {
             result = RESERVATION_GRANTED; // the same device again (reconnect, roaming)
         } else if (deviceKey != 0 && reservations.refresh(userKey, deviceKey, expiry, now)) {
             result = RESERVATION_GRANTED; // a retransmission or a second attempt of the same device
-        } else if (store.devicesOnline(userKey) + reservations.live(userKey, now, store) >= maxDevices) {
+        } else if (store.devicesOnline(userKey, maxDevices) + reservations.live(userKey, now, store) >= maxDevices) {
             result = RESERVATION_DENIED;
         } else {
             result = reservations.add(userKey, deviceKey, expiry) ? RESERVATION_GRANTED : RESERVATION_CAPACITY;
@@ -628,8 +685,33 @@ public final class AccountingStateMachine {
     /** Sets a restored session's user and device (snapshot version 6). */
     public void restoreUser(long hi, long lo, long userKey, long deviceKey) {
         int slot = store.find(hi, lo);
-        if (slot >= 0 && userKey != 0) {
+        if (slot >= 0 && userKey != 0 && memberState) {
             store.user(slot, userKey, deviceKey);
+        }
+    }
+
+    private boolean memberState = true;
+
+    /**
+     * Whether sessions keep what only a member's answers need (ADR 0036): their users and devices (simultaneous use,
+     * ADR 0023) and identifying attributes (CoA). The exporter's replica does not: export outcomes never depend on
+     * them, and the replica lives in the member's JVM. Only this machine's own digest is affected.
+     */
+    public void memberState(boolean keep) {
+        this.memberState = keep;
+    }
+
+    /** Sets a restored session's first event and identifying attributes (snapshot version 7). */
+    public void restoreIdentity(long hi, long lo, int firstSeen, DirectBuffer identity, int offset, int length) {
+        int slot = store.find(hi, lo);
+        if (slot >= 0) {
+            if (!memberState) {
+                return;
+            }
+            store.firstSeen(slot, firstSeen);
+            if (length > 0 && length < SessionStore.IDENTITY_SIZE) {
+                store.identity(slot, identity, offset, length);
+            }
         }
     }
 

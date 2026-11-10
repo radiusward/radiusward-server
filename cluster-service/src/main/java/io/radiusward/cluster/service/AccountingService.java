@@ -74,7 +74,20 @@ public final class AccountingService implements ClusteredService {
     private final io.radiusward.protocol.SinkReportEncoder sinkReportEncoder =
             new io.radiusward.protocol.SinkReportEncoder();
     private final UnsafeBuffer sinkBuffer = new UnsafeBuffer(new byte[4096]);
-    private final UnsafeBuffer egressBuffer = new UnsafeBuffer(new byte[256]);
+    private final UnsafeBuffer egressBuffer = new UnsafeBuffer(new byte[512]);
+    /** Reports with lists of sessions (ADR 0036): at most {@link #MAX_LISTED} entries of up to 160 bytes. */
+    private final UnsafeBuffer listBuffer = new UnsafeBuffer(new byte[MAX_LISTED * 160 + 64]);
+
+    private final UnsafeBuffer identityScratch = new UnsafeBuffer(new byte[SessionStore.IDENTITY_SIZE]);
+    private final io.radiusward.protocol.UserSessionsQueryDecoder userSessionsQueryDecoder =
+            new io.radiusward.protocol.UserSessionsQueryDecoder();
+    private final io.radiusward.protocol.UserSessionsReportEncoder userSessionsReportEncoder =
+            new io.radiusward.protocol.UserSessionsReportEncoder();
+    private final io.radiusward.protocol.SessionPageQueryDecoder sessionPageQueryDecoder =
+            new io.radiusward.protocol.SessionPageQueryDecoder();
+    private final io.radiusward.protocol.SessionPageReportEncoder sessionPageReportEncoder =
+            new io.radiusward.protocol.SessionPageReportEncoder();
+    static final int MAX_LISTED = 64;
 
     private Cluster cluster;
     private IdleStrategy idleStrategy;
@@ -213,6 +226,10 @@ public final class AccountingService implements ClusteredService {
             }
             case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);
             case SessionQueryDecoder.TEMPLATE_ID -> onSessionQuery(session, buffer, offset);
+            case io.radiusward.protocol.UserSessionsQueryDecoder.TEMPLATE_ID ->
+                onUserSessionsQuery(session, buffer, offset);
+            case io.radiusward.protocol.SessionPageQueryDecoder.TEMPLATE_ID ->
+                onSessionPageQuery(session, buffer, offset);
             default -> {}
         }
     }
@@ -399,9 +416,94 @@ public final class AccountingService implements ClusteredService {
                     .inputOctets(store.inputOctets(slot))
                     .outputOctets(store.outputOctets(slot));
         }
+        int identity = slot < 0 ? 0 : store.identity(slot, identityScratch, 0);
+        sessionReportEncoder.putIdentity(identityScratch, 0, identity);
         if (session != null) {
             reply(session, MessageHeaderEncoder.ENCODED_LENGTH + sessionReportEncoder.encodedLength());
         }
+    }
+
+    /**
+     * The active sessions of a user, at most {@link #MAX_LISTED} (ADR 0036). A scan of the store: an operator's or a
+     * Simultaneous-Use question, not one per accounting packet.
+     */
+    private void onUserSessionsQuery(ClientSession session, DirectBuffer buffer, int offset) {
+        userSessionsQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        long user = userSessionsQueryDecoder.userKey();
+        SessionStore store = machine.store();
+        int count = 0;
+        for (int slot = 0, n = store.highWater(); slot < n && count < MAX_LISTED; slot++) {
+            if (user != 0 && store.state(slot) == SessionStore.ACTIVE && store.userKey(slot) == user) {
+                count++;
+            }
+        }
+        io.radiusward.protocol.UserSessionsReportEncoder.SessionsEncoder sessions = userSessionsReportEncoder
+                .wrapAndApplyHeader(listBuffer, 0, headerEncoder)
+                .correlationId(userSessionsQueryDecoder.correlationId())
+                .sessionsCount(count);
+        for (int slot = 0, n = store.highWater(), written = 0; slot < n && written < count; slot++) {
+            if (store.state(slot) == SessionStore.ACTIVE && store.userKey(slot) == user) {
+                int length = store.identity(slot, identityScratch, 0);
+                sessions.next()
+                        .keyHi(store.keyHi(slot))
+                        .keyLo(store.keyLo(slot))
+                        .nasId(store.nasId(slot))
+                        .firstSeen(store.firstSeen(slot))
+                        .lastSeen(store.lastSeen(slot))
+                        .putIdentity(identityScratch, 0, length);
+                written++;
+            }
+        }
+        if (session != null) {
+            replyList(session, MessageHeaderEncoder.ENCODED_LENGTH + userSessionsReportEncoder.encodedLength());
+        }
+    }
+
+    /** A page of active sessions with a user, from a slot on (the gateways' store sweep, ADR 0036). */
+    private void onSessionPageQuery(ClientSession session, DirectBuffer buffer, int offset) {
+        sessionPageQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        SessionStore store = machine.store();
+        int limit = Math.max(1, Math.min(MAX_LISTED, sessionPageQueryDecoder.maxSessions()));
+        int from = Math.max(0, sessionPageQueryDecoder.fromSlot());
+        int n = store.highWater();
+        int count = 0;
+        int slot = from;
+        for (; slot < n && count < limit; slot++) {
+            if (store.state(slot) == SessionStore.ACTIVE && store.userKey(slot) != 0) {
+                count++;
+            }
+        }
+        io.radiusward.protocol.SessionPageReportEncoder.SessionsEncoder sessions = sessionPageReportEncoder
+                .wrapAndApplyHeader(listBuffer, 0, headerEncoder)
+                .correlationId(sessionPageQueryDecoder.correlationId())
+                .nextSlot(slot >= n ? -1 : slot)
+                .sessionsCount(count);
+        for (int s = from, written = 0; written < count; s++) {
+            if (store.state(s) == SessionStore.ACTIVE && store.userKey(s) != 0) {
+                int length = store.identity(s, identityScratch, 0);
+                sessions.next()
+                        .keyHi(store.keyHi(s))
+                        .keyLo(store.keyLo(s))
+                        .nasId(store.nasId(s))
+                        .userKey(store.userKey(s))
+                        .putIdentity(identityScratch, 0, length);
+                written++;
+            }
+        }
+        if (session != null) {
+            replyList(session, MessageHeaderEncoder.ENCODED_LENGTH + sessionPageReportEncoder.encodedLength());
+        }
+    }
+
+    private void replyList(ClientSession session, int length) {
+        for (int attempt = 0; attempt < MAX_EGRESS_ATTEMPTS; attempt++) {
+            long result = session.offer(listBuffer, 0, length);
+            if (result > 0 || result == Publication.NOT_CONNECTED || result == Publication.CLOSED) {
+                return;
+            }
+            idleStrategy.idle();
+        }
+        stats.recordEgressDropped();
     }
 
     /**

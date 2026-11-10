@@ -2,7 +2,7 @@
 
 SBE messages between gateways, the cluster and tools, plus the snapshot format. Schema:
 [`protocol/src/main/resources/sbe/radiusward-schema.xml`](../protocol/src/main/resources/sbe/radiusward-schema.xml)
-(schema id 7101, version 6, little endian); Java codecs are generated at build time into
+(schema id 7101, version 7, little endian); Java codecs are generated at build time into
 `io.radiusward.protocol`.
 
 ## Messages
@@ -12,16 +12,18 @@ SBE messages between gateways, the cluster and tools, plus the snapshot format. 
 | 1 | `AccountingCommand` | gateway → cluster | one accounting event |
 | 2 | `AccountingCommitted` | cluster → gateway | applied, duplicate or stale — answer the NAS |
 | 3 | `AccountingRejected` | cluster → gateway | not applied (capacity) — stay silent |
-| 4 / 5 | `SessionQuery` / `SessionReport` | admin → cluster → admin | one session's replicated state |
+| 4 / 5 | `SessionQuery` / `SessionReport` | admin → cluster → admin | one session's replicated state; v7: its identifying attributes |
 | 6 / 7 | `StateQuery` / `StateReport` | admin → cluster → admin | totals and state digest |
 | 8 / 9 | `ExportCheckpoint` / `ExportCheckpointAck` | exporter → cluster → exporter | v2: sink lease and checkpoint (ADR 0017) |
 | 10 | `MemberLogPosition` | member → cluster | v2: log position for purging; v5: supported state version |
 | 11–13 | `SinkQuery`, `SinkReport`, `SinkResync` | admin ↔ cluster | v2: sink status and resync |
 | 14 / 15 | `ActivateVersion` / `ActivateVersionResult` | admin → cluster → admin | v5: state versions (ADR 0005) |
 | 16 / 17 | `AuthReservation` / `AuthReservationResult` | gateway → cluster → gateway | v6: simultaneous use (ADR 0023) |
+| 18 / 19 | `UserSessionsQuery` / `UserSessionsReport` | admin, gateway → cluster | v7: a user's active sessions with their identifying attributes (ADR 0036) |
+| 27 / 28 | `SessionPageQuery` / `SessionPageReport` | gateway → cluster | v7: a page of active sessions with a user (the store sweep) |
 | 20–23 | `SnapshotHeader`, `SessionChunk`, `ExactKeyChunk`, `SnapshotFooter` | snapshot | state machine snapshot |
 | 24 / 25 | `SinkChunk`, `MemberPositionChunk` | snapshot | v2: sinks, member positions |
-| 26 | `ReservationChunk` | snapshot | v6: reservations, only when there are any |
+| 26 | `ReservationChunk` | snapshot | v6: reservations, only when there are any; `SessionChunk` v7: first event and identifying attributes per session |
 
 ### AccountingCommand
 

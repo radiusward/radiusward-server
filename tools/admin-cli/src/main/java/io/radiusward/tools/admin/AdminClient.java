@@ -49,7 +49,11 @@ public final class AdminClient implements AutoCloseable, EgressListener {
     public record Activation(
             io.radiusward.protocol.ActivationResult result, int activeVersion, int lowestSupportedVersion) {}
 
-    /** One session as replicated. */
+    /**
+     * One session as replicated.
+     *
+     * @param identity the RADIUS attributes naming it to its NAS (state version 7, ADR 0036); empty before
+     */
     public record Session(
             SessionStatus status,
             int nasId,
@@ -57,7 +61,52 @@ public final class AdminClient implements AutoCloseable, EgressListener {
             long sessionTime,
             long eventTimestamp,
             long inputOctets,
-            long outputOctets) {}
+            long outputOctets,
+            byte[] identity) {
+
+        /** Without identifying attributes (a member below state version 7). */
+        public Session(
+                SessionStatus status,
+                int nasId,
+                long statusType,
+                long sessionTime,
+                long eventTimestamp,
+                long inputOctets,
+                long outputOctets) {
+            this(status, nasId, statusType, sessionTime, eventTimestamp, inputOctets, outputOctets, new byte[0]);
+        }
+
+        /** An attribute of the identity as text (e.g. 1 = User-Name, 44 = Acct-Session-Id), or {@code null}. */
+        public String attribute(int type) {
+            return AdminClient.attribute(identity, type);
+        }
+    }
+
+    /** An active session in a list (a user's sessions, a page of the store, ADR 0036). */
+    public record ListedSession(
+            long keyHi, long keyLo, int nasId, long userKey, int firstSeen, int lastSeen, byte[] identity) {
+
+        public String attribute(int type) {
+            return AdminClient.attribute(identity, type);
+        }
+    }
+
+    /** A page of active sessions with a user; {@code nextSlot} -1 at the end. */
+    public record SessionPage(int nextSlot, List<ListedSession> sessions) {}
+
+    static String attribute(byte[] identity, int type) {
+        for (int at = 0; at + 2 <= identity.length; ) {
+            int length = identity[at + 1] & 0xFF;
+            if (length < 2 || at + length > identity.length) {
+                return null;
+            }
+            if ((identity[at] & 0xFF) == type) {
+                return new String(identity, at + 2, length - 2, java.nio.charset.StandardCharsets.UTF_8);
+            }
+            at += length;
+        }
+        return null;
+    }
 
     private final MediaDriver driver;
     private final String ingressEndpoints;
@@ -129,6 +178,30 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 .sessionKeyHi(keyHi)
                 .sessionKeyLo(keyLo);
         return (Session) request(id, MessageHeaderEncoder.ENCODED_LENGTH + SessionQueryEncoder.BLOCK_LENGTH);
+    }
+
+    /** The active sessions of a user (its {@code UserKeys} key), at most 64 (ADR 0036). */
+    @SuppressWarnings("unchecked")
+    public List<ListedSession> userSessions(long userKey) {
+        long id = ++correlation;
+        new io.radiusward.protocol.UserSessionsQueryEncoder()
+                .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                .correlationId(id)
+                .userKey(userKey);
+        return (List<ListedSession>) request(
+                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.UserSessionsQueryEncoder.BLOCK_LENGTH);
+    }
+
+    /** Active sessions with a user from store slot {@code fromSlot} on, at most {@code max} (up to 64). */
+    public SessionPage sessionPage(int fromSlot, int max) {
+        long id = ++correlation;
+        new io.radiusward.protocol.SessionPageQueryEncoder()
+                .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                .correlationId(id)
+                .fromSlot(fromSlot)
+                .maxSessions(max);
+        return (SessionPage) request(
+                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SessionPageQueryEncoder.BLOCK_LENGTH);
     }
 
     /** One sink as the replicated state holds it. */
@@ -274,15 +347,58 @@ public final class AdminClient implements AutoCloseable, EgressListener {
         } else if (headerDecoder.templateId() == SessionReportDecoder.TEMPLATE_ID) {
             sessionDecoder.wrapAndApplyHeader(buf, offset, headerDecoder);
             replyCorrelation = sessionDecoder.correlationId();
-            reply = new Session(
+            Session session = new Session(
                     sessionDecoder.status(),
                     sessionDecoder.nasId(),
                     sessionDecoder.statusType(),
                     sessionDecoder.sessionTime(),
                     sessionDecoder.eventTimestamp(),
                     sessionDecoder.inputOctets(),
-                    sessionDecoder.outputOctets());
+                    sessionDecoder.outputOctets(),
+                    identity(sessionDecoder));
+            reply = session;
+        } else if (headerDecoder.templateId() == io.radiusward.protocol.UserSessionsReportDecoder.TEMPLATE_ID) {
+            io.radiusward.protocol.UserSessionsReportDecoder r = new io.radiusward.protocol.UserSessionsReportDecoder();
+            r.wrapAndApplyHeader(buf, offset, headerDecoder);
+            long correlationId = r.correlationId();
+            List<ListedSession> sessions = new java.util.ArrayList<>();
+            for (io.radiusward.protocol.UserSessionsReportDecoder.SessionsDecoder s : r.sessions()) {
+                long hi = s.keyHi();
+                long lo = s.keyLo();
+                int nas = s.nasId();
+                int first = s.firstSeen();
+                int last = s.lastSeen();
+                byte[] identity = new byte[s.identityLength()];
+                s.getIdentity(identity, 0, identity.length);
+                sessions.add(new ListedSession(hi, lo, nas, 0, first, last, identity));
+            }
+            replyCorrelation = correlationId;
+            reply = List.copyOf(sessions);
+        } else if (headerDecoder.templateId() == io.radiusward.protocol.SessionPageReportDecoder.TEMPLATE_ID) {
+            io.radiusward.protocol.SessionPageReportDecoder r = new io.radiusward.protocol.SessionPageReportDecoder();
+            r.wrapAndApplyHeader(buf, offset, headerDecoder);
+            long correlationId = r.correlationId();
+            int next = r.nextSlot();
+            List<ListedSession> sessions = new java.util.ArrayList<>();
+            for (io.radiusward.protocol.SessionPageReportDecoder.SessionsDecoder s : r.sessions()) {
+                long hi = s.keyHi();
+                long lo = s.keyLo();
+                int nas = s.nasId();
+                long user = s.userKey();
+                byte[] identity = new byte[s.identityLength()];
+                s.getIdentity(identity, 0, identity.length);
+                sessions.add(new ListedSession(hi, lo, nas, user, 0, 0, identity));
+            }
+            replyCorrelation = correlationId;
+            reply = new SessionPage(next, List.copyOf(sessions));
         }
+    }
+
+    /** The report's identity; empty from a member below protocol version 7. */
+    private static byte[] identity(SessionReportDecoder d) {
+        byte[] identity = new byte[d.identityLength()];
+        d.getIdentity(identity, 0, identity.length);
+        return identity;
     }
 
     @Override

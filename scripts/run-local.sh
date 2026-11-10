@@ -26,7 +26,7 @@ JAR="$ROOT/distribution/target/radiusward.jar"
 RADCLIENT="$ROOT/tools/radclient/target/radclient.jar"
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # small profile memory budget (ADR 0004)
-NODE_OPTS="-Xms384m -Xmx384m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k -XX:+UseG1GC"
+NODE_OPTS="-Xms256m -Xmx256m -XX:MaxDirectMemorySize=576m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k -XX:+UseG1GC"
 GATEWAY_OPTS="-Xms192m -Xmx192m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k -XX:+UseG1GC"
 ALL=(node-0 node-1 node-2 gateway-a gateway-b)
 

@@ -69,3 +69,17 @@ devices online. They are only looked up, never iterated, and are rebuilt from th
 Reservations live beside the store in `Reservations` (columns, a per-user list, a free list); no decision depends on
 slot numbers.
 
+**Off-heap records** (state version 7, 2026-11-10, ADR 0036): `OverloadIT` found that a small member no longer held
+2M sessions in its 384 MB heap. The per-user maps of version 6 (one entry per distinct user) and the replica's copy
+of every column outgrew it. The store now keeps each chunk off-heap, in direct buffers:
+- a 72-byte core record (the columns above), for members and the exporter's replica;
+- a 32-byte member record (user, device, first event, the user's list), allocated with a chunk's first use;
+- the 64-byte identifying attributes, also allocated with a chunk's first use.
+
+The replica never allocates the member record or the identities. The two maps became an `int[]` index by user,
+pointing at the head of a list of the user's active sessions linked through the member records. Distinct devices are
+counted along that list, at most up to the limit being checked.
+
+The index on the session key stays an `int[]` on the heap. At 2M sessions the state needs ~60 MB of heap and ~460 MB
+off-heap for member and replica together (`StateFootprintIT`).
+

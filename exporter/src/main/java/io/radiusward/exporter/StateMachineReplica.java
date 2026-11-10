@@ -41,6 +41,7 @@ public final class StateMachineReplica implements ClusterLogReader.Listener {
     private long position;
 
     private StateMachineReplica(AccountingStateMachine machine, long position, OutcomeListener outcomes) {
+        machine.memberState(false); // users, devices, CoA identities stay with the member (ADR 0036): same JVM
         this.applier = new LogApplier(machine);
         this.position = position;
         this.outcomes = outcomes;
@@ -65,6 +66,7 @@ public final class StateMachineReplica implements ClusterLogReader.Listener {
             OutcomeListener outcomes) {
         RecordingLog.Entry snapshot = latestSnapshot(clusterDir, maxPosition);
         AccountingStateMachine machine = new AccountingStateMachine(settings);
+        machine.memberState(false);
         if (snapshot == null) {
             return new StateMachineReplica(machine, 0, outcomes);
         }

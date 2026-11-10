@@ -52,7 +52,10 @@ public final class SnapshotCodec {
                             + Math.max(
                                     KEYS_PER_CHUNK * ExactKeyChunkEncoder.KeysEncoder.sbeBlockLength(),
                                     Math.max(
-                                            SESSIONS_PER_CHUNK * SessionChunkEncoder.SessionsEncoder.sbeBlockLength(),
+                                            SESSIONS_PER_CHUNK
+                                                    * (SessionChunkEncoder.SessionsEncoder.sbeBlockLength()
+                                                            + 4
+                                                            + SessionStore.IDENTITY_SIZE),
                                             RESERVATIONS_PER_CHUNK
                                                     * ReservationChunkEncoder.ReservationsEncoder.sbeBlockLength()))
                             + 64]);
@@ -63,6 +66,7 @@ public final class SnapshotCodec {
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final SnapshotHeaderEncoder snapshotHeaderEncoder = new SnapshotHeaderEncoder();
     private final SessionChunkEncoder sessionChunkEncoder = new SessionChunkEncoder();
+    private final UnsafeBuffer identityScratch = new UnsafeBuffer(new byte[SessionStore.IDENTITY_SIZE]);
     private final ExactKeyChunkEncoder exactKeyChunkEncoder = new ExactKeyChunkEncoder();
     private final SnapshotFooterEncoder footerEncoder = new SnapshotFooterEncoder();
     private final SinkChunkEncoder sinkChunkEncoder = new SinkChunkEncoder();
@@ -147,7 +151,9 @@ public final class SnapshotCodec {
                             .flags((short) (store.flags(slot) & 0xFF))
                             .idleTimeoutMinutes(store.idleMinutes(slot))
                             .userKey(store.userKey(slot))
-                            .deviceKey(store.deviceKey(slot));
+                            .deviceKey(store.deviceKey(slot))
+                            .firstSeen(store.firstSeen(slot))
+                            .putIdentity(identityScratch, 0, store.identity(slot, identityScratch, 0));
                     written++;
                 }
                 slot++;
@@ -339,6 +345,11 @@ public final class SnapshotCodec {
                             sessionChunkDecoder.actingVersion() >= 4 ? s.idleTimeoutMinutes() : 0);
                     if (sessionChunkDecoder.actingVersion() >= 6) {
                         machine.restoreUser(s.keyHi(), s.keyLo(), s.userKey(), s.deviceKey());
+                    }
+                    if (sessionChunkDecoder.actingVersion() >= 7) {
+                        int identity = s.getIdentity(
+                                identityScratch, 0, Math.min(s.identityLength(), SessionStore.IDENTITY_SIZE - 1));
+                        machine.restoreIdentity(s.keyHi(), s.keyLo(), s.firstSeen(), identityScratch, 0, identity);
                     }
                     loadedSessions++;
                 }

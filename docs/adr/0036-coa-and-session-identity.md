@@ -1,0 +1,58 @@
+# ADR 0036: CoA and Disconnect, and sessions' identifying attributes
+
+Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.12
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestone 1 (session identity in the replicated state) done.
+
+## Context
+RFC 5176 lets a server change (CoA-Request) or end (Disconnect-Request) a session on the NAS. The request must name
+the session in the NAS's terms: Acct-Session-Id, User-Name, often Framed-IP-Address, Calling-Station-Id or
+NAS-Port, and the NAS's own NAS-IP-Address or NAS-Identifier.
+
+The replicated session state (ADR 0012) kept only 128-bit keys, counters and, since state version 6, hashes of user
+and device. Three triggers were decided:
+- the admin API, by user or by session;
+- Simultaneous-Use: disconnect the oldest session instead of rejecting a new one;
+- store changes: a disabled or regrouped user, found by a rate-limited sweep.
+
+Each needs those attributes, for any session, from any gateway, also after restarts.
+
+## Decision
+- **Identity in the replicated state** (state version 7, `atLeast(7)`). The state machine takes the identifying
+  attributes from the attribute section that every `AccountingCommand` already carries for export, in order of
+  importance while they fit 127 bytes:
+  - Acct-Session-Id, User-Name, NAS-IP-Address, NAS-IPv6-Address, Framed-IP-Address, Calling-Station-Id,
+    NAS-Identifier, NAS-Port, NAS-Port-Id, Called-Station-Id.
+  - They are kept as RADIUS attributes, ready to copy into a request, per active session in a 128-byte slot.
+  - Every applied event replaces them; the session's first event time (`firstSeen`) is set once.
+  - Both enter the state digest, and snapshot version 7 carries them.
+  - The extraction is pure and allocation-free, and reads the command with a decoder of its own, so the exporter
+    still reads the command's variable fields.
+  - Before activation they are ignored, as by older members. A session started before then gets its identity with
+    its next event.
+- **Memory** (ADR 0004, 0012): 64 bytes per session (63 bytes of attributes), off-heap, allocated with a storage
+  chunk's first identity, so a cluster below version 7 pays nothing.
+  - The exporter's replica shares the member's JVM, its outcomes never depend on users, devices or identities, and
+    it never sends a CoA. It keeps no member state at all (`memberState(false)`).
+  - On the way, `OverloadIT` showed that the small profile had stopped holding its 2M-session maximum in 1 GiB since
+    state version 6, because of the per-user maps and the replica's copy of every column on a 384 MB heap. The first
+    two attempts, 128-byte identities on the heap with a 640 MB heap, then off-heap with a 384 MB heap, both ran out
+    of heap.
+  - The fix compacts the whole session store into off-heap records (ADR 0012). At 2M sessions the state is ~60 MB
+    of heap and ~460 MB direct for member and replica. The small member runs with `-Xmx256m
+    -XX:MaxDirectMemorySize=576m` in its 1 GiB.
+- **Queries** (protocol version 7):
+  - `SessionReport` carries the identity.
+  - `UserSessionsQuery`/`UserSessionsReport` list a user's active sessions (key, NAS, first and last event,
+    identity), at most 64.
+  - `SessionPageQuery`/`SessionPageReport` page through active sessions with a user, for the store sweep.
+  - Both scan the store: operator and sweep questions, not per-packet work.
+  - `AdminClient.session`, `userSessions` and `sessionPage` expose them.
+
+## Consequences
+- Any gateway can name any active session to its NAS, and that survives member restarts and snapshots.
+- Session state is native memory now: an operator who starts members without the image's entrypoint must set
+  `-XX:MaxDirectMemorySize` (~240 bytes per session for member and replica, plus a margin); the heap can be smaller.
+- NAS-IP-Address and the other lower-priority attributes may not fit 63 bytes behind a long Acct-Session-Id and
+  User-Name. The NAS entry's own address is then used to reach the NAS (milestone 2).
+- The following milestones build on it: the sender with ACK/NAK and retries and the admin API (2), Simultaneous-Use
+  disconnecting the oldest session (3), the store sweep (4), interop with a CoA listener (5).

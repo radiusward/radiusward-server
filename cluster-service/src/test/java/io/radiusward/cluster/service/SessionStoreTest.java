@@ -139,9 +139,43 @@ class SessionStoreTest {
             store.insert(i * 0x9E3779B97F4A7C15L, i, i % 1000, SessionStore.ACTIVE);
         }
         long bytes = store.footprintBytes();
-        // state version 6 added the user and device of a session (16 bytes, simultaneous use)
-        assertThat(bytes).as("bytes for 500k sessions").isLessThanOrEqualTo(52L << 20);
-        assertThat(bytes / 500_000.0).as("bytes per session").isLessThan(105.0);
+        // the core record (72 bytes, off-heap) and the index: what the exporter's replica keeps per session
+        assertThat(bytes).as("bytes for 500k sessions").isLessThanOrEqualTo(42L << 20);
+        assertThat(bytes / 500_000.0).as("bytes per session").isLessThan(85.0);
         assertThat(store.find(499_999 * 0x9E3779B97F4A7C15L, 499_999)).isGreaterThanOrEqualTo(0);
+
+        // members: user, device, first event (32 bytes) and identities (64 bytes), only once a chunk keeps them
+        org.agrona.concurrent.UnsafeBuffer attributes = new org.agrona.concurrent.UnsafeBuffer(new byte[60]);
+        for (int slot = 0; slot < 500_000; slot++) {
+            store.identity(slot, attributes, 0, 60);
+            store.user(slot, slot + 1, 0);
+        }
+        assertThat(store.footprintBytes() / 500_000.0)
+                .as("bytes per session of a member")
+                .isLessThan(190.0);
+    }
+
+    @Test
+    void identitiesAreKeptPerSessionAndClearedOnReuse() {
+        int a = store.insert(1, 1, 7, SessionStore.ACTIVE);
+        assertThat(store.identityLength(a)).isZero();
+        assertThat(store.identityHash(a)).as("no chunk allocated yet").isZero();
+        byte[] attrs = {44, 5, 'a', 'b', 'c', 1, 7, 'a', 'l', 'i', 'c', 'e'};
+        store.identity(a, new org.agrona.concurrent.UnsafeBuffer(attrs), 0, attrs.length);
+        store.firstSeen(a, 1234);
+        org.agrona.concurrent.UnsafeBuffer out = new org.agrona.concurrent.UnsafeBuffer(new byte[128]);
+        assertThat(store.identity(a, out, 0)).isEqualTo(attrs.length);
+        assertThat(SessionIdentity.string(out, 0, attrs.length, 1)).isEqualTo("alice");
+        assertThat(SessionIdentity.string(out, 0, attrs.length, 44)).isEqualTo("abc");
+        assertThat(SessionIdentity.string(out, 0, attrs.length, 31)).isNull();
+        assertThat(store.firstSeen(a)).isEqualTo(1234);
+        store.remove(a);
+        int b = store.insert(2, 2, 7, SessionStore.ACTIVE);
+        assertThat(b).as("the slot is reused").isEqualTo(a);
+        assertThat(store.identityLength(b)).isZero();
+        assertThat(store.firstSeen(b)).isZero();
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> store.identity(b, new org.agrona.concurrent.UnsafeBuffer(new byte[200]), 0, 64))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

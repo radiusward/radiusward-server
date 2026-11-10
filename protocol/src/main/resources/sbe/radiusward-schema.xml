@@ -10,7 +10,7 @@
 <sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
                    package="io.radiusward.protocol"
                    id="7101"
-                   version="6"
+                   version="7"
                    semanticVersion="6.0"
                    description="radiusward cluster protocol"
                    byteOrder="littleEndian">
@@ -224,6 +224,41 @@
         <field name="eventTimestamp" id="6" type="uint32"/>
         <field name="inputOctets" id="7" type="int64"/>
         <field name="outputOctets" id="8" type="int64"/>
+        <data name="identity" id="9" type="varDataEncoding" sinceVersion="7"
+              description="RADIUS attributes naming the session to its NAS; empty before state version 7"/>
+    </sbe:message>
+    <sbe:message name="UserSessionsQuery" id="18" sinceVersion="7"
+                 description="the active sessions of a user (CoA, Disconnect, Simultaneous-Use)">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="userKey" id="2" type="int64"/>
+    </sbe:message>
+    <sbe:message name="UserSessionsReport" id="19" sinceVersion="7">
+        <field name="correlationId" id="1" type="int64"/>
+        <group name="sessions" id="2" dimensionType="groupSizeEncoding">
+            <field name="keyHi" id="1" type="int64"/>
+            <field name="keyLo" id="2" type="int64"/>
+            <field name="nasId" id="3" type="int32"/>
+            <field name="firstSeen" id="4" type="int32" description="cluster time in seconds of the first event"/>
+            <field name="lastSeen" id="5" type="int32" description="cluster time in seconds"/>
+            <data name="identity" id="6" type="varDataEncoding"/>
+        </group>
+    </sbe:message>
+    <sbe:message name="SessionPageQuery" id="27" sinceVersion="7"
+                 description="a page of active sessions with a user, in slot order (the store sweep)">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="fromSlot" id="2" type="int32"/>
+        <field name="maxSessions" id="3" type="int32"/>
+    </sbe:message>
+    <sbe:message name="SessionPageReport" id="28" sinceVersion="7">
+        <field name="correlationId" id="1" type="int64"/>
+        <field name="nextSlot" id="2" type="int32" description="-1 at the end"/>
+        <group name="sessions" id="3" dimensionType="groupSizeEncoding">
+            <field name="keyHi" id="1" type="int64"/>
+            <field name="keyLo" id="2" type="int64"/>
+            <field name="nasId" id="3" type="int32"/>
+            <field name="userKey" id="4" type="int64"/>
+            <data name="identity" id="5" type="varDataEncoding"/>
+        </group>
     </sbe:message>
     <sbe:message name="StateQuery" id="6">
         <field name="correlationId" id="1" type="int64"/>
@@ -279,6 +314,9 @@
             <field name="idleTimeoutMinutes" id="14" type="uint16" sinceVersion="4" description="0 = the cluster default"/>
             <field name="userKey" id="15" type="int64" sinceVersion="6"/>
             <field name="deviceKey" id="16" type="int64" sinceVersion="6"/>
+            <field name="firstSeen" id="18" type="int32" sinceVersion="7" description="cluster time in seconds of the session's first event"/>
+            <data name="identity" id="17" type="varDataEncoding" sinceVersion="7"
+                  description="RADIUS attributes naming the session to its NAS (CoA, Disconnect)"/>
         </group>
     </sbe:message>
     <sbe:message name="ReservationChunk" id="26" sinceVersion="6"

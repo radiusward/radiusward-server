@@ -26,7 +26,7 @@ scripts/run-local.sh stop | clean     # clean also deletes .local/
 
 Configuration: [config/local](../../config/local) (`cluster.properties` + `node-<i>.properties`,
 `gateway-<a|b>.properties` + `nas-clients.properties`; NAS `127.0.0.1`, secret `testing123`). Nodes run with
-`-Xmx384m` (small profile). State, logs and pid files are in `.local/`.
+`-Xmx256m -XX:MaxDirectMemorySize=576m` (small profile; sessions are off-heap). State, logs and pid files are in `.local/`.
 
 Send traffic:
 

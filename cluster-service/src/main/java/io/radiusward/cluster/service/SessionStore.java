@@ -4,25 +4,30 @@
  */
 package io.radiusward.cluster.service;
 
+import org.agrona.BufferUtil;
+import org.agrona.DirectBuffer;
+import org.agrona.MutableDirectBuffer;
 import org.agrona.collections.Int2IntHashMap;
-import org.agrona.collections.Long2LongHashMap;
+import org.agrona.concurrent.UnsafeBuffer;
 
 /**
- * Accounting sessions stored as columns of primitive arrays (ADR 0012): no object per session, ~75 bytes per
- * session plus a 4 byte open-addressing index slot, allocation only when a new chunk or a larger index is
- * needed.
+ * Accounting sessions in off-heap records (ADR 0012, 0036): no object per session and nothing per session on the heap,
+ * a 4 byte open-addressing index slot, allocation only when a new chunk or a larger index is needed. A chunk of
+ * {@value #CHUNK_SIZE} slots holds a 72 byte core record per session (what the exporter's replica needs as well),
+ * and — allocated only once a chunk uses them — a 32 byte member record (user, device, first event: simultaneous use
+ * and CoA) and the 64 byte identifying attributes. Off-heap, they need no garbage-collector headroom: a small member
+ * holds its 2M sessions in 1 GiB (ADR 0004).
  *
- * <p>Slots are allocated in chunks of {@value #CHUNK_SIZE}; freed slots are reused LIFO. A session is
- * identified by its 128 bit key. Every session is also linked into a per-NAS list so Accounting-On/Off can
- * close all sessions of a NAS.
+ * <p>Freed slots are reused LIFO. A session is identified by its 128 bit key. Every session is also linked into a
+ * per-NAS list so Accounting-On/Off can close all sessions of a NAS.
  *
- * <p>An active session with a user (state version 6, simultaneous use) is also counted per user: the number of
- * distinct devices (Calling-Station-Id) the user has online, where every session without a device counts on its
- * own. The counts follow every state change and are rebuilt when sessions are restored, so they are not part of the
- * snapshot.
+ * <p>An active session with a user (state version 6, simultaneous use) is also linked into its user's list, found
+ * through an index by user: the distinct devices (Calling-Station-Id) a user has online are counted along it, every
+ * session without a device on its own. The lists follow every state change and are rebuilt when sessions are
+ * restored, so they are not part of the snapshot.
  *
- * <p>Deterministic: the same sequence of calls produces the same slots and the same iteration order, which
- * the replicated state machine relies on. Not thread-safe.
+ * <p>Deterministic: the same sequence of calls produces the same slots and the same iteration order, which the
+ * replicated state machine relies on. Not thread-safe.
  */
 public final class SessionStore {
 
@@ -35,30 +40,45 @@ public final class SessionStore {
 
     public static final byte HAS_EVENT_TIMESTAMP = 2;
 
+    /** Bytes per session for its identifying attributes: a length byte, then RADIUS attributes (ADR 0036). */
+    public static final int IDENTITY_SIZE = 64;
+
     static final int CHUNK_SHIFT = 14;
     static final int CHUNK_SIZE = 1 << CHUNK_SHIFT;
     private static final int CHUNK_MASK = CHUNK_SIZE - 1;
     private static final int MAX_CHUNKS = 1 << 14; // 268M slots
     private static final int NONE = -1;
 
-    private final long[][] keyHi = new long[MAX_CHUNKS][];
-    private final long[][] keyLo = new long[MAX_CHUNKS][];
-    private final long[][] inputOctets = new long[MAX_CHUNKS][];
-    private final long[][] outputOctets = new long[MAX_CHUNKS][];
-    private final long[][] userKey = new long[MAX_CHUNKS][];
-    private final long[][] deviceKey = new long[MAX_CHUNKS][];
-    private final int[][] nasId = new int[MAX_CHUNKS][];
-    private final int[][] sessionTime = new int[MAX_CHUNKS][];
-    private final int[][] eventTimestamp = new int[MAX_CHUNKS][];
-    private final int[][] startKey = new int[MAX_CHUNKS][];
-    private final int[][] lastSeen = new int[MAX_CHUNKS][];
-    private final int[][] tombstoneUntil = new int[MAX_CHUNKS][];
-    private final int[][] prev = new int[MAX_CHUNKS][];
-    private final int[][] next = new int[MAX_CHUNKS][];
-    private final byte[][] state = new byte[MAX_CHUNKS][];
-    private final byte[][] statusType = new byte[MAX_CHUNKS][];
-    private final byte[][] flags = new byte[MAX_CHUNKS][];
-    private final char[][] idleMinutes = new char[MAX_CHUNKS][];
+    // core record
+    private static final int CORE = 72;
+    private static final int KEY_HI = 0;
+    private static final int KEY_LO = 8;
+    private static final int INPUT_OCTETS = 16;
+    private static final int OUTPUT_OCTETS = 24;
+    private static final int NAS_ID = 32;
+    private static final int SESSION_TIME = 36;
+    private static final int EVENT_TIMESTAMP = 40;
+    private static final int START_KEY = 44;
+    private static final int LAST_SEEN = 48;
+    private static final int TOMBSTONE_UNTIL = 52;
+    private static final int PREV = 56;
+    private static final int NEXT = 60;
+    private static final int IDLE_MINUTES = 64;
+    private static final int STATE = 66;
+    private static final int STATUS_TYPE = 67;
+    private static final int FLAGS = 68;
+
+    // member record
+    private static final int MEMBER = 32;
+    private static final int USER_KEY = 0;
+    private static final int DEVICE_KEY = 8;
+    private static final int FIRST_SEEN = 16;
+    private static final int USER_NEXT = 20;
+    private static final int USER_PREV = 24;
+
+    private final UnsafeBuffer[] core = new UnsafeBuffer[MAX_CHUNKS];
+    private final UnsafeBuffer[] member = new UnsafeBuffer[MAX_CHUNKS];
+    private final UnsafeBuffer[] identity = new UnsafeBuffer[MAX_CHUNKS];
 
     private int chunks;
     private int highWater; // slots ever handed out
@@ -72,11 +92,12 @@ public final class SessionStore {
 
     private final Int2IntHashMap nasHead = new Int2IntHashMap(NONE);
 
-    /** Active sessions per user and device ({@link #pair}); only looked up, never iterated. */
-    private final Long2LongHashMap deviceSessions = new Long2LongHashMap(0);
+    /** Head slot + 1 of each user's list of active sessions, by user key; 0 = empty. Never iterated. */
+    private int[] userIndex = new int[1 << 10];
 
-    /** Distinct devices online per user; only looked up, never iterated. */
-    private final Long2LongHashMap userDevices = new Long2LongHashMap(0);
+    private int userIndexMask = userIndex.length - 1;
+    private int users;
+    private long[] seen = new long[16]; // devices met while counting
 
     public SessionStore() {
         index = new int[1 << 10];
@@ -94,8 +115,7 @@ public final class SessionStore {
                 return NONE;
             }
             int slot = entry - 1;
-            if (keyHi[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] == hi
-                    && keyLo[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] == lo) {
+            if (keyHi(slot) == hi && keyLo(slot) == lo) {
                 return slot;
             }
             i = (i + 1) & indexMask;
@@ -108,24 +128,21 @@ public final class SessionStore {
             growIndex();
         }
         int slot = allocateSlot();
-        int c = slot >>> CHUNK_SHIFT;
-        int o = slot & CHUNK_MASK;
-        keyHi[c][o] = hi;
-        keyLo[c][o] = lo;
-        nasId[c][o] = nas;
-        state[c][o] = initialState;
-        statusType[c][o] = 0;
-        flags[c][o] = 0;
-        sessionTime[c][o] = 0;
-        eventTimestamp[c][o] = 0;
-        inputOctets[c][o] = 0;
-        outputOctets[c][o] = 0;
-        startKey[c][o] = 0;
-        lastSeen[c][o] = 0;
-        tombstoneUntil[c][o] = 0;
-        idleMinutes[c][o] = 0;
-        userKey[c][o] = 0;
-        deviceKey[c][o] = 0;
+        UnsafeBuffer b = core[slot >>> CHUNK_SHIFT];
+        int at = (slot & CHUNK_MASK) * CORE;
+        b.setMemory(at, CORE, (byte) 0);
+        b.putLong(at + KEY_HI, hi);
+        b.putLong(at + KEY_LO, lo);
+        b.putInt(at + NAS_ID, nas);
+        b.putByte(at + STATE, initialState);
+        UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
+        if (m != null) {
+            m.setMemory((slot & CHUNK_MASK) * MEMBER, MEMBER, (byte) 0);
+        }
+        UnsafeBuffer id = identity[slot >>> CHUNK_SHIFT];
+        if (id != null) {
+            id.putByte((slot & CHUNK_MASK) * IDENTITY_SIZE, (byte) 0);
+        }
         linkNas(slot, nas);
 
         int i = bucket(hi);
@@ -142,15 +159,13 @@ public final class SessionStore {
 
     /** Removes a session and frees its slot. */
     public void remove(int slot) {
-        int c = slot >>> CHUNK_SHIFT;
-        int o = slot & CHUNK_MASK;
-        removeFromIndex(slot, keyHi[c][o]);
+        removeFromIndex(slot, keyHi(slot));
         unlinkNas(slot);
-        if (state[c][o] == ACTIVE) {
+        if (state(slot) == ACTIVE) {
             activeCount--;
-            untrack(userKey[c][o], deviceKey[c][o]);
+            untrack(slot);
         }
-        state[c][o] = FREE;
+        putByte(slot, STATE, FREE);
         if (freeCount == freeSlots.length) {
             int[] grown = new int[freeSlots.length * 2];
             System.arraycopy(freeSlots, 0, grown, 0, freeCount);
@@ -162,17 +177,17 @@ public final class SessionStore {
 
     /** Changes the state of a live session, keeping the active count right. */
     public void state(int slot, byte newState) {
-        int c = slot >>> CHUNK_SHIFT;
-        int o = slot & CHUNK_MASK;
-        byte old = state[c][o];
+        byte old = state(slot);
         if (old == ACTIVE && newState != ACTIVE) {
             activeCount--;
-            untrack(userKey[c][o], deviceKey[c][o]);
+            untrack(slot);
         } else if (old != ACTIVE && newState == ACTIVE) {
             activeCount++;
-            track(userKey[c][o], deviceKey[c][o]);
+            putByte(slot, STATE, newState);
+            track(slot);
+            return;
         }
-        state[c][o] = newState;
+        putByte(slot, STATE, newState);
     }
 
     // ---- users (simultaneous use) --------------------------------------------------------------
@@ -183,77 +198,195 @@ public final class SessionStore {
      * @return whether an active session newly counts for this user and device (it did not before)
      */
     public boolean user(int slot, long user, long device) {
-        int c = slot >>> CHUNK_SHIFT;
-        int o = slot & CHUNK_MASK;
-        long oldUser = userKey[c][o];
-        long oldDevice = deviceKey[c][o];
-        if (oldUser == user && oldDevice == device) {
+        if (userKey(slot) == user && deviceKey(slot) == device) {
             return false;
         }
-        boolean active = state[c][o] == ACTIVE;
+        boolean active = state(slot) == ACTIVE;
         if (active) {
-            untrack(oldUser, oldDevice);
+            untrack(slot);
         }
-        userKey[c][o] = user;
-        deviceKey[c][o] = device;
+        UnsafeBuffer m = memberRecord(slot);
+        int at = (slot & CHUNK_MASK) * MEMBER;
+        m.putLong(at + USER_KEY, user);
+        m.putLong(at + DEVICE_KEY, device);
         if (active) {
-            track(user, device);
+            track(slot);
         }
         return active && user != 0;
     }
 
     public long userKey(int slot) {
-        return userKey[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
+        return m == null ? 0 : m.getLong((slot & CHUNK_MASK) * MEMBER + USER_KEY);
     }
 
     public long deviceKey(int slot) {
-        return deviceKey[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
+        return m == null ? 0 : m.getLong((slot & CHUNK_MASK) * MEMBER + DEVICE_KEY);
     }
 
     /** Distinct devices the user has online (sessions without a device each count once). */
     public int devicesOnline(long user) {
-        return (int) userDevices.get(user);
+        return devicesOnline(user, Integer.MAX_VALUE);
+    }
+
+    /** As above, counting no further than {@code limit}: all a limit check needs, however many sessions. */
+    public int devicesOnline(long user, int limit) {
+        int count = 0;
+        int distinct = 0;
+        for (int s = userHead(user); s != NONE && count < limit; s = userNext(s)) {
+            long device = deviceKey(s);
+            if (device == 0) {
+                count++;
+                continue;
+            }
+            boolean known = false;
+            for (int k = 0; k < distinct && !known; k++) {
+                known = seen[k] == device;
+            }
+            if (!known) {
+                if (distinct == seen.length) {
+                    seen = java.util.Arrays.copyOf(seen, distinct * 2);
+                }
+                seen[distinct++] = device;
+                count++;
+            }
+        }
+        return count;
     }
 
     /** Whether the user has an active session on this device ({@code device != 0}). */
     public boolean online(long user, long device) {
-        return device != 0 && deviceSessions.get(pair(user, device)) > 0;
+        if (device == 0) {
+            return false;
+        }
+        for (int s = userHead(user); s != NONE; s = userNext(s)) {
+            if (deviceKey(s) == device) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    private void track(long user, long device) {
+    /** Links an active session into its user's list. */
+    private void track(int slot) {
+        long user = userKey(slot);
         if (user == 0) {
             return;
         }
-        if (device != 0) {
-            long key = pair(user, device);
-            long sessions = deviceSessions.get(key);
-            deviceSessions.put(key, sessions + 1);
-            if (sessions > 0) {
-                return; // the device is already online
-            }
+        if ((users + 1) * 2L > userIndex.length) {
+            growUserIndex();
         }
-        userDevices.put(user, userDevices.get(user) + 1);
+        UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
+        int at = (slot & CHUNK_MASK) * MEMBER;
+        int i = userBucket(user);
+        while (userIndex[i] != 0) {
+            int head = userIndex[i] - 1;
+            if (userKey(head) == user) {
+                m.putInt(at + USER_NEXT, head);
+                m.putInt(at + USER_PREV, NONE);
+                putUserLink(head, USER_PREV, slot);
+                userIndex[i] = slot + 1;
+                return;
+            }
+            i = (i + 1) & userIndexMask;
+        }
+        m.putInt(at + USER_NEXT, NONE);
+        m.putInt(at + USER_PREV, NONE);
+        userIndex[i] = slot + 1;
+        users++;
     }
 
-    private void untrack(long user, long device) {
+    /** Takes an active session out of its user's list. */
+    private void untrack(int slot) {
+        long user = userKey(slot);
         if (user == 0) {
             return;
         }
-        if (device != 0) {
-            long key = pair(user, device);
-            long sessions = deviceSessions.get(key);
-            if (sessions > 1) {
-                deviceSessions.put(key, sessions - 1);
-                return; // the device still has another session
-            }
-            deviceSessions.remove(key);
-        }
-        long devices = userDevices.get(user);
-        if (devices > 1) {
-            userDevices.put(user, devices - 1);
+        int prev = userLink(slot, USER_PREV);
+        int next = userLink(slot, USER_NEXT);
+        if (prev != NONE) {
+            putUserLink(prev, USER_NEXT, next);
         } else {
-            userDevices.remove(user);
+            int i = userBucket(user);
+            while (userIndex[i] != slot + 1) {
+                i = (i + 1) & userIndexMask;
+            }
+            if (next != NONE) {
+                userIndex[i] = next + 1;
+            } else {
+                removeUserEntry(i);
+                users--;
+            }
         }
+        if (next != NONE) {
+            putUserLink(next, USER_PREV, prev);
+        }
+    }
+
+    private int userHead(long user) {
+        if (user == 0) {
+            return NONE;
+        }
+        for (int i = userBucket(user); userIndex[i] != 0; i = (i + 1) & userIndexMask) {
+            int head = userIndex[i] - 1;
+            if (userKey(head) == user) {
+                return head;
+            }
+        }
+        return NONE;
+    }
+
+    private int userNext(int slot) {
+        return userLink(slot, USER_NEXT);
+    }
+
+    private int userLink(int slot, int field) {
+        return member[slot >>> CHUNK_SHIFT].getInt((slot & CHUNK_MASK) * MEMBER + field);
+    }
+
+    private void putUserLink(int slot, int field, int value) {
+        member[slot >>> CHUNK_SHIFT].putInt((slot & CHUNK_MASK) * MEMBER + field, value);
+    }
+
+    private int userBucket(long user) {
+        long h = user * 0xC2B2_AE3D_27D4_EB4FL;
+        return (int) (h ^ (h >>> 32)) & userIndexMask;
+    }
+
+    private void growUserIndex() {
+        int[] old = userIndex;
+        userIndex = new int[old.length * 2];
+        userIndexMask = userIndex.length - 1;
+        for (int entry : old) {
+            if (entry != 0) {
+                int i = userBucket(userKey(entry - 1));
+                while (userIndex[i] != 0) {
+                    i = (i + 1) & userIndexMask;
+                }
+                userIndex[i] = entry;
+            }
+        }
+    }
+
+    /** Linear probing delete with backward shift. */
+    private void removeUserEntry(int i) {
+        int hole = i;
+        int j = i;
+        while (true) {
+            j = (j + 1) & userIndexMask;
+            int entry = userIndex[j];
+            if (entry == 0) {
+                break;
+            }
+            int home = userBucket(userKey(entry - 1));
+            boolean between = hole <= j ? (home > hole && home <= j) : (home > hole || home <= j);
+            if (!between) {
+                userIndex[hole] = entry;
+                hole = j;
+            }
+        }
+        userIndex[hole] = 0;
     }
 
     /** One key for a user's device. */
@@ -275,7 +408,7 @@ public final class SessionStore {
     }
 
     public int nextOfNas(int slot) {
-        return next[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getInt(slot, NEXT);
     }
 
     public int size() {
@@ -290,115 +423,210 @@ public final class SessionStore {
         return size - activeCount;
     }
 
-    /** Bytes held by the store's arrays (columns of allocated chunks + index). */
+    /** Bytes held by the store: records of allocated chunks (off-heap), indexes and free list. */
     public long footprintBytes() {
-        long perSlot = 6L * 8 + 8L * 4 + 3 + 2; // 6 long, 8 int, 3 byte, 1 char columns
-        return chunks * (long) CHUNK_SIZE * perSlot + index.length * 4L + freeSlots.length * 4L;
+        long bytes = index.length * 4L + userIndex.length * 4L + freeSlots.length * 4L;
+        for (int c = 0; c < chunks; c++) {
+            bytes += core[c].capacity();
+            bytes += member[c] == null ? 0 : member[c].capacity();
+            bytes += identity[c] == null ? 0 : identity[c].capacity();
+        }
+        return bytes;
     }
 
-    // ---- columns -------------------------------------------------------------------------------
+    // ---- fields --------------------------------------------------------------------------------
 
     public long keyHi(int slot) {
-        return keyHi[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getLong(slot, KEY_HI);
     }
 
     public long keyLo(int slot) {
-        return keyLo[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getLong(slot, KEY_LO);
     }
 
     public int nasId(int slot) {
-        return nasId[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getInt(slot, NAS_ID);
     }
 
     public byte state(int slot) {
-        return state[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE + STATE);
     }
 
     public int statusType(int slot) {
-        return statusType[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] & 0xFF;
+        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE + STATUS_TYPE) & 0xFF;
     }
 
     public void statusType(int slot, int value) {
-        statusType[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = (byte) value;
+        putByte(slot, STATUS_TYPE, (byte) value);
     }
 
     public byte flags(int slot) {
-        return flags[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return core[slot >>> CHUNK_SHIFT].getByte((slot & CHUNK_MASK) * CORE + FLAGS);
     }
 
     public void flags(int slot, byte value) {
-        flags[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = value;
+        putByte(slot, FLAGS, value);
     }
 
     /** Unsigned 32 bit value as {@code long}. */
     public long sessionTime(int slot) {
-        return sessionTime[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] & 0xFFFF_FFFFL;
+        return getInt(slot, SESSION_TIME) & 0xFFFF_FFFFL;
     }
 
     public void sessionTime(int slot, long value) {
-        sessionTime[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = (int) value;
+        putInt(slot, SESSION_TIME, (int) value);
     }
 
     public long eventTimestamp(int slot) {
-        return eventTimestamp[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] & 0xFFFF_FFFFL;
+        return getInt(slot, EVENT_TIMESTAMP) & 0xFFFF_FFFFL;
     }
 
     public void eventTimestamp(int slot, long value) {
-        eventTimestamp[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = (int) value;
+        putInt(slot, EVENT_TIMESTAMP, (int) value);
     }
 
     public long inputOctets(int slot) {
-        return inputOctets[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getLong(slot, INPUT_OCTETS);
     }
 
     public void inputOctets(int slot, long value) {
-        inputOctets[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = value;
+        putLong(slot, INPUT_OCTETS, value);
     }
 
     public long outputOctets(int slot) {
-        return outputOctets[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getLong(slot, OUTPUT_OCTETS);
     }
 
     public void outputOctets(int slot, long value) {
-        outputOctets[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = value;
+        putLong(slot, OUTPUT_OCTETS, value);
     }
 
     public int startKey(int slot) {
-        return startKey[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getInt(slot, START_KEY);
     }
 
     public void startKey(int slot, int value) {
-        startKey[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = value;
+        putInt(slot, START_KEY, value);
     }
 
     /** Cluster time of the last applied event, in seconds. */
     public int lastSeen(int slot) {
-        return lastSeen[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getInt(slot, LAST_SEEN);
     }
 
     public void lastSeen(int slot, int seconds) {
-        lastSeen[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = seconds;
+        putInt(slot, LAST_SEEN, seconds);
     }
 
     /** Idle timeout of the session's NAS entry in minutes; 0 = the cluster's default. */
     public int idleMinutes(int slot) {
-        return idleMinutes[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return core[slot >>> CHUNK_SHIFT].getChar((slot & CHUNK_MASK) * CORE + IDLE_MINUTES);
     }
 
     public void idleMinutes(int slot, int minutes) {
-        idleMinutes[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = (char) minutes;
+        core[slot >>> CHUNK_SHIFT].putChar((slot & CHUNK_MASK) * CORE + IDLE_MINUTES, (char) minutes);
     }
 
     /** Cluster time in seconds until which a stopped session is kept, or 0. */
     public int tombstoneUntil(int slot) {
-        return tombstoneUntil[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        return getInt(slot, TOMBSTONE_UNTIL);
     }
 
     public void tombstoneUntil(int slot, int seconds) {
-        tombstoneUntil[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = seconds;
+        putInt(slot, TOMBSTONE_UNTIL, seconds);
+    }
+
+    /** Cluster time in seconds of the session's first event (state version 7; 0 before). */
+    public int firstSeen(int slot) {
+        UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
+        return m == null ? 0 : m.getInt((slot & CHUNK_MASK) * MEMBER + FIRST_SEEN);
+    }
+
+    public void firstSeen(int slot, int seconds) {
+        memberRecord(slot).putInt((slot & CHUNK_MASK) * MEMBER + FIRST_SEEN, seconds);
+    }
+
+    /** Length of the session's identifying attributes; 0 = none (ADR 0036). */
+    public int identityLength(int slot) {
+        UnsafeBuffer chunk = identity[slot >>> CHUNK_SHIFT];
+        return chunk == null ? 0 : chunk.getByte((slot & CHUNK_MASK) * IDENTITY_SIZE) & 0xFF;
+    }
+
+    /** Copies the session's identifying attributes to {@code dst}; returns their length. */
+    public int identity(int slot, MutableDirectBuffer dst, int offset) {
+        UnsafeBuffer chunk = identity[slot >>> CHUNK_SHIFT];
+        if (chunk == null) {
+            return 0;
+        }
+        int at = (slot & CHUNK_MASK) * IDENTITY_SIZE;
+        int length = chunk.getByte(at) & 0xFF;
+        dst.putBytes(offset, chunk, at + 1, length);
+        return length;
+    }
+
+    /** Replaces the session's identifying attributes; at most {@code IDENTITY_SIZE - 1} bytes. */
+    public void identity(int slot, DirectBuffer src, int offset, int length) {
+        if (length < 0 || length >= IDENTITY_SIZE) {
+            throw new IllegalArgumentException("identity of " + length + " bytes");
+        }
+        UnsafeBuffer chunk = identity[slot >>> CHUNK_SHIFT];
+        if (chunk == null) {
+            chunk = identity[slot >>> CHUNK_SHIFT] = offHeap(CHUNK_SIZE * IDENTITY_SIZE);
+        }
+        int at = (slot & CHUNK_MASK) * IDENTITY_SIZE;
+        chunk.putByte(at, (byte) length);
+        chunk.putBytes(at + 1, src, offset, length);
+    }
+
+    /** A digest of the identifying attributes, for the state machine's cross-member check. */
+    public long identityHash(int slot) {
+        UnsafeBuffer chunk = identity[slot >>> CHUNK_SHIFT];
+        if (chunk == null) {
+            return 0;
+        }
+        int at = (slot & CHUNK_MASK) * IDENTITY_SIZE;
+        long h = 0x9E37_79B9_7F4A_7C15L;
+        for (int i = 0, n = (chunk.getByte(at) & 0xFF) + 1; i < n; i++) {
+            h = (h ^ chunk.getByte(at + i)) * 0x100_0000_01B3L;
+        }
+        return h;
     }
 
     // ---- internals -----------------------------------------------------------------------------
+
+    private long getLong(int slot, int field) {
+        return core[slot >>> CHUNK_SHIFT].getLong((slot & CHUNK_MASK) * CORE + field);
+    }
+
+    private void putLong(int slot, int field, long value) {
+        core[slot >>> CHUNK_SHIFT].putLong((slot & CHUNK_MASK) * CORE + field, value);
+    }
+
+    private int getInt(int slot, int field) {
+        return core[slot >>> CHUNK_SHIFT].getInt((slot & CHUNK_MASK) * CORE + field);
+    }
+
+    private void putInt(int slot, int field, int value) {
+        core[slot >>> CHUNK_SHIFT].putInt((slot & CHUNK_MASK) * CORE + field, value);
+    }
+
+    private void putByte(int slot, int field, byte value) {
+        core[slot >>> CHUNK_SHIFT].putByte((slot & CHUNK_MASK) * CORE + field, value);
+    }
+
+    /** The slot's member record, its chunk allocated on first use (never in the exporter's replica). */
+    private UnsafeBuffer memberRecord(int slot) {
+        UnsafeBuffer m = member[slot >>> CHUNK_SHIFT];
+        if (m == null) {
+            m = member[slot >>> CHUNK_SHIFT] = offHeap(CHUNK_SIZE * MEMBER);
+        }
+        return m;
+    }
+
+    /** Zeroed off-heap memory (direct buffers are zero-filled). */
+    private static UnsafeBuffer offHeap(int bytes) {
+        return new UnsafeBuffer(BufferUtil.allocateDirectAligned(bytes, 64));
+    }
 
     private int allocateSlot() {
         if (freeCount > 0) {
@@ -416,25 +644,9 @@ public final class SessionStore {
         if (chunks == MAX_CHUNKS) {
             throw new IllegalStateException("session store full");
         }
-        int c = chunks++;
-        keyHi[c] = new long[CHUNK_SIZE];
-        keyLo[c] = new long[CHUNK_SIZE];
-        inputOctets[c] = new long[CHUNK_SIZE];
-        outputOctets[c] = new long[CHUNK_SIZE];
-        userKey[c] = new long[CHUNK_SIZE];
-        deviceKey[c] = new long[CHUNK_SIZE];
-        nasId[c] = new int[CHUNK_SIZE];
-        sessionTime[c] = new int[CHUNK_SIZE];
-        eventTimestamp[c] = new int[CHUNK_SIZE];
-        startKey[c] = new int[CHUNK_SIZE];
-        lastSeen[c] = new int[CHUNK_SIZE];
-        tombstoneUntil[c] = new int[CHUNK_SIZE];
-        prev[c] = new int[CHUNK_SIZE];
-        next[c] = new int[CHUNK_SIZE];
-        state[c] = new byte[CHUNK_SIZE];
-        statusType[c] = new byte[CHUNK_SIZE];
-        flags[c] = new byte[CHUNK_SIZE];
-        idleMinutes[c] = new char[CHUNK_SIZE];
+        core[chunks++] = offHeap(CHUNK_SIZE * CORE);
+        // member and identity records: allocated with their chunk's first use, so stores that keep none (the
+        // exporter's replica, a cluster below state version 6 or 7) do not pay for them
     }
 
     private int bucket(long hi) {
@@ -485,19 +697,19 @@ public final class SessionStore {
 
     private void linkNas(int slot, int nas) {
         int head = nasHead.get(nas);
-        prev[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = NONE;
-        next[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK] = head;
+        putInt(slot, PREV, NONE);
+        putInt(slot, NEXT, head);
         if (head != NONE) {
-            prev[head >>> CHUNK_SHIFT][head & CHUNK_MASK] = slot;
+            putInt(head, PREV, slot);
         }
         nasHead.put(nas, slot);
     }
 
     private void unlinkNas(int slot) {
-        int p = prev[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
-        int n = next[slot >>> CHUNK_SHIFT][slot & CHUNK_MASK];
+        int p = getInt(slot, PREV);
+        int n = getInt(slot, NEXT);
         if (p != NONE) {
-            next[p >>> CHUNK_SHIFT][p & CHUNK_MASK] = n;
+            putInt(p, NEXT, n);
         } else {
             int nas = nasId(slot);
             if (n == NONE) {
@@ -507,7 +719,7 @@ public final class SessionStore {
             }
         }
         if (n != NONE) {
-            prev[n >>> CHUNK_SHIFT][n & CHUNK_MASK] = p;
+            putInt(n, PREV, p);
         }
     }
 }

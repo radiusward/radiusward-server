@@ -17,7 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.Container.ExecResult;
 
 /**
- * Small profile at its limits (ADR 0004), with the exporter and its state-machine replica exporting to PostgreSQL: members limited to 1 GiB and one CPU, gateways to 384 MiB, 2M sessions
+ * Small profile at its limits (ADR 0004, with the sessions' CoA identities of ADR 0036), with the exporter and its state-machine replica exporting to PostgreSQL: members limited to 1 GiB and one CPU, gateways to 384 MiB, 2M sessions
  * (the profile's maximum), 8 generators offering 48k requests/s for 2 minutes. Measured on an 8-CPU Colima VM:
  * ~32k/s served, so the gateways must shed load (pending table full; the NAS retries). Nothing may be
  * OOM-killed, unreclaimable memory stays below the limit, every event is acknowledged eventually and the
@@ -113,6 +113,9 @@ class OverloadIT {
             Map<String, String> leader = cluster.state(cluster.awaitLeader(Duration.ofSeconds(5)));
             System.out.println("overload: leader " + leader);
             assertThat(Long.parseLong(leader.get("activeSessions"))).isPositive();
+            assertThat(Integer.parseInt(leader.get("stateVersionActive")))
+                    .as("state version 7: the sessions kept their CoA identities while measured (ADR 0036)")
+                    .isGreaterThanOrEqualTo(7);
         }
     }
 }

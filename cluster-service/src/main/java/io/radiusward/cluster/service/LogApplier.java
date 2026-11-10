@@ -46,6 +46,12 @@ public final class LogApplier {
     private final AccountingStateMachine machine;
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final AccountingCommandDecoder commandDecoder = new AccountingCommandDecoder();
+    private final AccountingCommandDecoder identityDecoder = new AccountingCommandDecoder();
+    private final io.radiusward.protocol.MessageHeaderDecoder identityHeader =
+            new io.radiusward.protocol.MessageHeaderDecoder();
+    private final org.agrona.concurrent.UnsafeBuffer rawView = new org.agrona.concurrent.UnsafeBuffer(0, 0);
+    private final org.agrona.concurrent.UnsafeBuffer identityScratch =
+            new org.agrona.concurrent.UnsafeBuffer(new byte[SessionStore.IDENTITY_SIZE]);
     private final ExportCheckpointDecoder checkpointDecoder = new ExportCheckpointDecoder();
     private final MemberLogPositionDecoder memberPositionDecoder = new MemberLogPositionDecoder();
     private final SinkResyncDecoder resyncDecoder = new SinkResyncDecoder();
@@ -170,10 +176,24 @@ public final class LogApplier {
                     commandDecoder.actingVersion() >= 4 ? commandDecoder.idleTimeoutMinutes() : 0,
                     commandDecoder.actingVersion() >= 6 ? commandDecoder.userKey() : 0,
                     commandDecoder.actingVersion() >= 6 ? commandDecoder.deviceKey() : 0,
+                    identityScratch,
+                    0,
+                    identity(buffer, offset),
                     timestamp);
         }
         export.commandProcessed(position);
         return outcome;
+    }
+
+    /**
+     * The session's identifying attributes from the command's attribute section (ADR 0036), read with a decoder of its
+     * own: the command decoder's variable-length fields stay unread for the exporter.
+     */
+    private int identity(DirectBuffer buffer, int offset) {
+        identityDecoder.wrapAndApplyHeader(buffer, offset, identityHeader);
+        identityDecoder.skipSessionId();
+        identityDecoder.wrapRawAttributes(rawView);
+        return SessionIdentity.extract(rawView, 0, rawView.capacity(), identityScratch, 0);
     }
 
     private int applyCheckpoint(DirectBuffer buffer, int offset, long timestamp) {
