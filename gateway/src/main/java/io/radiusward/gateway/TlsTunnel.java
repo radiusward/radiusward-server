@@ -111,9 +111,19 @@ abstract class TlsTunnel implements EapMethod {
 
     /** Remembers the inner user with the TLS session, for a resumption to skip the inner method. */
     final void remember(String inner) {
-        if (inner != null) {
+        if (inner != null && resumable) {
             engine.getSession().putValue(INNER, inner);
         }
+    }
+
+    private boolean resumable = true;
+
+    /**
+     * The inner user is checked elsewhere each time (a home server, ADR 0044): the session is not remembered for
+     * fast reconnect, so a resumed tunnel runs the inner method again.
+     */
+    final void notResumable() {
+        resumable = false;
     }
 
     /** A failed conversation's session is not resumed. */

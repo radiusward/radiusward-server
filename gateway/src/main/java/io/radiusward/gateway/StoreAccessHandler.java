@@ -200,6 +200,16 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             }
             EapConversations.Conversation c = cache(context).eap.conversation;
             String inner = c.method == null ? null : c.method.innerIdentity();
+            InnerProxy p = innerProxy;
+            if (inner != null && p != null && p.realm(inner) != null) {
+                // the inner user's home server decided and authorized it (ADR 0044); its reply is ours
+                if (c.proxiedReply == null) {
+                    return REJECT; // no verdict from it in this conversation
+                }
+                writeEapSuccess(context, method);
+                context.reply().rawAttributes(new UnsafeBuffer(c.proxiedReply), 0, c.proxiedReply.length);
+                return ACCEPT;
+            }
             if (inner != null) { // a tunnel: the inner user is the one authorized (ADR 0029)
                 a = authorize(context, inner, c.method.innerOptional());
                 if (a.code() != ACCEPT) {
@@ -542,8 +552,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         EapMethod.Credentials credentials = new EapMethod.Credentials(
                 passwords, stores.chap().getOrDefault(found.store(), false), new EapMethod.InnerAuth() {
                     @Override
-                    public EapMethod.Inner msChapV2(String user, byte[] challengeHash, byte[] ntResponse) {
-                        return innerMsChapV2(context, user, challengeHash, ntResponse);
+                    public EapMethod.Inner msChapV2(String user, EapMethod.MsChapV2 exchange) {
+                        InnerProxy p = innerProxy;
+                        if (p != null && p.realm(user) != null) {
+                            return proxied(context, p.msChapV2(user, exchange));
+                        }
+                        return innerMsChapV2(context, user, exchange.challengeHash(), exchange.ntResponse());
                     }
 
                     @Override
@@ -727,6 +741,31 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * MS-CHAPv2 inside a tunnel (PEAP, TTLS): the inner user is looked up and checked like outside — a credential
      * verifier, or the local NT hash.
      */
+    /** Inner checks of proxied realms' users go to their home servers when set (ADR 0044). */
+    private volatile InnerProxy innerProxy;
+
+    void proxyInner(InnerProxy proxy) {
+        this.innerProxy = proxy;
+    }
+
+    InnerProxy innerProxy() {
+        return innerProxy;
+    }
+
+    /** A home server's verdict on the inner user: its reply kept for our Accept, the tunnel not remembered. */
+    private EapMethod.Inner proxied(AccessContext context, InnerProxy.Result r) {
+        EapConversations.Conversation c = cache(context).eap.conversation;
+        if (c != null) {
+            if (r.inner().code() == ACCEPT) {
+                c.proxiedReply = r.reply();
+            }
+            if (c.method instanceof TlsTunnel tunnel) {
+                tunnel.notResumable();
+            }
+        }
+        return r.inner();
+    }
+
     private EapMethod.Inner innerMsChapV2(AccessContext context, String user, byte[] challengeHash, byte[] ntResponse) {
         return innerMsChap(context, user, challengeHash, ntResponse, true);
     }
@@ -737,6 +776,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      */
     private EapMethod.Inner innerChap(
             AccessContext context, String user, int identifier, byte[] challenge, byte[] response) {
+        InnerProxy home = innerProxy;
+        if (home != null && home.realm(user) != null) {
+            return proxied(context, home.chap(user, identifier, challenge, response));
+        }
         Authorization a = authorize(context, user, false);
         if (a.code() != ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
@@ -806,6 +849,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     /** A password inside a tunnel (TTLS/PAP): the inner user looked up, then a verifier or the stored credentials. */
     private EapMethod.Inner innerPassword(AccessContext context, String user, byte[] password) {
+        InnerProxy home = innerProxy;
+        if (home != null && home.realm(user) != null) {
+            return proxied(context, home.password(user, password));
+        }
         Authorization a = authorize(context, user, false);
         if (a.code() != ACCEPT) {
             return new EapMethod.Inner(a.code(), null);

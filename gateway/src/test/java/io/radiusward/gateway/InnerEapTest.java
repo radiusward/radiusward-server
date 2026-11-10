@@ -49,11 +49,12 @@ class InnerEapTest {
         }
 
         @Override
-        public Inner msChapV2(String user, byte[] challengeHash, byte[] ntResponse) {
+        public Inner msChapV2(String user, EapMethod.MsChapV2 exchange) {
             calls++;
             byte[] ntHash = MsChap.ntHash(PASSWORD);
             return user.equals("alice")
-                            && MessageDigest.isEqual(MsChap.challengeResponse(challengeHash, ntHash), ntResponse)
+                            && MessageDigest.isEqual(
+                                    MsChap.challengeResponse(exchange.challengeHash(), ntHash), exchange.ntResponse())
                     ? new Inner(AccessHandler.ACCEPT, Md4.digest(ntHash))
                     : new Inner(AccessHandler.REJECT, null);
         }

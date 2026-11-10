@@ -64,8 +64,7 @@ final class Peap extends TlsTunnel {
     private int innerId;
     private String identity;
     private String authenticated;
-    private byte[] pendingHash; // an inner check that could not be answered, for the retransmission
-    private byte[] pendingResponse;
+    private MsChapV2 pendingExchange; // an inner check that could not be answered, for the retransmission
     private byte[] pendingPassword;
     private final java.util.List<Integer> innerTypes;
     private int innerType;
@@ -289,7 +288,9 @@ final class Peap extends TlsTunnel {
         byte[] ntResponse = Arrays.copyOfRange(data, 30, 54);
         byte[] name = Arrays.copyOfRange(data, 55, data.length);
         byte[] challengeHash = MsChap.challengeHash(peerChallenge, authenticatorChallenge, MsChap.v2UserName(name));
-        return check(challengeHash, ntResponse, credentials);
+        return check(
+                new MsChapV2(challengeHash, ntResponse, authenticatorChallenge.clone(), peerChallenge, msChapId),
+                credentials);
     }
 
     @Override
@@ -297,23 +298,22 @@ final class Peap extends TlsTunnel {
         if (pendingPassword != null) {
             return gtc(pendingPassword, credentials);
         }
-        return pendingHash == null ? Step.FAILED : check(pendingHash, pendingResponse, credentials);
+        return pendingExchange == null ? Step.FAILED : check(pendingExchange, credentials);
     }
 
     /** The inner MS-CHAPv2 check by the gateway; its outcome as Success or Failure inside the tunnel. */
-    private Step check(byte[] challengeHash, byte[] ntResponse, Credentials credentials) {
+    private Step check(MsChapV2 exchange, Credentials credentials) {
         if (credentials.inner() == null) {
             return Step.FAILED;
         }
-        Inner checked = credentials.inner().msChapV2(identity, challengeHash, ntResponse);
+        Inner checked = credentials.inner().msChapV2(identity, exchange);
         if (checked.code() == AccessHandler.DROP) {
-            pendingHash = challengeHash;
-            pendingResponse = ntResponse;
+            pendingExchange = exchange;
             return Step.UNAVAILABLE;
         }
-        pendingHash = null;
-        pendingResponse = null;
-        if (checked.code() != AccessHandler.ACCEPT || checked.ntHashHash() == null) {
+        pendingExchange = null;
+        byte[] ntResponse = exchange.ntResponse();
+        if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {
             state = State.FAILURE;
             String failure = "E=691 R=0 C="
                     + HexFormat.of().formatHex(authenticatorChallenge).toUpperCase(Locale.ROOT)
@@ -321,10 +321,10 @@ final class Peap extends TlsTunnel {
             return sendApplication(msChap(OP_FAILURE, failure.getBytes(StandardCharsets.US_ASCII)));
         }
         authenticated = identity;
-        isk = PeapCryptoBinding.msChapV2Isk(checked.ntHashHash(), ntResponse);
+        isk = PeapCryptoBinding.msChapV2Isk(checked, ntResponse);
         state = State.SUCCESS;
-        String success = MsChap.authenticatorResponseFromKey(checked.ntHashHash(), ntResponse, challengeHash)
-                + " M=Authentication succeeded";
+        String success =
+                checked.authenticatorResponse(ntResponse, exchange.challengeHash()) + " M=Authentication succeeded";
         return sendApplication(msChap(OP_SUCCESS, success.getBytes(StandardCharsets.US_ASCII)));
     }
 

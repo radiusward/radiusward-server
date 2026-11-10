@@ -29,11 +29,11 @@ interface EapMethod {
 
         /**
          * MS-CHAPv2 inside a tunnel: the user is looked up and checked like outside it (local NT hash, cleartext opt-in,
-         * credential verifier).
+         * credential verifier), or, for a proxied realm, by its home server (ADR 0044).
          *
-         * @param challengeHash the RFC 2759 challenge hash the NT response answers
+         * @param exchange the challenges and the response, as a home server needs them
          */
-        Inner msChapV2(String user, byte[] challengeHash, byte[] ntResponse);
+        Inner msChapV2(String user, MsChapV2 exchange);
 
         /** A password inside a tunnel (TTLS/PAP), checked like PAP outside it (stored formats or a verifier). */
         Inner password(String user, byte[] password);
@@ -56,7 +56,51 @@ interface EapMethod {
      * The answer of an inner check: {@link AccessHandler#ACCEPT} with the MS-CHAP session key (MD4 of the NT hash),
      * {@link AccessHandler#REJECT}, or {@link AccessHandler#DROP} when it cannot tell.
      */
-    record Inner(int code, byte[] ntHashHash) {}
+    record Inner(int code, byte[] ntHashHash, String success, byte[] sendKey, byte[] receiveKey) {
+
+        Inner(int code, byte[] ntHashHash) {
+            this(code, ntHashHash, null, null, null);
+        }
+
+        /**
+         * An MS-CHAPv2 acceptance by a home server (ADR 0044): its authenticator response ({@code S=...}) and the
+         * server's MPPE send and receive keys, instead of the NT hash's MD4.
+         */
+        static Inner proxied(String success, byte[] sendKey, byte[] receiveKey) {
+            return new Inner(AccessHandler.ACCEPT, null, success, sendKey, receiveKey);
+        }
+
+        /** Whether an MS-CHAPv2 acceptance carries what the tunnel needs: a key, or the home server's answer. */
+        boolean keyed() {
+            return ntHashHash != null || (success != null && sendKey != null && receiveKey != null);
+        }
+
+        /** The authenticator response ({@code S=} and 40 hex digits) for the peer. */
+        String authenticatorResponse(byte[] ntResponse, byte[] challengeHash) {
+            return success != null
+                    ? success
+                    : MsChap.authenticatorResponseFromKey(ntHashHash, ntResponse, challengeHash);
+        }
+
+        /** The server's MPPE send ({@code send}) or receive key (RFC 3079), 16 bytes. */
+        byte[] serverKey(byte[] ntResponse, boolean send) {
+            if (ntHashHash == null) {
+                return send ? sendKey : receiveKey;
+            }
+            return MsChap.serverKey(MsChap.masterKeyFromKey(ntHashHash, ntResponse), send);
+        }
+    }
+
+    /**
+     * An MS-CHAPv2 exchange inside a tunnel.
+     *
+     * @param challengeHash the RFC 2759 challenge hash the NT response answers
+     * @param authenticatorChallenge the server's 16-byte challenge
+     * @param peerChallenge the peer's 16-byte challenge
+     * @param ident the MS-CHAPv2 identifier
+     */
+    record MsChapV2(
+            byte[] challengeHash, byte[] ntResponse, byte[] authenticatorChallenge, byte[] peerChallenge, int ident) {}
 
     /**
      * The next step: another request to the peer, success (with the MSK if the method derives one), failure, or

@@ -93,3 +93,4 @@ never lets one network's secret protect another's data.
 - Not covered: CoA from a home server back through the gateway to the NAS.
 
 CoA and Disconnect from home servers are relayed to the NAS since work package 5.19 ([ADR 0043](0043-coa-relay.md)).
+Ending tunnels here and proxying only the inner user followed in work package 5.20 ([ADR 0044](0044-inner-tunnel-proxying.md)).

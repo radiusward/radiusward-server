@@ -27,6 +27,8 @@ final class EapConversations {
         int identifier;
         int rounds;
         long expires;
+        /** The reply attributes of the home server that accepted the inner user (ADR 0044), for our Accept. */
+        byte[] proxiedReply;
 
         Conversation(String nas, String identity) {
             this.nas = nas;

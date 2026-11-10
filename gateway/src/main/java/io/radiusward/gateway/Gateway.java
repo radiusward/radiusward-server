@@ -188,6 +188,9 @@ public final class Gateway implements AutoCloseable {
                 authAgent = new AuthAgent(config, auth, registry, slots, authStats, System::nanoTime, link);
                 if (proxy.enabled()) {
                     authAgent.proxy(proxy);
+                    if (proxy.inner() && handler instanceof StoreAccessHandler stores) {
+                        stores.proxyInner(new InnerProxy(proxy)); // ADR 0044
+                    }
                 }
                 socketAgents.add(authAgent);
                 for (int w = 0; w < auth.workers(); w++) {
@@ -528,6 +531,9 @@ public final class Gateway implements AutoCloseable {
         }
         if (coaRelay != null) {
             coaRelay.writeMetrics(w, id);
+        }
+        if (handler instanceof StoreAccessHandler stores && stores.innerProxy() != null) {
+            stores.innerProxy().writeMetrics(w, id);
         }
         if (authAgent != null && authAgent.proxy() != null) {
             authAgent.proxy().writeMetrics(w, id);

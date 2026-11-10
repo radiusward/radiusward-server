@@ -304,19 +304,21 @@ final class Ttls extends TlsTunnel {
         byte[] peer = Arrays.copyOfRange(response, 2, 18);
         byte[] ntResponse = Arrays.copyOfRange(response, 26, 50);
         byte[] hash = MsChap.challengeHash(peer, challenge, MsChap.v2UserName(user.getBytes(StandardCharsets.UTF_8)));
-        Inner checked = credentials.inner().msChapV2(user, hash, ntResponse);
+        Inner checked = credentials
+                .inner()
+                .msChapV2(user, new EapMethod.MsChapV2(hash, ntResponse, challenge, peer, response[0] & 0xFF));
         if (checked.code() == AccessHandler.DROP) {
             pending = new byte[][] {challenge, response};
             pendingKind = MS_CHAP_V2;
             return Step.UNAVAILABLE;
         }
         pending = null;
-        if (checked.code() != AccessHandler.ACCEPT || checked.ntHashHash() == null) {
+        if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {
             return Step.FAILED;
         }
         authenticated = user;
         successSent = true;
-        String s = MsChap.authenticatorResponseFromKey(checked.ntHashHash(), ntResponse, hash);
+        String s = checked.authenticatorResponse(ntResponse, hash);
         byte[] value = new byte[1 + s.length()];
         value[0] = response[0];
         System.arraycopy(s.getBytes(StandardCharsets.US_ASCII), 0, value, 1, s.length());

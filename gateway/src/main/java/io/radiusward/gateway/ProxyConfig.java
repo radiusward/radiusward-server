@@ -44,6 +44,8 @@ import java.util.TreeMap;
  *     ({@code proxy.require.message-authenticator}, BlastRADIUS)
  * @param coaPort where CoA and Disconnect-Requests from home servers with {@code home.<id>.coa = true} are received
  *     and relayed to the NAS ({@code proxy.coa.port}, 3799; ADR 0043); no listener without such a home server
+ * @param inner whether a tunnel (PEAP, TTLS, TEAP) for an inner user of a proxied realm ends here and only the inner
+ *     credential goes to the realm's home servers ({@code proxy.inner}, ADR 0044)
  */
 public record ProxyConfig(
         boolean enabled,
@@ -57,7 +59,8 @@ public record ProxyConfig(
         Map<String, Home> homes,
         Discovery discovery,
         boolean requireMessageAuthenticator,
-        int coaPort) {
+        int coaPort,
+        boolean inner) {
 
     public static final ProxyConfig DISABLED = new ProxyConfig(
             false,
@@ -71,7 +74,8 @@ public record ProxyConfig(
             Map.of(),
             Discovery.OFF,
             true,
-            3799);
+            3799,
+            false);
 
     /**
      * @param name the realm in lower case, {@code *} for every realm no other entry names
@@ -201,7 +205,8 @@ public record ProxyConfig(
                 Map.copyOf(homes),
                 anyDiscovery ? discovery(config) : Discovery.OFF,
                 config.bool("proxy.require.message-authenticator", true),
-                config.integer("proxy.coa.port", 3799));
+                config.integer("proxy.coa.port", 3799),
+                config.bool("proxy.inner", false));
     }
 
     private static Home home(Config config, String id) {

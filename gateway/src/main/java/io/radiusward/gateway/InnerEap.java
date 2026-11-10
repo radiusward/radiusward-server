@@ -177,21 +177,22 @@ final class InnerEap {
         byte[] ntResponse = Arrays.copyOfRange(data, 29, 53);
         byte[] name = Arrays.copyOfRange(data, 54, data.length);
         byte[] hash = MsChap.challengeHash(peerChallenge, challenge, MsChap.v2UserName(name));
-        Inner checked = credentials.inner().msChapV2(identity, hash, ntResponse);
+        Inner checked = credentials
+                .inner()
+                .msChapV2(
+                        identity, new EapMethod.MsChapV2(hash, ntResponse, challenge.clone(), peerChallenge, msChapId));
         if (checked.code() == AccessHandler.DROP) {
             pending = data;
             return Step.UNAVAILABLE;
         }
         pending = null;
-        if (checked.code() != AccessHandler.ACCEPT || checked.ntHashHash() == null) {
+        if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {
             return Step.FAILED;
         }
-        byte[] master = MsChap.masterKeyFromKey(checked.ntHashHash(), ntResponse);
         msk = new byte[32]; // the server's send key, then its receive key (the peer's receive, then send)
-        System.arraycopy(MsChap.serverKey(master, true), 0, msk, 0, 16);
-        System.arraycopy(MsChap.serverKey(master, false), 0, msk, 16, 16);
-        String success = MsChap.authenticatorResponseFromKey(checked.ntHashHash(), ntResponse, hash)
-                + " M=Authentication succeeded";
+        System.arraycopy(checked.serverKey(ntResponse, true), 0, msk, 0, 16);
+        System.arraycopy(checked.serverKey(ntResponse, false), 0, msk, 16, 16);
+        String success = checked.authenticatorResponse(ntResponse, hash) + " M=Authentication succeeded";
         state = State.MS_CHAP_SUCCESS;
         return request(MS_CHAP_V2, msChap(3, success.getBytes(StandardCharsets.US_ASCII)));
     }

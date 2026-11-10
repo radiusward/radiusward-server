@@ -195,6 +195,7 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `proxy.require.message-authenticator` | `true` | ignore answers without a valid Message-Authenticator (BlastRADIUS) |
 | `home.<id>.coa` | `false` | this (UDP) home server may send CoA and Disconnect-Requests for its users; they are relayed to the NAS of the user's session (needs `coa.enabled`; [ADR 0043](adr/0043-coa-relay.md)) |
 | `proxy.coa.port` | `3799` | where CoA from such home servers is received (on `gateway.listen.host`) |
+| `proxy.inner` | `false` | end PEAP, TTLS and TEAP here and send only the inner credential of a proxied realm's user to its UDP home servers (PAP, CHAP, MS-CHAPv2); their reply attributes become ours ([ADR 0044](adr/0044-inner-tunnel-proxying.md)) |
 
 ## Identity stores
 

@@ -266,13 +266,18 @@ class EapolTestIT {
 
     /** A second gateway offering only TEAP with these settings. */
     private static Gateway teapGateway(String name, Map<String, String> extra) throws Exception {
-        Path users =
-                Files.writeString(dir.resolve(name + "-users"), "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n");
+        return secondGateway(name, "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n", extra);
+    }
+
+    /** Another gateway with its own users file and settings (TEAP offered unless the settings say otherwise). */
+    private static Gateway secondGateway(String name, String usersFile, Map<String, String> extra) throws Exception {
+        Path users = Files.writeString(dir.resolve(name + "-users"), usersFile);
         Map<String, String> settings = new java.util.HashMap<>(Map.ofEntries(
                 Map.entry("auth.stores", "local"),
                 Map.entry("auth.store.local.type", "file"),
                 Map.entry("auth.store.local.path", users.toString()),
                 Map.entry("auth.store.local.mschap", "true"),
+                Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
                 Map.entry("auth.eap.methods", "teap"),
                 Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
@@ -301,7 +306,68 @@ class EapolTestIT {
                 c.aeronDir() + "-" + name,
                 c.dictionaryDir(),
                 c.debugResponseDelay());
-        return Gateway.launchWith(second, anyPrivateNas(), auth, Gateway.storeHandler(config, auth));
+        return Gateway.launchWith(
+                second,
+                anyPrivateNas(),
+                auth,
+                Gateway.storeHandler(config, auth),
+                RadsecConfig.DISABLED,
+                CoaConfig.DISABLED,
+                ProxyConfig.from(config));
+    }
+
+    /**
+     * The tunnel ends here, the inner user of a proxied realm is checked by its home server (ADR 0044): another gateway
+     * plays the home server and knows bob@partner.example, which the proxy does not. PAP, MS-CHAPv2 (its MPPE keys
+     * decrypted for PEAP's crypto-binding and TEAP's binding) and EAP-GTC go through; wrong passwords are rejected.
+     */
+    @Test
+    void innerUsersOfAProxiedRealmAreCheckedByTheirHomeServer() throws Exception {
+        try (Gateway home = secondGateway(
+                        "inner-home",
+                        "bob@partner.example  Cleartext-Password := \"Bob-Passw0rd!\"\n"
+                                + "                     Reply-Message = \"hello from home\"\n",
+                        Map.of("auth.eap.methods", "md5"));
+                Gateway proxy = secondGateway(
+                        "inner-proxy",
+                        "",
+                        Map.ofEntries(
+                                Map.entry("auth.eap.methods", "peap, ttls, teap"),
+                                Map.entry("auth.eap.peap.inner", "mschapv2, gtc"),
+                                Map.entry("proxy.enabled", "true"),
+                                Map.entry("proxy.inner", "true"),
+                                Map.entry("proxy.timeout", "1s"),
+                                Map.entry("home.h.address", "127.0.0.1:" + home.authPort()),
+                                Map.entry("home.h.secret", SECRET),
+                                Map.entry("pool.p.servers", "h"),
+                                Map.entry("realm.partner.name", "partner.example"),
+                                Map.entry("realm.partner.pool", "p")))) {
+            String bob = "bob@partner.example";
+            for (String[] profile : new String[][] {
+                {"inner-peap-mschapv2", peap(TLS12, "auth=MSCHAPV2", bob, "Bob-Passw0rd!")},
+                {"inner-peap-gtc", peap(TLS13, "auth=GTC", bob, "Bob-Passw0rd!")},
+                {"inner-ttls-pap", ttlsAs(bob, TLS12, "auth=PAP", "Bob-Passw0rd!")},
+                {"inner-ttls-mschapv2", ttlsAs(bob, TLS13, "auth=MSCHAPV2", "Bob-Passw0rd!")},
+                {"inner-ttls-eap-mschapv2", ttlsAs(bob, TLS12, "autheap=MSCHAPV2", "Bob-Passw0rd!")},
+                {"inner-teap-mschapv2", teapAs(bob, TLS12, "auth=MSCHAPV2", "Bob-Passw0rd!")}
+            }) {
+                Container.ExecResult ok = run(profile[0], profile[1], 0, proxy.authPort());
+                assertAccepted(ok);
+                assertThat(ok.getStdout()).as(profile[0]).contains("hello from home");
+            }
+            assertRejected(run("inner-peap-wrong", peap(TLS12, "auth=MSCHAPV2", bob, "wrong"), 0, proxy.authPort()));
+            assertRejected(run("inner-ttls-wrong", ttlsAs(bob, TLS12, "auth=PAP", "wrong"), 0, proxy.authPort()));
+            assertThat(proxy.metrics())
+                    .contains("radiusward_gateway_inner_proxy_total{gateway=\"1\",result=\"accepted\"} 6");
+        }
+    }
+
+    static String ttlsAs(String user, String tls, String phase2, String password) {
+        return ttls(tls, phase2, password).replace("identity=\"alice\"", "identity=\"" + user + "\"");
+    }
+
+    static String teapAs(String user, String tls, String phase2, String password) {
+        return teap(tls, phase2, password).replace("identity=\"alice\"", "identity=\"" + user + "\"");
     }
 
     /** TEAP's Basic-Password-Auth (no inner EAP) from a gateway that offers it first; checked like PAP. */
