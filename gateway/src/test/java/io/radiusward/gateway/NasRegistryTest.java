@@ -193,4 +193,53 @@ class NasRegistryTest {
                         io.radiusward.common.config.Config.of(java.util.Map.of("nas.x.radsec", "true"))))
                 .hasMessageContaining("nas.x.address: required");
     }
+
+    @Test
+    void ipv6EntriesMatchLongestPrefixFirst() throws Exception {
+        NasRegistry r = NasRegistry.from(Config.of(Map.of(
+                "nas.lab.address", "2001:db8:1::/48",
+                "nas.lab.secret", "lab",
+                "nas.ap.address", "2001:db8:1:2::/64",
+                "nas.ap.secret", "ap",
+                "nas.one.address", "2001:db8:1:2::7",
+                "nas.one.secret", "one",
+                "nas.v4.address", "10.0.0.1",
+                "nas.v4.secret", "v4")));
+        java.net.InetAddress seven = java.net.InetAddress.getByName("2001:db8:1:2::7");
+        assertThat(r.lookup(seven).name()).as("the /128").isEqualTo("one");
+        assertThat(r.lookup(seven).name()).as("the same sender again: cached").isEqualTo("one");
+        assertThat(r.lookup(java.net.InetAddress.getByName("2001:db8:1:2::8")).name())
+                .isEqualTo("ap");
+        assertThat(r.lookup(java.net.InetAddress.getByName("2001:db8:1:9::1")).name())
+                .isEqualTo("lab");
+        assertThat(r.lookup(java.net.InetAddress.getByName("2001:db8:2::1"))).isNull();
+        assertThat(r.lookup(java.net.InetAddress.getByName("10.0.0.1")).name()).isEqualTo("v4");
+        NasClient one = r.clients().stream()
+                .filter(c -> c.name().equals("one"))
+                .findFirst()
+                .orElseThrow();
+        assertThat(one.ipv6()).isTrue();
+        assertThat(one.singleAddress()).isTrue();
+        assertThat(one.matches(0)).as("never an IPv4 match").isFalse();
+        assertThat(one.matches6(new byte[4])).isFalse();
+
+        for (String[] wrong : new String[][] {
+            {"2001:db8::/129", "invalid prefix length"},
+            {"2001:db8::zz", "expected an IPv6 address"},
+        }) {
+            assertThatThrownBy(
+                            () -> NasRegistry.from(Config.of(Map.of("nas.x.address", wrong[0], "nas.x.secret", "s"))))
+                    .hasMessageContaining(wrong[1]);
+        }
+        assertThatThrownBy(() -> NasRegistry.from(Config.of(Map.of(
+                        "nas.a.address",
+                        "2001:db8::1",
+                        "nas.a.secret",
+                        "s",
+                        "nas.b.address",
+                        "2001:db8:0::1/128",
+                        "nas.b.secret",
+                        "s"))))
+                .hasMessageContaining("duplicate address");
+    }
 }

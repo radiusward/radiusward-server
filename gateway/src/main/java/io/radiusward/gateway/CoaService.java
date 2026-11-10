@@ -176,11 +176,14 @@ public final class CoaService {
         }
         byte[] nasIp = raw(attributes, NAS_IP_ADDRESS);
         if (nasIp == null || nasIp.length != 4) {
-            return null;
+            nasIp = raw(attributes, NAS_IPV6_ADDRESS);
+            if (nasIp == null || nasIp.length != 16) {
+                return null;
+            }
         }
         try {
             NasClient nas = registry.lookup(InetAddress.getByAddress(nasIp));
-            return nas == null || nas.prefixLength() != 32 ? null : deliver(nas, null, code, attributes);
+            return nas == null || !nas.singleAddress() ? null : deliver(nas, null, code, attributes);
         } catch (UnknownHostException e) {
             return null;
         }
@@ -233,8 +236,7 @@ public final class CoaService {
             return sender.sendRadsec(code, attrs, index, radsecLink.clients[index].secret());
         }
         CoaConfig.Target target = config.target(nas.name());
-        InetAddress address =
-                target.address() != null ? target.address() : s == null ? ipv4(nas.network()) : address(nas, s);
+        InetAddress address = target.address() != null ? target.address() : s == null ? own(nas) : address(nas, s);
         if (address == null) {
             return unreachable();
         }
@@ -266,12 +268,24 @@ public final class CoaService {
         return ip == null ? null : registry.lookup(ip);
     }
 
-    /** The entry's own address if it is a single one, else the session's NAS-IP-Address. */
+    /** The entry's own address if it is a single one, else the session's NAS-IP-Address or NAS-IPv6-Address. */
     private static InetAddress address(NasClient nas, ClusterQueries.Session s) {
-        if (nas.prefixLength() == 32) {
-            return ipv4(nas.network());
+        if (nas.singleAddress()) {
+            return own(nas);
         }
         return nasIp(s);
+    }
+
+    /** A single-address entry's address, IPv4 or IPv6. */
+    private static InetAddress own(NasClient nas) {
+        if (nas.ipv6()) {
+            try {
+                return InetAddress.getByAddress(nas.network6());
+            } catch (UnknownHostException e) {
+                return null;
+            }
+        }
+        return ipv4(nas.network());
     }
 
     private static InetAddress nasIp(ClusterQueries.Session s) {
@@ -281,9 +295,10 @@ public final class CoaService {
             if (length < 2) {
                 return null;
             }
-            if ((id[at] & 0xFF) == NAS_IP_ADDRESS && length == 6) {
+            if (((id[at] & 0xFF) == NAS_IP_ADDRESS && length == 6)
+                    || ((id[at] & 0xFF) == NAS_IPV6_ADDRESS && length == 18)) {
                 try {
-                    return InetAddress.getByAddress(java.util.Arrays.copyOfRange(id, at + 2, at + 6));
+                    return InetAddress.getByAddress(java.util.Arrays.copyOfRange(id, at + 2, at + length));
                 } catch (UnknownHostException e) {
                     return null;
                 }
@@ -312,10 +327,17 @@ public final class CoaService {
         if (s.attribute(NAS_IP_ADDRESS) == null
                 && s.attribute(NAS_IDENTIFIER) == null
                 && s.attribute(NAS_IPV6_ADDRESS) == null
-                && nas.prefixLength() == 32) {
-            int a = nas.network();
-            out.writeBytes(
-                    new byte[] {NAS_IP_ADDRESS, 6, (byte) (a >>> 24), (byte) (a >>> 16), (byte) (a >>> 8), (byte) a});
+                && nas.singleAddress()) {
+            if (nas.ipv6()) {
+                out.write(NAS_IPV6_ADDRESS);
+                out.write(18);
+                out.writeBytes(nas.network6());
+            } else {
+                int a = nas.network();
+                out.writeBytes(
+                        new byte[] {NAS_IP_ADDRESS, 6, (byte) (a >>> 24), (byte) (a >>> 16), (byte) (a >>> 8), (byte) a
+                        });
+            }
         }
         out.writeBytes(extra);
         return out.toByteArray();

@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.22 done (ADR 0020–0046). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.23 done (ADR 0020–0047). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -119,6 +119,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.20 ✅ | Inner-tunnel proxying | `proxy.inner`: the tunnel ends here, the inner user of a proxied realm is checked by its home server (PAP, CHAP, MS-CHAPv2 with MPPE keys for the bindings), its reply attributes ours ([ADR 0044](../adr/0044-inner-tunnel-proxying.md)) | M |
 | 5.21 ✅ | RADIUS over TCP | plain TCP (RFC 6613) on 1812/1813 in the RadSec agent, NAS by address with its own secret, ports keep their kind ([ADR 0045](../adr/0045-radius-over-tcp.md)) | S |
 | 5.22 ✅ | Dynamic clients | NAS entries looked up on demand in SQL (`nas` table) for unknown addresses of configured networks, off the packet path, with lifetimes and a negative cache ([ADR 0046](../adr/0046-dynamic-clients.md)) | M |
+| 5.23 ✅ | IPv6 NAS | IPv6 entries and ranges (longest prefix first), dual-stack listening, CoA by NAS-IPv6-Address ([ADR 0047](../adr/0047-ipv6-nas.md)) | S |
 
 ## Tests
 

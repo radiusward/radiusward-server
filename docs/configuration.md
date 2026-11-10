@@ -53,7 +53,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | Key | Default | Meaning |
 |---|---|---|
 | `gateway.id` | `1` | distinct per gateway |
-| `gateway.listen.host` / `gateway.listen.port` | `0.0.0.0` / `1813` | RADIUS accounting socket |
+| `gateway.listen.host` / `gateway.listen.port` | `0.0.0.0` / `1813` | RADIUS accounting socket; `::` listens on IPv6 and IPv4 (dual stack) for IPv6 NAS |
 | `gateway.socket.receive.buffer` | `4m` | `SO_RCVBUF` |
 | `gateway.egress.host` | `localhost` | address the cluster sends replies to (the pod IP in Kubernetes) |
 | `gateway.aeron.dir` | temp dir per process | embedded media driver directory |
@@ -305,7 +305,7 @@ File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 
 | Key | Default | Meaning |
 |---|---|---|
-| `nas.<name>.address` | — | IPv4 address or CIDR range of the NAS |
+| `nas.<name>.address` | — | IPv4 or IPv6 address or CIDR range of the NAS (IPv6 needs `gateway.listen.host = ::`; [ADR 0047](adr/0047-ipv6-nas.md)) |
 | `nas.<name>.secret` | — | shared secret; use `${env:...}` |
 | `nas.<name>.vendor` | `default` | vendor profile; a dictionary vendor name (`cisco`, `mikrotik`, …) also limits the vendor attributes in Access-Accepts (`reply.vendors`) |
 | `nas.<name>.message-authenticator` | `optional` | `required` \| `optional` \| `off` |

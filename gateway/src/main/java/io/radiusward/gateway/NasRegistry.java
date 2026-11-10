@@ -7,6 +7,7 @@ package io.radiusward.gateway;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
@@ -44,11 +45,16 @@ public final class NasRegistry {
 
     private final Int2ObjectHashMap<NasClient> exact = new Int2ObjectHashMap<>();
     private final NasClient[] ranges;
+    private final NasClient[] ranges6; // IPv6 entries, longest prefix first
     private final List<NasClient> all;
+    // the last IPv6 sender and its entry: the JDK hands out the same address object for a repeating sender
+    private volatile Inet6Address lastAddress6;
+    private volatile NasClient lastClient6;
     private volatile DynamicClients dynamic; // entries looked up on demand (ADR 0046), after the configured ones
 
     private NasRegistry(List<NasClient> clients) {
         List<NasClient> rangeList = new ArrayList<>();
+        List<NasClient> range6List = new ArrayList<>();
         Map<Integer, String> ids = new HashMap<>();
         for (NasClient c : clients) {
             String other = ids.put(c.id(), c.name());
@@ -59,6 +65,16 @@ public final class NasRegistry {
             if (c.certificateOnly()) {
                 continue; // found by certificate, never by address
             }
+            if (c.ipv6()) {
+                for (NasClient earlier : range6List) {
+                    if (earlier.prefixLength() == c.prefixLength()
+                            && java.util.Arrays.equals(earlier.network6(), c.network6())) {
+                        throw new ConfigException("nas." + c.name() + ".address: duplicate address");
+                    }
+                }
+                range6List.add(c);
+                continue;
+            }
             if (c.prefixLength() == 32) {
                 if (exact.put(c.network(), c) != null) {
                     throw new ConfigException("nas." + c.name() + ".address: duplicate address");
@@ -68,6 +84,8 @@ public final class NasRegistry {
             }
         }
         this.ranges = rangeList.toArray(NasClient[]::new);
+        range6List.sort((a, b) -> Integer.compare(b.prefixLength(), a.prefixLength()));
+        this.ranges6 = range6List.toArray(NasClient[]::new);
         this.all = List.copyOf(clients);
     }
 
@@ -95,9 +113,13 @@ public final class NasRegistry {
                         + prefix + "dtls = true and " + prefix + "dtls.identity)");
             }
             int slash = address.indexOf('/');
-            int prefixLength = byCertificate ? -1 : slash < 0 ? 32 : parsePrefix(prefix, address.substring(slash + 1));
-            int network =
-                    byCertificate ? 0 : ipv4(prefix + "address", slash < 0 ? address : address.substring(0, slash));
+            String host = slash < 0 ? address : address.substring(0, slash);
+            boolean v6 = !byCertificate && host.indexOf(':') >= 0;
+            int prefixLength = byCertificate
+                    ? -1
+                    : slash < 0 ? (v6 ? 128 : 32) : parsePrefix(prefix, address.substring(slash + 1), v6 ? 128 : 32);
+            int network = byCertificate || v6 ? 0 : ipv4(prefix + "address", host);
+            byte[] network6 = v6 ? ipv6(prefix + "address", host) : null;
             byte[] secret = (byCertificate ? config.string(prefix + "secret", "") : config.string(prefix + "secret"))
                     .getBytes(StandardCharsets.UTF_8);
             NasClient.MessageAuthenticatorPolicy policy = config.enumValue(
@@ -124,7 +146,8 @@ public final class NasRegistry {
                     config.enumValue(
                             prefix + "access.message-authenticator",
                             NasClient.MessageAuthenticatorPolicy.class,
-                            NasClient.MessageAuthenticatorPolicy.REQUIRED)));
+                            NasClient.MessageAuthenticatorPolicy.REQUIRED),
+                    network6));
         }
         DynamicClients dynamic = DynamicClients.from(config);
         if (clients.isEmpty() && dynamic == null) {
@@ -135,10 +158,29 @@ public final class NasRegistry {
         return registry;
     }
 
-    /** The NAS for a source address, or {@code null}. Allocation-free for IPv4. */
+    /**
+     * The NAS for a source address, or {@code null}. Allocation-free for IPv4, and for IPv6 while the same sender keeps
+     * sending; IPv6 entries match longest prefix first.
+     */
     public NasClient lookup(InetAddress address) {
+        if (address instanceof Inet6Address v6) {
+            if (v6 == lastAddress6) {
+                return lastClient6;
+            }
+            byte[] bytes = v6.getAddress();
+            NasClient found = null;
+            for (NasClient c : ranges6) {
+                if (c.matches6(bytes)) {
+                    found = c;
+                    break;
+                }
+            }
+            lastClient6 = found;
+            lastAddress6 = v6;
+            return found;
+        }
         if (!(address instanceof Inet4Address)) {
-            return null; // IPv6 NAS support arrives later
+            return null;
         }
         int ip = address.hashCode();
         NasClient client = exact.get(ip);
@@ -229,15 +271,31 @@ public final class NasRegistry {
         return list.toArray(NasClient.Identity[]::new);
     }
 
-    private static int parsePrefix(String key, String text) {
+    private static int parsePrefix(String key, String text, int max) {
         try {
             int p = Integer.parseInt(text);
-            if (p < 0 || p > 32) {
+            if (p < 0 || p > max) {
                 throw new NumberFormatException();
             }
             return p;
         } catch (NumberFormatException e) {
             throw new ConfigException(key + "address: invalid prefix length /" + text);
+        }
+    }
+
+    /** An IPv6 literal (no host names), 16 bytes. */
+    static byte[] ipv6(String key, String text) {
+        if (!text.matches("[0-9A-Fa-f:.]+") || text.indexOf(':') < 0) {
+            throw new ConfigException(key + ": expected an IPv6 address or CIDR range, got \"" + text + "\"");
+        }
+        try {
+            byte[] b = InetAddress.getByName(text).getAddress();
+            if (b.length != 16) {
+                throw new ConfigException(key + ": " + text + " is not an IPv6 address");
+            }
+            return b;
+        } catch (UnknownHostException e) {
+            throw new ConfigException(key + ": invalid address " + text, e);
         }
     }
 
