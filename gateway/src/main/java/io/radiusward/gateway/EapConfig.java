@@ -277,9 +277,9 @@ record EapConfig(
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls, ttlsInner);
             case Teap.TYPE -> tls == null ? null : new Teap(tls, teapInner, teapAuthorityId, teapIdentity);
             case EapPwd.TYPE -> new EapPwd(pwdServerId);
-            case EapSim.TYPE -> new EapSim(identity);
-            case EapAka.TYPE_AKA -> new EapAka(false, sim.networkName(), identity);
-            case EapAka.TYPE_AKA_PRIME -> new EapAka(true, sim.networkName(), identity);
+            case EapSim.TYPE -> new EapSim(identity, sim.identities());
+            case EapAka.TYPE_AKA -> new EapAka(false, sim.networkName(), identity, sim.identities());
+            case EapAka.TYPE_AKA_PRIME -> new EapAka(true, sim.networkName(), identity, sim.identities());
             default -> null;
         };
     }

@@ -276,6 +276,8 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.teap.authority.id` | `radiusward` | TEAP's Authority-ID (sent in the Start) |
 | `auth.eap.pwd.server.id` | `radiusward` | EAP-pwd's server identity (method `pwd`, group 19; needs the cleartext of a store that allows it, or an NT-Password) ([ADR 0042](adr/0042-eap-pwd.md)) |
 | `auth.eap.aka-prime.network.name` | `WLAN` | EAP-AKA′'s network name (AT_KDF_INPUT), bound into its keys; SIM subscribers are store entries named by IMSI with `SIM-Ki` and `SIM-OPc` (or `SIM-OP`), optional `SIM-AMF` and `SIM-SQN` (also `EAP-Sim-*` names); EAP-SIM also takes three stored triplets (`EAP-Sim-Rand1…3`, `EAP-Sim-SRES1…3`, `EAP-Sim-KC1…3`); the cluster keeps the sequence numbers ([ADR 0061](adr/0061-eap-sim-aka.md)) |
+| `auth.eap.sim.pseudonym.keys` | none | `<id>:<32 hex digits>`, comma-separated, the first one current: EAP-SIM/AKA/AKA′ pseudonyms are the IMSI encrypted with AES-GCM under it, any listed key decrypts (rotation); without keys no pseudonyms ([ADR 0061](adr/0061-eap-sim-aka.md)) |
+| `auth.eap.sim.reauth.lifetime` / `.max` / `.sessions` | `1h` / `16` / `100000` | fast re-authentication: how long kept keys last from the full authentication, how many re-authentications in a row, how many kept at once per gateway; `0s` = off |
 | `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |

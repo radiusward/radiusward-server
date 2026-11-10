@@ -94,7 +94,8 @@ class AkaEapolIT {
                 "auth.store.sims.type", "file",
                 "auth.store.sims.path", users.toString(),
                 "auth.plugins.dir", dir.resolve("plugins").toString(),
-                "auth.eap.methods", "aka, aka-prime, sim"));
+                "auth.eap.methods", "aka, aka-prime, sim",
+                "auth.eap.sim.pseudonym.keys", "k:000102030405060708090a0b0c0d0e0f"));
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
         gateway = cluster.startGateway(
@@ -207,6 +208,32 @@ class AkaEapolIT {
         assertThat(r.getStdout()).contains("SUCCESS");
     }
 
+    @Test
+    void fastReauthenticationAfterAFullOneForEveryMethod() throws Exception {
+        for (String[] method : new String[][] {
+            {"AKA", "0262011000000001", KI + ":" + OPC + ":000000000000"},
+            {"AKA'", "6262011000000002", KI + ":" + OPC + ":000000000000"},
+            {"SIM", "1262011000000006", KI + ":" + OPC}
+        }) {
+            Container.ExecResult r = run(
+                    "reauth-" + method[0].replace("'", "-prime"),
+                    """
+                    eap=%s
+                    identity="%s%s"
+                    password="%s"
+                    """.formatted(method[0], method[1], REALM, method[2]),
+                    2);
+            assertThat(r.getStdout().split("CTRL-EVENT-EAP-SUCCESS", -1))
+                    .as(method[0] + ": three authentications")
+                    .hasSize(4);
+            assertThat(r.getStdout())
+                    .as(method[0] + ": the later ones are fast re-authentications")
+                    .contains("Subtype=13")
+                    .contains("AT_NEXT_PSEUDONYM")
+                    .doesNotContain("mismatch: 1");
+        }
+    }
+
     /** Three triplets as an operator's AuC would have issued them: GSM-MILENAGE of the same Ki and OPc. */
     static final class StoredTriplets {
         static String items() {
@@ -236,6 +263,11 @@ class AkaEapolIT {
     }
 
     static Container.ExecResult run(String name, String network) throws Exception {
+        return run(name, network, 0);
+    }
+
+    /** @param again further authentications in the same run: fast re-authentications when the server offers them */
+    static Container.ExecResult run(String name, String network, int again) throws Exception {
         String conf = "network={\n    key_mgmt=WPA-EAP\n" + network.indent(4) + "}\n";
         Path file = Files.writeString(dir.resolve(name + ".conf"), conf, StandardCharsets.UTF_8);
         peer.copyFileToContainer(MountableFile.forHostPath(file), "/work/" + name + ".conf");
@@ -243,7 +275,7 @@ class AkaEapolIT {
                 "sh",
                 "-c",
                 "eapol_test -c /work/" + name + ".conf -a \"$(getent hosts host.docker.internal | cut -d' ' -f1)\""
-                        + " -p " + gateway.authPort() + " -s " + SECRET + " -t 20");
+                        + " -p " + gateway.authPort() + " -s " + SECRET + " -t 20 -r " + again);
         Path logs = Path.of("target/eapol-test-logs");
         Files.createDirectories(logs);
         Files.writeString(logs.resolve("aka-" + name + ".log"), result.getStdout() + result.getStderr());

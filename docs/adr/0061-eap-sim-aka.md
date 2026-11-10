@@ -18,8 +18,11 @@ pseudonyms kept by site policy. The radio attach to the LTE/5G core is not RADIU
   implemented (broken, 2G being switched off, only GPL implementations exist); such SIMs can use stored triplets.
 - **SQN in the cluster** (5.38): one sequence number per subscriber, advanced by a replicated command so that every
   gateway and every failover sees the same value; resynchronisation from AUTS updates it.
-- **Pseudonyms** are encrypted permanent identities (any gateway decrypts them, nothing stored); fast
-  re-authentication state lives per gateway with a lifetime (5.41).
+- **Pseudonyms** are the IMSI encrypted with AES-GCM under the current key of `auth.eap.sim.pseudonym.keys` (any
+  gateway with the keys decrypts them, nothing stored; listed older keys still decrypt). **Fast re-authentication**
+  keeps the keys of a full authentication per gateway for `auth.eap.sim.reauth.lifetime`, at most
+  `auth.eap.sim.reauth.max` times in a row; each identity is used once. On another gateway it is unknown and the
+  peer authenticates in full (5.41).
 
 ## Consequences
 - Interoperability is tested with wpa_supplicant's `eapol_test` and its SIM/USIM simulator; EAP-SIM is also compared

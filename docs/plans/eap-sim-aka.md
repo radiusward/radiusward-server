@@ -1,6 +1,6 @@
 # Plan: EAP-SIM, EAP-AKA and EAP-AKA′ with local SIM keys
 
-Status: in progress (2026-11-10): 5.37–5.40 done. ADR [0061](../adr/0061-eap-sim-aka.md). Follows Phase 5 ([phase-5-auth.md](phase-5-auth.md)); work packages 5.37–5.41.
+Status: done (2026-11-10): 5.37–5.41. ADR [0061](../adr/0061-eap-sim-aka.md). Follows Phase 5 ([phase-5-auth.md](phase-5-auth.md)); work packages 5.37–5.41.
 
 ## Goal and scope
 
@@ -61,8 +61,8 @@ On the wire both servers follow the same RFCs, so devices see no difference; the
   timeouts, limits).
 
 ### Identity privacy and fast re-authentication
-- **Pseudonyms**: AES-encrypted IMSI with a key index (`auth.eap.sim.pseudonym.keys`, rotatable), sent in
-  `AT_NEXT_PSEUDONYM` (encrypted in `AT_ENCR_DATA`); any gateway decrypts it, nothing stored.
+- **Pseudonyms**: the IMSI encrypted with AES-GCM under a key id (`auth.eap.sim.pseudonym.keys`, rotatable), sent
+  in `AT_NEXT_PSEUDONYM` (encrypted in `AT_ENCR_DATA`); any gateway decrypts it, nothing stored.
 - **Fast re-authentication**: `AT_NEXT_REAUTH_ID`; MK and counter kept per gateway for `auth.eap.sim.reauth.lifetime`
   with a maximum count; an unknown or expired one falls back to full authentication (no state in the cluster).
 
@@ -79,7 +79,7 @@ On the wire both servers follow the same RFCs, so devices see no difference; the
 | 5.38 ✅ | SQN in the cluster | `SqnNext`/`SqnResync` commands, state version 8, snapshot, rolling-upgrade gate, gateway client with a mailbox per worker | M |
 | 5.39 ✅ | EAP-AKA and EAP-AKA′ | identities and hints, negotiation and checkcode, challenge, resync, notifications, result indication, keys; store attributes of both naming schemes | L |
 | 5.40 ✅ | EAP-SIM | start/version negotiation, nonce, three triplets from GSM-Milenage or stored ones, keys | M |
-| 5.41 | Privacy and fast re-auth | encrypted pseudonyms with key rotation, fast re-authentication with counters | M |
+| 5.41 ✅ | Privacy and fast re-auth | encrypted pseudonyms with key rotation, fast re-authentication with counters | M |
 
 Each with an ADR, docs (`configuration.md`, the EAP section of the ADR index, strategy) and tests.
 
