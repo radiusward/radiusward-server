@@ -108,6 +108,36 @@ nas.branch-17.radsec          = true
 nas.branch-17.radsec.identity = wlc.branch-17.corp.example
 ```
 
+### DTLS
+
+RADIUS over DTLS 1.2 (RFC 7360, [ADR 0038](adr/0038-dtls.md)) on a UDP port, with the RadSec certificate, key, CAs,
+revocation and reload (`radsec.certificate`, `radsec.key`, `radsec.ca`, ...) and `radsec.handshake.timeout`. It runs
+with or without the TCP listener. One association per NAS address and port; one RADIUS packet per record.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `radsec.dtls.enabled` | `false` | accept DTLS associations on `gateway.listen.host` |
+| `radsec.dtls.port` | `2083` | UDP port |
+| `radsec.dtls.associations` | `256` | associations at once; a ClientHello beyond is dropped |
+| `radsec.dtls.idle.timeout` | `15m` | close an association without traffic for this long (`0s`: never) |
+| `radsec.dtls.retransmit` | `1s` | first retransmission of an unanswered handshake flight, doubled up to 8 times as long (RFC 6347 §4.2.4) |
+| `nas.<name>.dtls` | `false` | this NAS entry may use DTLS |
+| `nas.<name>.dtls.secret` | `radius/dtls` | the shared secret inside DTLS (RFC 7360 §2.1) |
+| `nas.<name>.dtls.identity` | — | a name the client certificate must carry; unset: any certificate of `radsec.ca` |
+| `nas.<name>.address` omitted | | with `dtls = true` and `dtls.identity`: the entry is identified by its certificate alone, as for RadSec |
+
+```properties
+radsec.dtls.enabled = true
+radsec.certificate  = /etc/radiusward/tls/radsec.pem
+radsec.key          = /etc/radiusward/tls/radsec.key
+radsec.ca           = /etc/radiusward/tls/nas-ca.pem
+nas.ap-cloud.address       = 203.0.113.0/24
+nas.ap-cloud.secret        = ${env:AP_CLOUD_SECRET}
+nas.ap-cloud.identity      = nas-identifier
+nas.ap-cloud.dtls          = true
+nas.ap-cloud.dtls.identity = controller.ap-cloud.example
+```
+
 ## CoA and Disconnect (gateway)
 
 The gateway changes or ends sessions on their NAS (RFC 5176, [ADR 0036](adr/0036-coa-and-session-identity.md)).

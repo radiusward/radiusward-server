@@ -36,8 +36,9 @@ import org.agrona.collections.Int2ObjectHashMap;
  * nas.core.access.message-authenticator = required   # on Access-Requests (default required: BlastRADIUS)
  * </pre>
  *
- * An entry without {@code address} but with {@code radsec = true} and {@code radsec.identity} is identified by its
- * RadSec client certificate alone (NAT, changing addresses); it is kept out of the address lookup.
+ * An entry without {@code address} but with {@code radsec = true} and {@code radsec.identity} (or {@code dtls = true}
+ * and {@code dtls.identity}) is identified by its RadSec or DTLS client certificate alone (NAT, changing addresses);
+ * it is kept out of the address lookup.
  */
 public final class NasRegistry {
 
@@ -73,17 +74,21 @@ public final class NasRegistry {
         return new NasRegistry(clients);
     }
 
+    private static boolean byCertificate(Config config, String prefix, String transport) {
+        return config.bool(prefix + transport, false)
+                && !config.string(prefix + transport + ".identity", "").isBlank();
+    }
+
     public static NasRegistry from(Config config) {
         List<NasClient> clients = new ArrayList<>();
         for (String name : config.names("nas")) {
             String prefix = "nas." + name + ".";
             String address = config.string(prefix + "address", "").trim();
             boolean byCertificate = address.isEmpty();
-            if (byCertificate
-                    && (!config.bool(prefix + "radsec", false)
-                            || config.string(prefix + "radsec.identity", "").isBlank())) {
+            if (byCertificate && !byCertificate(config, prefix, "radsec") && !byCertificate(config, prefix, "dtls")) {
                 throw new ConfigException(prefix + "address: required, unless the entry is identified by its RadSec"
-                        + " certificate (" + prefix + "radsec = true and " + prefix + "radsec.identity)");
+                        + " or DTLS certificate (" + prefix + "radsec = true and " + prefix + "radsec.identity, or "
+                        + prefix + "dtls = true and " + prefix + "dtls.identity)");
             }
             int slash = address.indexOf('/');
             int prefixLength = byCertificate ? -1 : slash < 0 ? 32 : parsePrefix(prefix, address.substring(slash + 1));

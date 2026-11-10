@@ -11,6 +11,7 @@ import io.radiusward.common.management.Health;
 import io.radiusward.common.management.ManagementServer;
 import io.radiusward.gateway.AuthConfig;
 import io.radiusward.gateway.CoaConfig;
+import io.radiusward.gateway.DtlsClient;
 import io.radiusward.gateway.Gateway;
 import io.radiusward.gateway.RadsecClient;
 import io.radiusward.gateway.RadsecConfig;
@@ -275,6 +276,53 @@ class CoaIT {
                     .isTrue();
             client.send(ack(request, radsec));
             assertThat(call.join().body()).contains("\"session\":\"s-carol\"").contains("\"result\":\"ack\"");
+        }
+        assertThat(requests).as("nothing over UDP").isEmpty();
+    }
+
+    @Test
+    void aNasOnDtlsGetsItOnItsAssociation() throws Exception {
+        TestPki pki = new TestPki(dir, "coa-dtls");
+        Gateway gateway = start(RadsecConfig.from(
+                Config.of(Map.of(
+                        "radsec.dtls.enabled",
+                        "true",
+                        "radsec.dtls.port",
+                        "0",
+                        "radsec.certificate",
+                        pki.serverPem.toString(),
+                        "radsec.key",
+                        pki.serverKey.toString(),
+                        "radsec.ca",
+                        pki.caPem.toString(),
+                        "nas." + LocalCluster.NAS_NAME + ".dtls",
+                        "true")),
+                "127.0.0.1"));
+        byte[] dtls = "radius/dtls".getBytes(StandardCharsets.US_ASCII);
+        try (DtlsClient client =
+                new DtlsClient(gateway.dtlsPort(), TestPki.clientContext(pki.client("nas"), pki.ca, "DTLS"))) {
+            byte[] start = accounting(6, "s-dave", "dave", dtls);
+            client.send(start);
+            assertThat(client.receive()[0]).isEqualTo((byte) RadiusCode.ACCOUNTING_RESPONSE);
+
+            CompletableFuture<HttpResponse<String>> call = CompletableFuture.supplyAsync(() -> {
+                try {
+                    return post("/coa/disconnect?user=dave", "", TOKEN);
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
+            });
+            byte[] request = client.receive();
+            assertThat(request[0])
+                    .as("Disconnect-Request on the DTLS association")
+                    .isEqualTo((byte) 40);
+            RadiusPacket p = new RadiusPacket();
+            p.wrap(new UnsafeBuffer(request), 0, request.length);
+            assertThat(new RadiusAuthenticator().verifyAccountingRequest(p, dtls))
+                    .as("signed with radius/dtls")
+                    .isTrue();
+            client.send(ack(request, dtls));
+            assertThat(call.join().body()).contains("\"session\":\"s-dave\"").contains("\"result\":\"ack\"");
         }
         assertThat(requests).as("nothing over UDP").isEmpty();
     }

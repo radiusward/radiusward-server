@@ -175,6 +175,11 @@ public final class TestPki {
 
     /** A TLS client context: its certificate (or none) and trust in {@code serverCa}. */
     public static SSLContext clientContext(Issued client, Issued serverCa) throws Exception {
+        return clientContext(client, serverCa, "TLS");
+    }
+
+    /** As above for {@code protocol} ({@code TLS} or {@code DTLS}). */
+    public static SSLContext clientContext(Issued client, Issued serverCa, String protocol) throws Exception {
         KeyStore keys = KeyStore.getInstance("PKCS12");
         keys.load(null, null);
         if (client != null) {
@@ -188,7 +193,7 @@ public final class TestPki {
         trust.setCertificateEntry("ca", serverCa.certificate());
         TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
         tmf.init(trust);
-        SSLContext context = SSLContext.getInstance("TLS");
+        SSLContext context = SSLContext.getInstance(protocol);
         context.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
         return context;
     }

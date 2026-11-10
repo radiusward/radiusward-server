@@ -58,6 +58,7 @@ Each needs those attributes, for any session, from any gateway, also after resta
     is a timeout.
 - **Where to**:
   - Over the NAS's RadSec connection, if it has one (RFC 6614 lets both sides send on it), with its RadSec secret.
+  - Otherwise over its DTLS association, if it has one, with its DTLS secret (RFC 7360 §2.4, [ADR 0038](0038-dtls.md)).
   - Otherwise over UDP to `nas.<name>.coa.address`, else the entry's address if it is a single one, else the
     session's NAS-IP-Address. The port is `nas.<name>.coa.port` (3799), the secret `nas.<name>.coa.secret` (else
     the entry's).

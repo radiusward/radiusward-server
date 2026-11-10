@@ -153,7 +153,8 @@ public final class Gateway implements AutoCloseable {
             OneToOneRingBuffer toCluster = ring();
             OneToOneRingBuffer fromCluster = ring();
             java.util.Map<String, Integer> radsecIndex = new java.util.TreeMap<>();
-            RadsecLink link = radsec.enabled() ? radsecLink(registry, radsec, radsecIndex) : null;
+            java.util.Map<String, Integer> dtlsIndex = new java.util.TreeMap<>();
+            RadsecLink link = radsec.enabled() ? radsecLink(registry, radsec, radsecIndex, dtlsIndex) : null;
             UdpAgent udp = new UdpAgent(
                     config,
                     registry,
@@ -209,7 +210,8 @@ public final class Gateway implements AutoCloseable {
             }
             RadsecAgent radsecAgent = null;
             if (link != null) {
-                radsecAgent = new RadsecAgent(radsec, registry, link, radsecIndex, auth.enabled(), System::nanoTime);
+                radsecAgent = new RadsecAgent(
+                        radsec, registry, link, radsecIndex, dtlsIndex, auth.enabled(), System::nanoTime);
                 socketAgents.add(radsecAgent);
             }
             ClusterQueries queries = null;
@@ -243,8 +245,8 @@ public final class Gateway implements AutoCloseable {
             gateway.radsecAgent = radsecAgent;
             if (dynamic != null) {
                 gateway.dynamicAuthorization = dynamic;
-                gateway.coaService =
-                        new CoaService(coa, registry, queries, dynamic, dictionary, link, radsecIndex, radsecAgent);
+                gateway.coaService = new CoaService(
+                        coa, registry, queries, dynamic, dictionary, link, radsecIndex, dtlsIndex, radsecAgent);
                 coaHolder.set(gateway.coaService);
                 if (coa.sweep().enabled() && handler instanceof StoreAccessHandler stores) {
                     gateway.sweep = new StoreSweep(coa.sweep(), gateway.coaService, stores);
@@ -334,30 +336,46 @@ public final class Gateway implements AutoCloseable {
         return authAgent.localPort();
     }
 
-    /** The NAS entries allowed over RadSec, with their RadSec secret; the same ids, so events dedup across both. */
+    /**
+     * The NAS entries allowed over RadSec, then those allowed over DTLS, each with the secret of that transport; the
+     * same ids as over UDP, so events dedup across all three.
+     */
     private static RadsecLink radsecLink(
-            NasRegistry registry, RadsecConfig radsec, java.util.Map<String, Integer> index) {
+            NasRegistry registry,
+            RadsecConfig radsec,
+            java.util.Map<String, Integer> index,
+            java.util.Map<String, Integer> dtlsIndex) {
         java.util.List<NasClient> clients = new java.util.ArrayList<>();
-        radsec.clients().keySet().stream().sorted().forEach(name -> {
+        addLinkClients(registry, radsec.clients(), "radsec", clients, index);
+        addLinkClients(registry, radsec.dtls().clients(), "dtls", clients, dtlsIndex);
+        return new RadsecLink(clients.toArray(NasClient[]::new));
+    }
+
+    private static void addLinkClients(
+            NasRegistry registry,
+            java.util.Map<String, RadsecConfig.Client> allowed,
+            String key,
+            java.util.List<NasClient> clients,
+            java.util.Map<String, Integer> index) {
+        allowed.keySet().stream().sorted().forEach(name -> {
             NasClient n = registry.clients().stream()
                     .filter(c -> c.name().equals(name))
                     .findFirst()
                     .orElseThrow(() -> new io.radiusward.common.config.ConfigException(
-                            "nas." + name + ".radsec: no such NAS entry"));
+                            "nas." + name + "." + key + ": no such NAS entry"));
             index.put(name, clients.size());
             clients.add(new NasClient(
                     n.name(),
                     n.id(),
                     n.network(),
                     n.prefixLength(),
-                    radsec.clients().get(name).secret(),
+                    allowed.get(name).secret(),
                     n.vendor(),
                     n.messageAuthenticator(),
                     n.identity(),
                     n.idleTimeoutMinutes(),
                     n.accessMessageAuthenticator()));
         });
-        return new RadsecLink(clients.toArray(NasClient[]::new));
     }
 
     /** RadSec port actually bound, -1 without RadSec; waits briefly for the bind. */
@@ -370,6 +388,18 @@ public final class Gateway implements AutoCloseable {
             Thread.onSpinWait();
         }
         return radsecAgent.localPort();
+    }
+
+    /** DTLS port actually bound, -1 without DTLS; waits briefly for the bind. */
+    public int dtlsPort() {
+        if (radsecAgent == null) {
+            return -1;
+        }
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (!radsecAgent.bound() && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        return radsecAgent.localDtlsPort();
     }
 
     RadsecAgent radsecAgent() {

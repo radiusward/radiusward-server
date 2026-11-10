@@ -45,6 +45,7 @@ public final class CoaService {
     private final Dictionary dictionary;
     private final RadsecLink radsecLink;
     private final Map<String, Integer> radsecIndex;
+    private final Map<String, Integer> dtlsIndex;
     private final RadsecAgent radsec;
 
     CoaService(
@@ -55,6 +56,7 @@ public final class CoaService {
             Dictionary dictionary,
             RadsecLink radsecLink,
             Map<String, Integer> radsecIndex,
+            Map<String, Integer> dtlsIndex,
             RadsecAgent radsec) {
         this.config = config;
         this.registry = registry;
@@ -63,6 +65,7 @@ public final class CoaService {
         this.dictionary = dictionary;
         this.radsecLink = radsecLink;
         this.radsecIndex = radsecIndex;
+        this.dtlsIndex = dtlsIndex;
         this.radsec = radsec;
     }
 
@@ -165,8 +168,11 @@ public final class CoaService {
         } catch (IllegalArgumentException e) {
             return CompletableFuture.failedFuture(e);
         }
-        Integer index = radsecIndex.get(nas.name());
-        if (index != null && radsec != null && radsec.connected(index)) {
+        Integer index = connected(radsecIndex.get(nas.name()));
+        if (index == null) {
+            index = connected(dtlsIndex.get(nas.name())); // RFC 7360 §2.4: over its DTLS association
+        }
+        if (index != null) {
             byte[] attrs = attributes(s, nas, extra);
             return sender.sendRadsec(code, attrs, index, radsecLink.clients[index].secret());
         }
@@ -180,6 +186,11 @@ public final class CoaService {
                 attributes(s, nas, extra),
                 new InetSocketAddress(address, target.port()),
                 target.secret() != null ? target.secret() : nas.secret());
+    }
+
+    /** The link index if the NAS has an established RadSec connection or DTLS association there. */
+    private Integer connected(Integer index) {
+        return index != null && radsec != null && radsec.connected(index) ? index : null;
     }
 
     private static CompletableFuture<DynamicAuthorization.Result> unreachable() {

@@ -17,7 +17,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** {@code radsec.*} and {@code nas.<name>.radsec*} (ADR 0034). */
+/** {@code radsec.*} and {@code nas.<name>.radsec*} (ADR 0034); {@code radsec.dtls.*} and {@code nas.<name>.dtls*} (ADR 0038). */
 class RadsecConfigTest {
 
     @TempDir
@@ -90,5 +90,70 @@ class RadsecConfigTest {
         none.put("nas.core.radsec", "false");
         assertThatThrownBy(() -> RadsecConfig.from(Config.of(none), "0.0.0.0"))
                 .hasMessageContaining("nas.<name>.radsec");
+    }
+
+    @Test
+    void dtlsAloneOrBesideTcp() {
+        Map<String, String> settings = base();
+        settings.put("radsec.enabled", "false");
+        settings.put("radsec.dtls.enabled", "true");
+        settings.put("nas.edge.dtls", "true");
+        settings.put("nas.core.dtls", "true");
+        settings.put("nas.core.dtls.secret", "dtls-other");
+        settings.put("nas.core.dtls.identity", "core.corp.test");
+        RadsecConfig c = RadsecConfig.from(Config.of(settings), "0.0.0.0");
+        assertThat(c.enabled()).isTrue();
+        assertThat(c.tcp()).isFalse();
+        assertThat(c.clients()).as("no TCP clients without the TCP listener").isEmpty();
+        RadsecConfig.Dtls dtls = c.dtls();
+        assertThat(dtls.enabled()).isTrue();
+        assertThat(dtls.port()).isEqualTo(2083);
+        assertThat(dtls.associations()).isEqualTo(256);
+        assertThat(dtls.idleTimeout()).isEqualTo(Duration.ofMinutes(15));
+        assertThat(dtls.retransmit()).isEqualTo(Duration.ofSeconds(1));
+        assertThat(new String(dtls.clients().get("edge").secret(), StandardCharsets.UTF_8))
+                .as("RFC 7360 §2.1")
+                .isEqualTo("radius/dtls");
+        assertThat(dtls.clients().get("core").identity()).isEqualTo("core.corp.test");
+        assertThat(new String(dtls.clients().get("core").secret(), StandardCharsets.UTF_8))
+                .isEqualTo("dtls-other");
+        assertThat(c.credentials().currentDtls().getProtocol()).isEqualTo("DTLS");
+        assertThat(c.credentials().currentDtls())
+                .as("built once per certificate set")
+                .isSameAs(c.credentials().currentDtls());
+
+        settings.put("radsec.enabled", "true");
+        RadsecConfig both = RadsecConfig.from(Config.of(settings), "0.0.0.0");
+        assertThat(both.tcp()).isTrue();
+        assertThat(both.clients()).containsOnlyKeys("edge", "core");
+        assertThat(both.dtls().clients()).containsOnlyKeys("edge", "core");
+    }
+
+    @Test
+    void dtlsMistakesAreConfigErrors() {
+        for (String[] wrong : new String[][] {
+            {"radsec.dtls.associations", "0", "radsec.dtls.associations"},
+            {"radsec.dtls.retransmit", "0s", "radsec.dtls.retransmit"},
+            {"nas.edge.dtls", "false", "nas.<name>.dtls"}
+        }) {
+            Map<String, String> settings = base();
+            settings.put("radsec.dtls.enabled", "true");
+            settings.put("nas.edge.dtls", "true");
+            settings.put(wrong[0], wrong[1]);
+            assertThatThrownBy(() -> RadsecConfig.from(Config.of(settings), "0.0.0.0"))
+                    .as(wrong[0])
+                    .hasMessageContaining(wrong[2]);
+        }
+    }
+
+    @Test
+    void aNasEntryMayBeIdentifiedByItsDtlsCertificateAlone() {
+        NasRegistry registry = NasRegistry.from(
+                Config.of(Map.of("nas.roaming.dtls", "true", "nas.roaming.dtls.identity", "ap-7.corp.test")));
+        assertThat(registry.clients())
+                .singleElement()
+                .satisfies(n -> assertThat(n.certificateOnly()).isTrue());
+        assertThatThrownBy(() -> NasRegistry.from(Config.of(Map.of("nas.roaming.dtls", "true"))))
+                .hasMessageContaining("dtls.identity");
     }
 }

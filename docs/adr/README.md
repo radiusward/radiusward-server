@@ -39,5 +39,6 @@
 | [0035](0035-eap-session-resumption.md) | EAP session resumption per gateway, PEAP/TTLS fast reconnect with the inner user authorized again | Accepted |
 | [0036](0036-coa-and-session-identity.md) | CoA/Disconnect; sessions' identifying attributes in the replicated state (version 7), off-heap, 2M sessions still in 1 GiB | Accepted |
 | [0037](0037-proxying.md) | Proxying realms to home servers: strictly local or proxied, non-blocking on the auth thread, everything re-encrypted, Status-Server health | Accepted |
+| [0038](0038-dtls.md) | RADIUS over DTLS 1.2 (RFC 7360) in the RadSec agent: associations per NAS address, retransmission, one packet per record | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

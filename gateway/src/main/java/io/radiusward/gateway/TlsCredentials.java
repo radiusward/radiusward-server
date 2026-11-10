@@ -71,6 +71,8 @@ final class TlsCredentials {
     private final AtomicLong reloadFailures = new AtomicLong();
     private final AtomicLong resumptions = new AtomicLong();
     private volatile SSLContext context;
+    private volatile SSLContext dtls; // built from the same files as context, on first use
+    private volatile SSLContext dtlsOf;
     private volatile long nextCheck;
     private long[] stamps;
 
@@ -194,6 +196,20 @@ final class TlsCredentials {
         return context;
     }
 
+    /** A DTLS 1.2 context from the same certificate, key and CAs as {@link #current()} (RFC 7360, ADR 0038). */
+    SSLContext currentDtls() {
+        SSLContext tls = current();
+        if (dtlsOf != tls) {
+            synchronized (this) {
+                if (dtlsOf != tls) {
+                    dtls = build("DTLS");
+                    dtlsOf = tls;
+                }
+            }
+        }
+        return dtls;
+    }
+
     long reloads() {
         return reloads.get();
     }
@@ -253,6 +269,10 @@ final class TlsCredentials {
     }
 
     private SSLContext build() {
+        return build("TLS");
+    }
+
+    private SSLContext build(String protocol) {
         try {
             Certificate[] certificates = certificates(chain).toArray(Certificate[]::new);
             if (certificates.length == 0) {
@@ -267,7 +287,7 @@ final class TlsCredentials {
             keys.setKeyEntry("server", privateKey, new char[0], certificates);
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             kmf.init(keys, new char[0]);
-            SSLContext ssl = SSLContext.getInstance("TLS");
+            SSLContext ssl = SSLContext.getInstance(protocol);
             ssl.init(kmf.getKeyManagers(), ca == null ? null : trust().getTrustManagers(), null);
             if (sessionTimeout != null) {
                 // the JDK reads 0 as "no limit": resumption off is a session that expires at once
