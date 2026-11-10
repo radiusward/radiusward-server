@@ -21,6 +21,8 @@ import java.util.Locale;
  * @param tls the TLS side ({@code auth.eap.tls.*}), {@code null} without a certificate
  * @param peapInner the inner EAP types PEAP offers, first preferred ({@code auth.eap.peap.inner})
  * @param peapBinding PEAP crypto-binding ({@code auth.eap.peap.crypto.binding}, ADR 0032)
+ * @param peapClientCertificate whether PEAP's TLS handshake requires a client certificate
+ *     ({@code auth.eap.peap.client.certificate}, ADR 0039)
  */
 record EapConfig(
         List<String> methods,
@@ -29,10 +31,22 @@ record EapConfig(
         int maxRounds,
         EapTlsConfig tls,
         List<Integer> peapInner,
-        Peap.Binding peapBinding) {
+        Peap.Binding peapBinding,
+        boolean peapClientCertificate) {
 
     EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
         this(methods, timeout, conversations, maxRounds, tls, List.of(Peap.MS_CHAP_V2), Peap.Binding.OPTIONAL);
+    }
+
+    EapConfig(
+            List<String> methods,
+            Duration timeout,
+            int conversations,
+            int maxRounds,
+            EapTlsConfig tls,
+            List<Integer> peapInner,
+            Peap.Binding peapBinding) {
+        this(methods, timeout, conversations, maxRounds, tls, peapInner, peapBinding, false);
     }
 
     static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls");
@@ -81,6 +95,11 @@ record EapConfig(
         } catch (IllegalArgumentException e) {
             throw new ConfigException("auth.eap.peap.crypto.binding: off, optional or required, got " + binding, e);
         }
+        boolean peapCertificate = config.bool("auth.eap.peap.client.certificate", false);
+        if (peapCertificate && config.string("auth.eap.tls.ca", "").isBlank()) {
+            throw new ConfigException(
+                    "auth.eap.peap.client.certificate: needs auth.eap.tls.ca, the CAs of client certificates");
+        }
         return new EapConfig(
                 List.copyOf(methods),
                 config.duration("auth.eap.timeout", Duration.ofSeconds(30)),
@@ -88,7 +107,8 @@ record EapConfig(
                 200, // a TLS handshake in small fragments takes many rounds
                 tls,
                 inner,
-                peapBinding);
+                peapBinding,
+                peapCertificate);
     }
 
     /** The EAP type number of a method name. */
@@ -111,7 +131,7 @@ record EapConfig(
         return switch (type) {
             case EapPacket.TYPE_MD5 -> new EapMd5();
             case EapTls.TYPE -> tls == null ? null : new EapTls(tls, identity);
-            case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner, peapBinding);
+            case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner, peapBinding, peapClientCertificate);
             case Ttls.TYPE -> tls == null ? null : new Ttls(tls);
             default -> null;
         };

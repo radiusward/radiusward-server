@@ -50,6 +50,12 @@ final class Ttls extends TlsTunnel {
         return false;
     }
 
+    /** TTLSv0 (RFC 5281 §9.1: the only version). */
+    @Override
+    int version() {
+        return 0;
+    }
+
     @Override
     String keyLabel() {
         return "ttls keying material";

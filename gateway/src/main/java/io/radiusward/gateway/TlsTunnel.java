@@ -27,6 +27,8 @@ abstract class TlsTunnel implements EapMethod {
     static final int FLAG_LENGTH = 0x80;
     static final int FLAG_MORE = 0x40;
     static final int FLAG_START = 0x20;
+    /** PEAP and TTLS carry their version in the low three flag bits; EAP-TLS keeps them reserved. */
+    static final int VERSION_BITS = 0x07;
 
     final EapTlsConfig config;
     private SSLEngine engine;
@@ -45,6 +47,14 @@ abstract class TlsTunnel implements EapMethod {
 
     /** Whether the peer must present a certificate (EAP-TLS), or the tunnel authenticates only the server. */
     abstract boolean clientCertificate();
+
+    /**
+     * The method version the server offers in its Start (0 for PEAPv0 and TTLSv0), {@code -1} for a method without a
+     * version field (EAP-TLS). A peer may answer with that version or a lower one, never a higher one.
+     */
+    int version() {
+        return -1;
+    }
 
     /** The TLS 1.2 exporter label of the method's keys. */
     abstract String keyLabel();
@@ -148,6 +158,9 @@ abstract class TlsTunnel implements EapMethod {
             return settled(step);
         }
         int flags = data[0] & 0xFF;
+        if (version() >= 0 && (flags & VERSION_BITS) > version()) {
+            return Step.FAILED; // a peer claiming a version above the offered one (a PEAPv1-only peer, say)
+        }
         int offset = 1;
         if ((flags & FLAG_LENGTH) != 0) {
             if (data.length < 5) {

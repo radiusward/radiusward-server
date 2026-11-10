@@ -93,7 +93,7 @@ class EapTlsTest {
                 mschap,
                 verifiers,
                 storeVerifiers,
-                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls, peapInner, binding));
+                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls, peapInner, binding, peapCertificate));
         return new StoreAccessHandler(auth, StoreAccessHandlerTest.DICTIONARY, System::currentTimeMillis);
     }
 
@@ -136,6 +136,10 @@ class EapTlsTest {
 
     private EapPacket lastResponse;
     private byte[] lastState;
+    /** Rewrites each answer of the peer before it is sent (a peer claiming another method version). */
+    private java.util.function.UnaryOperator<byte[]> tamper = a -> a;
+    /** {@code auth.eap.peap.client.certificate} for the handlers made next. */
+    private boolean peapCertificate;
 
     private int converse(StoreAccessHandler h, String identity, EapTlsClient client, int type) throws Exception {
         int code = handle(h, StoreAccessHandlerTest.identity(1, identity), null);
@@ -143,7 +147,7 @@ class EapTlsTest {
         while (code == AccessHandler.CHALLENGE && rounds++ < 300) {
             EapPacket request = EapPacket.from(reply());
             assertThat(request.type()).isEqualTo(type);
-            byte[] answer = client.answer(request.data());
+            byte[] answer = tamper.apply(client.answer(request.data()));
             lastResponse = new EapPacket(EapPacket.RESPONSE, request.identifier(), type, answer);
             lastState = state();
             code = handle(h, lastResponse, lastState);
@@ -432,6 +436,7 @@ class EapTlsTest {
         EapConfig defaults = EapConfig.from(io.radiusward.common.config.Config.of(base));
         assertThat(defaults.tls().identity()).isEqualTo(CertificateIdentity.Check.MATCH);
         assertThat(defaults.peapBinding()).isEqualTo(Peap.Binding.OPTIONAL);
+        assertThat(defaults.peapClientCertificate()).as("as other servers: off").isFalse();
 
         Map<String, String> custom = new java.util.HashMap<>(base);
         custom.put("auth.eap.tls.identity", "certificate");
@@ -439,7 +444,9 @@ class EapTlsTest {
         custom.put("auth.eap.tls.revocation", "ocsp");
         custom.put("auth.eap.tls.ocsp.url", "http://127.0.0.1:9/");
         custom.put("auth.eap.tls.reload", "0s");
+        custom.put("auth.eap.peap.client.certificate", "true");
         EapConfig set = EapConfig.from(io.radiusward.common.config.Config.of(custom));
+        assertThat(set.peapClientCertificate()).isTrue();
         assertThat(set.tls().identity()).isEqualTo(CertificateIdentity.Check.CERTIFICATE);
         assertThat(set.peapBinding()).isEqualTo(Peap.Binding.REQUIRED);
         assertThat(set.outerOptional(EapTls.TYPE)).isTrue();
@@ -455,6 +462,13 @@ class EapTlsTest {
                             () -> EapConfig.from(io.radiusward.common.config.Config.of(bad)))
                     .hasMessageContaining(wrong[0]);
         }
+        Map<String, String> noCa = new java.util.HashMap<>(base);
+        noCa.remove("auth.eap.tls.ca");
+        noCa.put("auth.eap.methods", "peap");
+        noCa.put("auth.eap.peap.client.certificate", "true");
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                        () -> EapConfig.from(io.radiusward.common.config.Config.of(noCa)))
+                .hasMessageContaining("auth.eap.peap.client.certificate: needs auth.eap.tls.ca");
     }
 
     // ---- PEAPv0 / EAP-MSCHAPv2 (ADR 0029) --------------------------------------------------------
@@ -488,6 +502,102 @@ class EapTlsTest {
                 .isTrue();
         assertThat(reply().findAttribute(11)).as("the inner user's reply items").isPositive();
         assertKeys(client, Peap.TYPE);
+    }
+
+    @Test
+    void aPeerClaimingAHigherVersionFails() throws Exception {
+        store.user(
+                        "alice",
+                        List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Alice-Pw")))),
+                        List.of())
+                .user("carol", List.of(new AttributeItem("Cleartext-Password", ":=", "Carol-Pw")), List.of());
+        tamper = a -> {
+            byte[] b = a.clone();
+            b[0] |= 1; // PEAPv1, TTLSv1: above the version 0 offered
+            return b;
+        };
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.2", new PeapPeer("alice", "Alice-Pw")), Peap.TYPE))
+                .as("PEAPv1")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()),
+                        "anonymous",
+                        ttlsClient("TLSv1.2", new TtlsPeer("carol", "Carol-Pw", false, false)),
+                        Ttls.TYPE))
+                .as("TTLSv1")
+                .isEqualTo(AccessHandler.REJECT);
+        tamper = a -> a;
+        assertThat(converse(peap(), "anonymous", peapClient("TLSv1.2", new PeapPeer("alice", "Alice-Pw")), Peap.TYPE))
+                .as("PEAPv0")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()),
+                        "anonymous",
+                        ttlsClient("TLSv1.2", new TtlsPeer("carol", "Carol-Pw", false, false)),
+                        Ttls.TYPE))
+                .as("TTLSv0")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void eapTlsIgnoresTheReservedBits() throws Exception {
+        tamper = a -> {
+            byte[] b = a.clone();
+            b[0] |= 0x07; // reserved in EAP-TLS (RFC 5216 §3.1): ignored on receipt
+            return b;
+        };
+        assertThat(converse(
+                        handler(1024, false, 65_536),
+                        "nas-user",
+                        new EapTlsClient(TestPki.clientContext(pki.client("nas-user"), pki.ca), "TLSv1.3", 1024)))
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void peapMayRequireAClientCertificate() throws Exception {
+        store.user(
+                "alice",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Alice-Pw")))),
+                List.of());
+        peapCertificate = true;
+        StoreAccessHandler h = peap();
+        assertThat(converse(h, "anonymous", peapClient("TLSv1.3", new PeapPeer("alice", "Alice-Pw")), Peap.TYPE))
+                .as("no client certificate")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        new EapTlsClient(
+                                TestPki.clientContext(other.client("laptop-7"), pki.ca),
+                                "TLSv1.3",
+                                1024,
+                                new PeapPeer("alice", "Alice-Pw")),
+                        Peap.TYPE))
+                .as("a certificate of another CA")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        new EapTlsClient(
+                                TestPki.clientContext(pki.client("laptop-7"), pki.ca),
+                                "TLSv1.3",
+                                1024,
+                                new PeapPeer("alice", "Alice-Pw")),
+                        Peap.TYPE))
+                .as("a certificate of auth.eap.tls.ca, then the inner method as usual")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        new EapTlsClient(
+                                TestPki.clientContext(pki.client("laptop-7"), pki.ca),
+                                "TLSv1.3",
+                                1024,
+                                new PeapPeer("alice", "wrong")),
+                        Peap.TYPE))
+                .as("the certificate does not replace the password")
+                .isEqualTo(AccessHandler.REJECT);
+        peapCertificate = false;
     }
 
     @Test

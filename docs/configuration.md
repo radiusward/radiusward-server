@@ -231,6 +231,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.tls.reload` | `60s` | how often the certificate, key, CA and CRL files are checked for changes; a change that does not load keeps the previous ones; `0s` = never |
 | `auth.eap.peap.inner` | `mschapv2` | inner methods PEAP offers, first preferred: `mschapv2`, `gtc` (a password checked like PAP), `tls` (a client certificate; needs `auth.eap.tls.ca`) ([ADR 0031](adr/0031-peap-inner-methods.md)) |
 | `auth.eap.peap.crypto.binding` | `optional` | PEAP crypto-binding: `optional` (sent; a peer without support may answer without it, a wrong one fails), `required`, `off`; with a verified binding the keys come from the compound session key ([ADR 0032](adr/0032-peap-crypto-binding.md)) |
+| `auth.eap.peap.client.certificate` | `false` | PEAP's TLS handshake requires a client certificate of `auth.eap.tls.ca` (with its revocation settings), in addition to the inner method; needs `auth.eap.tls.ca` ([ADR 0039](adr/0039-peap-alignment.md)). PEAP is offered as version 0 only; a peer answering PEAP or TTLS with a higher version is rejected |
 | `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |

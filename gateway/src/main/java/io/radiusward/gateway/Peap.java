@@ -11,7 +11,7 @@ import java.util.HexFormat;
 import java.util.Locale;
 
 /**
- * PEAPv0 (MS-PEAP, ADR 0029, 0031): a TLS tunnel that authenticates only the server, then inside it the real identity
+ * PEAPv0 (MS-PEAP, ADR 0029, 0031, 0039): a TLS tunnel that authenticates only the server, then inside it the real identity
  * and an inner method from {@code auth.eap.peap.inner}: EAP-MSCHAPv2 (checked like MS-CHAPv2 outside: local NT hash,
  * cleartext opt-in, a credential verifier such as Netlogon), EAP-GTC (a password, checked like PAP) or EAP-TLS (a
  * client certificate); the peer may Nak to another listed one. Inner EAP messages go without their header (type and data only),
@@ -77,6 +77,7 @@ final class Peap extends TlsTunnel {
     private final byte[] nonce = new byte[32];
     private byte[] sessionKey;
     private boolean fastReconnect;
+    private final boolean requireClientCertificate;
 
     Peap(EapTlsConfig config) {
         this(config, java.util.List.of(MS_CHAP_V2), Binding.OPTIONAL);
@@ -87,9 +88,18 @@ final class Peap extends TlsTunnel {
      * @param binding whether crypto-binding is sent and required
      */
     Peap(EapTlsConfig config, java.util.List<Integer> innerTypes, Binding binding) {
+        this(config, innerTypes, binding, false);
+    }
+
+    /**
+     * @param clientCertificate whether the outer TLS handshake requires a client certificate of {@code auth.eap.tls.ca}
+     *     ({@code auth.eap.peap.client.certificate}), before and besides the inner method
+     */
+    Peap(EapTlsConfig config, java.util.List<Integer> innerTypes, Binding binding, boolean clientCertificate) {
         super(config);
         this.innerTypes = java.util.List.copyOf(innerTypes);
         this.binding = binding;
+        this.requireClientCertificate = clientCertificate;
     }
 
     @Override
@@ -104,7 +114,13 @@ final class Peap extends TlsTunnel {
 
     @Override
     boolean clientCertificate() {
-        return false;
+        return requireClientCertificate;
+    }
+
+    /** PEAPv0 only (as other servers): a peer answering with version 1 fails at once; PEAPv1 is not planned. */
+    @Override
+    int version() {
+        return 0;
     }
 
     @Override
