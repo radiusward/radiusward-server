@@ -20,7 +20,7 @@ import java.util.TreeMap;
  * Settings of an LDAP store or verifier ({@code auth.store.<name>.*} / {@code auth.verifier.<name>.*}).
  *
  * @param urls servers, tried in order ({@code url}, space or comma separated; {@code ldaps://} for TLS)
- * @param bindDn service account that searches ({@code bind.dn}); empty = anonymous
+ * @param bindDn service account that searches ({@code bind.dn}); empty = anonymous, only with {@code bind.anonymous}
  * @param userFilter finds the user, {@code {0}} is the escaped user name
  * @param groupAttribute attribute listing the user's groups (DNs), {@code memberOf}
  * @param nestedGroups also groups of groups (Active Directory's in-chain matching rule) instead of the attribute
@@ -114,6 +114,11 @@ record LdapSettings(
         int pool = Integer.parseInt(context.setting("pool", Integer.toString(context.workers())));
         if (pool < 1) {
             throw new IllegalArgumentException(prefix + "pool: at least 1");
+        }
+        if (context.setting("bind.dn", "").isBlank()
+                && !Boolean.parseBoolean(context.setting("bind.anonymous", "false"))) {
+            throw new IllegalArgumentException(prefix + "bind.dn: required (a service account), or " + prefix
+                    + "bind.anonymous = true for a directory that allows anonymous searches");
         }
         String filter = context.setting("user.filter", "(&(objectClass=user)(sAMAccountName={0}))");
         if (!filter.contains("{0}")) {

@@ -31,7 +31,8 @@ auth.verifier.ad-bind.base.dn = DC=corp,DC=example
 |---|---|---|
 | `url` | — | `ldap://` or `ldaps://` URLs, tried in order |
 | `tls.ca` | the JDK's CAs | PEM file with the CA(s) of the directory's certificate (`ldaps://` only) |
-| `bind.dn` / `bind.password` | anonymous | service account for searches |
+| `bind.dn` / `bind.password` | — (required) | service account for searches |
+| `bind.anonymous` | `false` | `true`: search without `bind.dn`, for a directory that allows anonymous searches; users are still checked by binding as themselves, and an empty password is always refused |
 | `base.dn` | — | where users and groups are searched |
 | `user.filter` | `(&(objectClass=user)(sAMAccountName={0}))` | `{0}` is the escaped user name |
 | `strip.domain` | `true` | look `DOMAIN\user` and `user@realm` up as `user` (Windows clients send the former); `false` when `user.filter` matches the full `userPrincipalName` |

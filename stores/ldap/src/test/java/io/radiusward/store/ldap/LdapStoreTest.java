@@ -204,6 +204,14 @@ class LdapStoreTest {
         Map<String, String> s = settings();
         s.put("url", "http://dc");
         assertThatThrownBy(() -> store(s)).hasMessageContaining("ldap:// or ldaps://");
+        Map<String, String> anonymous = settings();
+        anonymous.remove("bind.dn");
+        anonymous.remove("bind.password");
+        assertThatThrownBy(() -> store(anonymous))
+                .as("anonymous searches only on request")
+                .hasMessageContaining("bind.anonymous");
+        anonymous.put("bind.anonymous", "true");
+        store(anonymous).close();
         Map<String, String> filter = settings();
         filter.put("user.filter", "(uid=alice)");
         assertThatThrownBy(() -> store(filter)).hasMessageContaining("{0}");

@@ -34,6 +34,10 @@ final class Probe {
                             HttpResponse.BodyHandlers.ofString());
             System.out.println(response.statusCode() + " " + response.body());
             return response.statusCode() == 200 ? 0 : 1;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.out.println("probe interrupted");
+            return 1;
         } catch (Exception e) {
             System.out.println("probe failed: " + e.getMessage());
             return 1;

@@ -72,7 +72,9 @@ public final class AckVerifier {
     public static Map<String, Expected> lastAcknowledged(Path ackLog) throws IOException {
         Map<String, Expected> last = new LinkedHashMap<>();
         try (java.io.BufferedReader reader = Files.newBufferedReader(ackLog, StandardCharsets.UTF_8)) {
-            reader.readLine(); // header
+            if (reader.readLine() == null) { // the header
+                return last; // an empty log: nothing was acknowledged
+            }
             for (String line = reader.readLine(); line != null; line = reader.readLine()) {
                 add(last, line);
             }

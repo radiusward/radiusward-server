@@ -75,6 +75,7 @@ final class StoreSweep implements Runnable {
             } catch (TimeoutException e) {
                 LOG.warn("store sweep: the cluster did not answer, next sweep in {}", config.interval());
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // stopping: the flag stays for whoever asked
                 return;
             } catch (RuntimeException e) {
                 LOG.warn("store sweep failed", e);
@@ -83,6 +84,7 @@ final class StoreSweep implements Runnable {
             try {
                 java.util.concurrent.TimeUnit.NANOSECONDS.sleep(Math.max(rest, 1_000_000L));
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // stopping: the flag stays for whoever asked
                 return;
             }
         }

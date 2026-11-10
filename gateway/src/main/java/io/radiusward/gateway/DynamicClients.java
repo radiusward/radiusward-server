@@ -189,6 +189,7 @@ public final class DynamicClients implements AutoCloseable {
             try {
                 address = queue.poll(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // closing: the flag stays for whoever asked
                 return;
             }
             if (address == null) {

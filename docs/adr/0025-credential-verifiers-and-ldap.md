@@ -19,7 +19,8 @@ winbind on a domain-joined host, which would add a native dependency and a domai
   `memberOf` or nested through Active Directory's in-chain rule, `require.groups`, group policies (`policy.<id>.*` in
   the users-file item syntax, now shared as `ItemParser`), attributes mapped to check and reply items, disabled and
   expired AD accounts rejected. LDAPS with an own CA (`tls.ca`); the JDK checks the server's host name. A bounded pool
-  of service-account connections; timeouts and failover between the URLs.
+  of service-account connections; timeouts and failover between the URLs. Searching without a service account
+  (an anonymous bind) only with `bind.anonymous = true` (added 2026-11-10); otherwise `bind.dn` is required.
 - **LDAP verifier** (`type = ldap`): PAP by binding as the user; the directory applies its account rules. An empty
   password is never tried (it would be an anonymous bind).
 - **Netlogon verifier** (`type = netlogon`): a pure-Java MS-NRPC client — DCE/RPC over TCP, the endpoint mapper, the AES

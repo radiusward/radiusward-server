@@ -171,7 +171,7 @@ final class RpcConnection implements AutoCloseable {
         pdu.put(body, 0, bodyLength);
         if (authLength > 0) {
             pdu.put(new byte[pad]);
-            int authType = auth != null ? sec.authType() : sec.authType();
+            int authType = sec.authType(); // an auth token (bind) or a protected request: both come with sec
             pdu.put((byte) authType)
                     .put((byte) sec.authLevel())
                     .put((byte) pad)
