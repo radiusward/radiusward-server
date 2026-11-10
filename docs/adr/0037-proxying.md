@@ -1,7 +1,7 @@
 # ADR 0037: Proxying to home servers
 
 Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.13
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–5 (realms, UDP proxy, health, RadSec client, accounting forwarding) done.
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–6 (realms, UDP proxy, health, RadSec client, accounting forwarding, discovery) done.
 
 ## Context
 Roaming federations (eduroam-style), partners and migrations need users of some realms authenticated by other RADIUS
@@ -64,6 +64,18 @@ never lets one network's secret protect another's data.
   - The sink's lease means one member forwards.
   - After a crash or lease handover, the last batch may be sent again. RADIUS accounting allows that, and home
     servers deduplicate by session and counters.
+- **Dynamic discovery** (milestone 6, RFC 7585): a realm with `realm.<id>.discover = true` has no pool. Its RadSec
+  home servers come from DNS:
+  - the realm's NAPTR records with service `aaa+auth:radius.tls.tcp` and flag `s`, in order and preference;
+  - then the SRV records they name, by priority and weight;
+  - then the targets' addresses.
+  - Lookups block, so they run on a discovery thread, never on the auth thread. The first request for an unknown
+    realm starts the lookup and is not answered; the NAS's retransmission finds the result.
+  - Results are kept for `proxy.discovery.ttl` (1 h), failures and empty answers for
+    `proxy.discovery.negative.ttl` (5 min).
+  - Discovered servers are TLS home servers like configured ones, with `proxy.discovery.tls.*` and the secret
+    `radsec`. Their certificate must carry the SRV target's name, the classic TLS name check. Matching it against
+    the NAI realm instead is not covered.
 - **Metrics**: `radiusward_gateway_proxy_requests_total{home,result}` and `radiusward_gateway_proxy_home_alive{home}`.
 
 ## Consequences

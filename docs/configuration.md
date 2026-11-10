@@ -153,6 +153,11 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `home.<id>.tls.certificate` / `home.<id>.tls.key` | — | our client certificate and unencrypted PKCS#8 key (PEM) for RadSec |
 | `home.<id>.tls.ca` | — | CAs the home server's certificate must chain to; required with `tls` |
 | `home.<id>.tls.name` | the address's host | a name the home server's certificate must carry (and SNI) |
+| `realm.<id>.discover` | `false` | find the realm's RadSec home servers in DNS (RFC 7585: NAPTR `aaa+auth:radius.tls.tcp`, SRV, address) instead of a pool |
+| `proxy.discovery.tls.ca` / `.certificate` / `.key` | — | CAs discovered servers must chain to (required), our client certificate and key; their certificate must carry the SRV target name |
+| `proxy.discovery.ttl` / `proxy.discovery.negative.ttl` | `1h` / `5m` | how long a lookup, or a failed or empty one, is kept |
+| `proxy.discovery.dns.server` | the system's | `host:port` of the DNS server to ask |
+| `proxy.discovery.secret` | `radsec` | the secret over TLS |
 | `proxy.timeout` / `proxy.retries` | `3s` / `2` | wait for an answer, then send again; afterwards the NAS gets none and asks again |
 | `proxy.dead.after` | `30s` | a home server without any answer for this long while requests wait is skipped |
 | `proxy.status.interval` | `10s` | Status-Server probes to every home server; an answer brings a dead one back |
