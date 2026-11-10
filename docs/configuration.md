@@ -279,6 +279,12 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.counter.<name>.query` | over `accounting_session` | SQL with two parameters, user name and period start, returning the usage; the default reads the PostgreSQL sink's table |
 | `auth.counter.<name>.reply` | none | `octets`: a reply attribute that gets the octets left |
 | `auth.counter.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the counters; unreachable = no answer |
+| `auth.pools` | none | IPv4 address pools by name; `Pool-Name := <pool>` in a user's or group's check items gives a `Framed-IP-Address` ([ADR 0050](adr/0050-ip-pools.md)) |
+| `auth.pool.<name>.range` | — | ranges (`10.0.0.10-10.0.0.250`), CIDRs (network and broadcast left out) or addresses, comma-separated; 65 536 addresses at most |
+| `auth.pool.<name>.lease` | `5m` | how long an address stays taken without an open exported session (until the Accounting-Start reaches PostgreSQL) |
+| `auth.pool.<name>.exhausted` | `reject` | an empty pool: `reject`, or `accept` without an address |
+| `auth.pool.sessions` | `true` | an address of an open session in `accounting_session` is taken; `false`: the lease alone (no PostgreSQL sink) |
+| `auth.pool.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the pools; the gateway creates and fills `ip_pool`; unreachable = no answer |
 | `auth.plugins.dir` | `/opt/radiusward/plugins` | jars with further `IdentityStoreProvider`s |
 | `nas.<name>.auth.stores` | all of `auth.stores` | the stores asked for this NAS entry, in order |
 | `nas.<name>.reply.vendors` | from `nas.<name>.vendor` | vendors whose attributes this entry's Access-Accepts carry (dictionary vendor names, `all`, `none`); standard attributes are always sent ([ADR 0022](adr/0022-reply-attributes.md)). Without it: the vendor of `nas.<name>.vendor` if it names a dictionary vendor (`juniper` also gets `Unisphere`), else everything |

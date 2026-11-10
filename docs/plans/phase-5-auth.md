@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.25 done (ADR 0020–0049). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.26 done (ADR 0020–0050). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -122,6 +122,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.23 ✅ | IPv6 NAS | IPv6 entries and ranges (longest prefix first), dual-stack listening, CoA by NAS-IPv6-Address ([ADR 0047](../adr/0047-ipv6-nas.md)) | S |
 | 5.24 ✅ | Password formats | yescrypt (`$y$`), MD5-crypt (`$1$`), MD5/SMD5, unsalted SHA and SHA-2, LM, for migrations ([ADR 0048](../adr/0048-password-formats.md)) | S |
 | 5.25 ✅ | Login times and usage limits | `Login-Time`, daily/weekly/monthly time and octet counters over `accounting_session`, Session-Timeout cut to the expiry, window or quota ([ADR 0049](../adr/0049-time-and-usage-limits.md)) | S |
+| 5.26 ✅ | IP pools | `Pool-Name` → `Framed-IP-Address` from IPv4 pools in PostgreSQL, free after the lease and the exported Stop, same address per device ([ADR 0050](../adr/0050-ip-pools.md)) | S |
 
 ## Tests
 

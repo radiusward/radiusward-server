@@ -235,6 +235,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (restricted != ACCEPT) {
             return restricted;
         }
+        int pooled = assignAddress(request, found.user().userName(), a);
+        if (pooled != ACCEPT) {
+            return pooled;
+        }
         encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
         writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
         writeEapSuccess(context, method);
@@ -761,7 +765,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         UsageCounters c = counters;
         for (AttributeItem item : checks) {
             String name = item.attribute();
-            if (name.equalsIgnoreCase("Expiration") || name.equalsIgnoreCase("Login-Time")) {
+            if (name.equalsIgnoreCase("Expiration")
+                    || name.equalsIgnoreCase("Login-Time")
+                    || name.equalsIgnoreCase("Pool-Name")) {
                 into.add(item);
             } else if (c != null
                     && c.counters().stream().anyMatch(k -> k.check().equalsIgnoreCase(name))) {
@@ -792,6 +798,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 cap = Math.min(
                         cap,
                         Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
+            } else if (name.equalsIgnoreCase("Pool-Name")) {
+                continue; // #assignAddress
             } else if (name.equalsIgnoreCase("Login-Time")) {
                 LoginTime window = LoginTime.parse(item.value());
                 if (window == null) {
@@ -858,6 +866,61 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             }
             replace(a.reply(), "Session-Timeout", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
         }
+        return ACCEPT;
+    }
+
+    // ---- IP pools (ADR 0050) ------------------------------------------------------------------------------------
+
+    private volatile IpPools pools;
+
+    void pools(IpPools pools) {
+        this.pools = pools;
+    }
+
+    /**
+     * A {@code Framed-IP-Address} from the pool named by the user's (else a group's) {@code Pool-Name}, unless the
+     * reply already has one. An empty pool rejects (or accepts without an address, per pool); a pool that cannot be
+     * reached leaves the request unanswered.
+     */
+    private int assignAddress(RadiusPacket request, String user, Authorization a) {
+        String name = null;
+        for (AttributeItem item : a.restrictions()) {
+            if (item.attribute().equalsIgnoreCase("Pool-Name")) {
+                name = item.value();
+                break;
+            }
+        }
+        if (name == null || a.reply().stream().anyMatch(r -> r.attribute().equalsIgnoreCase("Framed-IP-Address"))) {
+            return ACCEPT;
+        }
+        IpPools p = pools;
+        IpPools.Pool pool = p == null ? null : p.pool(name);
+        if (pool == null) {
+            warnOnce("pool:" + name, "Pool-Name {}: no such pool in auth.pools, the user is rejected", name);
+            return REJECT;
+        }
+        int station = request.findAttribute(CALLING_STATION_ID);
+        String device = station < 0
+                ? user
+                : request.buffer()
+                        .getStringWithoutLengthUtf8(
+                                station + 2, (request.buffer().getByte(station + 1) & 0xFF) - 2);
+        String address;
+        try {
+            address = p.allocate(pool, user, device);
+        } catch (Exception e) {
+            warnOnce(
+                    "pool-unavailable:" + pool.name(),
+                    "IP pool {} unavailable, requests are not answered: {}",
+                    pool.name(),
+                    e.toString());
+            return DROP;
+        }
+        if (address == null) {
+            warnOnce("pool-empty:" + pool.name(), "IP pool {} has no free address", pool.name());
+            return pool.exhausted() ? ACCEPT : REJECT;
+        }
+        a.reply().add(new AttributeItem("Framed-IP-Address", "=", address));
         return ACCEPT;
     }
 
@@ -1395,7 +1458,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         IntHashSet vendors = stores.replyVendors().get(nas);
         for (AttributeItem item : reply) {
             Encoded e = encoded.get(item);
-            if (e == null) {
+            if (e == null && perRequest(item)) {
+                e = encode(item); // values that change per request (ADR 0049, 0050) would only churn the cache
+            } else if (e == null) {
                 e = encode(item);
                 if (encoded.size() >= stores.cacheMax()) {
                     encoded.clear();
@@ -1413,6 +1478,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 filtered.get(nas).incrementAndGet(); // present: the entry has a vendor set
             }
         }
+    }
+
+    private static boolean perRequest(AttributeItem item) {
+        return item.attribute().equalsIgnoreCase("Framed-IP-Address")
+                || item.attribute().equalsIgnoreCase("Session-Timeout");
     }
 
     /** One reply item, encoded; {@code value == null} if it cannot be sent. */

@@ -330,6 +330,68 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void poolNameGetsAnAddress() {
+        String[] next = {"10.0.0.7"};
+        boolean[] down = {false};
+        java.util.List<String> devices = new java.util.ArrayList<>();
+        IpPools pools = new IpPools(
+                Map.of(
+                        "office",
+                        new IpPools.Pool("office", List.of(), Duration.ofMinutes(5), false),
+                        "guest",
+                        new IpPools.Pool("guest", List.of(), Duration.ofMinutes(5), true)),
+                (pool, user, device) -> {
+                    if (down[0]) {
+                        throw new java.sql.SQLException("down");
+                    }
+                    devices.add(user + "@" + device);
+                    return next[0];
+                });
+        main.user(
+                        "alice",
+                        List.of(item("Cleartext-Password", ":=", "a")),
+                        List.of(),
+                        new UserRecord.Group("staff", List.of(item("Pool-Name", ":=", "office")), List.of()))
+                .user(
+                        "fixed",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "office")),
+                        List.of(item("Framed-IP-Address", "=", "192.0.2.1")))
+                .user(
+                        "guest",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "guest")),
+                        List.of())
+                .user(
+                        "lost",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "nowhere")),
+                        List.of());
+        StoreAccessHandler h = handler();
+        h.pools(pools);
+        byte[] station = AccessRequestBuilder.attribute(31, "aa-bb-cc".getBytes(StandardCharsets.US_ASCII));
+
+        assertThat(pap(h, "alice", "a", station)).isEqualTo(AccessHandler.ACCEPT);
+        RadiusPacket reply = reply();
+        int at = reply.findAttribute(8);
+        assertThat(at).as("Framed-IP-Address").isPositive();
+        assertThat(reply.buffer().getInt(at + 2, java.nio.ByteOrder.BIG_ENDIAN)).isEqualTo(0x0A000007);
+        assertThat(devices).containsExactly("alice@aa-bb-cc");
+        assertThat(pap(h, "fixed", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(devices).as("a fixed address is kept, the pool not asked").hasSize(1);
+        assertThat(pap(h, "guest", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(devices)
+                .last()
+                .as("without Calling-Station-Id the user is the device")
+                .isEqualTo("guest@guest");
+        assertThat(pap(h, "lost", "a")).isEqualTo(AccessHandler.REJECT);
+
+        next[0] = null;
+        assertThat(pap(h, "alice", "a")).as("empty pool").isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "guest", "a")).as("empty pool that accepts").isEqualTo(AccessHandler.ACCEPT);
+        assertThat(reply().findAttribute(8)).isNegative();
+        down[0] = true;
+        assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.DROP);
+    }
+
+    @Test
     void groupsApplyWhenTheirChecksMatch() {
         UserRecord.Group staff = new UserRecord.Group(
                 "staff", List.of(item("NAS-Port-Type", "==", "Ethernet")), List.of(item("Filter-Id", "=", "staff")));
@@ -985,6 +1047,14 @@ class StoreAccessHandlerTest {
             return new byte[] {
                 (byte) type, 6, (byte) (value >> 24), (byte) (value >> 16), (byte) (value >> 8), (byte) value
             };
+        }
+
+        static byte[] attribute(int type, byte[] value) {
+            byte[] attribute = new byte[2 + value.length];
+            attribute[0] = (byte) type;
+            attribute[1] = (byte) attribute.length;
+            System.arraycopy(value, 0, attribute, 2, value.length);
+            return attribute;
         }
 
         static byte[] ipv4(int type, int a, int b, int c, int d) {

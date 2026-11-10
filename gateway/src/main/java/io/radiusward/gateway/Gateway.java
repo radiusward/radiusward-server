@@ -296,10 +296,12 @@ public final class Gateway implements AutoCloseable {
             io.radiusward.common.config.Config config, AuthConfig auth) {
         UsageCounters counters = UsageCounters.from(config);
         java.time.ZoneId zone = UsageCounters.zone(config);
+        IpPools pools = IpPools.from(config);
         return dictionary -> {
             StoreAccessHandler handler = new StoreAccessHandler(
                     AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
             handler.limits(counters, zone); // ADR 0049
+            handler.pools(pools); // ADR 0050
             return handler;
         };
     }
