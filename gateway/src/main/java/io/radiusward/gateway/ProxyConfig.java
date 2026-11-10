@@ -83,8 +83,8 @@ public record ProxyConfig(
      * @param pool the pool its users go to; {@code null} with {@code discover}
      * @param strip whether the home server gets the user name without the realm
      * @param discover find the home servers in DNS (RFC 7585) instead of a pool ({@code realm.<id>.discover})
+     * @param rewrite attributes removed and added on the way to and from its home servers (ADR 0055)
      */
-    /** @param rewrite attributes removed and added on the way to and from its home servers (ADR 0055) */
     public record Realm(
             String name, byte[] nameBytes, String pool, boolean strip, boolean discover, ProxyRewrite rewrite) {
 

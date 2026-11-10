@@ -195,7 +195,7 @@ class RadiusSinkTlsTest {
         }
 
         @Override
-        public void close() throws Exception {
+        public void close() throws java.io.IOException {
             server.close();
         }
     }

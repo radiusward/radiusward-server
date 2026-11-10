@@ -479,7 +479,6 @@ public final class Gateway implements AutoCloseable {
         return coaService;
     }
 
-    /** The CoA HTTP API for the management server ({@code /coa/}), {@code null} without {@code coa.api.token}. */
     /**
      * Per-request traces of Access-Requests ({@code trace.*}, ADR 0052) on every worker.
      *
@@ -551,6 +550,7 @@ public final class Gateway implements AutoCloseable {
         return summary;
     }
 
+    /** The CoA HTTP API for the management server ({@code /coa/}), {@code null} without {@code coa.api.token}. */
     public com.sun.net.httpserver.HttpHandler coaApi() {
         return coaApi;
     }
