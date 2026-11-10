@@ -23,6 +23,7 @@ own cursor, lease and lag.
 | Built-in type | Writes |
 |---|---|
 | `postgres` | `accounting_session` (one row per session), `accounting_event` with `mode=sessions+events`, `radacct` view; PostgreSQL 16+ |
+| `radius` | Accounting-Requests to the home servers of proxied realms (`realms`, `servers`, `secret`, `transport` `udp`/`tls` with `tls.*`, `timeout`, `retries`, `strip`; `mode=sessions+events`), Acct-Delay-Time raised; a batch counts once every request is acknowledged ([ADR 0037](../adr/0037-proxying.md)) |
 | `file` | JSON lines (`{"type":"event"…}`, `{"type":"session"…}`) in `dir`, rotated at `max.file.size`; on the member holding the lease |
 
 Other targets are plug-ins ([roadmap](../plans/roadmap.md#sinks), [writing a sink](../sinks/writing-a-sink.md)):

@@ -33,6 +33,7 @@
         <module>exporter</module>
         <module>sinks/file</module>
         <module>sinks/postgres</module>
+        <module>sinks/radius</module>
         <module>cluster-node</module>
         <module>auth-api</module>
         <module>stores/file</module>
@@ -178,6 +179,11 @@
             <dependency>
                 <groupId>io.radiusward</groupId>
                 <artifactId>sink-file</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>sink-radius</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -1,7 +1,7 @@
 # ADR 0037: Proxying to home servers
 
 Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.13
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–4 (realms, UDP proxy, health, RadSec client) done.
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1–5 (realms, UDP proxy, health, RadSec client, accounting forwarding) done.
 
 ## Context
 Roaming federations (eduroam-style), partners and migrations need users of some realms authenticated by other RADIUS
@@ -53,11 +53,22 @@ never lets one network's secret protect another's data.
   - A request is written once (RFC 6613 §2.6.1: no retransmission on a connection) and waits as long as all tries
     over UDP would.
   - Status-Server goes over the connection as well.
+- **Accounting** (milestone 5): the gateway commits it in the cluster as always. A `radius` export sink
+  (`sink.<name>.type = radius`, in the members) forwards the events of its `realms` to its `servers`.
+  - Each event is resent as an Accounting-Request: its original attributes, Acct-Delay-Time raised by the time
+    since the commit, and a new Message-Authenticator for the home server's secret.
+  - Requests go out in windows of up to 256 and are resent while unanswered. Servers are tried in order, over UDP
+    or RadSec.
+  - A batch counts as written only when every request is acknowledged. Otherwise the exporter keeps it and retries,
+    so a home-server outage delays forwarding but loses nothing.
+  - The sink's lease means one member forwards.
+  - After a crash or lease handover, the last batch may be sent again. RADIUS accounting allows that, and home
+    servers deduplicate by session and counters.
 - **Metrics**: `radiusward_gateway_proxy_requests_total{home,result}` and `radiusward_gateway_proxy_home_alive{home}`.
 
 ## Consequences
 - Proxied users never reach the identity stores, the workers or Simultaneous-Use. The home server decides, and its
   reply items go to the NAS as they are.
-- Accounting of proxied users is still committed by the cluster. Forwarding it to home servers comes with a sink of
-  its own (milestone 5).
+- Accounting of proxied users is committed and answered by the cluster like any other; nothing the home server does
+  can lose it or keep the NAS waiting.
 - Not covered: CoA from a home server back through the gateway to the NAS.

@@ -49,7 +49,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `cluster-node` | Launches a member (media driver, archive, consensus module, service, exporter, log purge) |
 | `export-api` | Sink plug-in API, canonical attribute JSON, `SqlMigrations` |
 | `exporter` | Committed-log reader, state-machine replica, lease, batching, plug-in loading |
-| `sinks/postgres`, `sinks/file` | Built-in sinks |
+| `sinks/postgres`, `sinks/file`, `sinks/radius` | Built-in sinks (`radius`: accounting of proxied realms forwarded to home servers) |
 | `auth-api` | Identity store and credential verifier plug-in API (`IdentityStore`, `CredentialVerifier`, `UserRecord`, `ItemParser`) |
 | `stores/file`, `stores/sql`, `stores/ldap` | Built-in identity stores (users file; JDBC `radcheck` schema; LDAP/Active Directory with a bind verifier) |
 | `verifiers/netlogon` | Credential verifier for Active Directory over Netlogon, pure Java (MS-CHAPv1/v2, PAP) |
