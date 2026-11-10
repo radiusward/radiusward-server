@@ -15,7 +15,8 @@ import java.util.TreeMap;
 /**
  * RadSec, RADIUS over TLS (RFC 6614, ADR 0034): {@code radsec.*} for the listener and {@code nas.<name>.radsec*} for
  * the NAS entries that may use it; RADIUS over DTLS (RFC 7360, ADR 0038) with the same certificates:
- * {@code radsec.dtls.*} and {@code nas.<name>.dtls*}.
+ * {@code radsec.dtls.*} and {@code nas.<name>.dtls*}; RADIUS over plain TCP (RFC 6613, ADR 0045):
+ * {@code radius.tcp.*} and {@code nas.<name>.tcp}.
  *
  * @param enabled whether the RadSec agent runs: over TCP ({@code radsec.enabled}), DTLS, or both
  * @param host the listen address ({@code gateway.listen.host})
@@ -28,6 +29,7 @@ import java.util.TreeMap;
  * @param clients the NAS entries allowed over RadSec, by name
  * @param tcp whether the TCP listener runs ({@code radsec.enabled})
  * @param dtls the DTLS listener
+ * @param plain the plain TCP listeners
  */
 public record RadsecConfig(
         boolean enabled,
@@ -40,7 +42,8 @@ public record RadsecConfig(
         Duration idleTimeout,
         Map<String, Client> clients,
         boolean tcp,
-        Dtls dtls) {
+        Dtls dtls,
+        Plain plain) {
 
     /** RFC 6614 §2.3: the shared secret over TLS is {@code radsec} unless both sides agree on another. */
     static final String DEFAULT_SECRET = "radsec";
@@ -49,7 +52,32 @@ public record RadsecConfig(
     static final String DEFAULT_DTLS_SECRET = "radius/dtls";
 
     public static final RadsecConfig DISABLED = new RadsecConfig(
-            false, "0.0.0.0", 2083, null, List.of(), 0, Duration.ZERO, Duration.ZERO, Map.of(), false, Dtls.DISABLED);
+            false,
+            "0.0.0.0",
+            2083,
+            null,
+            List.of(),
+            0,
+            Duration.ZERO,
+            Duration.ZERO,
+            Map.of(),
+            false,
+            Dtls.DISABLED,
+            Plain.DISABLED);
+
+    /**
+     * RADIUS over plain TCP (RFC 6613): no TLS, the NAS entry's own secret, bound to the entry of the source address
+     * when accepted. Authentication on one port, accounting on the other; a packet of the other kind is discarded.
+     *
+     * @param enabled {@code radius.tcp.enabled}
+     * @param authPort {@code radius.tcp.auth.port}, 1812 (0 = any free port, for tests)
+     * @param accountingPort {@code radius.tcp.acct.port}, 1813
+     * @param clients the NAS entries allowed over TCP ({@code nas.<name>.tcp}); their secret is the entry's
+     */
+    public record Plain(boolean enabled, int authPort, int accountingPort, java.util.Set<String> clients) {
+
+        static final Plain DISABLED = new Plain(false, 1812, 1813, java.util.Set.of());
+    }
 
     /**
      * RADIUS over DTLS 1.2 (RFC 7360): one association per NAS address and port on a UDP socket.
@@ -84,10 +112,40 @@ public record RadsecConfig(
     public static RadsecConfig from(Config config, String listenHost) {
         boolean tcp = config.bool("radsec.enabled", false);
         boolean udp = config.bool("radsec.dtls.enabled", false);
-        if (!tcp && !udp) {
-            return DISABLED;
+        Plain plain = Plain.DISABLED;
+        if (config.bool("radius.tcp.enabled", false)) {
+            java.util.Set<String> names = new java.util.TreeSet<>();
+            for (String name : config.names("nas")) {
+                if (config.bool("nas." + name + ".tcp", false)) {
+                    names.add(name);
+                }
+            }
+            if (names.isEmpty()) {
+                throw new ConfigException("radius.tcp.enabled: no NAS entry allows it; set nas.<name>.tcp = true");
+            }
+            plain = new Plain(
+                    true,
+                    config.integer("radius.tcp.auth.port", 1812),
+                    config.integer("radius.tcp.acct.port", 1813),
+                    java.util.Set.copyOf(names));
         }
-        String what = tcp ? "radsec.enabled" : "radsec.dtls.enabled";
+        if (!tcp && !udp) {
+            return plain.enabled()
+                    ? new RadsecConfig(
+                            true,
+                            listenHost,
+                            2083,
+                            null,
+                            List.of(),
+                            connections(config),
+                            config.duration("radsec.handshake.timeout", Duration.ofSeconds(10)),
+                            config.duration("radsec.idle.timeout", Duration.ZERO),
+                            Map.of(),
+                            false,
+                            Dtls.DISABLED,
+                            plain)
+                    : DISABLED;
+        }
         String certificate = config.string("radsec.certificate");
         String ca = config.string("radsec.ca", "");
         if (ca.isBlank()) {
@@ -100,10 +158,7 @@ public record RadsecConfig(
                 throw new ConfigException("radsec.versions: TLSv1.2 and/or TLSv1.3, got " + v);
             }
         }
-        int connections = config.integer("radsec.connections", 256);
-        if (connections < 1) {
-            throw new ConfigException("radsec.connections: at least 1");
-        }
+        int connections = connections(config);
         Map<String, Client> clients = tcp ? clients(config, "radsec", DEFAULT_SECRET) : Map.of();
         if (tcp && clients.isEmpty()) {
             throw new ConfigException("radsec.enabled: no NAS entry allows it; set nas.<name>.radsec = true");
@@ -147,7 +202,16 @@ public record RadsecConfig(
                 config.duration("radsec.idle.timeout", Duration.ZERO),
                 clients,
                 tcp,
-                dtls);
+                dtls,
+                plain);
+    }
+
+    private static int connections(Config config) {
+        int connections = config.integer("radsec.connections", 256);
+        if (connections < 1) {
+            throw new ConfigException("radsec.connections: at least 1");
+        }
+        return connections;
     }
 
     /** The NAS entries with {@code nas.<name>.<key> = true}, their {@code .secret} and {@code .identity}. */

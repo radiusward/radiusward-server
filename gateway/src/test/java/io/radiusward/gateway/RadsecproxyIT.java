@@ -94,6 +94,9 @@ class RadsecproxyIT {
                 "radsec.port", "0",
                 "radsec.dtls.enabled", "true",
                 "radsec.dtls.port", "0",
+                "radius.tcp.enabled", "true",
+                "radius.tcp.auth.port", "0",
+                "radius.tcp.acct.port", "0",
                 "radsec.certificate", pki.serverPem.toString(),
                 "radsec.key", pki.serverKey.toString(),
                 "radsec.ca", pki.caPem.toString()));
@@ -102,6 +105,7 @@ class RadsecproxyIT {
             settings.put("nas." + nas.name() + ".radsec.identity", "radsecproxy.corp.test");
             settings.put("nas." + nas.name() + ".dtls", "true");
             settings.put("nas." + nas.name() + ".dtls.identity", "radsecproxy.corp.test");
+            settings.put("nas." + nas.name() + ".tcp", "true");
         }
         Config config = Config.of(settings);
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
@@ -200,6 +204,22 @@ class RadsecproxyIT {
         assertThat(reject.getStdout()).as(reject.getStderr()).contains("Received Access-Reject");
         assertThat(gateway.radsecAgent().get(RadsecAgent.Counter.REQUESTS)).isPositive();
         assertThat(gateway.radsecAgent().openConnections()).isEqualTo(1);
+    }
+
+    /** RADIUS over plain TCP (RFC 6613, ADR 0045): radclient straight to the gateway's TCP port, the NAS's secret. */
+    @Test
+    void papOverPlainTcp() throws Exception {
+        String to = "$(getent hosts host.docker.internal | cut -d' ' -f1):" + gateway.tcpPort(true);
+        for (String[] c :
+                new String[][] {{"Alice-Passw0rd!", "Received Access-Accept"}, {"wrong", "Received Access-Reject"}}) {
+            Container.ExecResult r = proxy.execInContainer(
+                    "sh",
+                    "-c",
+                    "echo 'User-Name = alice, User-Password = \"" + c[0] + "\", Message-Authenticator = 0x00'"
+                            + " | radclient -P tcp -r 2 -t 3 -x " + to + " auth " + EapolTestIT.SECRET);
+            assertThat(r.getStdout()).as(r.getStderr()).contains(c[1]);
+        }
+        assertThat(gateway.radsecAgent().getTcp(RadsecAgent.Counter.REPLIES)).isEqualTo(2);
     }
 
     @Test

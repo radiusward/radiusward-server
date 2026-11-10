@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.20 done (ADR 0020–0044). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.21 done (ADR 0020–0045). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -117,6 +117,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.18 ✅ | EAP-pwd | RFC 5931 with group 19, password preparation none (cleartext) or MS (NT hash), interop and comparison ([ADR 0042](../adr/0042-eap-pwd.md)) | M |
 | 5.19 ✅ | CoA relay | CoA and Disconnect-Requests from home servers (`home.<id>.coa`) relayed to the NAS of the user's session; ACK/NAK with Proxy-State back, 503/506 when no session or no answer ([ADR 0043](../adr/0043-coa-relay.md)) | S |
 | 5.20 ✅ | Inner-tunnel proxying | `proxy.inner`: the tunnel ends here, the inner user of a proxied realm is checked by its home server (PAP, CHAP, MS-CHAPv2 with MPPE keys for the bindings), its reply attributes ours ([ADR 0044](../adr/0044-inner-tunnel-proxying.md)) | M |
+| 5.21 ✅ | RADIUS over TCP | plain TCP (RFC 6613) on 1812/1813 in the RadSec agent, NAS by address with its own secret, ports keep their kind ([ADR 0045](../adr/0045-radius-over-tcp.md)) | S |
 
 ## Tests
 

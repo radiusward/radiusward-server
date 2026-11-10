@@ -155,7 +155,8 @@ public final class Gateway implements AutoCloseable {
             OneToOneRingBuffer fromCluster = ring();
             java.util.Map<String, Integer> radsecIndex = new java.util.TreeMap<>();
             java.util.Map<String, Integer> dtlsIndex = new java.util.TreeMap<>();
-            RadsecLink link = radsec.enabled() ? radsecLink(registry, radsec, radsecIndex, dtlsIndex) : null;
+            java.util.Map<String, Integer> tcpIndex = new java.util.TreeMap<>();
+            RadsecLink link = radsec.enabled() ? radsecLink(registry, radsec, radsecIndex, dtlsIndex, tcpIndex) : null;
             UdpAgent udp = new UdpAgent(
                     config,
                     registry,
@@ -215,7 +216,7 @@ public final class Gateway implements AutoCloseable {
             RadsecAgent radsecAgent = null;
             if (link != null) {
                 radsecAgent = new RadsecAgent(
-                        radsec, registry, link, radsecIndex, dtlsIndex, auth.enabled(), System::nanoTime);
+                        radsec, registry, link, radsecIndex, dtlsIndex, tcpIndex, auth.enabled(), System::nanoTime);
                 socketAgents.add(radsecAgent);
             }
             ClusterQueries queries = null;
@@ -360,10 +361,19 @@ public final class Gateway implements AutoCloseable {
             NasRegistry registry,
             RadsecConfig radsec,
             java.util.Map<String, Integer> index,
-            java.util.Map<String, Integer> dtlsIndex) {
+            java.util.Map<String, Integer> dtlsIndex,
+            java.util.Map<String, Integer> tcpIndex) {
         java.util.List<NasClient> clients = new java.util.ArrayList<>();
         addLinkClients(registry, radsec.clients(), "radsec", clients, index);
         addLinkClients(registry, radsec.dtls().clients(), "dtls", clients, dtlsIndex);
+        java.util.Map<String, RadsecConfig.Client> plain = new java.util.TreeMap<>();
+        for (String name : radsec.plain().clients()) {
+            registry.clients().stream()
+                    .filter(c -> c.name().equals(name))
+                    .findFirst()
+                    .ifPresent(n -> plain.put(name, new RadsecConfig.Client(n.secret(), null))); // the UDP secret
+        }
+        addLinkClients(registry, plain, "tcp", clients, tcpIndex);
         return new RadsecLink(clients.toArray(NasClient[]::new));
     }
 
@@ -404,6 +414,18 @@ public final class Gateway implements AutoCloseable {
             Thread.onSpinWait();
         }
         return radsecAgent.localPort();
+    }
+
+    /** A plain TCP port actually bound (authentication or accounting), -1 without it; waits briefly for the bind. */
+    public int tcpPort(boolean authentication) {
+        if (radsecAgent == null) {
+            return -1;
+        }
+        long deadline = System.nanoTime() + 5_000_000_000L;
+        while (!radsecAgent.bound() && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
+        return radsecAgent.localTcpPort(authentication);
     }
 
     /** DTLS port actually bound, -1 without DTLS; waits briefly for the bind. */

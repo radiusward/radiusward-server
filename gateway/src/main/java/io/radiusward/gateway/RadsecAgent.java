@@ -52,6 +52,10 @@ import org.apache.logging.log4j.Logger;
  * way. Handshake flights are retransmitted on a doubling timer (RFC 6347 §4.2.4); a new ClientHello from the address
  * of an established association replaces it (the NAS restarted, §4.2.8); datagrams that are not DTLS, or not from an
  * association or a ClientHello, are silently discarded.
+ *
+ * <p>RADIUS over plain TCP (RFC 6613, ADR 0045) on two more listeners of the same selector, authentication and
+ * accounting: connections without TLS, bound to the NAS entry of their address when accepted (it must allow TCP),
+ * signed with the entry's own secret; a packet of the other port's kind is discarded.
  */
 final class RadsecAgent implements Agent {
 
@@ -89,6 +93,7 @@ final class RadsecAgent implements Agent {
     private final RadsecLink link;
     private final Map<String, Integer> clientIndex;
     private final Map<String, Integer> dtlsIndex;
+    private final Map<String, Integer> tcpIndex;
     private final boolean auth;
     private final UdpAgent.NanoClock clock;
     private final List<NasClient> certificateOnly;
@@ -100,6 +105,7 @@ final class RadsecAgent implements Agent {
     private final Map<InetSocketAddress, Association> byAddress = new HashMap<>();
     private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
     private final AtomicLongArray dtlsCounts = new AtomicLongArray(Counter.values().length);
+    private final AtomicLongArray tcpCounts = new AtomicLongArray(Counter.values().length);
     private final MessageHandler replyHandler = this::onReply;
     private final MessageHandler coaHandler = this::onCoa;
     private final java.util.concurrent.atomic.AtomicIntegerArray connectedNas;
@@ -107,6 +113,8 @@ final class RadsecAgent implements Agent {
     private final ByteBuffer empty = ByteBuffer.allocate(0);
 
     private ServerSocketChannel server;
+    private ServerSocketChannel tcpAuth;
+    private ServerSocketChannel tcpAccounting;
     private DatagramChannel dtls;
     private ByteBuffer datagramIn;
     private ByteBuffer datagramOut;
@@ -128,6 +136,7 @@ final class RadsecAgent implements Agent {
             RadsecLink link,
             Map<String, Integer> clientIndex,
             Map<String, Integer> dtlsIndex,
+            Map<String, Integer> tcpIndex,
             boolean auth,
             UdpAgent.NanoClock clock) {
         this.config = config;
@@ -135,6 +144,7 @@ final class RadsecAgent implements Agent {
         this.link = link;
         this.clientIndex = Map.copyOf(clientIndex);
         this.dtlsIndex = Map.copyOf(dtlsIndex);
+        this.tcpIndex = Map.copyOf(tcpIndex);
         this.auth = auth;
         this.clock = clock;
         this.certificateOnly = registry.clients().stream()
@@ -171,20 +181,37 @@ final class RadsecAgent implements Agent {
         ByteBuffer netOut;
         long lastActivity;
         int nas = -1; // index in RadsecLink.clients once the handshake is done and the NAS known
+        /** Plain TCP (no engine): {@link #AUTH_PORT} or {@link #ACCOUNTING_PORT}; 0 for TLS. */
+        final int port;
 
         Connection(int index, int generation, SocketChannel channel, SSLEngine engine, long now) throws IOException {
+            this(index, generation, channel, engine, now, 0);
+        }
+
+        Connection(int index, int generation, SocketChannel channel, SSLEngine engine, long now, int port)
+                throws IOException {
             this.index = index;
             this.generation = generation;
             this.channel = channel;
             this.engine = engine;
+            this.port = port;
             this.remote = (InetSocketAddress) channel.getRemoteAddress();
             this.openedAt = now;
             this.lastActivity = now;
-            int packetSize = engine.getSession().getPacketBufferSize();
+            int packetSize = engine == null
+                    ? RadiusPacket.MAX_LENGTH
+                    : engine.getSession().getPacketBufferSize();
             netIn = ByteBuffer.allocate(packetSize);
-            appIn = ByteBuffer.allocate(engine.getSession().getApplicationBufferSize() + RadiusPacket.MAX_LENGTH);
+            appIn = ByteBuffer.allocate((engine == null
+                            ? RadiusPacket.MAX_LENGTH
+                            : engine.getSession().getApplicationBufferSize())
+                    + RadiusPacket.MAX_LENGTH);
             appView = new UnsafeBuffer(appIn);
             netOut = ByteBuffer.allocate(packetSize * 2);
+        }
+
+        AtomicLongArray counters(RadsecAgent agent) {
+            return engine == null ? agent.tcpCounts : agent.counts;
         }
 
         long route() {
@@ -221,6 +248,9 @@ final class RadsecAgent implements Agent {
         }
     }
 
+    static final int AUTH_PORT = 1;
+    static final int ACCOUNTING_PORT = 2;
+
     /** The route of an association: its slot after the TCP connections. */
     private long route(Association a) {
         return RadsecLink.route(connections.length + a.index, a.generation);
@@ -237,6 +267,23 @@ final class RadsecAgent implements Agent {
                 server.configureBlocking(false);
                 server.register(selector, SelectionKey.OP_ACCEPT);
                 LOG.info("listening for RadSec on {}", server.getLocalAddress());
+            }
+            if (config.plain().enabled()) {
+                where = config.host() + ":" + config.plain().authPort() + "/tcp";
+                tcpAuth = ServerSocketChannel.open();
+                tcpAuth.bind(new InetSocketAddress(config.host(), config.plain().authPort()), 128);
+                tcpAuth.configureBlocking(false);
+                tcpAuth.register(selector, SelectionKey.OP_ACCEPT, AUTH_PORT);
+                where = config.host() + ":" + config.plain().accountingPort() + "/tcp";
+                tcpAccounting = ServerSocketChannel.open();
+                tcpAccounting.bind(
+                        new InetSocketAddress(config.host(), config.plain().accountingPort()), 128);
+                tcpAccounting.configureBlocking(false);
+                tcpAccounting.register(selector, SelectionKey.OP_ACCEPT, ACCOUNTING_PORT);
+                LOG.info(
+                        "listening for RADIUS over TCP on {} (authentication) and {} (accounting)",
+                        tcpAuth.getLocalAddress(),
+                        tcpAccounting.getLocalAddress());
             }
             if (config.dtls().enabled()) {
                 where = config.host() + ":" + config.dtls().port() + "/udp";
@@ -258,6 +305,16 @@ final class RadsecAgent implements Agent {
     int localPort() {
         try {
             return server == null ? -1 : ((InetSocketAddress) server.getLocalAddress()).getPort();
+        } catch (IOException e) {
+            return -1;
+        }
+    }
+
+    /** The plain TCP authentication ({@code true}) or accounting port actually bound; -1 without plain TCP. */
+    int localTcpPort(boolean authentication) {
+        ServerSocketChannel s = authentication ? tcpAuth : tcpAccounting;
+        try {
+            return s == null ? -1 : ((InetSocketAddress) s.getLocalAddress()).getPort();
         } catch (IOException e) {
             return -1;
         }
@@ -285,7 +342,9 @@ final class RadsecAgent implements Agent {
                 if (!key.isValid()) {
                     continue;
                 }
-                if (key.isAcceptable()) {
+                if (key.isAcceptable() && key.attachment() instanceof Integer port) {
+                    acceptPlain((ServerSocketChannel) key.channel(), port);
+                } else if (key.isAcceptable()) {
                     accept();
                 } else if (key.channel() == dtls) {
                     receive();
@@ -344,6 +403,32 @@ final class RadsecAgent implements Agent {
         }
     }
 
+    /** A plain TCP connection: bound to the NAS entry of its address at once, which must allow TCP. */
+    private void acceptPlain(ServerSocketChannel listener, int port) throws IOException {
+        SocketChannel channel;
+        while ((channel = listener.accept()) != null) {
+            InetSocketAddress remote = (InetSocketAddress) channel.getRemoteAddress();
+            NasClient nas = registry.lookup(remote.getAddress());
+            Integer nasIndex = nas == null ? null : tcpIndex.get(nas.name());
+            int index = freeIndex();
+            if (nasIndex == null || index < 0) {
+                tcpCounts.incrementAndGet(
+                        (nasIndex == null ? Counter.NAS_REFUSED : Counter.CONNECTIONS_REFUSED).ordinal());
+                channel.close();
+                continue;
+            }
+            channel.configureBlocking(false);
+            channel.setOption(StandardSocketOptions.TCP_NODELAY, true);
+            channel.setOption(StandardSocketOptions.SO_KEEPALIVE, true);
+            Connection c = new Connection(index, generations[index], channel, null, now, port);
+            c.nas = nasIndex;
+            c.key = channel.register(selector, SelectionKey.OP_READ, c);
+            connections[index] = c;
+            open++;
+            tcpCounts.incrementAndGet(Counter.CONNECTIONS_ACCEPTED.ordinal());
+        }
+    }
+
     private int freeIndex() {
         for (int i = 0; i < connections.length; i++) {
             if (connections[i] == null) {
@@ -354,6 +439,18 @@ final class RadsecAgent implements Agent {
     }
 
     private void read(Connection c) throws IOException {
+        if (c.engine == null) {
+            if (c.channel.read(c.appIn) < 0) {
+                close(c);
+                return;
+            }
+            c.lastActivity = now;
+            dispatch(c);
+            if (connections[c.index] == c) {
+                flush(c);
+            }
+            return;
+        }
         if (!c.netIn.hasRemaining()) {
             c.netIn = grow(c.netIn, c.engine.getSession().getPacketBufferSize());
         }
@@ -416,8 +513,18 @@ final class RadsecAgent implements Agent {
         }
     }
 
-    /** Encrypts {@code plain} (or a handshake message) into the connection's output. */
+    /** Encrypts {@code plain} (or a handshake message) into the connection's output; plain TCP copies it. */
     private void wrap(Connection c, ByteBuffer plain) throws IOException {
+        if (c.engine == null) {
+            if (c.netOut.remaining() < plain.remaining()) {
+                if (c.netOut.capacity() + plain.remaining() > MAX_PENDING_OUTPUT) {
+                    throw new IOException("peer does not read its replies");
+                }
+                c.netOut = grow(c.netOut, plain.remaining());
+            }
+            c.netOut.put(plain);
+            return;
+        }
         do {
             int need = c.engine.getSession().getPacketBufferSize();
             if (c.netOut.remaining() < need) {
@@ -528,13 +635,19 @@ final class RadsecAgent implements Agent {
                 int at = in.position();
                 int length = in.getShort(at + 2) & 0xFFFF;
                 if (length < RadiusPacket.HEADER_LENGTH || length > RadiusPacket.MAX_LENGTH || c.nas < 0) {
-                    increment(Counter.MALFORMED);
-                    throw new IOException("malformed RADIUS packet over RadSec"); // RFC 6613 §2.6.4: close
+                    c.counters(this).incrementAndGet(Counter.MALFORMED.ordinal());
+                    throw new IOException("malformed RADIUS packet over TCP"); // RFC 6613 §2.6.4: close
                 }
                 if (in.remaining() < length) {
                     break;
                 }
-                forward(c.route(), c.nas, c.appView, in.get(at) & 0xFF, at, length, counts);
+                int code = in.get(at) & 0xFF;
+                if ((c.port == AUTH_PORT && code == RadiusCode.ACCOUNTING_REQUEST)
+                        || (c.port == ACCOUNTING_PORT && code == RadiusCode.ACCESS_REQUEST)) {
+                    c.counters(this).incrementAndGet(Counter.NOT_HANDLED.ordinal()); // the other port's kind
+                } else {
+                    forward(c.route(), c.nas, c.appView, code, at, length, c.counters(this), c.port == ACCOUNTING_PORT);
+                }
                 in.position(at + length);
             }
         } finally {
@@ -544,6 +657,19 @@ final class RadsecAgent implements Agent {
 
     private void forward(
             long route, int nas, UnsafeBuffer packet, int code, int offset, int length, AtomicLongArray counters) {
+        forward(route, nas, packet, code, offset, length, counters, false);
+    }
+
+    /** @param accountingPort a plain TCP accounting connection: Status-Server goes to accounting */
+    private void forward(
+            long route,
+            int nas,
+            UnsafeBuffer packet,
+            int code,
+            int offset,
+            int length,
+            AtomicLongArray counters,
+            boolean accountingPort) {
         if (code == DynamicAuthorization.DISCONNECT_ACK
                 || code == DynamicAuthorization.DISCONNECT_NAK
                 || code == DynamicAuthorization.COA_ACK
@@ -563,7 +689,7 @@ final class RadsecAgent implements Agent {
         org.agrona.concurrent.ringbuffer.RingBuffer ring = switch (code) {
             case RadiusCode.ACCESS_REQUEST -> auth ? link.toAuth : null;
             case RadiusCode.ACCOUNTING_REQUEST -> link.toAccounting;
-            case RadiusCode.STATUS_SERVER -> auth ? link.toAuth : link.toAccounting;
+            case RadiusCode.STATUS_SERVER -> auth && !accountingPort ? link.toAuth : link.toAccounting;
             default -> null;
         };
         if (ring == null) {
@@ -631,7 +757,7 @@ final class RadsecAgent implements Agent {
         reply.flip();
         try {
             wrap(c, reply);
-            increment(Counter.REPLIES); // before the flush: the NAS may read it before the counter otherwise
+            c.counters(this).incrementAndGet(Counter.REPLIES.ordinal()); // before the flush: the NAS may read it first
             flush(c);
         } catch (IOException e) {
             close(c);
@@ -938,8 +1064,11 @@ final class RadsecAgent implements Agent {
         }
         generations[c.index] = (c.generation + 1) & 0x7FFF_FFFF;
         open--;
-        increment(Counter.CONNECTIONS_CLOSED);
+        c.counters(this).incrementAndGet(Counter.CONNECTIONS_CLOSED.ordinal());
         try {
+            if (c.engine == null) {
+                throw new IOException("plain TCP: no close_notify");
+            }
             c.engine.closeOutbound();
             c.netOut.clear();
             c.engine.wrap(empty, c.netOut); // close_notify, best effort
@@ -962,6 +1091,10 @@ final class RadsecAgent implements Agent {
 
     long get(Counter counter) {
         return counts.get(counter.ordinal());
+    }
+
+    long getTcp(Counter counter) {
+        return tcpCounts.get(counter.ordinal());
     }
 
     long getDtls(Counter counter) {
@@ -987,6 +1120,12 @@ final class RadsecAgent implements Agent {
         }
         w.gauge("radiusward_gateway_radsec_connections", "Open RadSec connections")
                 .sample(open, "gateway", gateway);
+        if (tcpAuth != null) {
+            w.counter("radiusward_gateway_tcp_total", "Plain TCP connections and packets by what happened to them");
+            for (Counter c : Counter.values()) {
+                w.sample(getTcp(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
+            }
+        }
         if (dtls != null) {
             w.counter("radiusward_gateway_dtls_total", "DTLS associations and packets by what happened to them");
             for (Counter c : Counter.values()) {
@@ -995,11 +1134,13 @@ final class RadsecAgent implements Agent {
             w.gauge("radiusward_gateway_dtls_associations", "Open DTLS associations")
                     .sample(openAssociations, "gateway", gateway);
         }
-        w.counter(
-                "radiusward_gateway_radsec_tls_reloads_total",
-                "Changes of the RadSec certificate, key, CA or CRL files: loaded, or failed (previous kept)");
-        w.sample(config.credentials().reloads(), "gateway", gateway, "result", "loaded");
-        w.sample(config.credentials().reloadFailures(), "gateway", gateway, "result", "failed");
+        if (config.credentials() != null) {
+            w.counter(
+                    "radiusward_gateway_radsec_tls_reloads_total",
+                    "Changes of the RadSec certificate, key, CA or CRL files: loaded, or failed (previous kept)");
+            w.sample(config.credentials().reloads(), "gateway", gateway, "result", "loaded");
+            w.sample(config.credentials().reloadFailures(), "gateway", gateway, "result", "failed");
+        }
     }
 
     @Override
@@ -1017,6 +1158,10 @@ final class RadsecAgent implements Agent {
         try {
             if (server != null) {
                 server.close();
+            }
+            if (tcpAuth != null) {
+                tcpAuth.close();
+                tcpAccounting.close();
             }
             if (dtls != null) {
                 dtls.close();

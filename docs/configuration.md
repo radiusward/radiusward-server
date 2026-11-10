@@ -108,6 +108,18 @@ nas.branch-17.radsec          = true
 nas.branch-17.radsec.identity = wlc.branch-17.corp.example
 ```
 
+### Plain TCP
+
+RADIUS over TCP without TLS (RFC 6613, [ADR 0045](adr/0045-radius-over-tcp.md)), for protected networks only; no
+certificate needed. A connection belongs to the NAS entry of its source address and uses that entry's secret.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `radius.tcp.enabled` | `false` | accept RADIUS over TCP on `gateway.listen.host` |
+| `radius.tcp.auth.port` | `1812` | TCP port for Access-Requests (and Status-Server) |
+| `radius.tcp.acct.port` | `1813` | TCP port for Accounting-Requests (and Status-Server) |
+| `nas.<name>.tcp` | `false` | this NAS entry may connect over TCP |
+
 ### DTLS
 
 RADIUS over DTLS 1.2 (RFC 7360, [ADR 0038](adr/0038-dtls.md)) on a UDP port, with the RadSec certificate, key, CAs,

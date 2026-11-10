@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Accounting over RadSec (ADR 0034) and DTLS (ADR 0038) with 3 cluster members: answered only after the commit, signed
+ * Accounting over RadSec (ADR 0034), DTLS (ADR 0038) and plain TCP (ADR 0045) with 3 cluster members: answered only after the commit, signed
  * with the secret of the transport, and the same event later over another transport from the same NAS entry is a
  * duplicate — one NAS, one set of keys, whichever transport it uses.
  */
@@ -133,25 +133,20 @@ class RadsecAccountingIT {
         cluster = LocalCluster.start(dir.toFile(), 3, 0);
         cluster.awaitLeader();
         RadsecConfig radsec = RadsecConfig.from(
-                Config.of(Map.of(
-                        "radsec.enabled",
-                        "true",
-                        "radsec.port",
-                        "0",
-                        "radsec.dtls.enabled",
-                        "true",
-                        "radsec.dtls.port",
-                        "0",
-                        "radsec.certificate",
-                        pki.serverPem.toString(),
-                        "radsec.key",
-                        pki.serverKey.toString(),
-                        "radsec.ca",
-                        pki.caPem.toString(),
-                        "nas." + LocalCluster.NAS_NAME + ".radsec",
-                        "true",
-                        "nas." + LocalCluster.NAS_NAME + ".dtls",
-                        "true")),
+                Config.of(Map.ofEntries(
+                        Map.entry("radsec.enabled", "true"),
+                        Map.entry("radsec.port", "0"),
+                        Map.entry("radsec.dtls.enabled", "true"),
+                        Map.entry("radsec.dtls.port", "0"),
+                        Map.entry("radsec.certificate", pki.serverPem.toString()),
+                        Map.entry("radsec.key", pki.serverKey.toString()),
+                        Map.entry("radsec.ca", pki.caPem.toString()),
+                        Map.entry("nas." + LocalCluster.NAS_NAME + ".radsec", "true"),
+                        Map.entry("nas." + LocalCluster.NAS_NAME + ".dtls", "true"),
+                        Map.entry("radius.tcp.enabled", "true"),
+                        Map.entry("radius.tcp.auth.port", "0"),
+                        Map.entry("radius.tcp.acct.port", "0"),
+                        Map.entry("nas." + LocalCluster.NAS_NAME + ".tcp", "true"))),
                 "127.0.0.1");
         Gateway gateway = cluster.startGateway(
                 1, LocalCluster.freePort(), LocalCluster.registry(), AuthConfig.DISABLED, d -> null, radsec);
@@ -172,6 +167,14 @@ class RadsecAccountingIT {
             nas.send(interim);
             assertResponse(nas.receive(), interim, RADSEC);
         }
+        try (java.net.Socket tcp = new java.net.Socket("127.0.0.1", gateway.tcpPort(false))) {
+            tcp.setSoTimeout(5_000);
+            byte[] interim = request(4, 3, "dt-1", 120, UDP_SECRET); // plain TCP: the NAS entry's own secret
+            tcp.getOutputStream().write(interim);
+            byte[] answer = new byte[20];
+            new java.io.DataInputStream(tcp.getInputStream()).readFully(answer);
+            assertResponse(answer, interim, UDP_SECRET);
+        }
         LocalClusterIT udp = new LocalClusterIT();
         try {
             udp.exchange(gateway.radiusPort(), request(7, 1, "dt-1", 0, UDP_SECRET));
@@ -181,8 +184,8 @@ class RadsecAccountingIT {
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();
             assertThat(state.applied())
-                    .as("Start over DTLS, Interim over RadSec")
-                    .isEqualTo(2);
+                    .as("Start over DTLS, Interims over RadSec and plain TCP")
+                    .isEqualTo(3);
             assertThat(state.duplicates()).as("the Start again, over UDP").isEqualTo(1);
             assertThat(state.active()).isEqualTo(1);
         }

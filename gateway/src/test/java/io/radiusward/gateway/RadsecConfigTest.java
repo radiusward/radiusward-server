@@ -156,4 +156,31 @@ class RadsecConfigTest {
         assertThatThrownBy(() -> NasRegistry.from(Config.of(Map.of("nas.roaming.dtls", "true"))))
                 .hasMessageContaining("dtls.identity");
     }
+
+    @Test
+    void plainTcpNeedsNoCertificates() {
+        RadsecConfig c = RadsecConfig.from(
+                Config.of(Map.of(
+                        "radius.tcp.enabled", "true",
+                        "nas.edge.address", "10.0.0.1",
+                        "nas.edge.secret", "s",
+                        "nas.edge.tcp", "true")),
+                "0.0.0.0");
+        assertThat(c.enabled()).isTrue();
+        assertThat(c.tcp()).as("no RadSec listener").isFalse();
+        assertThat(c.credentials()).isNull();
+        assertThat(c.plain().enabled()).isTrue();
+        assertThat(c.plain().authPort()).isEqualTo(1812);
+        assertThat(c.plain().accountingPort()).isEqualTo(1813);
+        assertThat(c.plain().clients()).containsExactly("edge");
+        assertThatThrownBy(() -> RadsecConfig.from(
+                        Config.of(Map.of("radius.tcp.enabled", "true", "nas.edge.address", "10.0.0.1")), "0.0.0.0"))
+                .hasMessageContaining("nas.<name>.tcp");
+        Map<String, String> both = base();
+        both.put("radius.tcp.enabled", "true");
+        both.put("nas.plain.tcp", "true");
+        RadsecConfig withTls = RadsecConfig.from(Config.of(both), "0.0.0.0");
+        assertThat(withTls.tcp()).isTrue();
+        assertThat(withTls.plain().clients()).containsExactly("plain");
+    }
 }

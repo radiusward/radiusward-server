@@ -46,5 +46,6 @@
 | [0042](0042-eap-pwd.md) | EAP-pwd (RFC 5931), group 19, cleartext or NT-hash preparation, own P-256 arithmetic | Accepted |
 | [0043](0043-coa-relay.md) | CoA and Disconnect from home servers relayed to the NAS of the user's session, answered with their Proxy-State | Accepted |
 | [0044](0044-inner-tunnel-proxying.md) | Tunnels end here, the inner user of a proxied realm is checked by its home server (PAP, CHAP, MS-CHAPv2 with its keys) | Accepted |
+| [0045](0045-radius-over-tcp.md) | RADIUS over plain TCP (RFC 6613) in the RadSec agent: NAS by address, its own secret, ports keep their kind | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.
