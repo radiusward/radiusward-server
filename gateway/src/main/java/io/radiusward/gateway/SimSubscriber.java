@@ -75,13 +75,13 @@ record SimSubscriber(byte[] ki, byte[] opc, byte[] amf, long sqn, int algorithm,
     }
 
     /** Whether vectors can be computed: a Ki and an OPc, and no COMP128 v1–3 (not supported, ADR 0061). */
-    boolean milenage() {
+    boolean usesMilenage() {
         return ki != null && opc != null && (algorithm == 0 || algorithm == MILENAGE || algorithm == COMP128_4);
     }
 
-    /** {@link #milenage()} or three stored triplets: what EAP-SIM can use. */
+    /** {@link #usesMilenage()} or three stored triplets: what EAP-SIM can use. */
     boolean gsm() {
-        return milenage() || triplets.size() == 3;
+        return usesMilenage() || triplets.size() == 3;
     }
 
     private static byte[] hex(AttributeItem item, String value, int length) {

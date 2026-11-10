@@ -30,7 +30,7 @@ class SimSubscriberTest {
         assertThat(v4.opc()).as("derived from OP").isEqualTo(hex("cd63cb71954a9f4e48a5994e37a02baf"));
         assertThat(v4.amf()).isEqualTo(hex("8000"));
         assertThat(v4.sqn()).isEqualTo(4096);
-        assertThat(v4.milenage()).isTrue();
+        assertThat(v4.usesMilenage()).isTrue();
 
         SimSubscriber v3 = SimSubscriber.of(List.of(
                 item("EAP-Sim-Ki", "465b5ce8b199b49faa5f0a2ee238a6bc"),
@@ -45,12 +45,12 @@ class SimSubscriberTest {
                 item("EAP-Sim-SRES3", "11111113"),
                 item("EAP-Sim-KC3", "2222222222222224"),
                 item("Cleartext-Password", "ignored")));
-        assertThat(v3.milenage()).as("COMP128-2 is not supported").isFalse();
+        assertThat(v3.usesMilenage()).as("COMP128-2 is not supported").isFalse();
         assertThat(v3.triplets()).hasSize(3);
         assertThat(v3.gsm()).as("the stored triplets serve EAP-SIM").isTrue();
         assertThat(SimSubscriber.of(List.of()).gsm()).isFalse();
         assertThat(SimSubscriber.of(List.of(item("SIM-Ki", "465b5ce8b199b49faa5f0a2ee238a6bc")))
-                        .milenage())
+                        .usesMilenage())
                 .as("no OPc")
                 .isFalse();
     }

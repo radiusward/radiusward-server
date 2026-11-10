@@ -44,7 +44,7 @@ final class EapAka implements EapMethod {
     private final byte[] networkName;
     private final SimIdentities identities;
     private State state;
-    private byte[] identity; // as last received: the input of the key derivation
+    private byte[] peerIdentity; // as last received: the input of the key derivation
     private String imsi;
     private SimSubscriber subscriber;
     private byte[] rand;
@@ -67,7 +67,7 @@ final class EapAka implements EapMethod {
     EapAka(boolean prime, byte[] networkName, String identity, SimIdentities identities) {
         this.prime = prime;
         this.networkName = networkName.clone();
-        this.identity = identity == null ? new byte[0] : identity.getBytes(StandardCharsets.UTF_8);
+        this.peerIdentity = identity == null ? new byte[0] : identity.getBytes(StandardCharsets.UTF_8);
         this.identities = identities;
     }
 
@@ -93,7 +93,7 @@ final class EapAka implements EapMethod {
 
     /** Permanent, re-authentication or pseudonym identity; {@code null} if it is none of them. */
     private Step byIdentity(int identifier, Credentials credentials) {
-        String id = new String(identity, StandardCharsets.UTF_8);
+        String id = new String(peerIdentity, StandardCharsets.UTF_8);
         String permanent = permanentImsi(id, prime);
         if (permanent != null) {
             return challenge(identifier, credentials, permanent, 0);
@@ -148,7 +148,7 @@ final class EapAka implements EapMethod {
         if (state != State.IDENTITY || value == null) {
             return fail();
         }
-        identity = value;
+        peerIdentity = value;
         Step step = byIdentity(identifier + 1, credentials);
         return step != null ? step : fail();
     }
@@ -168,7 +168,7 @@ final class EapAka implements EapMethod {
             } catch (IllegalArgumentException e) {
                 return fail(); // logged by the handler's subscriber look-up
             }
-            if (!subscriber.milenage()) {
+            if (!subscriber.usesMilenage()) {
                 return fail(); // no Ki and OPc: AKA needs MILENAGE
             }
             imsi = permanent;
@@ -196,10 +196,10 @@ final class EapAka implements EapMethod {
                 .reserved(SimMessage.AT_AUTN, autn);
         if (prime) {
             byte[][] ckIk = SimKeys.akaPrimeCkIk(q.ck(), q.ik(), networkName, Arrays.copyOfRange(autn, 0, 6));
-            keys = SimKeys.akaPrimeKeys(ckIk[0], ckIk[1], identity);
+            keys = SimKeys.akaPrimeKeys(ckIk[0], ckIk[1], peerIdentity);
             b.lengthPrefixed(SimMessage.AT_KDF_INPUT, networkName).uint16(SimMessage.AT_KDF, KDF_AKA_PRIME);
         } else {
-            mk = SimKeys.akaMasterKey(identity, q.ik(), q.ck());
+            mk = SimKeys.akaMasterKey(peerIdentity, q.ik(), q.ck());
             keys = SimKeys.fullKeys(mk);
         }
         identities.drop(nextReauthId); // a resynchronised challenge replaces the first one's
@@ -292,8 +292,8 @@ final class EapAka implements EapMethod {
             return fail(); // the peer refused the counter: it authenticates in full next time
         }
         SimKeys.Keys k = prime
-                ? SimKeys.akaPrimeReauthKeys(reauth.kRe(), identity, counter, nonceS)
-                : SimKeys.reauthKeys(identity, counter, nonceS, reauth.mk());
+                ? SimKeys.akaPrimeReauthKeys(reauth.kRe(), peerIdentity, counter, nonceS)
+                : SimKeys.reauthKeys(peerIdentity, counter, nonceS, reauth.mk());
         state = State.DONE;
         return Step.succeeded(k.msk());
     }

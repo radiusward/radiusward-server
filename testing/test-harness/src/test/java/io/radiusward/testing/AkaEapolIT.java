@@ -157,7 +157,7 @@ class AkaEapolIT {
                 password="%s:%s:000000100000"
                 """.formatted(REALM, KI, OPC));
         assertThat(r.getStdout()).contains("SUCCESS");
-        assertThat(r.getStdout()).contains("Synchronization-Failure").as("the USIM reported its SQN");
+        assertThat(r.getStdout()).as("the USIM reported its SQN").contains("Synchronization-Failure");
     }
 
     @Test

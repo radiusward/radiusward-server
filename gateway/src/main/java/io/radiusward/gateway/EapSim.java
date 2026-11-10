@@ -181,7 +181,7 @@ final class EapSim implements EapMethod {
     /** Three triplets with distinct RANDs: from GSM-MILENAGE, else the stored ones; {@code null} if neither. */
     private static Milenage.Triplet[] triplets(SimSubscriber subscriber) {
         Milenage.Triplet[] t = new Milenage.Triplet[3];
-        if (subscriber.milenage()) {
+        if (subscriber.usesMilenage()) {
             Milenage milenage = new Milenage(subscriber.ki(), subscriber.opc());
             for (int i = 0; i < 3; i++) {
                 byte[] rand = new byte[16];
