@@ -47,6 +47,9 @@ public final class Gateway implements AutoCloseable {
     private final AccessHandler handler;
     private final AgentRunner[] runners;
     private RadsecAgent radsecAgent;
+    private DynamicAuthorization dynamicAuthorization;
+    private CoaService coaService;
+    private CoaApi coaApi;
 
     private Gateway(
             GatewayConfig config,
@@ -98,6 +101,17 @@ public final class Gateway implements AutoCloseable {
             AuthConfig auth,
             java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
             RadsecConfig radsec) {
+        return launchWith(config, registry, auth, handlerFactory, radsec, CoaConfig.DISABLED);
+    }
+
+    /** As above, also sending CoA and Disconnect-Requests when {@code coa} is enabled (ADR 0036). */
+    public static Gateway launchWith(
+            GatewayConfig config,
+            NasRegistry registry,
+            AuthConfig auth,
+            java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
+            RadsecConfig radsec,
+            CoaConfig coa) {
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (config.dictionaryDir() != null) {
             dictionaries.addDirectory(config.dictionaryDir(), ParseMode.LENIENT);
@@ -167,6 +181,14 @@ public final class Gateway implements AutoCloseable {
                 radsecAgent = new RadsecAgent(radsec, registry, link, radsecIndex, auth.enabled(), System::nanoTime);
                 socketAgents.add(radsecAgent);
             }
+            ClusterQueries queries = null;
+            DynamicAuthorization dynamic = null;
+            if (coa.enabled()) {
+                queries = new ClusterQueries();
+                client.queries(queries);
+                dynamic = new DynamicAuthorization(coa, config.listenHost(), link);
+                socketAgents.add(dynamic);
+            }
             if (config.dedicatedThreads()) {
                 for (org.agrona.concurrent.Agent agent : socketAgents) {
                     runnerList.add(
@@ -188,6 +210,14 @@ public final class Gateway implements AutoCloseable {
             }
             Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
             gateway.radsecAgent = radsecAgent;
+            if (dynamic != null) {
+                gateway.dynamicAuthorization = dynamic;
+                gateway.coaService =
+                        new CoaService(coa, registry, queries, dynamic, dictionary, link, radsecIndex, radsecAgent);
+                if (coa.token() != null) {
+                    gateway.coaApi = new CoaApi(gateway.coaService, coa.token());
+                }
+            }
             LOG.info(
                     "gateway {} started: {} NAS, cluster {}, {} threads",
                     config.gatewayId(),
@@ -310,6 +340,16 @@ public final class Gateway implements AutoCloseable {
         return radsecAgent;
     }
 
+    /** CoA and Disconnect (ADR 0036), {@code null} unless {@code coa.enabled}. */
+    public CoaService coa() {
+        return coaService;
+    }
+
+    /** The CoA HTTP API for the management server ({@code /coa/}), {@code null} without {@code coa.api.token}. */
+    public com.sun.net.httpserver.HttpHandler coaApi() {
+        return coaApi;
+    }
+
     public Health health() {
         for (AgentRunner runner : runners) {
             if (runner.isClosed()) {
@@ -391,6 +431,9 @@ public final class Gateway implements AutoCloseable {
         if (radsecAgent != null) {
             radsecAgent.writeMetrics(w, id);
         }
+        if (dynamicAuthorization != null) {
+            dynamicAuthorization.writeMetrics(w, id);
+        }
         w.counter("radiusward_log_messages_dropped_total", "Log messages dropped because the logging ring was full")
                 .sample(NonBlockingQueueFullPolicy.dropped());
         JvmMetrics.write(w);
@@ -399,6 +442,9 @@ public final class Gateway implements AutoCloseable {
 
     @Override
     public void close() {
+        if (coaApi != null) {
+            coaApi.close();
+        }
         CloseHelper.closeAll(runners);
         if (handler instanceof AutoCloseable closeable) {
             CloseHelper.quietClose(closeable); // identity stores: connections, files

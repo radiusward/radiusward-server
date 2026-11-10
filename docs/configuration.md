@@ -108,6 +108,27 @@ nas.branch-17.radsec          = true
 nas.branch-17.radsec.identity = wlc.branch-17.corp.example
 ```
 
+## CoA and Disconnect (gateway)
+
+The gateway changes or ends sessions on their NAS (RFC 5176, [ADR 0036](adr/0036-coa-and-session-identity.md)).
+Sessions are found in the replicated state, so any gateway reaches any session.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `coa.enabled` | `false` | send CoA and Disconnect-Requests |
+| `coa.timeout` / `coa.retries` | `2s` / `2` | wait for an ACK or NAK, then send again; after the retries the result is `timeout` |
+| `coa.api.token` | — | bearer token of the HTTP API on the management port (`POST /coa/disconnect`, `/coa/update`); at least 16 characters, use `${env:...}`; without it there is no API |
+| `nas.<name>.coa.address` | the entry's address, else the session's NAS-IP-Address | where the NAS's dynamic-authorization server listens (a NAS on RadSec gets the request on its connection instead) |
+| `nas.<name>.coa.port` | `3799` | its UDP port |
+| `nas.<name>.coa.secret` | `nas.<name>.secret` | its shared secret |
+
+```bash
+curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:9190/coa/disconnect?user=alice'
+curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:9190/coa/update?user=alice' \
+     --data 'Session-Timeout = 600, Filter-Id = "restricted"'
+admin disconnect --gateway http://gw:9190 --user alice      # token from RADIUSWARD_COA_API_TOKEN
+```
+
 ## Identity stores
 
 Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.md)).

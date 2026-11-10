@@ -20,7 +20,6 @@ public final class GatewayMain {
 
     private GatewayMain() {}
 
-    @SuppressWarnings("try") // the management server only has to stay open until shutdown
     public static void main(String[] args) {
         TlsCredentials.statefulSessions(); // before anything loads the JDK's TLS classes
         Config config = Config.load(
@@ -35,14 +34,18 @@ public final class GatewayMain {
                         registry,
                         auth,
                         Gateway.storeHandler(config, auth),
-                        RadsecConfig.from(config, gatewayConfig.listenHost()));
-                ManagementServer ignored = ManagementServer.start(
+                        RadsecConfig.from(config, gatewayConfig.listenHost()),
+                        CoaConfig.from(config));
+                ManagementServer management = ManagementServer.start(
                         config,
                         9189 + gatewayConfig.gatewayId(),
                         gateway::health,
                         gateway::ready,
                         gateway::stateJson,
                         gateway::metrics)) {
+            if (management != null && gateway.coaApi() != null) {
+                management.handle("/coa/", gateway.coaApi()); // ADR 0036, with coa.api.token only
+            }
             barrier.await();
         } finally {
             LogManager.shutdown();

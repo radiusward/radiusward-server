@@ -1,7 +1,7 @@
 # ADR 0036: CoA and Disconnect, and sessions' identifying attributes
 
 Status: Accepted (2026-11-10), being implemented. Phase 5, work package 5.12
-([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestone 1 (session identity in the replicated state) done.
+([plans/phase-5-auth.md](../plans/phase-5-auth.md)); milestones 1 (session identity in the replicated state) and 2 (sender, API) done.
 
 ## Context
 RFC 5176 lets a server change (CoA-Request) or end (Disconnect-Request) a session on the NAS. The request must name
@@ -47,6 +47,34 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - `SessionPageQuery`/`SessionPageReport` page through active sessions with a user, for the store sweep.
   - Both scan the store: operator and sweep questions, not per-packet work.
   - `AdminClient.session`, `userSessions` and `sessionPage` expose them.
+
+- **Sending** (milestone 2): `DynamicAuthorization`, one gateway thread.
+  - Disconnect-Request (40) and CoA-Request (43) are signed like an Accounting-Request and always carry a
+    Message-Authenticator.
+  - Each request gets an identifier free for its destination.
+  - A response counts only if its Response Authenticator, and its Message-Authenticator if present, verify.
+    ACK and NAK come back with the NAK's Error-Cause.
+  - Without an answer, the request is sent again every `coa.timeout` (2 s) up to `coa.retries` (2) times, then it
+    is a timeout.
+- **Where to**:
+  - Over the NAS's RadSec connection, if it has one (RFC 6614 lets both sides send on it), with its RadSec secret.
+  - Otherwise over UDP to `nas.<name>.coa.address`, else the entry's address if it is a single one, else the
+    session's NAS-IP-Address. The port is `nas.<name>.coa.port` (3799), the secret `nas.<name>.coa.secret` (else
+    the entry's).
+  - A NAS-IP-Address is added when the identity names no NAS and the entry has a single address.
+- **Finding the sessions**: the gateway asks the cluster through its client session (`ClusterQueries`), by user or
+  by NAS entry and Acct-Session-Id.
+  - Entries that tell devices apart are addressed by user only.
+  - A session without an identity yet (applied before version 7) is reported unreachable.
+- **API**: on the gateway's management port, only with `coa.api.token` (at least 16 characters, compared in
+  constant time):
+  - `POST /coa/disconnect?user=` or `?nas=&session=`.
+  - `POST /coa/update?user=` with a body of attributes in the users-file syntax, encoded with the dictionary.
+  - The answer is one JSON result per session: `ack`, `nak` with `errorCause`, `timeout` or `unreachable`.
+  - The work runs on its own threads, so a slow NAS never holds up `/health`.
+  - `admin disconnect` and `admin coa` call it.
+- **Metrics**: `radiusward_gateway_coa_requests_total{result}`, and RadSec's `coa_sent`, `coa_no_connection` and
+  `coa_answers`.
 
 ## Consequences
 - Any gateway can name any active session to its NAS, and that survives member restarts and snapshots.

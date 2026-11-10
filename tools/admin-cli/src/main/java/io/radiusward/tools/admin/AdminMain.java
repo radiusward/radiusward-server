@@ -60,6 +60,8 @@ public final class AdminMain {
                 case "activate-version" -> need(o, "members", "version");
                 case "verify-export" -> need(o, "jdbc-url", "ack-log", "nas-id");
                 case "export-schema" -> {}
+                case "disconnect" -> need(o, "gateway");
+                case "coa" -> need(o, "gateway", "attributes");
                 default -> throw new IllegalArgumentException("unknown command " + command);
             }
             byDevice(o);
@@ -72,12 +74,47 @@ public final class AdminMain {
             return switch (command) {
                 case "export-schema" -> exportSchema(o, out, err);
                 case "verify-export" -> verifyExport(o, out);
+                case "disconnect", "coa" -> coa(command, o, out);
                 default -> withCluster(command, o, out);
             };
         } catch (Exception e) {
             err.println("admin: " + e.getMessage());
             return EXIT_FAILED;
         }
+    }
+
+    /**
+     * CoA and Disconnect through a gateway's API (ADR 0036): the gateway finds the sessions in the cluster and sends
+     * the requests to their NAS. The token is {@code --token} or {@code RADIUSWARD_COA_API_TOKEN}.
+     */
+    private static int coa(String command, Map<String, String> o, PrintStream out) throws Exception {
+        String target;
+        if (o.containsKey("user")) {
+            target = "user=" + java.net.URLEncoder.encode(o.get("user"), java.nio.charset.StandardCharsets.UTF_8);
+        } else if (o.containsKey("nas") && o.containsKey("session")) {
+            target = "nas=" + java.net.URLEncoder.encode(o.get("nas"), java.nio.charset.StandardCharsets.UTF_8)
+                    + "&session="
+                    + java.net.URLEncoder.encode(o.get("session"), java.nio.charset.StandardCharsets.UTF_8);
+        } else {
+            throw new IllegalArgumentException("--user <name>, or --nas <entry> --session <Acct-Session-Id>");
+        }
+        String token = o.getOrDefault("token", System.getenv("RADIUSWARD_COA_API_TOKEN"));
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("--token or RADIUSWARD_COA_API_TOKEN");
+        }
+        String gateway = o.get("gateway").replaceAll("/+$", "");
+        java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(
+                        gateway + "/coa/" + (command.equals("coa") ? "update" : "disconnect") + "?" + target))
+                .header("Authorization", "Bearer " + token)
+                .timeout(java.time.Duration.ofSeconds(60))
+                .POST(java.net.http.HttpRequest.BodyPublishers.ofString(o.getOrDefault("attributes", "")))
+                .build();
+        java.net.http.HttpResponse<String> response = java.net.http.HttpClient.newHttpClient()
+                .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        out.println(response.body());
+        boolean allAcknowledged = response.statusCode() == 200
+                && !response.body().matches("(?s).*\"result\":\"(nak|timeout|unreachable)\".*");
+        return allAcknowledged ? EXIT_OK : EXIT_FAILED;
     }
 
     private static AdminClient cluster(Map<String, String> o) {
@@ -229,6 +266,10 @@ public final class AdminMain {
                        admin verify-export  --jdbc-url <url> [--jdbc-user u --jdbc-password p] --ack-log <acks.csv>
                                             --nas-id <id> [--members ...]   (sessions in the database vs. acks/cluster)
                        verify-acks/verify-export: [--identity nas-identifier] when the NAS entry identifies devices
+                       admin disconnect     --gateway http://<gateway>:<management port> [--token t] --user <name>
+                                            | --nas <entry> --session <Acct-Session-Id>   (Disconnect-Request, RFC 5176)
+                       admin coa            --gateway ... [--token t] --user <name> --attributes 'Session-Timeout = 600'
+                       disconnect/coa: the gateway's coa.api.token, or RADIUSWARD_COA_API_TOKEN
                 exit: 0 ok, 1 something missing or no answer, 64 usage""";
     }
 }

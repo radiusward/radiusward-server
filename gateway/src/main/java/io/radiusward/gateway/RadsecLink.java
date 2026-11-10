@@ -35,6 +35,10 @@ final class RadsecLink {
     final RingBuffer fromAuth = ring();
     final RingBuffer toAccounting = ring();
     final RingBuffer fromAccounting = ring();
+    /** CoA and Disconnect-Requests for a NAS's connection: NAS index (4), packet (ADR 0036). */
+    final RingBuffer toNas = ring();
+    /** Their ACKs and NAKs: NAS index (4), packet. */
+    final RingBuffer fromNas = ring();
 
     RadsecLink(NasClient[] clients) {
         this.clients = clients;

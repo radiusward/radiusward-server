@@ -57,6 +57,9 @@ final class RadsecAgent implements Agent {
         REQUESTS,
         MALFORMED,
         NOT_HANDLED,
+        COA_SENT,
+        COA_NO_CONNECTION,
+        COA_ANSWERS,
         DROPPED,
         REPLIES,
         REPLIES_STALE,
@@ -75,6 +78,8 @@ final class RadsecAgent implements Agent {
     private final int[] generations;
     private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
     private final MessageHandler replyHandler = this::onReply;
+    private final MessageHandler coaHandler = this::onCoa;
+    private final java.util.concurrent.atomic.AtomicIntegerArray connectedNas;
     private final ByteBuffer reply = ByteBuffer.allocate(RadiusPacket.MAX_LENGTH);
     private final ByteBuffer empty = ByteBuffer.allocate(0);
 
@@ -107,6 +112,7 @@ final class RadsecAgent implements Agent {
                 .filter(n -> config.clients().containsKey(n.name()))
                 .sorted(java.util.Comparator.comparing(NasClient::name))
                 .toList();
+        this.connectedNas = new java.util.concurrent.atomic.AtomicIntegerArray(Math.max(1, link.clients.length));
         this.connections = new Connection[config.connections()];
         this.generations = new int[config.connections()];
     }
@@ -209,6 +215,7 @@ final class RadsecAgent implements Agent {
             work += link.fromAuth.read(replyHandler, 64);
         }
         work += link.fromAccounting.read(replyHandler, 64);
+        work += link.toNas.read(coaHandler, 64);
         if (now - nextHousekeeping >= 0) {
             housekeeping();
             nextHousekeeping = now + HOUSEKEEPING_INTERVAL_NS;
@@ -376,6 +383,7 @@ final class RadsecAgent implements Agent {
             throw new Refused();
         }
         c.nas = index;
+        connectedNas.incrementAndGet(index);
         if (c.engine.getSession().getCreationTime() < c.acceptedAt) {
             increment(Counter.HANDSHAKES_RESUMED); // a session from an earlier connection
         }
@@ -422,6 +430,21 @@ final class RadsecAgent implements Agent {
     }
 
     private void forward(Connection c, int code, int offset, int length) {
+        if (code == DynamicAuthorization.DISCONNECT_ACK
+                || code == DynamicAuthorization.DISCONNECT_NAK
+                || code == DynamicAuthorization.COA_ACK
+                || code == DynamicAuthorization.COA_NAK) {
+            int index = link.fromNas.tryClaim(RadsecLink.PACKET_MSG, 4 + length);
+            if (index > 0) {
+                link.fromNas.buffer().putInt(index, c.nas);
+                link.fromNas.buffer().putBytes(index + 4, c.appView, offset, length);
+                link.fromNas.commit(index);
+                increment(Counter.COA_ANSWERS);
+            } else {
+                increment(Counter.DROPPED);
+            }
+            return;
+        }
         increment(Counter.REQUESTS);
         org.agrona.concurrent.ringbuffer.RingBuffer ring = switch (code) {
             case RadiusCode.ACCESS_REQUEST -> auth ? link.toAuth : null;
@@ -434,6 +457,32 @@ final class RadsecAgent implements Agent {
         } else if (!RadsecLink.request(ring, c.route(), c.nas, c.appView, offset, length)) {
             increment(Counter.DROPPED);
         }
+    }
+
+    /** Whether a NAS index of {@link RadsecLink#clients} has an established connection (CoA goes there). */
+    boolean connected(int nas) {
+        return nas >= 0 && nas < connectedNas.length() && connectedNas.get(nas) > 0;
+    }
+
+    /** A CoA or Disconnect-Request for a NAS: to its first established connection (RFC 6614 §2.5). */
+    private void onCoa(int msgTypeId, DirectBuffer buffer, int index, int length) {
+        int nas = buffer.getInt(index);
+        for (Connection c : connections) {
+            if (c != null && c.nas == nas) {
+                reply.clear();
+                buffer.getBytes(index + 4, reply, length - 4);
+                reply.flip();
+                try {
+                    wrap(c, reply);
+                    flush(c);
+                    increment(Counter.COA_SENT);
+                } catch (IOException e) {
+                    close(c);
+                }
+                return;
+            }
+        }
+        increment(Counter.COA_NO_CONNECTION); // the request times out at the sender
     }
 
     /** A reply from a deciding agent: written to its connection if that is still the same one. */
@@ -489,6 +538,9 @@ final class RadsecAgent implements Agent {
             return;
         }
         connections[c.index] = null;
+        if (c.nas >= 0) {
+            connectedNas.decrementAndGet(c.nas);
+        }
         generations[c.index] = (c.generation + 1) & 0x7FFF_FFFF;
         open--;
         increment(Counter.CONNECTIONS_CLOSED);

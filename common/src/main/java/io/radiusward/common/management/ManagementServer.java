@@ -97,6 +97,15 @@ public final class ManagementServer implements AutoCloseable {
                 metrics);
     }
 
+    /**
+     * Adds an endpoint (e.g. the gateway's CoA API). The handler runs on the server's single thread: one that waits
+     * must hand its work to a thread of its own and answer from there.
+     */
+    public ManagementServer handle(String path, com.sun.net.httpserver.HttpHandler handler) {
+        server.createContext(path, handler);
+        return this;
+    }
+
     public int port() {
         return server.getAddress().getPort();
     }

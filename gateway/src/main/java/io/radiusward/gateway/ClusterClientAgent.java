@@ -42,6 +42,7 @@ final class ClusterClientAgent implements Agent, EgressListener {
     private final RingBuffer fromCluster;
     private final GatewayStats stats;
     private final ClusterReservations reservations;
+    private ClusterQueries queries;
     private final io.radiusward.protocol.AuthReservationResultDecoder reservationResult =
             new io.radiusward.protocol.AuthReservationResultDecoder();
     private final BufferClaim claim = new BufferClaim();
@@ -93,6 +94,9 @@ final class ClusterClientAgent implements Agent, EgressListener {
         work += toCluster.controlledRead(commandHandler, 64);
         if (reservations != null) {
             work += reservations.requests().controlledRead(commandHandler, 16);
+        }
+        if (queries != null) {
+            work += queries.requests().controlledRead(commandHandler, 8);
         }
         if (now - lastSendNs > KEEP_ALIVE_INTERVAL_NS && cluster.sendKeepAlive()) {
             lastSendNs = now;
@@ -160,6 +164,17 @@ final class ClusterClientAgent implements Agent, EgressListener {
             }
             return;
         }
+        switch (headerDecoder.templateId()) {
+            case io.radiusward.protocol.SessionReportDecoder.TEMPLATE_ID,
+                    io.radiusward.protocol.UserSessionsReportDecoder.TEMPLATE_ID,
+                    io.radiusward.protocol.SessionPageReportDecoder.TEMPLATE_ID -> {
+                if (queries != null) {
+                    queries.deliver(buffer, offset, length);
+                }
+                return;
+            }
+            default -> {}
+        }
         int msgType = switch (headerDecoder.templateId()) {
             case AccountingCommittedDecoder.TEMPLATE_ID -> UdpAgent.COMMITTED_MSG;
             case AccountingRejectedDecoder.TEMPLATE_ID -> UdpAgent.REJECTED_MSG;
@@ -180,6 +195,11 @@ final class ClusterClientAgent implements Agent, EgressListener {
         if (!fromCluster.write(UdpAgent.NEW_LEADER_MSG, signal, 0, 1)) {
             stats.increment(Counter.RING_FULL); // NAS retransmits remain the fallback
         }
+    }
+
+    /** Questions to the replicated state (CoA, ADR 0036); set before the agent starts. */
+    void queries(ClusterQueries queries) {
+        this.queries = queries;
     }
 
     boolean connected() {
