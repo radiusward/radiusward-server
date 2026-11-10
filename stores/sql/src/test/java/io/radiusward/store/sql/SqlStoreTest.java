@@ -16,6 +16,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -174,6 +175,58 @@ class SqlStoreTest {
         try (IdentityStore store = store(Map.of("table.radcheck", "other.users_check"))) {
             assertThat(store.lookup("dave")).isPresent();
             assertThat(store.lookup("bob")).isEmpty();
+        }
+    }
+
+    @Test
+    void theFullPoolMakesBorrowersWaitUntilTheirTimeout() throws Exception {
+        java.util.Properties credentials = new java.util.Properties();
+        credentials.setProperty("user", postgres.getUsername());
+        credentials.setProperty("password", postgres.getPassword());
+        ConnectionPool pool = new ConnectionPool(postgres.getJdbcUrl(), credentials, 1, Duration.ofMillis(2_000));
+        try {
+            java.sql.Connection only = pool.borrow();
+            Thread releaser = new Thread(() -> {
+                try {
+                    Thread.sleep(200);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                pool.release(only, false);
+            });
+            releaser.start();
+            assertThat(pool.borrow()).as("handed over when released").isSameAs(only);
+            releaser.join();
+
+            ConnectionPool impatient =
+                    new ConnectionPool(postgres.getJdbcUrl(), credentials, 1, Duration.ofMillis(200));
+            java.sql.Connection held = impatient.borrow();
+            assertThatThrownBy(impatient::borrow).hasMessageContaining("no free database connection within 200 ms");
+
+            java.util.concurrent.atomic.AtomicReference<Throwable> failure =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            ConnectionPool patient = new ConnectionPool(postgres.getJdbcUrl(), credentials, 1, Duration.ofSeconds(30));
+            java.sql.Connection busy = patient.borrow();
+            Thread waiter = new Thread(() -> {
+                try {
+                    patient.borrow();
+                } catch (Throwable t) {
+                    failure.set(t);
+                }
+            });
+            waiter.start();
+            Thread.sleep(200);
+            waiter.interrupt();
+            waiter.join(5_000);
+            assertThat(failure.get()).hasMessageContaining("interrupted waiting for a database connection");
+
+            impatient.release(held, true);
+            patient.release(busy, true);
+            pool.release(only, false);
+            impatient.close();
+            patient.close();
+        } finally {
+            pool.close();
         }
     }
 }
