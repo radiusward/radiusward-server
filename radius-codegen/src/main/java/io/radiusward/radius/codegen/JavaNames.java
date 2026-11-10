@@ -16,8 +16,7 @@ final class JavaNames {
 
     /** {@code Acct-Status-Type} → {@code ACCT_STATUS_TYPE}, {@code 3GPP-IMSI} → {@code _3GPP_IMSI}. */
     static String constant(String name) {
-        String upper =
-                name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_").replaceAll("^_+|_+$", "");
+        String upper = trim(name.toUpperCase(Locale.ROOT).replaceAll("[^A-Z0-9]+", "_"), '_');
         if (upper.isEmpty()) {
             upper = "UNNAMED";
         }
@@ -60,5 +59,18 @@ final class JavaNames {
             }
             return name;
         }
+    }
+
+    /** {@code text} without {@code c} at either end (a loop: a regex such as {@code ^_+|_+$} backtracks). */
+    static String trim(String text, char c) {
+        int start = 0;
+        int end = text.length();
+        while (start < end && text.charAt(start) == c) {
+            start++;
+        }
+        while (end > start && text.charAt(end - 1) == c) {
+            end--;
+        }
+        return text.substring(start, end);
     }
 }

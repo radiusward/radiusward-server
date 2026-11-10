@@ -102,15 +102,22 @@ public final class AdminMain {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("--token or RADIUSWARD_COA_API_TOKEN");
         }
-        String gateway = o.get("gateway").replaceAll("/+$", "");
+        String gateway = o.get("gateway");
+        int end = gateway.length();
+        while (end > 0 && gateway.charAt(end - 1) == '/') { // trailing slashes, without a backtracking regex
+            end--;
+        }
+        gateway = gateway.substring(0, end);
         java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(
                         gateway + "/coa/" + (command.equals("coa") ? "update" : "disconnect") + "?" + target))
                 .header("Authorization", "Bearer " + token)
                 .timeout(java.time.Duration.ofSeconds(60))
                 .POST(java.net.http.HttpRequest.BodyPublishers.ofString(o.getOrDefault("attributes", "")))
                 .build();
-        java.net.http.HttpResponse<String> response = java.net.http.HttpClient.newHttpClient()
-                .send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        java.net.http.HttpResponse<String> response;
+        try (java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient()) {
+            response = client.send(request, java.net.http.HttpResponse.BodyHandlers.ofString());
+        }
         out.println(response.body());
         boolean allAcknowledged = response.statusCode() == 200
                 && !response.body().matches("(?s).*\"result\":\"(nak|timeout|unreachable)\".*");

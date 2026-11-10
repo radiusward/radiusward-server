@@ -231,10 +231,16 @@ final class InnerProxy {
 
     private java.net.Socket connect(ProxyConfig.Home home, int timeout) throws IOException {
         java.net.Socket plain = new java.net.Socket();
-        plain.connect(new java.net.InetSocketAddress(home.address(), home.port()), timeout);
-        if (home.transport() == ProxyConfig.Transport.TCP) {
-            return plain;
+        try {
+            plain.connect(new java.net.InetSocketAddress(home.address(), home.port()), timeout);
+            return home.transport() == ProxyConfig.Transport.TCP ? plain : tls(home, plain);
+        } catch (IOException | RuntimeException e) {
+            plain.close(); // a refused connection or a failed handshake leaves no socket behind
+            throw e;
         }
+    }
+
+    private java.net.Socket tls(ProxyConfig.Home home, java.net.Socket plain) throws IOException {
         javax.net.ssl.SSLContext context = contexts.computeIfAbsent(
                 home.name(), n -> TlsClient.context(home.certificate(), home.key(), home.ca()));
         String serverName = home.serverName() != null ? home.serverName() : home.host();

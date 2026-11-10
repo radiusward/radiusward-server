@@ -84,7 +84,7 @@ final class AccessWorker implements Agent {
                     code == AccessHandler.ACCEPT,
                     code == AccessHandler.REJECT
                             ? (context.reason() != null
-                                    ? context.reason().replaceAll("[:\\s]+$", "")
+                                    ? withoutTrailingColon(context.reason())
                                     : "credentials or method rejected")
                             : null));
         }
@@ -114,6 +114,15 @@ final class AccessWorker implements Agent {
     /** The authentication log (ADR 0058); {@code null}: none. */
     void authLog(AuthLog log) {
         this.authLog = log;
+    }
+
+    /** A recorded cause such as {@code "user not in any store: "} without its trailing colon and spaces. */
+    static String withoutTrailingColon(String reason) {
+        int end = reason.length();
+        while (end > 0 && (reason.charAt(end - 1) == ':' || Character.isWhitespace(reason.charAt(end - 1)))) {
+            end--;
+        }
+        return reason.substring(0, end);
     }
 
     private static String text(io.radiusward.radius.codec.RadiusPacket request, int type) {

@@ -340,16 +340,21 @@ public final class RadiusSink implements AccountingSink {
 
     private SSLSocket connect(InetSocketAddress server) throws IOException {
         SSLSocket s = (SSLSocket) tlsContext.getSocketFactory().createSocket();
-        SSLParameters params = s.getSSLParameters();
-        params.setEndpointIdentificationAlgorithm("HTTPS");
-        String name = tlsName != null ? tlsName : server.getHostString();
-        if (!Character.isDigit(name.charAt(0)) && name.indexOf(':') < 0) {
-            params.setServerNames(List.of(new javax.net.ssl.SNIHostName(name)));
+        try {
+            SSLParameters params = s.getSSLParameters();
+            params.setEndpointIdentificationAlgorithm("HTTPS");
+            String name = tlsName != null ? tlsName : server.getHostString();
+            if (!Character.isDigit(name.charAt(0)) && name.indexOf(':') < 0) {
+                params.setServerNames(List.of(new javax.net.ssl.SNIHostName(name)));
+            }
+            s.setSSLParameters(params);
+            s.connect(server, (int) timeout.toMillis()); // the certificate must carry the SNI name (tls.name)
+            s.startHandshake();
+            return s;
+        } catch (IOException | RuntimeException e) {
+            s.close(); // a refused connection or a failed handshake leaves no socket behind
+            throw e;
         }
-        s.setSSLParameters(params);
-        s.connect(server, (int) timeout.toMillis()); // the certificate must carry the SNI name (tls.name)
-        s.startHandshake();
-        return s;
     }
 
     private void closeConnection() {

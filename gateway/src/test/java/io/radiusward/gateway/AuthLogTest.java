@@ -82,4 +82,11 @@ class AuthLogTest {
                 .containsExactly("{\"time\":\"1970-01-01T00:00:00Z\",\"nas\":\"n\",\"user\":null,\"station\":null,"
                         + "\"result\":\"reject\"}");
     }
+
+    @Test
+    void causesLoseTheirTrailingColon() {
+        assertThat(AccessWorker.withoutTrailingColon("user not in any store: ")).isEqualTo("user not in any store");
+        assertThat(AccessWorker.withoutTrailingColon("outside Login-Time ")).isEqualTo("outside Login-Time");
+        assertThat(AccessWorker.withoutTrailingColon(": ")).isEmpty();
+    }
 }

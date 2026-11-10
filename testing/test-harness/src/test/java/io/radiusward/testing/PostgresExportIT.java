@@ -135,7 +135,7 @@ class PostgresExportIT {
                     events,
                     distinct,
                     count("SELECT count(*) FROM accounting_session"),
-                    node.stateJson().replaceAll(".*\"export\":", ""));
+                    after(node.stateJson(), "\"export\":"));
             assertThat(epoch).as("the lease moved").isGreaterThanOrEqualTo(2);
             assertThat(events).as("no duplicates").isEqualTo(distinct);
             // history keeps applied and stale events (stale: an Interim older than the session's progress)
@@ -305,5 +305,11 @@ class PostgresExportIT {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** {@code json} from just after {@code key} (diagnostic output). */
+    private static String after(String json, String key) {
+        int at = json.indexOf(key);
+        return at < 0 ? json : json.substring(at + key.length());
     }
 }

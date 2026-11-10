@@ -78,4 +78,27 @@ class InnerProxyTest {
                         .code())
                 .isEqualTo(AccessHandler.DROP);
     }
+
+    @Test
+    void unreachableTlsAndTcpHomeServersLeaveTheRequestUnanswered() throws Exception {
+        int closed;
+        try (java.net.ServerSocket probe = new java.net.ServerSocket(0)) {
+            closed = probe.getLocalPort();
+        }
+        for (String transport : new String[] {"tls", "tcp"}) {
+            Map<String, String> settings = ProxyConfigTest.base();
+            settings.put("home.a.address", "127.0.0.1:" + closed);
+            settings.put("home.a.transport", transport);
+            settings.put("home.a.tls.ca", "/never/read.pem"); // the connection fails before the TLS context is needed
+            settings.put("pool.p.servers", "a");
+            settings.put("proxy.timeout", "200ms");
+            settings.put("proxy.retries", "0");
+            InnerProxy p = new InnerProxy(ProxyConfig.from(Config.of(settings)));
+            assertThat(p.password("bob@partner.example", "pw".getBytes(StandardCharsets.US_ASCII))
+                            .inner()
+                            .code())
+                    .as(transport)
+                    .isEqualTo(AccessHandler.DROP);
+        }
+    }
 }

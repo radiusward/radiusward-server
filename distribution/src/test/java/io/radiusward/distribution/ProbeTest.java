@@ -51,7 +51,8 @@ class ProbeTest {
         try (ServerSocket silent = new ServerSocket(0, 50, InetAddress.getLoopbackAddress())) {
             Thread acceptor = new Thread(() -> {
                 try (Socket s = silent.accept()) {
-                    Thread.sleep(5_000); // accepts, never answers
+                    s.setSoTimeout(5_000);
+                    s.getInputStream().readAllBytes(); // reads the request, never answers
                 } catch (Exception e) {
                     // the test is over
                 }

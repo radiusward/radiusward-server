@@ -170,9 +170,15 @@ public final class LoadGenerator {
         final ArrayDeque<Integer> freeIds = new ArrayDeque<>();
 
         Port(Selector selector, java.net.InetAddress local) throws IOException {
-            channel = DatagramChannel.open().bind(new InetSocketAddress(local, 0));
-            channel.configureBlocking(false);
-            channel.register(selector, SelectionKey.OP_READ, this);
+            channel = DatagramChannel.open();
+            try {
+                channel.bind(new InetSocketAddress(local, 0));
+                channel.configureBlocking(false);
+                channel.register(selector, SelectionKey.OP_READ, this);
+            } catch (IOException | RuntimeException e) {
+                channel.close();
+                throw e;
+            }
             for (int i = 0; i < IDS_PER_CHANNEL; i++) {
                 freeIds.add(i);
             }

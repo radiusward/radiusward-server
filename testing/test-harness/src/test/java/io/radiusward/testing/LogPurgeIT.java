@@ -71,7 +71,7 @@ class LogPurgeIT {
             }
             for (int i = 0; i < 3; i++) {
                 System.out.println("member " + i + " after purge: "
-                        + cluster.node(i).stateJson().replaceAll(".*\"logPurge\":(\\{[^}]*\\}).*", "$1"));
+                        + section(cluster.node(i).stateJson(), "\"logPurge\":"));
             }
 
             // a member that misses the next purge must still catch up from the others' logs
@@ -135,5 +135,15 @@ class LogPurgeIT {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /** The JSON object after {@code key} in {@code json} (diagnostic output). */
+    private static String section(String json, String key) {
+        int at = json.indexOf(key);
+        if (at < 0) {
+            return json;
+        }
+        int end = json.indexOf('}', at);
+        return json.substring(at + key.length(), end < 0 ? json.length() : end + 1);
     }
 }

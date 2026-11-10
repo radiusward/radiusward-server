@@ -227,4 +227,14 @@ class CodeGeneratorTest {
                 .hasMessageContaining("unknown argument");
         assertThatThrownBy(() -> CodeGenerator.main(new String[0])).hasMessageContaining("usage");
     }
+
+    @Test
+    void constantNamesWithoutSeparatorsAtTheEnds() {
+        org.assertj.core.api.Assertions.assertThat(JavaNames.constant("-Acct-Status-Type-"))
+                .isEqualTo("ACCT_STATUS_TYPE");
+        org.assertj.core.api.Assertions.assertThat(JavaNames.trim("__a_b__", '_'))
+                .isEqualTo("a_b");
+        org.assertj.core.api.Assertions.assertThat(JavaNames.trim("___", '_')).isEmpty();
+        org.assertj.core.api.Assertions.assertThat(JavaNames.constant("---")).isEqualTo("UNNAMED");
+    }
 }

@@ -159,10 +159,12 @@ class DtlsIT {
     @Test
     void clientCertificatesAreRequiredAndChecked() throws Exception {
         int port = start(Map.of("nas.local.dtls.identity", "nas-1.corp.test", "radsec.dtls.retransmit", "200ms"));
-        assertThatThrownBy(() -> new DtlsClient(port, TestPki.clientContext(null, pki.ca, "DTLS")))
+        javax.net.ssl.SSLContext withoutCertificate = TestPki.clientContext(null, pki.ca, "DTLS");
+        javax.net.ssl.SSLContext otherCa = TestPki.clientContext(stranger.client("nas-1"), pki.ca, "DTLS");
+        assertThatThrownBy(() -> new DtlsClient(port, withoutCertificate))
                 .as("no client certificate")
                 .isInstanceOf(Exception.class);
-        assertThatThrownBy(() -> new DtlsClient(port, TestPki.clientContext(stranger.client("nas-1"), pki.ca, "DTLS")))
+        assertThatThrownBy(() -> new DtlsClient(port, otherCa))
                 .as("a certificate of another CA")
                 .isInstanceOf(Exception.class);
         RadsecIT.LocalWait.until(() -> agent().getDtls(RadsecAgent.Counter.HANDSHAKES_FAILED) == 2);
