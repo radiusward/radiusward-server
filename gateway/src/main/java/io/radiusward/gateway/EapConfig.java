@@ -23,6 +23,8 @@ import java.util.Locale;
  * @param peapBinding PEAP crypto-binding ({@code auth.eap.peap.crypto.binding}, ADR 0032)
  * @param peapClientCertificate whether PEAP's TLS handshake requires a client certificate
  *     ({@code auth.eap.peap.client.certificate}, ADR 0039)
+ * @param ttlsInner the EAP types TTLS offers when the client starts EAP inside, first preferred
+ *     ({@code auth.eap.ttls.inner}, ADR 0040)
  */
 record EapConfig(
         List<String> methods,
@@ -32,7 +34,8 @@ record EapConfig(
         EapTlsConfig tls,
         List<Integer> peapInner,
         Peap.Binding peapBinding,
-        boolean peapClientCertificate) {
+        boolean peapClientCertificate,
+        List<Integer> ttlsInner) {
 
     EapConfig(List<String> methods, Duration timeout, int conversations, int maxRounds, EapTlsConfig tls) {
         this(methods, timeout, conversations, maxRounds, tls, List.of(Peap.MS_CHAP_V2), Peap.Binding.OPTIONAL);
@@ -46,8 +49,10 @@ record EapConfig(
             EapTlsConfig tls,
             List<Integer> peapInner,
             Peap.Binding peapBinding) {
-        this(methods, timeout, conversations, maxRounds, tls, peapInner, peapBinding, false);
+        this(methods, timeout, conversations, maxRounds, tls, peapInner, peapBinding, false, DEFAULT_TTLS_INNER);
     }
+
+    static final List<Integer> DEFAULT_TTLS_INNER = List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5);
 
     static final List<String> KNOWN = List.of("md5", "tls", "peap", "ttls");
 
@@ -100,6 +105,16 @@ record EapConfig(
             throw new ConfigException(
                     "auth.eap.peap.client.certificate: needs auth.eap.tls.ca, the CAs of client certificates");
         }
+        List<Integer> ttlsInner = config.list("auth.eap.ttls.inner", List.of("mschapv2", "gtc", "md5")).stream()
+                .map(m -> switch (m.trim().toLowerCase(Locale.ROOT)) {
+                    case "mschapv2" -> InnerEap.MS_CHAP_V2;
+                    case "gtc" -> InnerEap.GTC;
+                    case "md5" -> InnerEap.MD5;
+                    default ->
+                        throw new ConfigException(
+                                "auth.eap.ttls.inner: unknown inner EAP method " + m + " (mschapv2, gtc, md5)");
+                })
+                .toList();
         return new EapConfig(
                 List.copyOf(methods),
                 config.duration("auth.eap.timeout", Duration.ofSeconds(30)),
@@ -108,7 +123,8 @@ record EapConfig(
                 tls,
                 inner,
                 peapBinding,
-                peapCertificate);
+                peapCertificate,
+                ttlsInner);
     }
 
     /** The EAP type number of a method name. */
@@ -132,7 +148,7 @@ record EapConfig(
             case EapPacket.TYPE_MD5 -> new EapMd5();
             case EapTls.TYPE -> tls == null ? null : new EapTls(tls, identity);
             case Peap.TYPE -> tls == null ? null : new Peap(tls, peapInner, peapBinding, peapClientCertificate);
-            case Ttls.TYPE -> tls == null ? null : new Ttls(tls);
+            case Ttls.TYPE -> tls == null ? null : new Ttls(tls, ttlsInner);
             default -> null;
         };
     }

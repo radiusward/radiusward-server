@@ -91,6 +91,7 @@ class EapolTestIT {
                 Map.entry("auth.store.local.type", "file"),
                 Map.entry("auth.store.local.path", users.toString()),
                 Map.entry("auth.store.local.mschap", "true"),
+                Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
                 Map.entry("auth.eap.methods", "peap, ttls, tls"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc, tls"),
@@ -203,6 +204,23 @@ class EapolTestIT {
             assertAccepted(run("ttls-mschapv2-" + tls.length(), ttls(tls, "auth=MSCHAPV2", "Alice-Passw0rd!")));
         }
         assertRejected(run("ttls-wrong", ttls(TLS12, "auth=PAP", "wrong")));
+    }
+
+    /** TTLS with CHAP, MS-CHAPv1 and EAP inside (ADR 0040), over TLS 1.2 and 1.3: the challenges from the tunnel. */
+    @Test
+    void ttlsInnerMethods() throws Exception {
+        for (String tls : List.of(TLS12, TLS13)) {
+            for (String phase2 :
+                    List.of("auth=CHAP", "auth=MSCHAP", "autheap=MSCHAPV2", "autheap=MD5", "autheap=GTC")) {
+                String name =
+                        "ttls-" + phase2.replace('=', '-').toLowerCase(java.util.Locale.ROOT) + "-" + tls.length();
+                assertAccepted(run(name, ttls(tls, phase2, "Alice-Passw0rd!")));
+            }
+        }
+        for (String phase2 : List.of("auth=CHAP", "auth=MSCHAP", "autheap=MSCHAPV2", "autheap=MD5", "autheap=GTC")) {
+            String name = "ttls-wrong-" + phase2.replace('=', '-').toLowerCase(java.util.Locale.ROOT);
+            assertRejected(run(name, ttls(TLS12, phase2, "wrong")));
+        }
     }
 
     static final String TLS12 = "tls_disable_tlsv1_3=1";

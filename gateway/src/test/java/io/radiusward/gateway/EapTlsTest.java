@@ -93,7 +93,16 @@ class EapTlsTest {
                 mschap,
                 verifiers,
                 storeVerifiers,
-                new EapConfig(methods, Duration.ofSeconds(30), 1000, 200, tls, peapInner, binding, peapCertificate));
+                new EapConfig(
+                        methods,
+                        Duration.ofSeconds(30),
+                        1000,
+                        200,
+                        tls,
+                        peapInner,
+                        binding,
+                        peapCertificate,
+                        EapConfig.DEFAULT_TTLS_INNER));
         return new StoreAccessHandler(auth, StoreAccessHandlerTest.DICTIONARY, System::currentTimeMillis);
     }
 

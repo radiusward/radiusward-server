@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.15 done (ADR 0020–0039). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.16 done (ADR 0020–0040). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -112,6 +112,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.13 ✅ | Proxying, RadSec client, dynamic discovery | realms (`@realm`, `DOMAIN\`, default) strictly local or proxied; home servers and pools (failover, load-balance per device); Access-Requests proxied by a non-blocking agent (User-Password, CHAP, Message-Authenticator, Proxy-State, MS-MPPE keys and Tunnel-Password re-encrypted), EAP passed through; Status-Server health and failover; RadSec client; proxied accounting committed in the cluster first, then forwarded by a `radius` export sink with retries and lease; NAPTR/SRV discovery (RFC 7585) for TLS home servers. Not covered: CoA from home servers back to NAS. Milestones: 1 ✅ realms and home servers, 2 ✅ UDP proxy, 3 ✅ health and failover ([ADR 0037](../adr/0037-proxying.md)), 4 ✅ RadSec client, 5 ✅ accounting forwarding, 6 ✅ discovery, 7 ✅ interop with radsecproxy and an external RADIUS server ([ADR 0037](../adr/0037-proxying.md)) | L |
 | 5.14 ✅ | DTLS (RFC 7360) | RADIUS over DTLS 1.2 on 2083/udp (the JDK has no DTLS 1.3); radsecproxy as the interop client. Milestones: 1 ✅ DTLS associations in the RadSec agent: NAS by address or certificate, secret `radius/dtls`, handshake retransmission, restarted NAS, idle timeout, accounting deduplicated across UDP/RadSec/DTLS, CoA over the association ([ADR 0038](../adr/0038-dtls.md)); 2 ✅ interop with radsecproxy as the DTLS client of `radclient` and `eapol_test`. Not covered: DTLS 1.3 (not in the JDK), the gateway as a DTLS client of home servers | M |
 | 5.15 ✅ | PEAP alignment | PEAPv0 only as other servers (PEAPv1 not planned until a user with old Cisco PEAP/GTC clients asks); PEAP and TTLS version bits checked; `auth.eap.peap.client.certificate`; `ExternalEapComparisonIT`: the same `eapol_test` profiles against an installed external RADIUS server and the gateway end the same way, resume alike ([ADR 0039](../adr/0039-peap-alignment.md)) | S |
+| 5.16 ✅ | TTLS inner methods | CHAP, MS-CHAPv1 and EAP inside TTLS (EAP-MSCHAPv2, EAP-GTC, EAP-MD5; `auth.eap.ttls.inner`); `eapol_test` and comparison profiles ([ADR 0040](../adr/0040-ttls-inner-methods.md)) | S |
 
 ## Tests
 

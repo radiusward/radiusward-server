@@ -550,6 +550,16 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                     public EapMethod.Inner password(String user, byte[] password) {
                         return innerPassword(context, user, password);
                     }
+
+                    @Override
+                    public EapMethod.Inner chap(String user, int identifier, byte[] challenge, byte[] response) {
+                        return innerChap(context, user, identifier, challenge, response);
+                    }
+
+                    @Override
+                    public EapMethod.Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
+                        return innerMsChap(context, user, challenge, ntResponse, false);
+                    }
                 });
         EapMethod.Step step;
         if (c.method == null) {
@@ -718,6 +728,53 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * verifier, or the local NT hash.
      */
     private EapMethod.Inner innerMsChapV2(AccessContext context, String user, byte[] challengeHash, byte[] ntResponse) {
+        return innerMsChap(context, user, challengeHash, ntResponse, true);
+    }
+
+    /**
+     * CHAP inside a tunnel: only with the cleartext password of a store that allows CHAP, as outside it; verifiers
+     * cannot answer CHAP.
+     */
+    private EapMethod.Inner innerChap(
+            AccessContext context, String user, int identifier, byte[] challenge, byte[] response) {
+        Authorization a = authorize(context, user, false);
+        if (a.code() != ACCEPT) {
+            return new EapMethod.Inner(a.code(), null);
+        }
+        if (a.authType().equalsIgnoreCase("Accept")) {
+            return new EapMethod.Inner(ACCEPT, null);
+        }
+        if (!stores.chap().getOrDefault(a.found().store(), false)) {
+            warnOnce(
+                    "chap:" + a.found().store(),
+                    "CHAP request for store {}, which does not allow CHAP"
+                            + " (auth.store.<name>.chap = true needs cleartext passwords): rejected",
+                    a.found().store());
+            return new EapMethod.Inner(REJECT, null);
+        }
+        for (AttributeItem p : a.passwords()) {
+            if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)) {
+                byte[] clear = p.value().getBytes(StandardCharsets.UTF_8);
+                try {
+                    java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
+                    md5.update((byte) identifier);
+                    md5.update(clear);
+                    md5.update(challenge);
+                    return new EapMethod.Inner(
+                            java.security.MessageDigest.isEqual(md5.digest(), response) ? ACCEPT : REJECT, null);
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    throw new IllegalStateException(e);
+                } finally {
+                    Arrays.fill(clear, (byte) 0);
+                }
+            }
+        }
+        return new EapMethod.Inner(REJECT, null);
+    }
+
+    /** MS-CHAP inside a tunnel; {@code challenge} is the v2 challenge hash or the v1 challenge (both 8 bytes). */
+    private EapMethod.Inner innerMsChap(
+            AccessContext context, String user, byte[] challenge, byte[] ntResponse, boolean v2) {
         Authorization a = authorize(context, user, false);
         if (a.code() != ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
@@ -726,7 +783,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (verifier != null) {
             try {
                 CredentialVerifier.Result r =
-                        stores.verifiers().get(verifier).verifyMsChap(user, challengeHash, ntResponse, true);
+                        stores.verifiers().get(verifier).verifyMsChap(user, challenge, ntResponse, v2);
                 return r.accepted() && r.ntHashHash() != null
                         ? new EapMethod.Inner(ACCEPT, r.ntHashHash())
                         : new EapMethod.Inner(REJECT, null);
@@ -741,7 +798,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         byte[] ntHash = localNtHash(a.found(), a.passwords());
         if (ntHash == null
-                || !java.security.MessageDigest.isEqual(MsChap.challengeResponse(challengeHash, ntHash), ntResponse)) {
+                || !java.security.MessageDigest.isEqual(MsChap.challengeResponse(challenge, ntHash), ntResponse)) {
             return new EapMethod.Inner(REJECT, null);
         }
         return new EapMethod.Inner(ACCEPT, Md4.digest(ntHash));

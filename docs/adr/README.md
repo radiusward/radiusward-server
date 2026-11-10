@@ -41,5 +41,6 @@
 | [0037](0037-proxying.md) | Proxying realms to home servers: strictly local or proxied, non-blocking on the auth thread, everything re-encrypted, Status-Server health | Accepted |
 | [0038](0038-dtls.md) | RADIUS over DTLS 1.2 (RFC 7360) in the RadSec agent: associations per NAS address, retransmission, one packet per record | Accepted |
 | [0039](0039-peap-alignment.md) | PEAPv0 only (PEAPv1 not planned), version bits checked, PEAP client certificates, EAP compared with an external server | Accepted |
+| [0040](0040-ttls-inner-methods.md) | TTLS with CHAP, MS-CHAPv1 and EAP inside (MS-CHAPv2, GTC, MD5); challenges from the tunnel, MS-CHAPv1 exported at its own length | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

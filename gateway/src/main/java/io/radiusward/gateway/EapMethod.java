@@ -37,6 +37,19 @@ interface EapMethod {
 
         /** A password inside a tunnel (TTLS/PAP), checked like PAP outside it (stored formats or a verifier). */
         Inner password(String user, byte[] password);
+
+        /**
+         * CHAP inside a tunnel (TTLS/CHAP, and EAP-MD5 inside TTLS, which is the same computation): MD5 of the
+         * identifier, the cleartext password and the challenge; only for stores that allow CHAP (cleartext).
+         */
+        default Inner chap(String user, int identifier, byte[] challenge, byte[] response) {
+            return new Inner(AccessHandler.REJECT, null);
+        }
+
+        /** MS-CHAPv1 inside a tunnel (TTLS/MS-CHAP): the NT response to an 8-byte challenge, checked as outside. */
+        default Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
+            return new Inner(AccessHandler.REJECT, null);
+        }
     }
 
     /**

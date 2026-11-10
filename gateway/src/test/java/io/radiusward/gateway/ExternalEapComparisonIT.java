@@ -93,6 +93,7 @@ class ExternalEapComparisonIT {
                 Map.entry("auth.store.local.type", "file"),
                 Map.entry("auth.store.local.path", users.toString()),
                 Map.entry("auth.store.local.mschap", "true"),
+                Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
                 Map.entry("auth.eap.methods", "peap, ttls, tls"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc"),
@@ -161,6 +162,8 @@ class ExternalEapComparisonIT {
                         }
                         mschapv2 {
                         }
+                        md5 {
+                        }
                         gtc {
                             auth_type = PAP
                         }
@@ -188,7 +191,8 @@ class ExternalEapComparisonIT {
                     }
                 }
                 """;
-        return "modules {\n    pap {\n    }\n    mschap {\n    }\n    files {\n        filename = " + users
+        return "modules {\n    pap {\n    }\n    chap {\n    }\n    mschap {\n    }\n    files {\n        filename = "
+                + users
                 + "\n    }\n"
                 + eap.formatted("eap", pki.serverKey, pki.serverPem, pki.caPem, cache.resolve("eap"), "")
                 + eap.formatted(
@@ -210,6 +214,7 @@ class ExternalEapComparisonIT {
                 + """
                 server inner-tunnel {
                     authorize {
+                        chap
                         mschap
                         eap {
                             ok = return
@@ -220,6 +225,9 @@ class ExternalEapComparisonIT {
                     authenticate {
                         Auth-Type PAP {
                             pap
+                        }
+                        Auth-Type CHAP {
+                            chap
                         }
                         Auth-Type MS-CHAP {
                             mschap
@@ -309,6 +317,13 @@ class ExternalEapComparisonIT {
                 new Profile("ttls-pap", Outcome.ACCEPTED, ttls("auth=PAP", "Alice-Passw0rd!")),
                 new Profile("ttls-mschapv2", Outcome.ACCEPTED, ttls("auth=MSCHAPV2", "Alice-Passw0rd!")),
                 new Profile("ttls-wrong-password", Outcome.REJECTED, ttls("auth=PAP", "wrong")),
+                new Profile("ttls-chap", Outcome.ACCEPTED, ttls("auth=CHAP", "Alice-Passw0rd!")),
+                new Profile("ttls-mschap", Outcome.ACCEPTED, ttls("auth=MSCHAP", "Alice-Passw0rd!")),
+                new Profile("ttls-eap-mschapv2", Outcome.ACCEPTED, ttls("autheap=MSCHAPV2", "Alice-Passw0rd!")),
+                new Profile("ttls-eap-md5", Outcome.ACCEPTED, ttls("autheap=MD5", "Alice-Passw0rd!")),
+                new Profile("ttls-eap-gtc", Outcome.ACCEPTED, ttls("autheap=GTC", "Alice-Passw0rd!")),
+                new Profile("ttls-chap-wrong", Outcome.REJECTED, ttls("auth=CHAP", "wrong")),
+                new Profile("ttls-eap-md5-wrong", Outcome.REJECTED, ttls("autheap=MD5", "wrong")),
                 new Profile("tls-tls12", Outcome.ACCEPTED, tls(TLS12)),
                 new Profile("tls-tls13", Outcome.ACCEPTED, tls(TLS13)));
         List<String> differences = new ArrayList<>();
