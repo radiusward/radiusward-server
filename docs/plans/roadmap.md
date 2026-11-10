@@ -8,7 +8,7 @@
 | **3** | Exporter tailing the log; sink SPI (stable `export-api`); Postgres sink (COPY + ON CONFLICT) and file sink, lag policy, log purge, Prometheus metrics; Testcontainers | Docker | ✅ done ([plan + report](phase-3.md#phase-3-report)) |
 | **3b** | Generic JDBC sink with dialects for the relational databases below; Kafka sink | Docker | next |
 | **4** | Helm chart (StatefulSet, PDB, anti-affinity, UDP LB with source IP preservation), systemd units, observability dashboards, chaos and load tests, ClusterBackup / DR runbooks | Kubernetes, bare metal | planned |
-| **5** | Authentication/authorization (external auth adapter → cluster decision), EAP design review, RadSec | | planned |
+| **5** | Authentication and authorization (identity stores, Active Directory, EAP-TLS/PEAP/TTLS), Simultaneous-Use through the cluster, RadSec, CoA/Disconnect, proxying | local, Docker | in progress: 5.1–5.13 done, 5.14 DTLS open ([plan](phase-5-auth.md)) |
 
 State-machine versions are gated since 2026-11-09 ([ADR 0005](../adr/0005-log-determinism-versioning.md)): version 5 is
 the baseline of the first release; every later rule change gets a new version and `atLeast(n)`, activated by the

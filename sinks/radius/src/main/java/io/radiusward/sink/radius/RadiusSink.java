@@ -423,13 +423,13 @@ public final class RadiusSink implements AccountingSink {
         return context;
     }
 
-    private static List<? extends Certificate> certificates(Path pem) throws IOException, GeneralSecurityException {
+    static List<? extends Certificate> certificates(Path pem) throws IOException, GeneralSecurityException {
         try (InputStream in = Files.newInputStream(pem)) {
             return List.copyOf(CertificateFactory.getInstance("X.509").generateCertificates(in));
         }
     }
 
-    private static PrivateKey privateKey(Path pem) throws IOException, GeneralSecurityException {
+    static PrivateKey privateKey(Path pem) throws IOException, GeneralSecurityException {
         String text = Files.readString(pem, StandardCharsets.US_ASCII);
         int begin = text.indexOf("-----BEGIN PRIVATE KEY-----");
         int end = text.indexOf("-----END PRIVATE KEY-----");

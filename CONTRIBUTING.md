@@ -4,8 +4,9 @@ Thanks for helping. This guide is the single source of truth for how the project
 rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
 [docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
 
-Current state: **Phase 3** (export to PostgreSQL, sink plug-ins, log purge, metrics) is done; Phase 3b (more
-sinks) and Phase 4 (Kubernetes) are next — see the [roadmap](docs/plans/roadmap.md).
+Current state: Phases 0–3 are done; **Phase 5** (authentication, EAP, RadSec, CoA/Disconnect, proxying) is done up
+to work package 5.13, with 5.14 (DTLS) open. Phase 3b (more sinks) and Phase 4 (Kubernetes) follow — see the
+[roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Plinux`) run nightly in CI.
 
 ## Setup
 
@@ -34,7 +35,7 @@ sinks) and Phase 4 (Kubernetes) are next — see the [roadmap](docs/plans/roadma
 scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 gateways (docs/operations/local-cluster.md)
 docker build -f deploy/docker/Dockerfile -t radiusward:dev .   # image (after ./mvnw install -DskipTests)
 docker compose -f deploy/compose/compose.yaml up -d --wait     # compose stack (docs/operations/docker.md)
-scripts/linux-tests.sh [TestClass]              # fault injection in containers (-Plinux, ~15 min)
+scripts/linux-tests.sh [TestClass]              # fault injection in containers (-Plinux; nightly in CI, ~2 h in full)
 java -jar tools/radclient/target/radclient.jar --help
 scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
 ```

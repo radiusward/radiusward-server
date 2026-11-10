@@ -474,8 +474,8 @@ final class RadsecAgent implements Agent {
                 reply.flip();
                 try {
                     wrap(c, reply);
-                    flush(c);
                     increment(Counter.COA_SENT);
+                    flush(c);
                 } catch (IOException e) {
                     close(c);
                 }
@@ -499,8 +499,8 @@ final class RadsecAgent implements Agent {
         reply.flip();
         try {
             wrap(c, reply);
+            increment(Counter.REPLIES); // before the flush: the NAS may read it before the counter otherwise
             flush(c);
-            increment(Counter.REPLIES);
         } catch (IOException e) {
             close(c);
         }
