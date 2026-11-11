@@ -64,5 +64,6 @@
 | [0060](0060-expire-after.md) | Expire-After: accounts end a set time after their first exported session | Accepted |
 | [0061](0061-eap-sim-aka.md) | EAP-SIM, EAP-AKA, EAP-AKA′ with local SIM keys: Milenage, SQN in the cluster, encrypted pseudonyms | Accepted |
 | [0062](0062-members-and-gateways-on-kubernetes.md) | Members and gateways on Kubernetes: DNS names, 1.5 s heartbeat, caught-up readiness, a Service per gateway (spike results) | Accepted |
+| [0063](0063-seeding-a-replaced-member.md) | A member with an empty volume is seeded from the others with Aeron ClusterBackup before it starts | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

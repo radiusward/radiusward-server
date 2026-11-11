@@ -55,6 +55,8 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["cluster-node", "--config", "/etc/radiusward/cluster.properties"]
           env:
+            - name: RADIUSWARD_CLUSTER_SEED_TIMEOUT
+              value: {{ .Values.node.seedTimeout | quote }}
             - name: RADIUSWARD_CLUSTER_NODE_ID
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
             - {name: RADIUSWARD_PROFILE, value: {{ .Values.profile | quote }}}

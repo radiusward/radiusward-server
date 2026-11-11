@@ -22,6 +22,7 @@ node:
   basePort: 9000
   leaderHeartbeatTimeout: 1500ms   # ADR 0062: 1.5 s replaced a dead leader on Kubernetes without NAS retransmissions
   electionTimeout: 500ms
+  seedTimeout: 20s                 # an empty volume (a replaced member) is first seeded from the others (ADR 0063); 0s: off
   terminationGracePeriodSeconds: 60
   persistence:
     size: 100Gi

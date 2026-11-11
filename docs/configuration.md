@@ -34,6 +34,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.data.dir` | `.local/data` | archive and cluster directories go to `<dir>/node-<id>/` |
 | `cluster.aeron.dir` | temp dir per node | Aeron media driver directory (`/dev/shm` on Linux) |
 | `cluster.leader.heartbeat.timeout` | `1500ms` | leader failure detection; with the election timeout a crashed leader is replaced in ~2.2 s, below a 3 s NAS timeout ([ADR 0011](adr/0011-gateway-pipeline.md)) |
+| `cluster.seed.timeout` | `0s` (off) | a member with an empty data directory first copies the latest snapshot and the log after it from the other members (Aeron ClusterBackup), so a replaced volume can rejoin after the log was purged; gives up after this long and starts empty, as a new cluster does. The Helm chart sets `20s` ([ADR 0063](adr/0063-seeding-a-replaced-member.md)) |
 | `cluster.election.timeout` | `500ms` | how long a candidate waits for votes |
 | `cluster.session.timeout` | `10s` | client session timeout |
 | `cluster.version.hold` | `false` | keep a newer state-machine version off after an upgrade, so a rollback stays possible; activate with `admin activate-version` ([release.md](operations/release.md#upgrading-a-cluster)) |

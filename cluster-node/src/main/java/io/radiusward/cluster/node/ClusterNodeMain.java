@@ -27,6 +27,11 @@ public final class ClusterNodeMain {
                 ConfigArgs.files(args, "cluster-node --config <file.properties> [--config ...]"), System.getenv());
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));
         ClusterNodeConfig nodeConfig = ClusterNodeConfig.from(config);
+        java.time.Duration seed = config.duration("cluster.seed.timeout", java.time.Duration.ZERO);
+        if (!seed.isZero() && ClusterSeed.empty(nodeConfig)) { // a replaced volume (ADR 0063)
+            ClusterNode.awaitOwnAddress(nodeConfig.host(), ClusterNode.OWN_NAME_WAIT_MS);
+            ClusterSeed.seedIfEmpty(nodeConfig, seed);
+        }
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
                 ClusterNode node = ClusterNode.launch(nodeConfig, barrier::signalAll);
                 ManagementServer ignored = ManagementServer.start(

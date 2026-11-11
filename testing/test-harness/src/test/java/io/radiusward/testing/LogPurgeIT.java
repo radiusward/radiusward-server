@@ -89,12 +89,12 @@ class LogPurgeIT {
         }
     }
 
-    private static long logStart(ClusterNode node) {
+    static long logStart(ClusterNode node) {
         Matcher m = LOG_START.matcher(node.stateJson());
         return m.find() ? Long.parseLong(m.group(1)) : 0;
     }
 
-    private static void snapshot(LocalCluster cluster, int expected) {
+    static void snapshot(LocalCluster cluster, int expected) {
         ClusterNode leader = cluster.awaitLeader();
         LocalCluster.await(Duration.ofSeconds(10), "snapshot requested", leader::requestSnapshot);
         LocalCluster.await(
@@ -103,7 +103,7 @@ class LogPurgeIT {
                 () -> leader.stats().snapshots() >= expected);
     }
 
-    private static void load(LocalCluster cluster, int firstSession) {
+    static void load(LocalCluster cluster, int firstSession) {
         try {
             LoadGenerator.Result result = new LoadGenerator(
                             new LoadGenerator.Settings(

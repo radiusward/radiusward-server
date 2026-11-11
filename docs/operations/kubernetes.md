@@ -99,6 +99,14 @@ Disconnect and proxied requests leave with the node's address; NAS devices and h
 - **CPU.** Members get guaranteed CPU (requests = limits): a throttled or paused leader looks dead and costs an
   election.
 
+## Replacing a member's volume
+
+Delete the member's claim and pod (`kubectl delete pvc data-<release>-node-1 --wait=false; kubectl delete pod
+<release>-node-1`). The new pod finds its volume empty and first copies the latest snapshot and the log after it from
+the other members (`node.seedTimeout`, 20 s; [ADR 0063](../adr/0063-seeding-a-replaced-member.md)); on kind this took
+4 s under load and the member was ready 10 s after it started. While it is away the other two keep the quorum. The
+first install waits `node.seedTimeout` once, as there is nobody to copy from yet.
+
 ## Upgrades
 
 `helm upgrade` rolls the members one at a time: a restarted member counts as ready only once its election is
@@ -117,7 +125,6 @@ state version is refused.
 
 ## Not yet in the chart
 
-- **Backup and replacing a member's lost volume** (Phase 4.6): an empty member cannot catch up once the log is
-  purged; until the backup exists, a lost volume means restoring that member from a copy taken while it was
-  stopped, and a lost quorum means restoring the cluster from a snapshot.
+- **A backup outside the cluster** (Phase 4.6, second part): losing two members at once still loses the quorum;
+  restoring then needs a snapshot kept elsewhere.
 - Gateways do not yet drain on shutdown; a restarting gateway's requests in flight are retried by the NAS.

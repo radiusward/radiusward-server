@@ -424,14 +424,19 @@ public final class ClusterNode implements AutoCloseable {
             return Health.down(
                     "low disk space: " + (free >> 20) + " MiB free, need " + (config.diskMinFree() >> 20) + " MiB");
         }
-        if (s.leaderMemberId() < 0) {
-            return Health.down("no leader");
-        }
         io.aeron.cluster.ElectionState election = electionState();
-        if (election != null && election != io.aeron.cluster.ElectionState.CLOSED) {
+        if (election == null) { // the consensus module's counters are not readable: what the service saw
+            return s.leaderMemberId() < 0
+                    ? Health.down("no leader")
+                    : Health.up(s.role() + ", leader " + s.leaderMemberId());
+        }
+        if (election != io.aeron.cluster.ElectionState.CLOSED) {
             return Health.down("election in progress: " + election);
         }
-        return Health.up(s.role() + ", leader " + s.leaderMemberId());
+        // a closed election means a leader; the service names it only once it has seen the term begin in the log,
+        // which a member started from a later snapshot (restarted or seeded, ADR 0063) does not until the next term
+        return Health.up(s.role()
+                + (s.leaderMemberId() < 0 ? ", leader known to the cluster" : ", leader " + s.leaderMemberId()));
     }
 
     public String stateJson() {

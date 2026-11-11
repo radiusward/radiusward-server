@@ -118,8 +118,8 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 ### Backup and recovery runbooks (`docs/operations/`)
 
 - **Replace a member** (lost disk or node): an empty member cannot catch up once the log below the snapshot is purged
-  (checked in 4.1, ADR 0062), so it is seeded first: the backup's latest snapshot and log are copied into its new
-  volume (an init step of the chart, 4.6), then it joins and catches up the rest from the leader.
+  (checked in 4.1, ADR 0062), so it seeds itself before it starts: Aeron ClusterBackup copies the latest snapshot and
+  the log after it from the other members into its new volume, then it joins and catches up the rest (done, ADR 0063).
 - **Lost quorum** (two members gone): seed a new cluster from the backup's latest snapshot and log
   (`cluster-tool`), accept the loss of records after the last backed-up position (stated with the backup lag
   metric).
@@ -135,7 +135,7 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 | 4.3 ✅ | Helm chart: gateways (drain on SIGTERM still open) | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
 | 4.4 ✅ | Chart checks in CI | `helm lint` and `kubeconform` (Kubernetes 1.31 and 1.35, Prometheus Operator CRDs) with the defaults and `ci/all-on-values.yaml`; OCI chart in the release workflow | S |
 | 4.5 | `-Pk8s` tests (nightly) | kind + Testcontainers: install, accounting and EAP through the LoadBalancer (MetalLB in kind), leader pod deleted under load, rolling upgrade, node drain with the PDB, member replacement | L |
-| 4.6 | Backup | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |
+| 4.6 ½ | Backup (seeding a replaced member done, [ADR 0063](../adr/0063-seeding-a-replaced-member.md); backup outside the cluster open) | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |
 | 4.7 | systemd | units, env file, tmpfs, sysctls, hardening; a `linux-tests` scenario with three systemd containers (failover and restart) | S |
 | 4.8 ✅ | Dashboards and alerts (the chart's ServiceMonitor, PrometheusRule and ConfigMaps follow with 4.2) | compose gateways with authentication, `radclient auth` and an Access-Request load mix; the five dashboards above, the missing metrics (EAP method, latency histograms, reject causes, SQN, certificate expiry), authentication alerts, ServiceMonitor/PodMonitor, PrometheusRule, dashboard ConfigMaps; `MonitoringConfigIT` extended | M |
 | 4.9 | Load and chaos on Kubernetes | 500k sessions and the authentication mix through the LoadBalancer; pod kill, network partition (NetworkPolicy), node drain during load; results in the report | M |
