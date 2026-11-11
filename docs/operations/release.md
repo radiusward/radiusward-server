@@ -14,6 +14,15 @@ runs the full build with JDK 25, unit and end-to-end tests, then publishes the i
 a GitHub Release with `radiusward.jar` and `radclient.jar`. The fault-injection tests (`linux-tests.yml`) run
 for the same tag in parallel; check them before announcing a release.
 
+## Public packages
+
+GitHub creates new organization packages as private. Once per package an organization owner makes it public:
+organization **Settings → Packages → Package creation** must allow **Public**, then on the package's page **Package
+settings → Change visibility → Public**, and under **Manage Actions access** the `radiusward-server` repository keeps
+**Write**. Done for the image `ghcr.io/radiusward/radiusward-server` (2026-11-11); the Helm chart
+`oci://ghcr.io/radiusward/charts/radiusward` appears with the first tag and needs the same once. Check without
+credentials: `DOCKER_CONFIG=$(mktemp -d) docker pull ghcr.io/radiusward/radiusward-server:edge`.
+
 ## Cutting a release
 
 1. `main` is green (ci, the latest nightly linux-tests).
