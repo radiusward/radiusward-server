@@ -9,6 +9,7 @@
 [![End-to-end tests](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/e2e.json)](https://radiusward.github.io/radiusward-server/e2e/)
 [![Fault injection](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/linux.json)](https://radiusward.github.io/radiusward-server/linux/)
 [![Kubernetes](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/k8s.json)](https://radiusward.github.io/radiusward-server/k8s/)
+[![Benchmark](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/bench.json)](https://radiusward.github.io/radiusward-server/benchmarks/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A replicated RADIUS server for Java — accounting and authentication — built on

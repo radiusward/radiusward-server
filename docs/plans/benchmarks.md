@@ -1,6 +1,6 @@
 # Plan: benchmarks and published benchmark reports
 
-Status: **in progress** (2026-11-11): B1 and B2 done; B3 (pages) next, B4 (AWS) needs an account. ADR [0066](../adr/0066-benchmarks.md). Builds on the test reports
+Status: **in progress** (2026-11-11): B1, B2 and B3 done; B4 (AWS) needs an account. ADR [0066](../adr/0066-benchmarks.md). Builds on the test reports
 ([test-reports.md](test-reports.md)) and Phase 4 ([phase-4.md](phase-4.md)).
 
 ## Goal
@@ -29,7 +29,7 @@ pages next to the test reports.
 |---|---|---|---|
 | B1 ✅ | Harness | `scripts/bench.py`: compose stack (or an existing one), ladder for accounting / auth / mix, resource sampling, failover run, JMH, one JSON result; documented in `docs/testing/benchmarks.md` | M |
 | B2 ✅ | Weekly run | `bench.yml`: weekly and on demand on a GitHub runner, the result as an artifact `results-bench` | S |
-| B3 | Pages | Benchmarks section in `reports.yml`/`test-reports.sh`: ceiling per environment and profile, throughput–latency charts per ladder, the weekly trend with commits, JMH over time, README badge | M |
+| B3 ✅ | Pages | Benchmarks section in `reports.yml`/`test-reports.sh`: ceiling per environment and profile, throughput–latency charts per ladder, the weekly trend with commits, JMH over time, README badge | M |
 | B4 | AWS | the harness against the CloudFormation stack (Graviton, small and standard) with generators on c7g.xlarge; results into the pages and the ECS guide | M (needs an AWS account) |
 
 ## Limits

@@ -4,7 +4,7 @@
 #
 # Builds the published test reports (docs/plans/test-reports.md, ADR 0064): for every suite whose results are in
 # <results>, an Allure 3 report with its history in <site>/<suite>/, shields.io badge data in <site>/badges/ and the
-# landing page <site>/index.html. Suites without results keep their previous report. Used by reports.yml; locally:
+# landing page <site>/index.html, with a card for the benchmarks scripts/bench-pages.py wrote. Suites without results keep their previous report. Used by reports.yml; locally:
 #
 #   scripts/test-reports.sh <results> <site>        # <results>/results-integration/**/TEST-*.xml, ... → <site>
 #   (cd <site> && python3 -m http.server)           # then open http://localhost:8000
@@ -115,13 +115,35 @@ def card(sid, title, what, stats, meta):
 <p><a class="open" href="{sid}/">Open the report →</a></p>
 </article>"""
 
+def bench_card():
+    latest_file = os.path.join(site, "benchmarks", "latest.json")
+    what = "weekly on a GitHub runner and by hand anywhere: the ceiling of accounting, authentication and a mix, a leader killed under load, JMH"
+    if not os.path.exists(latest_file):
+        return f"""<article class="card none"><h2>Benchmarks</h2><p class="what">{html.escape(what)}</p>
+<p class="status">no results yet</p></article>"""
+    b = json.load(open(latest_file))
+    names = {"accounting": "accounting", "access": "authentication", "mix": "mix"}
+    ceilings = " · ".join(f"{names.get(k, k)} {v:,.0f}/s" for k, v in b.get("ceilings", {}).items() if v)
+    failover = "a leader killed under load: nothing lost" if b.get("failover_lost") is False else ""
+    commit = b.get("commit", "")
+    commit_html = (f'<a href="https://github.com/radiusward/radiusward-server/commit/{html.escape(commit)}">'
+                   f'{html.escape(commit[:7])}</a>') if len(commit) >= 7 else html.escape(commit)
+    return f"""<article class="card bench">
+<h2><a href="benchmarks/">Benchmarks</a></h2>
+<p class="what">{html.escape(what)}</p>
+<p class="status">{html.escape(ceilings or "no ceiling measured")}</p>
+<p class="counts">{html.escape(b.get("environment", b.get("where", "")))}{" · " + html.escape(failover) if failover else ""}</p>
+<p class="meta">{html.escape(b.get("date", "")[:10])} · commit {commit_html} · {b.get("runs", 0)} run(s)</p>
+<p><a class="open" href="benchmarks/">Open the benchmarks →</a></p>
+</article>"""
+
 page = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>radiusward test reports</title>
 <style>
-:root {{ --bg:#f6f7f9; --fg:#1d2330; --muted:#5c6577; --card:#fff; --line:#dfe3ea; --pass:#1a7f37; --fail:#cf222e; }}
+:root {{ --bg:#f6f7f9; --fg:#1d2330; --muted:#5c6577; --card:#fff; --line:#dfe3ea; --pass:#1a7f37; --fail:#cf222e; --bench:#0969da; }}
 @media (prefers-color-scheme: dark) {{ :root {{ --bg:#0f1218; --fg:#e6e9ef; --muted:#9aa3b5; --card:#181c24;
-  --line:#2a303c; --pass:#3fb950; --fail:#f85149; }} }}
+  --line:#2a303c; --pass:#3fb950; --fail:#f85149; --bench:#58a6ff; }} }}
 * {{ box-sizing:border-box }} body {{ margin:0; background:var(--bg); color:var(--fg);
   font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif }}
 main {{ max-width:960px; margin:0 auto; padding:32px 16px }} h1 {{ margin:0 0 4px; font-size:28px }}
@@ -129,8 +151,9 @@ main {{ max-width:960px; margin:0 auto; padding:32px 16px }} h1 {{ margin:0 0 4p
 .grid {{ display:grid; gap:16px; grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr)) }}
 .card {{ background:var(--card); border:1px solid var(--line); border-left:6px solid var(--line); border-radius:8px;
   padding:16px 20px }} .card.pass {{ border-left-color:var(--pass) }} .card.fail {{ border-left-color:var(--fail) }}
+.card.bench {{ border-left-color:var(--bench) }}
 .card h2 {{ margin:0 0 4px; font-size:20px }} .what,.meta,.counts {{ color:var(--muted); margin:4px 0; font-size:14px }}
-.status {{ font-weight:600; margin:8px 0 0 }} .pass .status {{ color:var(--pass) }} .fail .status {{ color:var(--fail) }}
+.status {{ font-weight:600; margin:8px 0 0 }} .pass .status {{ color:var(--pass) }} .bench .status {{ color:var(--bench) }} .fail .status {{ color:var(--fail) }}
 .open {{ font-weight:600; text-decoration:none }}
 </style></head>
 <body><main>
@@ -140,6 +163,7 @@ last 30 runs. Unit tests and coverage: <a href="https://sonarcloud.io/project/ov
 Source: <a href="https://github.com/radiusward/radiusward-server">radiusward/radiusward-server</a>.</p>
 <div class="grid">
 {"".join(card(*c) for c in cards)}
+{bench_card()}
 </div></main></body></html>
 """
 open(os.path.join(site, "index.html"), "w").write(page)

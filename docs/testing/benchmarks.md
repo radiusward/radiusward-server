@@ -39,3 +39,18 @@ The image is `radiusward:dev` (`--image` for another). Results land in `testing/
 On a MacBook (Colima, 8 vCPU) the first runs carried accounting at 1,000/s (p99 61 ms), authentication at 2,000/s
 (p99 29 ms) and the mix at 2,000/s with every step passing; a leader kill at 700/s lost nothing and caused no
 retransmission (longest wait 2.2 s). Higher steps follow in the published results.
+
+## Published results
+
+After every `bench` run on `main`, `reports.yml` publishes the
+[Benchmarks pages](https://radiusward.github.io/radiusward-server/benchmarks/) next to the test reports: per
+environment the ceilings and the failover of its latest run, each ladder as two charts (target against achieved rate,
+p99 against the 500 ms limit), CPU and memory per container at the top step, the JMH scores, and the trend of the
+ceilings and of JMH over all runs. The runs are kept inside the site's state (`benchmarks/runs/`), like the reports'
+history; the landing page has a card and the README a badge (`badges/bench.json`). A result made elsewhere is
+published by attaching it to a run as `results-bench` and running `reports.yml` by hand with that run's id; without
+one it publishes the latest successful `bench` run. Locally:
+
+```bash
+python3 scripts/bench-pages.py testing/benchmarks/target/bench site    # → site/benchmarks/index.html
+```

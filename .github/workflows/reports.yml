@@ -2,14 +2,20 @@ name: reports
 
 # Publishes the test reports to GitHub Pages (docs/plans/test-reports.md, ADR 0064): after ci, linux-tests or
 # k8s-tests finished on main, their results-* artifacts become Allure 3 reports with history, badges and a landing
-# page. The site is deployed from this workflow (no branch, no commits); what the next run needs — the other reports and
-# every history.jsonl — is restored from state.tar.gz inside the published site. The only workflow that deploys Pages;
+# page; the results of the weekly benchmarks (bench) become the Benchmarks pages (ADR 0066). The site is deployed from
+# this workflow (no branch, no commits); what the next run needs — the other reports, every history.jsonl and the
+# benchmark runs — is restored from state.tar.gz inside the published site. The only workflow that deploys Pages;
 # it runs the code of main and only reads the downloaded results as data. Pull requests never publish.
 on:
   workflow_run:
-    workflows: [ci, linux-tests, k8s-tests]
+    workflows: [ci, linux-tests, k8s-tests, bench]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "run whose results-* artifacts to publish (default: the latest successful bench run)"
+        required: false
 
 permissions:
   contents: read
@@ -28,8 +34,9 @@ env:
 jobs:
   publish:
     if: >-
-      github.event.workflow_run.conclusion != 'cancelled' &&
-      contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event.workflow_run.event)
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion != 'cancelled' &&
+       contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event.workflow_run.event))
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     environment:
@@ -40,9 +47,13 @@ jobs:
       - name: Download the results of the triggering run
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
         run: |
           mkdir -p results
+          if [[ -z "$RUN_ID" ]]; then
+            RUN_ID=$(gh run list -R "$GITHUB_REPOSITORY" -w bench -b main -s success -L 1 --json databaseId -q '.[0].databaseId')
+          fi
+          echo "publishing the results of run $RUN_ID"
           gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -p 'results-*' -D results || echo "no results artifacts"
           find results -type f | wc -l
       - name: Restore the published site
@@ -59,6 +70,7 @@ jobs:
           REPORT_BRANCH: ${{ github.event.workflow_run.head_branch }}
           REPORT_RUN_URL: ${{ github.event.workflow_run.html_url }}
         run: |
+          python3 scripts/bench-pages.py results site
           scripts/test-reports.sh results site
           tar czf state.tar.gz -C site --exclude=./state.tar.gz .
           mv state.tar.gz site/
