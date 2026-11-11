@@ -40,5 +40,13 @@ public final class JvmMetrics {
                 .sample(ManagementFactory.getThreadMXBean().getThreadCount());
         w.gauge("radiusward_process_uptime_seconds", "Time since the JVM started")
                 .sample(ManagementFactory.getRuntimeMXBean().getUptime() / 1000.0);
+        // CPU per process, where container tools are not at hand (ECS, systemd): its rate is the cores in use
+        if (ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean os
+                && os.getProcessCpuTime() >= 0) {
+            w.counter("radiusward_process_cpu_seconds_total", "CPU time of the process, all cores together")
+                    .sample(os.getProcessCpuTime() / 1e9);
+        }
+        w.gauge("radiusward_process_cpus", "CPUs available to the JVM")
+                .sample(Runtime.getRuntime().availableProcessors());
     }
 }

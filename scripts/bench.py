@@ -11,7 +11,11 @@ ceiling, optionally runs the JMH suite, and writes one JSON result.
   scripts/bench.py                          # full ladder on this machine
   scripts/bench.py --quick                  # short steps, for a first look
   scripts/bench.py --steps 1000,2000 --workloads accounting --external   # against a stack that already runs
+  scripts/bench.py --target nlb-a,nlb-b --ecs-cluster c --generator-hosts local,i-0abc --secret s --where aws-small
+                                            # against the ECS stack, from inside its VPC (scripts/bench-aws.sh)
 """
+
+import shlex
 
 import argparse
 import json
@@ -34,6 +38,8 @@ NETWORK = "radiusward_radius"
 GATEWAYS = ["172.28.0.20", "172.28.0.21"]
 MEMBER_PORTS = [9090, 9091, 9092]          # published management ports of node-0..2
 GATEWAY_PORTS = [9190, 9191]
+STACK = None                               # LocalStack or EcsStack, set by main()
+ARGS = None
 MAX_PROBES = 19                            # per workload: 20M session ids each within the workload's 400M
 LOAD = re.compile(r"^load: sent (\d+), acked (\d+), failed (\d+), retransmissions (\d+) in ([\d.]+)s \(([\d.]+) req/s\);"
                   r" latency p50 ([\d.]+) ms, p99 ([\d.]+) ms, max ([\d.]+) ms")
@@ -64,7 +70,8 @@ def environment(args, image):
     java = run(["docker", "run", "--rm", "--entrypoint", "java", image, "-version"])
     return {
         "where": args.where,
-        "shared_host": not args.external_generators,
+        "shared_host": not (args.external_generators or STACK.remote),
+        "labels": dict(label.split("=", 1) for label in args.label),
         "host": {"system": platform.system(), "machine": platform.machine(), "cpus": os.cpu_count()},
         "docker": {"cpus": int(docker[0]) if docker and docker[0].isdigit() else None,
                    "memory_bytes": int(docker[1]) if len(docker) > 1 and docker[1].isdigit() else None,
@@ -82,8 +89,8 @@ def environment(args, image):
 class Sampler:
     """docker stats every few seconds while a step runs: CPU % and memory per container."""
 
-    def __init__(self, interval=3):
-        self.interval, self.samples, self._stop = interval, {}, threading.Event()
+    def __init__(self, interval=3, enabled=True):
+        self.interval, self.samples, self._stop, self.enabled = interval, {}, threading.Event(), enabled
         self._thread = threading.Thread(target=self._loop, daemon=True)
 
     def _loop(self):
@@ -99,12 +106,14 @@ class Sampler:
             self._stop.wait(self.interval)
 
     def __enter__(self):
-        self._thread.start()
+        if self.enabled:
+            self._thread.start()
         return self
 
     def __exit__(self, *exc):
         self._stop.set()
-        self._thread.join()
+        if self.enabled:
+            self._thread.join()
 
     def summary(self):
         out = {}
@@ -125,10 +134,12 @@ def parse_size(text):
     return int(float(m.group(1)) * unit)
 
 
-def scrape(port):
+def scrape(url):
+    if not url:
+        return {}
     try:
         import urllib.request
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/metrics", timeout=5) as r:
+        with urllib.request.urlopen(f"{url}/metrics", timeout=5) as r:
             text = r.read().decode()
     except Exception:
         return {}
@@ -138,11 +149,123 @@ def scrape(port):
                              ("direct_bytes", r'^radiusward_jvm_buffer_used_bytes\{pool="direct"\} (\S+)'),
                              ("gc_pause_seconds_total", r'^radiusward_jvm_gc_pause_seconds_total\{[^}]*\} (\S+)'),
                              ("log_position_bytes", r'^radiusward_cluster_log_position_bytes\{[^}]*\} (\S+)'),
-                             ("sessions_active", r'^radiusward_sessions\{[^}]*state="active"\} (\S+)')):
+                             ("sessions_active", r'^radiusward_sessions\{[^}]*state="active"\} (\S+)'),
+                             ("cpu_seconds_total", r'^radiusward_process_cpu_seconds_total (\S+)')):
             m = re.match(pattern, line)
             if m:
                 values[key] = values.get(key, 0) + float(m.group(1))
     return values
+
+
+class LocalStack:
+    """The compose stack on this machine: generators on its network, metrics on the published ports."""
+
+    remote = False
+
+    def __init__(self, args):
+        self.args = args
+
+    def gateways(self):
+        return GATEWAYS
+
+    def member_urls(self):
+        return [f"http://127.0.0.1:{p}" for p in MEMBER_PORTS]
+
+    def gateway_urls(self):
+        return [f"http://127.0.0.1:{p}" for p in GATEWAY_PORTS]
+
+    def kill_member(self, n):
+        run(["docker", "kill", f"radiusward-node-{n}-1"])
+
+    def recover(self):
+        compose("up", "-d", "--wait", profiles=["monitoring"] if self.args.monitoring else ())
+
+
+class EcsStack:
+    """A stack on Amazon ECS (deploy/aws): the gateways' load balancers from --target, the tasks' addresses from the
+    ECS cluster (they change when a task is replaced), a member killed by stopping its task. Runs inside the VPC."""
+
+    remote = True
+
+    def __init__(self, args):
+        self.args, self.cluster = args, args.ecs_cluster
+
+    def gateways(self):
+        return self.args.target.split(",")
+
+    def _tasks(self, service):
+        r = run(["aws", "ecs", "list-tasks", "--cluster", self.cluster, "--service-name", service,
+                 "--desired-status", "RUNNING", "--query", "taskArns", "--output", "json"])
+        arns = json.loads(r.stdout or "[]") if r.returncode == 0 else []
+        if not arns:
+            return []
+        r = run(["aws", "ecs", "describe-tasks", "--cluster", self.cluster, "--tasks", *arns, "--output", "json"])
+        tasks = json.loads(r.stdout)["tasks"] if r.returncode == 0 else []
+        out = []
+        for t in tasks:
+            ip = next((d["value"] for a in t.get("attachments", []) for d in a.get("details", [])
+                       if d.get("name") == "privateIPv4Address"), None)
+            out.append((t["taskArn"], ip))
+        return out
+
+    def _urls(self, prefix, count):
+        urls = []
+        for n in range(count):
+            tasks = self._tasks(f"{prefix}-{n}")
+            urls.append(f"http://{tasks[0][1]}:9090" if tasks and tasks[0][1] else None)
+        return urls
+
+    def member_urls(self):
+        return self._urls("node", 3)
+
+    def gateway_urls(self):
+        return self._urls("gateway", 2)
+
+    def kill_member(self, n):
+        for arn, _ in self._tasks(f"node-{n}"):
+            run(["aws", "ecs", "stop-task", "--cluster", self.cluster, "--task", arn,
+                 "--reason", "benchmark: leader killed under load"])
+
+    def recover(self):
+        """Waits until every member answers /ready again: ECS replaces the stopped task, which seeds itself."""
+        deadline = time.time() + 600
+        while time.time() < deadline:
+            urls = self.member_urls()
+            if all(u and ready(u) for u in urls):
+                return
+            time.sleep(10)
+        log("  not every member is ready again after 10 min")
+
+
+def ready(url):
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"{url}/ready", timeout=3) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def ssm_run(instance, command, timeout):
+    """Runs a shell command on an EC2 instance through SSM and returns its output (the tail; SSM keeps 24,000
+    characters)."""
+    r = run(["aws", "ssm", "send-command", "--instance-ids", instance, "--document-name", "AWS-RunShellScript",
+             "--parameters", json.dumps({"commands": [command], "executionTimeout": [str(timeout)]}),
+             "--query", "Command.CommandId", "--output", "text"])
+    if r.returncode != 0:
+        return f"ssm send-command failed: {r.stderr.strip()}"
+    command_id = r.stdout.strip()
+    deadline = time.time() + timeout + 120
+    while time.time() < deadline:
+        time.sleep(5)
+        g = run(["aws", "ssm", "get-command-invocation", "--command-id", command_id, "--instance-id", instance,
+                 "--output", "json"])
+        if g.returncode != 0:
+            continue  # the invocation is not registered yet
+        d = json.loads(g.stdout)
+        if d["Status"] in ("Success", "Failed", "Cancelled", "TimedOut"):
+            return d.get("StandardOutputContent", "") + d.get("StandardErrorContent", "")
+    return "ssm: no result in time"
 
 
 def generators(workload, rate, seconds, count, image, first_session, interim):
@@ -150,8 +273,8 @@ def generators(workload, rate, seconds, count, image, first_session, interim):
     per = max(1, rate // count)
     procs = []
     for g in range(count):
-        args = ["radclient", "load", "--server", ",".join(f"{gw}:1813" for gw in GATEWAYS), "--retry-other-server",
-                "--secret", "testing123", "--nas", "20", "--duration", f"{seconds}s", "--timeout", "3s",
+        args = ["radclient", "load", "--server", ",".join(f"{gw}:1813" for gw in STACK.gateways()),
+                "--retry-other-server", "--secret", ARGS.secret, "--nas", "20", "--duration", f"{seconds}s", "--timeout", "3s",
                 "--retries", "3", "--first-session", str(first_session + g * 2_000_000)]
         if workload == "accounting":
             args += ["--sessions", str(per * interim), "--rate", str(per), "--interim", f"{interim}s", "--no-stop"]
@@ -164,10 +287,32 @@ def generators(workload, rate, seconds, count, image, first_session, interim):
             args += ["--sessions", str(acct * interim), "--rate", str(acct), "--interim", f"{interim}s", "--no-stop",
                      "--access-rate", str(auth), "--auth-methods", "pap,chap,mschapv2", "--reject-ratio", "0"]
         name = f"bench-gen-{g}"
-        run(["docker", "rm", "-f", name])
-        procs.append(subprocess.Popen(["docker", "run", "--rm", "--name", name, "--network", NETWORK, image] + args,
-                                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+        host = ARGS.generator_hosts[g % len(ARGS.generator_hosts)] if ARGS.generator_hosts else "local"
+        network = "host" if STACK.remote else NETWORK
+        docker = ["docker", "run", "--rm", "--name", name, "--network", network, image] + args
+        if host == "local":
+            run(["docker", "rm", "-f", name])
+            procs.append(subprocess.Popen(docker, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True))
+        else:  # an EC2 instance, through SSM
+            command = f"docker rm -f {name} >/dev/null 2>&1; {shlex.join(docker)} 2>&1 | tail -n 20"
+            procs.append(Remote(host, command, seconds + 180))
     return [p.communicate()[0] for p in procs]
+
+
+class Remote(threading.Thread):
+    """A generator on another instance, with the interface of Popen that generators() uses."""
+
+    def __init__(self, instance, command, timeout):
+        super().__init__(daemon=True)
+        self.args, self.output = (instance, command, timeout), ""
+        self.start()
+
+    def run(self):
+        self.output = ssm_run(*self.args)
+
+    def communicate(self):
+        self.join()
+        return self.output, None
 
 
 def combine(outputs, target, workload, seconds):
@@ -244,15 +389,26 @@ def ladder(workload, steps, args, image, first):
     def probe(rate, count):
         nonlocal probes
         # session ids are 32-bit: workloads 400M apart, probes 20M, generators 2M
-        with Sampler() as sampler:
+        urls = {f"node-{n}": u for n, u in enumerate(STACK.member_urls())}
+        urls.update({f"gateway-{n}": u for n, u in enumerate(STACK.gateway_urls())})
+        before, started = {name: scrape(u) for name, u in urls.items()}, time.time()
+        with Sampler(enabled=not STACK.remote) as sampler:
             outputs = generators(workload, rate, args.duration, count, image, first + probes * 20_000_000,
                                  args.interim)
         probes += 1
+        after, elapsed = {name: scrape(u) for name, u in urls.items()}, time.time() - started
+        for name, values in after.items():  # cores in use over the step, from the process's own CPU time
+            if "cpu_seconds_total" in values and "cpu_seconds_total" in before.get(name, {}):
+                values["cpu_cores"] = round(
+                    (values["cpu_seconds_total"] - before[name]["cpu_seconds_total"]) / elapsed, 2)
         step = combine(outputs, rate, workload, args.duration)
         step["generators"] = count
-        step["containers"] = sampler.summary()
-        step["members"] = {f"node-{n}": scrape(p) for n, p in enumerate(MEMBER_PORTS)}
-        step["gateways"] = {f"gateway-{n}": scrape(p) for n, p in enumerate(GATEWAY_PORTS)}
+        step["containers"] = sampler.summary() or {
+            name: {"cpu_avg_pct": v["cpu_cores"] * 100, "cpu_max_pct": v["cpu_cores"] * 100,
+                   "mem_max_bytes": int(v.get("heap_used_bytes", 0) + v.get("direct_bytes", 0))}
+            for name, v in after.items() if "cpu_cores" in v}
+        step["members"] = {n: v for n, v in after.items() if n.startswith("node-")}
+        step["gateways"] = {n: v for n, v in after.items() if n.startswith("gateway-")}
         step["problems"], step["load_limited"] = verdict(step, args.p99_limit)
         results.append(step)
         log(f"  {rate:>6}/s ×{count} → {step['rps']:>8}/s, p99 {step['p99_ms']} ms"
@@ -304,10 +460,12 @@ def ladder(workload, steps, args, image, first):
 
 
 def leader():
-    for n, port in enumerate(MEMBER_PORTS):
+    for n, url in enumerate(STACK.member_urls()):
+        if not url:
+            continue
         try:
             import urllib.request
-            with urllib.request.urlopen(f"http://127.0.0.1:{port}/ready", timeout=3) as r:
+            with urllib.request.urlopen(f"{url}/ready", timeout=3) as r:
                 if '"LEADER' in r.read().decode():
                     return n
         except Exception:
@@ -327,12 +485,12 @@ def failover(ceiling, args, image):
         n = leader()
         victim["member"] = n
         if n is not None:
-            run(["docker", "kill", f"radiusward-node-{n}-1"])
+            STACK.kill_member(n)
             log(f"  killed member {n}")
 
     killer = threading.Thread(target=kill)
     killer.start()
-    with Sampler():
+    with Sampler(enabled=not STACK.remote):
         outputs = generators("accounting", rate, max(90, args.duration), args.generators, image, 2_000_000_000,
                              args.interim)
     killer.join()
@@ -342,7 +500,7 @@ def failover(ceiling, args, image):
     log(f"  {step['rps']}/s, max {step.get('accounting', {}).get('max_ms')} ms, "
         f"{step.get('accounting', {}).get('retransmissions')} retransmissions"
         + (f"  ✗ {'; '.join(step['problems'])}" if step["problems"] else "  ✓ nothing lost"))
-    compose("up", "-d", "--wait", profiles=["monitoring"] if args.monitoring else ())
+    STACK.recover()
     return step
 
 
@@ -387,7 +545,22 @@ def main():
     p.add_argument("--no-failover", action="store_true")
     p.add_argument("--jmh", action="store_true", help="also run the JMH micro-benchmarks")
     p.add_argument("--quick", action="store_true", help="20 s steps, 250 → 4000/s, no failover")
+    p.add_argument("--secret", default="testing123", help="the NAS entry's shared secret")
+    p.add_argument("--target", help="gateway addresses of a remote stack (the ECS load balancers); implies --external")
+    p.add_argument("--ecs-cluster", help="with --target: the ECS cluster, for the tasks' metrics and the failover")
+    p.add_argument("--generator-hosts", type=lambda v: v.split(","), default=None,
+                   help="where the generators run, round robin: 'local' or EC2 instance ids (through SSM)")
+    p.add_argument("--label", action="append", default=[], help="key=value recorded in the environment")
     args = p.parse_args()
+    global STACK, ARGS
+    ARGS = args
+    if args.target:
+        if not args.ecs_cluster:
+            sys.exit("--target needs --ecs-cluster")
+        args.external = True
+        STACK = EcsStack(args)
+    else:
+        STACK = LocalStack(args)
     if args.quick:
         args.steps, args.duration, args.pause, args.no_failover = "250,500,1000,2000,4000", 20, 5, True
     steps = [int(s) for s in args.steps.split(",")]
@@ -406,7 +579,7 @@ def main():
                            "p99_limit_ms": args.p99_limit, "interim_s": args.interim}, "workloads": {}}
     try:
         for i, w in enumerate(args.workloads.split(",")):
-            # session ids are 32-bit: workloads 400M apart, steps 40M, generators 4M
+            # session ids are 32-bit: workloads 400M apart, probes 20M, generators 2M
             result["workloads"][w] = ladder(w, steps, args, args.image, i * 400_000_000)
         ceiling = result["workloads"].get("accounting", {}).get("ceiling_rps", 0)
         if not args.no_failover:

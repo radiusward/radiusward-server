@@ -110,7 +110,8 @@ Names carry the unit (`_bytes`, `_seconds`); counters end in `_total`. Members a
 
 `radiusward_jvm_memory_used_bytes{area}`, `radiusward_jvm_memory_committed_bytes{area}`,
 `radiusward_jvm_memory_max_bytes`, `radiusward_jvm_gc_collections_total{gc}`,
-`radiusward_jvm_gc_pause_seconds_total{gc}`, `radiusward_jvm_buffer_used_bytes{pool}` (direct memory), `radiusward_jvm_threads`, `radiusward_process_uptime_seconds`,
+`radiusward_jvm_gc_pause_seconds_total{gc}`, `radiusward_jvm_buffer_used_bytes{pool}` (direct memory), `radiusward_jvm_threads`, `radiusward_process_uptime_seconds`, `radiusward_process_cpu_seconds_total` (its rate is the
+cores in use), `radiusward_process_cpus`,
 `radiusward_log_messages_dropped_total` (logging ring full; the caller never blocks).
 
 ## Tracing one user or NAS

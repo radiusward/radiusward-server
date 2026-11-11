@@ -94,6 +94,8 @@ class PrometheusWriterTest {
         assertValid(text);
         assertThat(text)
                 .contains("radiusward_jvm_memory_used_bytes{area=\"heap\"}")
-                .contains("radiusward_jvm_threads ");
+                .contains("radiusward_jvm_threads ")
+                .contains("radiusward_process_cpu_seconds_total ")
+                .contains("radiusward_process_cpus ");
     }
 }

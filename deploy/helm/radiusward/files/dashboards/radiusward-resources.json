@@ -1,6 +1,6 @@
 {
   "uid": "radiusward-resources",
-  "title": "radiusward \u00b7 resources",
+  "title": "radiusward · resources",
   "description": "Memory, garbage collection and threads of every process; container limits on Kubernetes.",
   "tags": [
     "radiusward"
@@ -529,6 +529,58 @@
         }
       ],
       "description": "Throttled members answer heartbeats late; give members requests = limits.",
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "CPU cores in use",
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (instance) (rate(radiusward_process_cpu_seconds_total{namespace=~\"$namespace\"}[5m]))",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "max by (instance) (radiusward_process_cpus{namespace=~\"$namespace\"})",
+          "legendFormat": "{{instance}} available",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ],
+      "description": "CPU time per second of each process: 1 = one core busy",
       "options": {
         "legend": {
           "displayMode": "list",

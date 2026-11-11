@@ -30,6 +30,15 @@ The image is `radiusward:dev` (`--image` or `RADIUSWARD_IMAGE` for another). Res
 | `--no-failover` | | skip the leader kill |
 | `--jmh` | | also run the JMH suite |
 | `--quick` | | 20 s steps, 250 → 4000/s, no failover |
+| `--secret` | `testing123` | the NAS entry's shared secret |
+| `--target` | | gateway addresses of a remote stack (the ECS load balancers); no compose stack |
+| `--ecs-cluster` | | with `--target`: the ECS cluster, to find the tasks' metrics and stop the leader's task |
+| `--generator-hosts` | `local` | where the generators run, round robin: `local` or EC2 instance ids (started through SSM) |
+| `--label` | | `key=value` recorded in the result's environment (region, instance types) |
+
+Against a remote stack the CPU per process comes from `radiusward_process_cpu_seconds_total` on each `/metrics`
+(cores in use over the step) instead of `docker stats`, and the failover stops the leader's ECS task; ECS replaces it
+and the harness waits until every member is ready again.
 
 ## What it measures
 
