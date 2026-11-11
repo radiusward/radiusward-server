@@ -11,7 +11,7 @@
 #   KEEP=1 scripts/k8s-tests.sh          # keep the cluster afterwards (kubectl --context kind-rw-k8s-test)
 #   SKIP_BUILD=1 scripts/k8s-tests.sh    # use an image radiusward:k8s-test that is already built
 #   scripts/k8s-tests.sh leader-kill     # only the named scenarios (baseline leader-kill member-roll gateway-roll
-#                                        # replace-volume restore-quorum)
+#                                        # replace-volume restore-quorum; opt-in: scale)
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -321,6 +321,84 @@ scenario_restore-quorum() {
   ((ok)) || { fail "restore-quorum: members restored with other counts than $before"; return; }
   start_load 30 --sessions 200 --rate 100 --interim 10s --first-session 2000000
   finish_load restore-quorum
+}
+
+# scale (4.9, opt-in: scripts/k8s-tests.sh scale): 500k sessions through both gateways from two load pods, with the
+# Access-Request mix, while the leader is killed, a follower is cut off by a NetworkPolicy and a worker node is
+# drained. Nothing may be lost; every session must be in the replicated state; no container may run out of memory.
+scenario_scale() {
+  log "scale: 500k sessions and Access-Requests while the leader is killed, a member cut off and a node drained"
+  local g0 g1 seconds=${SCALE_SECONDS:-420} per=${SCALE_SESSIONS:-250000} rate=${SCALE_RATE:-1000}
+  g0=$(gateway_ip 0) g1=$(gateway_ip 1)
+  for p in a b; do k delete pod "load-$p" --ignore-not-found --wait >/dev/null 2>&1; done
+  k run load-a --image="$image" --image-pull-policy=Never --restart=Never \
+    --overrides='{"spec":{"securityContext":{"runAsUser":10001}}}' -- radclient load --server "$g0:1813,$g1:1813" \
+    --retry-other-server --secret testing123 --nas 50 --sessions "$per" --rate "$rate" --duration "${seconds}s" \
+    --interim 300s --no-stop --timeout 3s --retries 3 --access-rate 100 >/dev/null
+  k run load-b --image="$image" --image-pull-policy=Never --restart=Never \
+    --overrides='{"spec":{"securityContext":{"runAsUser":10001}}}' -- radclient load --server "$g1:1813,$g0:1813" \
+    --retry-other-server --secret testing123 --nas 50 --sessions "$per" --rate "$rate" --duration "${seconds}s" \
+    --interim 300s --no-stop --timeout 3s --retries 3 --access-rate 100 --first-session 10000000 >/dev/null
+  local start=$SECONDS
+  at() { while ((SECONDS - start < $1)); do sleep 2; done; }
+
+  at 120
+  local l
+  l=$(leader)
+  log "  +120 s: killing the leader, member $l"
+  k delete pod "$release-radiusward-node-$l" --grace-period=0 --force >/dev/null 2>&1
+
+  at 200
+  local f
+  f=$(follower)
+  log "  +200 s: cutting member $f off for 30 s (NetworkPolicy)"
+  printf '%s' "{\"apiVersion\": \"networking.k8s.io/v1\", \"kind\": \"NetworkPolicy\", \"metadata\": {\"name\": \"cut-off\"},
+ \"spec\": {\"podSelector\": {\"matchLabels\": {\"statefulset.kubernetes.io/pod-name\": \"$release-radiusward-node-$f\"}},
+          \"policyTypes\": [\"Ingress\", \"Egress\"]}}" | k apply -f - >/dev/null
+  at 230
+  k delete networkpolicy cut-off >/dev/null
+  log "  +230 s: member $f reconnected"
+
+  at 280
+  local victim node
+  victim=$(follower)
+  node=$(k get pod "$release-radiusward-node-$victim" -o jsonpath='{.spec.nodeName}')
+  log "  +280 s: draining $node (member $victim and what else runs there)"
+  kubectl --context "kind-$cluster" drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=120s \
+    >/dev/null 2>&1 || log "  drain did not finish within 120 s"
+  at 340
+  kubectl --context "kind-$cluster" uncordon "$node" >/dev/null
+  log "  +340 s: $node uncordoned"
+
+  local p phase summary access failed=0
+  for p in a b; do
+    until phase=$(k get pod "load-$p" -o jsonpath='{.status.phase}') && [[ "$phase" == Succeeded || "$phase" == Failed ]]; do
+      sleep 5
+    done
+    summary=$(k logs "load-$p" | grep '^load:' || true)
+    access=$(k logs "load-$p" | grep '^access:' || true)
+    log "  load-$p: $summary"
+    log "  load-$p: $access"
+    grep -q 'failed 0,' <<<"$summary" || failed=1
+    grep -q 'timeouts 0, unexpected 0' <<<"$access" || failed=1
+  done
+  ((failed)) && fail "scale: requests lost"
+  await_members_ready
+  sleep 10
+  local i active
+  for i in 0 1 2; do
+    active=$(k exec "$release-radiusward-node-$i" -- radiusward probe http://127.0.0.1:9090/metrics 2>/dev/null |
+      sed -n 's/^radiusward_sessions{[^}]*state="active"} \([0-9]*\).*/\1/p')
+    log "  member $i: $active active sessions, log position $(log_position "$i")"
+    [[ "$active" == $((2 * per)) ]] || fail "scale: member $i holds $active sessions, not $((2 * per))"
+  done
+  log "  restarts: $(k get pods -l "app.kubernetes.io/instance=$release" \
+    -o jsonpath='{range .items[*]}{.metadata.name}={.status.containerStatuses[0].restartCount}/{.status.containerStatuses[0].lastState.terminated.reason}{" "}{end}')"
+  if k get pods -l "app.kubernetes.io/instance=$release" \
+    -o jsonpath='{range .items[*]}{.status.containerStatuses[0].lastState.terminated.reason}{" "}{end}' | grep -q OOMKilled; then
+    fail "scale: a container ran out of memory"
+  fi
+  [[ -n "$current_failure" ]] || log "PASS scale"
 }
 
 mkdir -p "$out"

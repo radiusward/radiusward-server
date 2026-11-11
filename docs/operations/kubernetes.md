@@ -133,9 +133,12 @@ state version is refused.
 
 `scripts/k8s-tests.sh` builds the image, creates a kind cluster with three workers, installs the chart and runs
 accounting and Access-Request load from a pod through both gateways while it kills the leader, rolls the members,
-rolls the gateways and replaces a member's volume after a purge; a lost request fails the run. It runs nightly in CI
-(`k8s-tests.yml`, pod logs as an artifact) and takes about 20 minutes; `KEEP=1` keeps the cluster, and scenario names
-(`baseline leader-kill member-roll gateway-roll replace-volume`) run a subset.
+rolls the gateways, replaces a member's volume after a purge and restores the whole cluster from the backup after
+deleting every member's volume; a lost request fails the run. It runs nightly in CI (`k8s-tests.yml`, pod logs as an
+artifact) and takes about 25 minutes; `KEEP=1` keeps the cluster, and scenario names (`baseline leader-kill
+member-roll gateway-roll replace-volume restore-quorum`) run a subset. `scripts/k8s-tests.sh scale` (opt-in, ~10 min)
+puts 500k sessions and Access-Requests through both gateways while it kills the leader, cuts a member off with a
+NetworkPolicy and drains a node ([Phase 4 report](../plans/phase-4.md#phase-4-report)).
 
 ## Not yet in the chart
 

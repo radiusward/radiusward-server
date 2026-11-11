@@ -7,7 +7,7 @@
 | **2** | One container image, docker-compose; failover without NAS retransmissions; Linux fault-injection tests (power loss with LazyFS, partition, full disk, overload at 2M sessions in 1 GiB); latency and memory measured; CI e2e, nightly linux tests, release workflow (GHCR, amd64 + arm64) | Docker | ✅ done ([plan + report](phase-2.md#phase-2-report)); first RC tag pending |
 | **3** | Exporter tailing the log; sink SPI (stable `export-api`); Postgres sink (COPY + ON CONFLICT) and file sink, lag policy, log purge, Prometheus metrics; Testcontainers | Docker | ✅ done ([plan + report](phase-3.md#phase-3-report)) |
 | **3b** | Generic JDBC sink with dialects for the relational databases below; Kafka sink | Docker | next |
-| **4** | Helm chart (StatefulSet, PDB, anti-affinity, UDP LB with source IP preservation), systemd units, observability dashboards, chaos and load tests, ClusterBackup / DR runbooks | Kubernetes, bare metal | in progress ([plan](phase-4.md)) |
+| **4** | Helm chart (StatefulSet, PDB, anti-affinity, UDP LB with source IP preservation), systemd units, observability dashboards, chaos and load tests, ClusterBackup / DR runbooks | Kubernetes, bare metal | ✅ done ([plan + report](phase-4.md#phase-4-report)) |
 | **5** | Authentication and authorization (identity stores, Active Directory, EAP-TLS/PEAP/TTLS/TEAP/pwd), Simultaneous-Use through the cluster, RadSec, DTLS, CoA/Disconnect, proxying; EAP-SIM/AKA/AKA′ with local SIM keys | local, Docker | ✅ done: 5.1–5.36 ([plan](phase-5-auth.md)), 5.37–5.41 ([SIM/AKA plan](eap-sim-aka.md)) |
 
 Alongside the phases: published test reports for the integration, end-to-end, fault-injection and Kubernetes suites

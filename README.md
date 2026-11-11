@@ -27,8 +27,10 @@ same replicated state.
 > TCP, proxying, CoA/Disconnect, policies and pools; EAP-SIM, EAP-AKA and EAP-AKA′ with local SIM keys.
 > Phases 0–3: replicated accounting, container image, durability proven on Linux with simulated power loss of all
 > members, partitions, full disks and overload (2M sessions in 1 GiB per member), a crashed leader replaced in
-> ~2.2 s without NAS retransmissions, export to PostgreSQL. Next: more sinks (Phase 3b) and Kubernetes (Phase 4) —
-> see the [roadmap](docs/plans/roadmap.md).
+> ~2.2 s without NAS retransmissions, export to PostgreSQL. Phase 4: a Helm chart and systemd units, members that
+> reseed themselves after a lost disk, a continuous backup that restores a lost quorum, and 500k sessions under
+> leader kills, partitions and node drains on Kubernetes without a lost request
+> ([report](docs/plans/phase-4.md#phase-4-report)). Next: more sinks (Phase 3b) — see the [roadmap](docs/plans/roadmap.md).
 
 ## What it does
 

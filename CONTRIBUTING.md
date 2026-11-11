@@ -4,8 +4,9 @@ Thanks for helping. This guide is the single source of truth for how the project
 rules every change follows. Background and decisions: [docs/architecture.md](docs/architecture.md),
 [docs/accounting-contract.md](docs/accounting-contract.md), [docs/adr](docs/adr).
 
-Current state: Phases 0–3 and **Phase 5** (authentication, EAP, RadSec, DTLS, CoA/Disconnect, proxying) are done.
-Phase 3b (more sinks) and Phase 4 (Kubernetes) follow — see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Plinux`) run nightly in CI.
+Current state: Phases 0–3, **Phase 4** (Helm chart, systemd, seeding and backup, nightly Kubernetes tests) and
+**Phase 5** (authentication, EAP, RadSec, DTLS, CoA/Disconnect, proxying) are done. Phase 3b (more sinks) follows —
+see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Plinux`) run nightly in CI.
 
 ## Setup
 

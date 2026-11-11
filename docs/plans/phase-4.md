@@ -1,6 +1,6 @@
 # Phase 4 plan: Kubernetes, bare metal, backup and operations
 
-Status: **in progress** (4.8, 4.1, 4.2, 4.3 done 2026-11-11, [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md); chart in `deploy/helm/radiusward`) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
+Status: **done** (2026-11-11) · [Report](#phase-4-report) · ADRs [0062](../adr/0062-members-and-gateways-on-kubernetes.md), [0063](../adr/0063-seeding-a-replaced-member.md), [0065](../adr/0065-cluster-backup.md)
 [Phase 3](phase-3.md) (exporter, metrics), [Phase 5](phase-5-auth.md) (authentication) · Roadmap: [roadmap.md](roadmap.md)
 
 ## Goal
@@ -137,8 +137,8 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 | 4.6 ✅ | Backup (seeding a replaced member, [ADR 0063](../adr/0063-seeding-a-replaced-member.md); continuous backup outside the cluster and restore after a lost quorum, [ADR 0065](../adr/0065-cluster-backup.md)) | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |
 | 4.7 ✅ | systemd | units for members and gateways (`deploy/systemd`, hardened, verified with `systemd-analyze`), env file, sysctls; [bare-metal.md](../operations/bare-metal.md); `SystemdFailoverIT` in the `linux-tests` runs them with systemd as PID 1 under load (kill → restart, stop/start, reload, drain) and found the missing `SuccessExitStatus=143` | S |
 | 4.8 ✅ | Dashboards and alerts (the chart's ServiceMonitor, PrometheusRule and ConfigMaps follow with 4.2) | compose gateways with authentication, `radclient auth` and an Access-Request load mix; the five dashboards above, the missing metrics (EAP method, latency histograms, reject causes, SQN, certificate expiry), authentication alerts, ServiceMonitor/PodMonitor, PrometheusRule, dashboard ConfigMaps; `MonitoringConfigIT` extended | M |
-| 4.9 | Load and chaos on Kubernetes | 500k sessions and the authentication mix through the LoadBalancer; pod kill, network partition (NetworkPolicy), node drain during load; results in the report | M |
-| 4.10 | Documentation | `docs/operations/kubernetes.md`, `bare-metal.md`, `backup.md`, runbooks; ADRs for decisions 1, 2, 8 | S |
+| 4.9 ✅ | Load and chaos on Kubernetes (`scripts/k8s-tests.sh scale`) | 500k sessions and the authentication mix through the LoadBalancer; pod kill, network partition (NetworkPolicy), node drain during load; results in the report | M |
+| 4.10 ✅ | Documentation | `docs/operations/kubernetes.md`, `bare-metal.md`, `backup.md`, runbooks; ADRs for decisions 1, 2, 8 | S |
 
 ## Order
 
@@ -151,10 +151,43 @@ chart), 4.5 (proof), 4.6 (backup), 4.7, 4.8, 4.9 and 4.10 alongside. The first r
 
 - **Re-resolution:** settled in 4.1 — members rejoin by name after their pods move (ADR 0062).
 - **Load balancers differ:** source-IP preservation and UDP affinity behave differently across clouds and MetalLB
-  modes; the guide lists the tested ones (kind + MetalLB in CI, cloud ones as reported by users).
+  modes. The tests use ClusterIP Services on kind (one per gateway); real LoadBalancers are not tested yet (open).
 - **fsync on network storage:** commit latency rises with the volume's fsync time; the guide gives the measured
   numbers and recommends local volumes.
 - **Election on pod pauses:** CPU throttling or long GC in a pod can look like a dead leader; members get guaranteed
   CPU (requests = limits) in the presets.
 - **Gateway restarts drop EAP state:** each restart makes the peers in the middle of EAP start again; affinity keeps
   it to restarts, not every packet.
+
+## Phase 4 report
+
+Done 2026-11-11: radiusward installs with one Helm command or with systemd units, survives the loss of a member, a
+node and a whole quorum, and publishes what its tests prove. Everything below was measured on kind (Kubernetes 1.37,
+three workers, the `small` profile) on a laptop, and runs again nightly on GitHub's runners.
+
+| Exit criterion | Result |
+|---|---|
+| 1. Install | `helm install` gives three members, two gateways and the backup; accounting and Access-Requests from a pod through both gateways, NAS entries matched by source address |
+| 2. Leader pod deleted under load | nothing lost; with a 1.5 s heartbeat no retransmission, max 2.3 s (ADR 0062; 2.5 s caused retransmissions) |
+| 3. Rolling upgrade | members: nothing lost and no retransmission in 8 of 8 runs once the JVM's name cache was cut to 1 s (it had made 2 of 5 runs lose acknowledgements); gateways: nothing lost, requests in flight retried once through the other gateway (max 3 s) |
+| 4. Node drain | the members' PodDisruptionBudget held a drain back while a member was still catching up (never two members down); nothing lost |
+| 5. Lost disk | the member seeds itself from the others (ADR 0063): 3.6–4 s, ready 10 s after its pod started, under load, nothing lost or retried |
+| 6. Lost quorum | restored from the continuous backup with `scripts/k8s-restore.sh` (ADR 0065): 4000 events, 1500 of them after the snapshot, back on all three members; the same in compose and in `ClusterBackupIT` |
+| 7. Bare metal | `SystemdFailoverIT` with systemd as PID 1: killed member restarted, stop/start, reload and drain, nothing lost; found `SuccessExitStatus=143` missing |
+| 8. Operations | five Grafana dashboards, 19 alerts, PodMonitor, PrometheusRule and dashboard ConfigMaps in the chart; Allure test reports on GitHub Pages (ADR 0064) |
+
+**Scale and chaos (4.9):** 500,000 sessions and 84,000 Access-Requests through both gateways from two load pods in
+420 s (about 1,760 requests/s, the laptop's load generators' limit), while the leader was killed, a follower cut off by
+a NetworkPolicy for 30 s and a worker drained: 739,319 accounting requests acknowledged, **none failed and none
+retransmitted** (max 2.3 s), no Access-Request lost or answered wrongly, 500,000 active sessions on all three members
+at the same log position, no container restarted or out of memory.
+
+**Found and fixed on the way:** the JVM's 30 s name cache (elections stuck for ~20 s after a rolling restart), a member
+crashing before its own DNS record existed, readiness true before a restarted member caught up, an empty member unable
+to catch up after a purge, a seeded log recording short of the current term, readiness of members started from a
+snapshot, the systemd exit status, a restore from a read-only backup and from a copy that went through macOS, local
+volumes placed on the wrong node during a restore, and the backup's readiness holding back `helm install --wait`.
+
+**Open:** real LoadBalancers (cloud, MetalLB) in the tests; a node drain that runs to completion in the scale
+scenario; load beyond what a laptop generates (Phase 4 measured correctness, not the throughput limit).
+

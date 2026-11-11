@@ -153,7 +153,7 @@ member.
   tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)).
 - **Phase 3 (done):** the exporter runs in the member process; compose adds PostgreSQL and an optional
   Prometheus + Grafana profile.
-- **Phase 4 (in progress):** Helm chart ([kubernetes.md](operations/kubernetes.md),
+- **Phase 4 (done):** Helm chart ([kubernetes.md](operations/kubernetes.md),
   [ADR 0062](adr/0062-members-and-gateways-on-kubernetes.md)) — members as a StatefulSet found by DNS name, with a
   headless Service and one PVC (~100 GB) each, `/dev/shm` as `emptyDir: Memory`, anti-affinity,
   `PodDisruptionBudget maxUnavailable: 1`; gateways as a StatefulSet with one UDP LoadBalancer Service each
