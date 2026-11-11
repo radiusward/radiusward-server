@@ -186,6 +186,8 @@ final class ContainerCluster implements AutoCloseable {
                 .withEnv("NAS_SECRET", SECRET)
                 .withCopyToContainer(config("gateway.properties"), "/etc/radiusward/gateway.properties")
                 .withCopyToContainer(config("nas-clients.properties"), "/etc/radiusward/nas-clients.properties")
+                // gateway.properties enables authentication with the demo users file, as compose mounts it
+                .withCopyToContainer(config("users"), "/etc/radiusward/users")
                 .withCommand(
                         "gateway",
                         "--config",
