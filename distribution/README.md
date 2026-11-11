@@ -9,8 +9,8 @@ java -jar radiusward.jar gateway      --config <file> [--config <file>]...
 java -jar radiusward.jar cluster-backup --config backup.properties                 # continuous backup (ADR 0065)
 java -jar radiusward.jar cluster-restore --from <backup> --config cluster.properties  # a member from the backup
 java -jar radiusward.jar cluster-tool <cluster-dir> describe|snapshot|...   # Aeron ClusterTool
-java -jar radiusward.jar radclient acct|replay|decode|load ...             # test client (tools/radclient)
-java -jar radiusward.jar admin state|verify-acks --members ...            # replicated state (tools/admin-cli)
+java -jar radiusward.jar radclient acct|auth|replay|decode|load ...        # test client (tools/radclient)
+java -jar radiusward.jar admin state|verify-acks|sinks|resync|... ...     # state, export checks, CoA (tools/admin-cli)
 java -jar radiusward.jar probe http://127.0.0.1:9090/ready                # exit 0 on HTTP 200; health checks
 java -jar radiusward.jar version
 ```

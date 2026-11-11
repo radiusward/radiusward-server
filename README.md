@@ -31,7 +31,9 @@ same replicated state.
 > ~2.2 s without NAS retransmissions, export to PostgreSQL. Phase 4: a Helm chart and systemd units, members that
 > reseed themselves after a lost disk, a continuous backup that restores a lost quorum, and 500k sessions under
 > leader kills, partitions and node drains on Kubernetes without a lost request
-> ([report](docs/plans/phase-4.md#phase-4-report)). Next: more sinks (Phase 3b) — see the [roadmap](docs/plans/roadmap.md).
+> ([report](docs/plans/phase-4.md#phase-4-report)); deployment guides for Kubernetes, Amazon ECS on Graviton and bare
+> metal; published test reports and weekly benchmarks. Next: more sinks (Phase 3b) — see the
+> [roadmap](docs/plans/roadmap.md).
 
 ## What it does
 
@@ -51,8 +53,13 @@ same replicated state.
 - **Proxying**: realms to pools of home servers over UDP, TLS, TCP or DTLS with failover and load balancing, RFC 7585
   discovery, per-realm rewriting, inner-tunnel proxying, CoA relay.
 - **CoA and Disconnect**: by user or session through an HTTP API, disconnect-oldest for Simultaneous-Use.
-- **Operations**: Prometheus metrics, per-request traces, an authentication log, delayed rejects, configuration
-  reload on SIGHUP, container images.
+- **Operations**: Prometheus metrics with five Grafana dashboards and alert rules
+  ([monitoring](docs/operations/monitoring.md)), per-request traces, an authentication log, delayed rejects,
+  configuration reload on SIGHUP; public multi-arch container images, a Helm chart and systemd units.
+- **Recovery**: a member that lost its disk reseeds itself from the others
+  ([ADR 0063](docs/adr/0063-seeding-a-replaced-member.md)); `cluster-backup` keeps a continuous backup outside the
+  cluster, and `cluster-restore` or `cluster.restore.from` brings back a cluster that lost its quorum
+  ([backup](docs/operations/backup.md)).
 
 ## Architecture in short
 
@@ -74,8 +81,18 @@ same replicated state.
 - **Exporter** (inside every member): tails the committed log into pluggable sinks — PostgreSQL, JSON files and RADIUS
   forwarding built in, more on the [roadmap](docs/plans/roadmap.md#sinks).
 
-Test reports of the integration, end-to-end, fault-injection and Kubernetes suites:
+Test reports of the integration, end-to-end, fault-injection and Kubernetes suites, and the benchmarks:
 [radiusward.github.io/radiusward-server](https://radiusward.github.io/radiusward-server/).
+
+## Benchmarks
+
+`scripts/bench.py` raises the request rate step by step until p99 latency passes 500 ms or a request is lost, for
+accounting, authentication and a mix, kills the leader under load and runs the JMH suite
+([docs/testing/benchmarks.md](docs/testing/benchmarks.md), [ADR 0066](docs/adr/0066-benchmarks.md)). It runs weekly
+on a GitHub runner and the results are [published](https://radiusward.github.io/radiusward-server/benchmarks/). On a
+shared 4-vCPU runner, where members, gateways and load generators share the CPUs — a lower bound — the first run
+carried **3,788 accounting requests/s**, **3,701 Access-Requests/s** and **1,929/s mixed**, and a leader killed at
+2,651/s lost nothing. The hot path alone handles about 930k packets/s per core (JMH).
 
 Details: [docs/architecture.md](docs/architecture.md) · what an ACK guarantees:
 [docs/accounting-contract.md](docs/accounting-contract.md) · decisions: [docs/adr](docs/adr) · every setting:
@@ -91,7 +108,8 @@ docker compose -f deploy/compose/compose.yaml run --rm tools acct --server gatew
 deploy/compose/demo-failover.sh                              # kill -9 the leader under load, nothing lost
 ```
 
-Released images: `ghcr.io/radiusward/radiusward-server` ([docs/operations/docker.md](docs/operations/docker.md)).
+Released images (public, amd64 and arm64): `ghcr.io/radiusward/radiusward-server`
+([docs/operations/docker.md](docs/operations/docker.md)); a `backup` profile in compose runs the continuous backup.
 
 ## Kubernetes
 
@@ -101,8 +119,12 @@ helm install radiusward deploy/helm/radiusward -n radius --create-namespace -f m
 
 Three members and two gateways, each gateway with its own address for the NAS's primary and secondary server —
 [docs/operations/kubernetes.md](docs/operations/kubernetes.md).
+The chart also runs the continuous backup and ships the dashboards and alert rules; it is tested nightly on kind
+under load (leader killed, members and gateways rolled, a volume replaced, a lost quorum restored).
 On Amazon ECS: [docs/operations/aws-ecs.md](docs/operations/aws-ecs.md) with example CloudFormation and Terraform
-templates in [deploy/aws](deploy/aws).
+templates for Graviton in [deploy/aws](deploy/aws). On plain hosts with systemd:
+[docs/operations/bare-metal.md](docs/operations/bare-metal.md). Restoring after a lost quorum:
+[docs/operations/backup.md](docs/operations/backup.md).
 
 ## Quickstart without Docker
 
@@ -147,7 +169,7 @@ Stores, methods, RadSec, proxying and policies: [docs/configuration.md](docs/con
 | [`protocol`](protocol/README.md) | SBE messages between gateways, cluster and tools |
 | [`common`](common/README.md) | configuration, profiles, management HTTP server, non-blocking logging |
 | [`cluster-service`](cluster-service/README.md) | deterministic accounting state machine (dedup, sessions, snapshots) |
-| [`cluster-node`](cluster-node/README.md) | launches a cluster member |
+| [`cluster-node`](cluster-node/README.md) | launches a cluster member; seeding, continuous backup and restore |
 | [`gateway`](gateway/README.md) | RADIUS gateway: accounting, authentication, EAP, RadSec/DTLS/TCP, proxying, CoA |
 | [`export-api`](export-api/README.md) | sink plug-in API, canonical attribute encoding, migration runner |
 | [`exporter`](exporter/README.md) | exports the committed log to sinks (lease, state-machine reducer) |
@@ -165,12 +187,14 @@ Stores, methods, RadSec, proxying and policies: [docs/configuration.md](docs/con
 | [`radius-codegen`](radius-codegen/README.md) | Generates constants and the hot-attribute extractor |
 | [`radius-codec`](radius-codec/README.md) | Zero-allocation RADIUS packet codec |
 | [`tools/radclient`](tools/radclient/README.md) | Command-line test client: accounting and Access-Requests (PAP, CHAP, MS-CHAPv2), replays, decoding, load |
-| [`tools/admin-cli`](tools/admin-cli/README.md) | queries the replicated state; verifies acknowledgement logs |
+| [`tools/admin-cli`](tools/admin-cli/README.md) | replicated state, sinks and export checks, resync, CoA/Disconnect, state versions |
 | [`testing/test-harness`](testing/test-harness/README.md) | in-JVM local cluster, dev mode |
 | [`testing/e2e-tests`](testing/e2e-tests/README.md) | end-to-end tests against real processes (`-Pe2e`) |
 | [`testing/linux-tests`](testing/linux-tests/README.md) | fault injection in containers: power loss, partitions, full disk, overload (`-Plinux`) |
 | [`testing/benchmarks`](testing/benchmarks/README.md) | JMH benchmarks |
-| `testing/coverage` | Aggregate coverage over unit + integration tests, module floors (`-Pcoverage`) |
+| [`testing/coverage`](testing/coverage/README.md) | Aggregate coverage over unit + integration tests, module floors (`-Pcoverage`) |
+| [`testing/test-images`](testing/test-images/README.md) | the prebuilt public test images (`ghcr.io/radiusward/radiusward-test-images`), built locally when not published |
+| [`testing/interop-debs`](testing/interop-debs/README.md) | the interop tests' server packages as `.deb` files for CI |
 | [`testing/eapol-test`](testing/eapol-test/README.md) | wpa_supplicant's `eapol_test` with its SIM/USIM simulator, for the EAP interop tests |
 | [`testing/radsec-client`](testing/radsec-client/README.md) | radsecproxy and clients for the RadSec and DTLS interop tests |
 | [`testing/samba-ad`](testing/samba-ad/README.md) | Samba AD domain controller for the LDAP and Netlogon tests |

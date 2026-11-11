@@ -30,7 +30,7 @@ contract changes: an Accounting-Response is still sent only after the commit on 
    authentication as well as accounting ship with the chart and with compose, and an operator can tell from the
    overview alone whether NAS are being answered.
 
-## Proposed decisions
+## Decisions
 
 | # | Question | Proposal | Why |
 |---|---|---|---|
@@ -131,10 +131,10 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 |---|---|---|---|
 | 4.1 ✅ | Spike: members on Kubernetes ([ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md)) | kind cluster, three members by DNS name, pods deleted and rescheduled with new IPs, re-resolution settings; empty member catching up after log purge. Decides decisions 1 and the member-replacement runbook | M |
 | 4.2 ✅ | Helm chart: members | code done 2026-11-11: `/ready` false while the election is open, a member waits for its own name, a 1 s JVM name cache (ADR 0062); chart: StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
-| 4.3 ✅ | Helm chart: gateways (drain on SIGTERM still open) | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
+| 4.3 ✅ | Helm chart: gateways | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
 | 4.4 ✅ | Chart checks in CI | `helm lint` and `kubeconform` (Kubernetes 1.31 and 1.35, Prometheus Operator CRDs) with the defaults and `ci/all-on-values.yaml`; OCI chart in the release workflow | S |
 | 4.5 ✅ | Kubernetes tests (nightly: `scripts/k8s-tests.sh`, `k8s-tests.yml`) | kind + Testcontainers: install, accounting and EAP through the LoadBalancer (MetalLB in kind), leader pod deleted under load, rolling upgrade, node drain with the PDB, member replacement | L |
-| 4.6 ✅ | Backup (seeding a replaced member, [ADR 0063](../adr/0063-seeding-a-replaced-member.md); continuous backup outside the cluster and restore after a lost quorum, [ADR 0065](../adr/0065-cluster-backup.md)) | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |
+| 4.6 ✅ | Backup (seeding a replaced member, [ADR 0063](../adr/0063-seeding-a-replaced-member.md); continuous backup outside the cluster and restore after a lost quorum, [ADR 0065](../adr/0065-cluster-backup.md)) | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-restore`, automatically with `cluster.restore.from`; tests for backup and restore | M |
 | 4.7 ✅ | systemd | units for members and gateways (`deploy/systemd`, hardened, verified with `systemd-analyze`), env file, sysctls; [bare-metal.md](../operations/bare-metal.md); `SystemdFailoverIT` in the `linux-tests` runs them with systemd as PID 1 under load (kill → restart, stop/start, reload, drain) and found the missing `SuccessExitStatus=143` | S |
 | 4.8 ✅ | Dashboards and alerts (the chart's ServiceMonitor, PrometheusRule and ConfigMaps follow with 4.2) | compose gateways with authentication, `radclient auth` and an Access-Request load mix; the five dashboards above, the missing metrics (EAP method, latency histograms, reject causes, SQN, certificate expiry), authentication alerts, ServiceMonitor/PodMonitor, PrometheusRule, dashboard ConfigMaps; `MonitoringConfigIT` extended | M |
 | 4.9 ✅ | Load and chaos on Kubernetes (`scripts/k8s-tests.sh scale`) | 500k sessions and the authentication mix through the LoadBalancer; pod kill, network partition (NetworkPolicy), node drain during load; results in the report | M |
@@ -194,6 +194,7 @@ and Access-Requests through both gateways without one packet from an unknown NAS
 scale scenario now drains its node once every member is ready and requires the drain to complete and the member to
 come back.
 
-**Open:** cloud load balancers (AWS NLB, Azure, GCP), confirmed only in a cloud account; load beyond what a laptop
-generates (Phase 4 measured correctness, not the throughput limit).
+**Open:** cloud load balancers (AWS NLB, Azure, GCP), confirmed only in a cloud account. The throughput limit, which
+Phase 4 did not measure, is now measured weekly ([benchmarks](../testing/benchmarks.md)); on AWS it follows with B4 of
+the [benchmarks plan](benchmarks.md).
 

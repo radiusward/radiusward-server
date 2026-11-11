@@ -1,6 +1,7 @@
 # Plan: benchmarks and published benchmark reports
 
-Status: **in progress** (2026-11-11): B1, B2 and B3 done; B4 (AWS) needs an account. ADR [0066](../adr/0066-benchmarks.md). Builds on the test reports
+Status: **in progress** (2026-11-11): B1, B2 and B3 done — first GitHub run: accounting 3,788/s, authentication
+3,701/s, mix 1,929/s on a shared 4-vCPU runner ([results](../testing/benchmarks.md#published-results)); B4 (AWS) needs an account. ADR [0066](../adr/0066-benchmarks.md). Builds on the test reports
 ([test-reports.md](test-reports.md)) and Phase 4 ([phase-4.md](phase-4.md)).
 
 ## Goal

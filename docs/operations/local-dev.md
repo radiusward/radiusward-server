@@ -51,8 +51,8 @@ $RADCLIENT acct --server 127.0.0.1:1813 --secret testing123 --status start --ses
 $RADCLIENT replay radius-codec/src/test/resources/fixtures/cisco/stop.fixture --server 127.0.0.1:1813 --secret testing123
 ```
 
-## Phase 1 preview
+## A local cluster
 
-Phase 1 adds three ways to run the cluster locally: an in-JVM harness used by tests, a single-process
-dev-mode `main` for the IDE, and `scripts/run-local.sh` starting three `cluster-node` JVMs and two
-gateways on loopback for the `kill -9` failover demo.
+Three ways to run the cluster locally: the in-JVM harness used by tests (`LocalCluster`), a single-process dev mode
+(`DevCluster`) for the IDE, and `scripts/run-local.sh` with three `cluster-node` JVMs and two gateways on loopback
+for the `kill -9` failover demo ([local-cluster.md](local-cluster.md)).

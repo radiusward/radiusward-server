@@ -105,8 +105,9 @@ any number of gateways lost, network partitions that leave a majority connected,
 `maxLag`.
 
 Not tolerated: losing two of three nodes at once (no majority — the cluster stops ACKing; data on the
-surviving node is intact but the cluster is unavailable until a majority returns). Disaster recovery
-beyond that relies on Aeron ClusterBackup (Phase 4).
+surviving node is intact but the cluster is unavailable until a majority returns). Beyond that, a continuous
+backup outside the cluster (Aeron ClusterBackup) restores the cluster up to the backup's position
+([ADR 0065](adr/0065-cluster-backup.md), [backup.md](operations/backup.md)).
 
 ## Verification
 

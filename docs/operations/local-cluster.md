@@ -19,6 +19,7 @@ scripts/run-local.sh status           # roles, applied, duplicates, digests
 scripts/run-local.sh leader
 scripts/run-local.sh kill node-1      # kill -9
 scripts/run-local.sh start node-1     # restarts (waits up to 20 s for the dead process's mark file to expire)
+scripts/run-local.sh restart gateway-a   # stop and start one process
 scripts/run-local.sh logs gateway-a
 scripts/run-local.sh demo-failover    # load through both gateways, kill -9 the leader at t=10 s
 scripts/run-local.sh stop | clean     # clean also deletes .local/

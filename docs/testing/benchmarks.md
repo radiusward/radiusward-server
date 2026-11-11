@@ -10,7 +10,24 @@ scripts/bench.py --jmh                # also the JMH micro-benchmarks (testing/b
 scripts/bench.py --external --workloads accounting --steps 1000,2000   # against a stack that already runs
 ```
 
-The image is `radiusward:dev` (`--image` for another). Results land in `testing/benchmarks/target/bench/`.
+The image is `radiusward:dev` (`--image` or `RADIUSWARD_IMAGE` for another). Results land in
+`testing/benchmarks/target/bench/` (`--out`).
+
+| Option | Default | |
+|---|---|---|
+| `--steps` | `500,1000,2000,4000,8000,16000` | target request rates per second |
+| `--duration` | `60` | seconds per step |
+| `--generators` | `4` | radclient containers per step |
+| `--workloads` | `accounting,access,mix` | which ladders |
+| `--p99-limit` | `500` | ms; above it a step fails |
+| `--interim` | `10` | interim interval of the accounting sessions, seconds |
+| `--pause` | `10` | seconds between steps |
+| `--where` | `local` (`BENCH_WHERE`) | the environment's label in the result and on the pages |
+| `--external` | | use the running compose stack and leave it running |
+| `--monitoring` | | also start Prometheus and Grafana, to watch a run |
+| `--no-failover` | | skip the leader kill |
+| `--jmh` | | also run the JMH suite |
+| `--quick` | | 20 s steps, 250 → 4000/s, no failover |
 
 ## What it measures
 
@@ -38,7 +55,13 @@ The image is `radiusward:dev` (`--image` for another). Results land in `testing/
 
 On a MacBook (Colima, 8 vCPU) the first runs carried accounting at 1,000/s (p99 61 ms), authentication at 2,000/s
 (p99 29 ms) and the mix at 2,000/s with every step passing; a leader kill at 700/s lost nothing and caused no
-retransmission (longest wait 2.2 s). Higher steps follow in the published results.
+retransmission (longest wait 2.2 s).
+
+The first run on a GitHub runner (4 vCPU shared by members, gateways and generators; the members and gateways kept
+the CPUs saturated) carried accounting at **3,788/s** (p99 265 ms), authentication at **3,701/s** and the mix at **1,929/s**; a leader
+killed at 2,651/s lost nothing (239 retransmissions, longest wait 3.4 s). JMH: the full receive path at 0.93
+operations/µs, about 930k packets per second per core. Every later run is on the
+[published pages](https://radiusward.github.io/radiusward-server/benchmarks/).
 
 ## Published results
 

@@ -53,8 +53,10 @@ public final class Main {
                        radiusward cluster-backup --config <file.properties>   (continuous backup outside the cluster)
                        radiusward cluster-restore --from <backup dir> --config <cluster.properties>
                        radiusward cluster-tool <cluster-dir> <command>   (Aeron ClusterTool: describe, snapshot, ...)
-                       radiusward radclient ...                          (test client: acct, replay, decode, load)
-                       radiusward admin state|verify-acks ...            (query the replicated state)
+                       radiusward radclient ...                          (test client: acct, auth, replay, decode, load)
+                       radiusward admin <command> ...                    (state, verify-acks, sinks, resync,
+                                                                          activate-version, export-schema,
+                                                                          verify-export, disconnect, coa)
                        radiusward probe <url>                            (exit 0 if the URL answers 200; health checks)
                        radiusward version""");
     }

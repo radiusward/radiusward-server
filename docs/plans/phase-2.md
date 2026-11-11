@@ -1,7 +1,7 @@
 # Phase 2 build plan: containers, Linux durability, production defaults
 
-Status: **done** (2026-11-08) except the first release tag and the first nightly CI run, which wait for
-the maintainer · Created: 2026-11-08 · Builds on: [Phase 1](phase-1.md) · Report: [below](#phase-2-report)
+Status: **done** (2026-11-08) except the first release tag, which waits for the maintainer (the nightly CI
+runs now) · Created: 2026-11-08 · Builds on: [Phase 1](phase-1.md) · Report: [below](#phase-2-report)
 
 ## Goal
 

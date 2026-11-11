@@ -157,5 +157,17 @@ Every decision, not only traced ones, can also be kept: `auth.log.dir` and/or `a
 | `RadiuswardDiskLow` | free space below `cluster.disk.min.free` | critical |
 | `RadiuswardGatewayDropping` | a gateway drops requests (pending table or ring full) for 5 min | warning |
 | `RadiuswardGatewayDisconnected` | a gateway not connected to the cluster for 1 min | critical |
+| `RadiuswardRejectRatioHigh` | more than half of a gateway's Access-Requests rejected for 10 min | warning |
+| `RadiuswardIdentityStoreUnavailable` | an identity store does not answer a gateway for 5 min | critical |
+| `RadiuswardAuthWorkersSaturated` | Access-Requests dropped for lack of a free worker slot for 5 min | warning |
+| `RadiuswardHomeServerDown` | a home server marked dead for 2 min | warning |
+| `RadiuswardCertificateExpiring` | a gateway's server certificate expires within 14 days | warning |
+| `RadiuswardSimSequenceNumbersUnavailable` | EAP-AKA gets no sequence numbers from the cluster for 5 min | critical |
+| `RadiuswardBackupNotBackingUp` | the [backup](backup.md) has not recorded the live log for 15 min | warning |
+| `RadiuswardBackupBehind` | the backup more than 64 MiB of log behind the members for 10 min | warning |
+| `RadiuswardBackupSnapshotOld` | the backup's newest snapshot older than 3 h | warning |
 
 Adjust the export thresholds when you change `maxLag`, and route the alerts with your Alertmanager.
+
+The Helm chart ships copies of the dashboards and alert rules (`deploy/helm/radiusward/files/`): after editing
+`deploy/monitoring`, run `scripts/sync-chart-monitoring.sh` (`MonitoringConfigTest` fails while they differ).

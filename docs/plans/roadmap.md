@@ -59,4 +59,4 @@ row inserts.
 | Elasticsearch / OpenSearch | later | document id = `event_id` | bulk API; for search and dashboards |
 | Object storage (S3, GCS, Azure Blob) as Parquet / JSON lines | later | file names by log position range | archive and data lakes |
 
-Open questions: Kubernetes target (cloud LB vs bare metal/MetalLB), Maven Central publishing.
+Open questions: cloud load balancers verified only in a cloud account (MetalLB is tested nightly, [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md)), Maven Central publishing.

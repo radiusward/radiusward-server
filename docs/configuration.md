@@ -15,13 +15,14 @@ Gateways reload NAS entries, identity stores, counters, pools, TOTP, CUI, the re
 | `profile` | `small` | `small` \| `standard` \| `large` — Aeron term lengths, threading, idle strategy, logging ring, capacities ([ADR 0004](adr/0004-memory-budget.md)) |
 | `management.http.enabled` | `true` | management HTTP server on/off |
 | `management.http.host` | `127.0.0.1` | bind address (`0.0.0.0` inside a pod) |
-| `management.http.port` | node: `9090+id`, gateway: `9189+gateway.id` | `/health`, `/ready` (a member: started, leader known, election closed, disk space left), `/state` |
+| `management.http.port` | node: `9090+id`, gateway: `9189+gateway.id`, backup: `9090` | `/health`, `/ready` (a member: started, leader known, election closed, disk space left), `/state` |
 | `cluster.members` | `localhost,localhost,localhost` | member hosts in member-id order (nodes and gateways) |
 | `cluster.base.port` | `9000` | member *i* uses `base + 100·i + {ingress 0, consensus 1, log 2, catchup 3, archive 4, replication 5}` |
 
 In the container image the entrypoint sets defaults (as environment variables, so files still win):
 `cluster.data.dir=/var/lib/radiusward`, `cluster.aeron.dir=/dev/shm/radiusward-node`,
-`gateway.aeron.dir=/dev/shm/radiusward-gateway`, `dictionary.dir=/etc/radiusward/dictionary.d`,
+`gateway.aeron.dir=/dev/shm/radiusward-gateway`, `backup.data.dir=/var/lib/radiusward/backup`,
+`backup.aeron.dir=/dev/shm/radiusward-backup`, `dictionary.dir=/etc/radiusward/dictionary.d`,
 `management.http.host=0.0.0.0`; heap from `RADIUSWARD_PROFILE` ([docker.md](operations/docker.md)).
 
 System properties: `radiusward.log.dir` (also write a rolling file), `radiusward.log.level` (default `INFO`).
@@ -215,6 +216,7 @@ curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:919
 curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:9190/coa/update?user=alice' \
      --data 'Session-Timeout = 600, Filter-Id = "restricted"'
 admin disconnect --gateway http://gw:9190 --user alice      # token from RADIUSWARD_COA_API_TOKEN
+admin coa --gateway http://gw:9190 --user alice --attributes 'Session-Timeout = 600'
 ```
 
 ## Proxying (gateway)
@@ -233,7 +235,8 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `realm.<id>.post-proxy.remove` | none | standard attributes left out of the home servers' answers to the NAS |
 | `pool.<id>.servers` | — | home servers in order |
 | `pool.<id>.type` | `failover` | `failover` (the first one alive) or `load-balance` (by device, so an EAP conversation stays on one server) |
-| `home.<id>.address` | — | `host[:port]`; port 1812 |
+| `home.<id>.address` | — | `host[:port]`; without a port, `home.<id>.port` |
+| `home.<id>.port` | `2083` over TLS and DTLS, else `1812` | the port when `address` has none |
 | `home.<id>.secret` | — (`radsec` over TLS, `radius/dtls` over DTLS) | its shared secret; use `${env:...}`; required over UDP and TCP |
 | `home.<id>.transport` | `udp` | `udp`; `tls`: RadSec (port 2083 by default); `tcp`: RADIUS over TCP (1812); `dtls`: RADIUS over DTLS (2083), sent again like UDP ([ADR 0055](adr/0055-proxy-transports-and-rewriting.md)) |
 | `home.<id>.tls.certificate` / `home.<id>.tls.key` | — | our client certificate and unencrypted PKCS#8 key (PEM) for RadSec |
@@ -344,7 +347,7 @@ Cluster members; every member gets the same keys ([export.md](operations/export.
 | `export.sinks` | — (none) | comma-separated sink names; empty disables the exporter |
 | `export.lease.timeout` | `10s` | how long a sink's lease lasts without renewal (renewed every third of it) |
 | `export.plugins.dir` | `/opt/radiusward/plugins` | jars with further sink types |
-| `sink.<name>.type` | — (required) | `postgres`, `file`, or a plug-in's type |
+| `sink.<name>.type` | — (required) | `postgres`, `file`, `radius` (accounting of proxied realms to their home servers, [export.md](operations/export.md)), or a plug-in's type |
 | `sink.<name>.required` | `true` | a required sink holds the log and can block ACKs |
 | `sink.<name>.max.lag` | `4h` | lag limit by time (from the first unexported entry) |
 | `sink.<name>.max.lag.bytes` | `0` (off) | lag limit by log bytes |

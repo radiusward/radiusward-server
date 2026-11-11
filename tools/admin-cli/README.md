@@ -1,6 +1,6 @@
 # admin-cli
 
-`radiusward admin`: the replicated state, sinks and export checks. Cluster queries go through the cluster log
+`radiusward admin`: the replicated state, sinks and export checks, state versions, CoA and Disconnect. Cluster queries go through the cluster log
 (`StateQuery`, `SessionQuery`, `SinkQuery`), so every answer includes everything committed before it.
 
 ```bash
@@ -11,6 +11,9 @@ radiusward admin resync         --members h0,h1,h2 --sink pg --position 0
 radiusward admin export-schema  [--type postgres]
 radiusward admin verify-export  --jdbc-url jdbc:postgresql://db/radius --jdbc-user u --jdbc-password p \
                                 --ack-log acks.csv --nas-id 1001 [--members h0,h1,h2]
+radiusward admin activate-version --members h0,h1,h2 --version 7
+radiusward admin disconnect     --gateway http://gw:9190 --user alice          # or --nas <entry> --session <id>
+radiusward admin coa            --gateway http://gw:9190 --user alice --attributes 'Session-Timeout = 600'
 ```
 
 | Command | What it does |

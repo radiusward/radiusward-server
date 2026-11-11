@@ -20,15 +20,15 @@ GitHub creates new organization packages as private. Once per package an organiz
 organization **Settings → Packages → Package creation** must allow **Public**, then on the package's page **Package
 settings → Change visibility → Public**, and under **Manage Actions access** the `radiusward-server` repository keeps
 **Write**. Done for the image `ghcr.io/radiusward/radiusward-server` (2026-11-11); the Helm chart
-`oci://ghcr.io/radiusward/charts/radiusward` appears with the first tag and needs the same once, and so does the
-test-image package `ghcr.io/radiusward/radiusward-test-images` after the first run of `test-images.yml`
-([test images](../testing/strategy.md#test-images)); until then tests and CI build those images themselves. Check without
+`oci://ghcr.io/radiusward/charts/radiusward` appears with the first tag and needs the same once. The test-image
+package `ghcr.io/radiusward/radiusward-test-images` is public too (2026-11-11,
+[test images](../testing/strategy.md#test-images)). Check without
 credentials: `DOCKER_CONFIG=$(mktemp -d) docker pull ghcr.io/radiusward/radiusward-server:edge`.
 
 ## Cutting a release
 
 1. `main` is green (ci, the latest nightly linux-tests).
-2. Update `docs/plans/roadmap.md` and the changelog notes if needed.
+2. Update `docs/plans/roadmap.md` if needed; the release notes are generated from the commits.
 3. Tag and push (the version in the poms is set from the tag during the build):
 
    ```bash
@@ -38,8 +38,6 @@ credentials: `DOCKER_CONFIG=$(mktemp -d) docker pull ghcr.io/radiusward/radiuswa
 
 4. Check the workflow, the image (`docker run --rm ghcr.io/radiusward/radiusward-server:0.2.0-rc.1 version`)
    and the release page.
-
-The GHCR package is private after its first push; make it public once in the package settings.
 
 ## Upgrading a cluster
 

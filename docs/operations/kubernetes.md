@@ -14,6 +14,8 @@ kubectl -n radius get pods -l app.kubernetes.io/instance=radiusward
 kubectl -n radius exec radiusward-node-0 -- radiusward probe http://127.0.0.1:9090/ready
 ```
 
+The OCI chart is published with the first release tag; until then install from a checkout.
+
 A minimal `my-values.yaml`:
 
 ```yaml
@@ -142,7 +144,3 @@ artifact) and takes about 25 minutes; `KEEP=1` keeps the cluster, and scenario n
 leader-kill member-roll gateway-roll replace-volume restore-quorum`) run a subset. `scripts/k8s-tests.sh scale` (opt-in, ~10 min)
 puts 500k sessions and Access-Requests through both gateways while it kills the leader, cuts a member off with a
 NetworkPolicy and drains a node to completion once every member is ready ([Phase 4 report](../plans/phase-4.md#phase-4-report)).
-
-## Not yet in the chart
-
-- Gateways do not yet drain on shutdown; a restarting gateway's requests in flight are retried by the NAS.

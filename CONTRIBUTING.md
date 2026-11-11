@@ -40,10 +40,27 @@ scripts/linux-tests.sh [TestClass]              # fault injection in containers 
 scripts/k8s-tests.sh [scenario ...]             # Helm chart on kind under load: leader kill, rolls, volume replaced (nightly in CI)
 scripts/test-reports.sh <results> <site>        # the published Allure test reports from JUnit XML (docs/plans/test-reports.md)
 scripts/bench.py [--quick] [--jmh]              # benchmark ladders, failover, JMH → one JSON (docs/testing/benchmarks.md; weekly in CI)
+scripts/bench-pages.py <results> <site>         # the published benchmark pages from bench-*.json
+scripts/k8s-restore.sh -n <namespace> -r <release>   # restore a Kubernetes cluster from its backup (docs/operations/backup.md)
+scripts/sync-chart-monitoring.sh                # copy deploy/monitoring's dashboards and alerts into the Helm chart
 java -jar tools/radclient/target/radclient.jar --help
 scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
-scripts/test-images.sh list|tag|ref|build <image>   # prebuilt test images (docs/testing/strategy.md#test-images)
+scripts/test-images.sh list|tag|hash|inputs|platforms|ref|build [--push] <image>   # prebuilt test images (docs/testing/strategy.md#test-images)
 ```
+
+## CI workflows
+
+| Workflow | When | What |
+|---|---|---|
+| `ci.yml` | pushes to `main`, pull requests | build, unit + integration tests with the interop tests, e2e, coverage floors, Helm chart lint, AWS template checks, SonarCloud |
+| `linux-tests.yml` | nightly, on demand (`tests`) | fault injection in containers (`-Plinux`) |
+| `k8s-tests.yml` | nightly, on demand (`scenarios`) | the Helm chart on kind under load |
+| `bench.yml` | Sundays, on demand (`steps`) | the benchmark ladders, failover and JMH |
+| `reports.yml` | after ci, linux-tests, k8s-tests and bench on `main`; on demand | publishes the test reports and benchmark pages to GitHub Pages |
+| `test-images.yml` | when a test image's inputs change on `main`, weekly, on demand | publishes the prebuilt test images |
+| `release.yml` | pushes to `main` (`edge`) and tags | the container image, the Helm chart and the GitHub release |
+
+Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Actions.
 
 ## Modules
 
@@ -74,7 +91,7 @@ scripts/test-images.sh list|tag|ref|build <image>   # prebuilt test images (docs
 | `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder, Access-Request credentials (PAP, CHAP) and Access replies; generated `io.radiusward.radius.codec.attributes` |
 | `tools/radclient` | CLI test client (`acct`, `auth`, `replay`, `decode [--fixture]`, `load` with an optional Access-Request mix), executable jar |
-| `tools/admin-cli` | `AdminClient`; `admin state`, `admin verify-acks` (acknowledged events vs replicated state) |
+| `tools/admin-cli` | `AdminClient`; `admin state`, `verify-acks` (acknowledged events vs replicated state), `sinks`, `resync`, `activate-version`, `export-schema`, `verify-export`, `disconnect`, `coa` |
 | `testing/benchmarks` | JMH, only with `-Pbench` |
 | `testing/coverage` | Aggregate coverage report and module floors, only with `-Pcoverage` |
 

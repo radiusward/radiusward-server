@@ -17,8 +17,10 @@ This is the **target architecture**. What exists today is marked per section; th
         └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-radiusward replaces the accounting part of a RADIUS server. Authentication and authorization come later
-(Phase 5) and are out of scope here.
+This document describes the replicated accounting path, which everything else builds on. Authentication and
+authorization (Phase 5) run on the gateways' worker threads and keep only their shared state — simultaneous use,
+SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path.md) (the path),
+[ADR 0021](adr/0021-identity-stores.md) (identity stores), [ADR 0026](adr/0026-eap-framework.md) (EAP).
 
 ## Containers
 
@@ -147,8 +149,9 @@ member.
 ## Deployment
 
 - **Phase 0–1 (done):** local, no Docker: in-JVM test harness, single-process dev mode, `scripts/run-local.sh`.
-- **Phase 2 (done):** one container image `ghcr.io/radiusward/radiusward-server` with subcommands
-  `cluster-node | gateway | radclient | admin | probe`, non-root, multi-arch; compose stack with static
+- **Phase 2 (done):** one container image `ghcr.io/radiusward/radiusward-server` (public) with subcommands
+  `cluster-node | gateway | radclient | admin | probe` (since Phase 4 also `cluster-backup | cluster-restore`),
+  non-root, multi-arch; compose stack with static
   addresses ([ADR 0015](adr/0015-container-image.md), [docker.md](operations/docker.md)); fault-injection
   tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)).
 - **Phase 3 (done):** the exporter runs in the member process; compose adds PostgreSQL and an optional
@@ -158,7 +161,10 @@ member.
   headless Service and one PVC (~100 GB) each, `/dev/shm` as `emptyDir: Memory`, anti-affinity,
   `PodDisruptionBudget maxUnavailable: 1`; gateways as a StatefulSet with one UDP LoadBalancer Service each
   (`externalTrafficPolicy: Local`, so the NAS source IP is kept), NAS devices configured with two of them.
-  A member with a replaced volume seeds itself from the others ([ADR 0063](adr/0063-seeding-a-replaced-member.md)).
+  A member with a replaced volume seeds itself from the others ([ADR 0063](adr/0063-seeding-a-replaced-member.md));
+  a continuous backup outside the cluster restores a lost quorum ([ADR 0065](adr/0065-cluster-backup.md),
+  [backup.md](operations/backup.md)); dashboards and alert rules ship with the chart
+  ([monitoring.md](operations/monitoring.md)).
   systemd units for bare metal: [bare-metal.md](operations/bare-metal.md); Amazon ECS with example CloudFormation
   and Terraform templates: [aws-ecs.md](operations/aws-ecs.md).
 - Inter-node traffic is always `aeron:udp`; shared memory is only used inside a pod.
