@@ -1,0 +1,69 @@
+name: reports
+
+# Publishes the test reports to GitHub Pages (docs/plans/test-reports.md, ADR 0064): after ci, linux-tests or
+# k8s-tests finished on main, their results-* artifacts become Allure 3 reports with history, badges and a landing
+# page. The site is deployed from this workflow (no branch, no commits); what the next run needs — the other reports and
+# every history.jsonl — is restored from state.tar.gz inside the published site. The only workflow that deploys Pages;
+# it runs the code of main and only reads the downloaded results as data. Pull requests never publish.
+on:
+  workflow_run:
+    workflows: [ci, linux-tests, k8s-tests]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+  actions: read     # artifacts of the triggering run
+  pages: write
+  id-token: write   # deploy-pages
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  ALLURE: 3.33.0
+  SITE_URL: https://radiusward.github.io/radiusward-server
+
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion != 'cancelled' &&
+      contains(fromJSON('["push", "schedule", "workflow_dispatch"]'), github.event.workflow_run.event)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download the results of the triggering run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          mkdir -p results
+          gh run download "$RUN_ID" -R "$GITHUB_REPOSITORY" -p 'results-*' -D results || echo "no results artifacts"
+          find results -type f | wc -l
+      - name: Restore the published site
+        run: |
+          mkdir -p site
+          if curl --proto "=https" -fsSL "$SITE_URL/state.tar.gz" -o state.tar.gz; then
+            tar xzf state.tar.gz -C site
+          else
+            echo "nothing published yet: starting an empty site"
+          fi
+      - name: Generate reports, badges and landing page
+        env:
+          REPORT_COMMIT: ${{ github.event.workflow_run.head_sha }}
+          REPORT_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          REPORT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          scripts/test-reports.sh results site
+          tar czf state.tar.gz -C site --exclude=./state.tar.gz .
+          mv state.tar.gz site/
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v5

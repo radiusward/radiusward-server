@@ -22,11 +22,61 @@ out="$root/testing/k8s-tests/target"
 scenarios=("${@:-baseline leader-kill member-roll gateway-roll replace-volume}")
 read -r -a scenarios <<<"${scenarios[*]}"
 failures=0
+# per scenario, for the JUnit XML the published test report reads (docs/plans/test-reports.md)
+declare -a case_names=() case_seconds=() case_failures=() case_output=()
+current="" current_start=0 current_failure="" current_output=""
 
-log() { printf '%s %s\n' "$(date +%T)" "$*"; }
+log() {
+  printf '%s %s\n' "$(date +%T)" "$*"
+  current_output+="$(date +%T) $*"$'\n'
+}
+
+begin_case() {
+  current=$1 current_start=$SECONDS current_failure="" current_output=""
+}
+
+end_case() {
+  [[ -z "$current" ]] && return
+  case_names+=("$current")
+  case_seconds+=($((SECONDS - current_start)))
+  case_failures+=("$current_failure")
+  case_output+=("$current_output")
+  current=""
+}
+
+xml_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' -e 's/"/\&quot;/g' <<<"$1"; }
+
+write_junit() {
+  end_case
+  local i n=${#case_names[@]} failed=0 total=0 file="$out/junit.xml"
+  for ((i = 0; i < n; i++)); do
+    total=$((total + case_seconds[i]))
+    [[ -n "${case_failures[i]}" ]] && failed=$((failed + 1))
+  done
+  {
+    printf '<?xml version="1.0" encoding="UTF-8"?>\n'
+    printf '<testsuite name="io.radiusward.k8s.KubernetesScenarios" tests="%d" failures="%d" errors="0" skipped="0" time="%d">\n' \
+      "$n" "$failed" "$total"
+    for ((i = 0; i < n; i++)); do
+      printf '  <testcase classname="io.radiusward.k8s.KubernetesScenarios" name="%s" time="%d">\n' \
+        "$(xml_escape "${case_names[i]}")" "${case_seconds[i]}"
+      if [[ -n "${case_failures[i]}" ]]; then
+        printf '    <failure message="%s"/>\n' "$(xml_escape "${case_failures[i]}")"
+      fi
+      printf '    <system-out>%s</system-out>\n' "$(xml_escape "${case_output[i]}")"
+      printf '  </testcase>\n'
+    done
+    printf '</testsuite>\n'
+  } >"$file"
+}
 k() { kubectl --context "kind-$cluster" -n "$ns" "$@"; }
 
 cleanup() {
+  local status=$?
+  if [[ -n "$current" && $status -ne 0 && -z "$current_failure" ]]; then
+    current_failure="aborted (exit status $status)" # a command of the scenario failed under set -e
+  fi
+  write_junit
   mkdir -p "$out/logs"
   for pod in $(k get pods -o name 2>/dev/null); do
     k logs "$pod" --all-containers >"$out/logs/${pod#pod/}.log" 2>&1 || true
@@ -126,6 +176,7 @@ finish_load() {
 fail() {
   log "FAIL $*"
   failures=$((failures + 1))
+  current_failure+="${current_failure:+; }$*"
 }
 
 await_members_ready() {
@@ -228,6 +279,8 @@ build
 create_cluster
 install_chart
 for s in "${scenarios[@]}"; do
+  end_case
+  begin_case "$s"
   "scenario_$s"
 done
 log "$failures scenario(s) failed"

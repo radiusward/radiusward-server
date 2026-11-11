@@ -36,6 +36,13 @@ jobs:
           kind version && kubectl version --client && helm version --short
       - name: Run the scenarios
         run: scripts/k8s-tests.sh
+      - name: Upload test results (published by reports.yml)
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-k8s
+          path: testing/k8s-tests/target/junit.xml
+          if-no-files-found: warn
       - name: Upload pod logs
         if: always()
         uses: actions/upload-artifact@v7

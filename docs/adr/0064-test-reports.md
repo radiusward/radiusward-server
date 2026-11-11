@@ -16,8 +16,10 @@ nightly runs.
 - The first input is the **JUnit XML** Maven and the Kubernetes test script already write (Allure 3's `junitxml`
   reader); `allure-jupiter` (test scope, Failsafe profile) adds steps, ADR links and log attachments later.
 - One workflow, `reports.yml`, triggered by the test workflows' completion on `main`, generates the reports, writes
-  shields.io badge data and a landing page, and pushes to the `gh-pages` branch served by **GitHub Pages**. It is the
-  only workflow that writes there, runs one at a time, executes nothing from the artifacts it downloads, and never
+  shields.io badge data and a landing page, and deploys them to **GitHub Pages** straight from the workflow — no
+  `gh-pages` branch, so the repository holds no commits but the maintainer's and nothing grows in git; the state the
+  next run needs (the other reports and every history file) is a `state.tar.gz` in the published site. It is the only
+  workflow that deploys Pages, runs one at a time, executes nothing from the artifacts it downloads, and never
   publishes pull requests. Test jobs upload their results on every run.
 - The README gets one badge per report linking to it. Pull requests later get `allure-action` summaries and a
   quality-gate check, as artifacts only.

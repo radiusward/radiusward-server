@@ -67,6 +67,14 @@
 | Logging | `NonBlockingLoggingIT` | `./mvnw verify` | async, garbage-free, never blocks on a full ring |
 | Benchmarks | `testing/benchmarks`, `-Pbench` | manual | throughput baselines |
 
+## Published test reports
+
+The integration, end-to-end, fault-injection and Kubernetes suites publish Allure 3 reports with the history of their
+last 30 runs to [radiusward.github.io/radiusward-server](https://radiusward.github.io/radiusward-server/); the README
+badges link to them ([ADR 0064](../adr/0064-test-reports.md), [plan](../plans/test-reports.md)). The test workflows
+upload their JUnit XML on every run (`results-*` artifacts); `reports.yml` turns the results of runs on `main` into the
+reports. `scripts/test-reports.sh <results> <site>` builds the same site locally.
+
 ## Coverage
 
 `./mvnw verify` measures unit tests only and enforces the module floors of `radius-codec` (90 % lines,

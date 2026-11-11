@@ -5,6 +5,10 @@
 [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=radiusward_radiusward-server&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=radiusward_radiusward-server)
 [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=radiusward_radiusward-server&metric=coverage)](https://sonarcloud.io/component_measures?id=radiusward_radiusward-server&metric=coverage)
 [![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=radiusward_radiusward-server&metric=sqale_rating)](https://sonarcloud.io/project/overview?id=radiusward_radiusward-server)
+[![Integration tests](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/integration.json)](https://radiusward.github.io/radiusward-server/integration/)
+[![End-to-end tests](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/e2e.json)](https://radiusward.github.io/radiusward-server/e2e/)
+[![Fault injection](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/linux.json)](https://radiusward.github.io/radiusward-server/linux/)
+[![Kubernetes](https://img.shields.io/endpoint?url=https://radiusward.github.io/radiusward-server/badges/k8s.json)](https://radiusward.github.io/radiusward-server/k8s/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 A replicated RADIUS server for Java — accounting and authentication — built on
@@ -66,6 +70,9 @@ same replicated state.
   state of authentication (reservations, sequence numbers).
 - **Exporter** (inside every member): tails the committed log into pluggable sinks — PostgreSQL, JSON files and RADIUS
   forwarding built in, more on the [roadmap](docs/plans/roadmap.md#sinks).
+
+Test reports of the integration, end-to-end, fault-injection and Kubernetes suites:
+[radiusward.github.io/radiusward-server](https://radiusward.github.io/radiusward-server/).
 
 Details: [docs/architecture.md](docs/architecture.md) · what an ACK guarantees:
 [docs/accounting-contract.md](docs/accounting-contract.md) · decisions: [docs/adr](docs/adr) · every setting:

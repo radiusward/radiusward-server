@@ -36,6 +36,7 @@ docker build -f deploy/docker/Dockerfile -t radiusward:dev .   # image (after ./
 docker compose -f deploy/compose/compose.yaml up -d --wait     # compose stack (docs/operations/docker.md)
 scripts/linux-tests.sh [TestClass]              # fault injection in containers (-Plinux; nightly in CI, ~2 h in full)
 scripts/k8s-tests.sh [scenario ...]             # Helm chart on kind under load: leader kill, rolls, volume replaced (nightly in CI)
+scripts/test-reports.sh <results> <site>        # the published Allure test reports from JUnit XML (docs/plans/test-reports.md)
 java -jar tools/radclient/target/radclient.jar --help
 scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
 ```

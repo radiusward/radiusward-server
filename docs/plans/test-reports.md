@@ -1,6 +1,6 @@
 # Plan: published test reports (Allure 3 on GitHub Pages)
 
-Status: **planned** (2026-11-11). ADR [0064](../adr/0064-test-reports.md). Work packages R1–R3.
+Status: **R1 done** (2026-11-11), R2 and R3 in progress. ADR [0064](../adr/0064-test-reports.md). Work packages R1–R3.
 
 ## Goal
 
@@ -14,11 +14,11 @@ Kubernetes tests, the ones whose results today live only in workflow logs and ar
 | # | Question | Decision | Why |
 |---|---|---|---|
 | 1 | Report tool | **Allure Report 3** (npm `allure`, pinned, currently 3.33.0), the `awesome` report | current line; history, flaky detection and quality gates built in; Allure 2's Pages action is a community one |
-| 2 | History | `historyPath` per report: a `history.jsonl` kept next to the report on `gh-pages`, restored before and written back after each generation, `historyLimit: 30` | trends and flaky detection without Allure's storage service; the Pages guide's "no history" applies only to its minimal example |
+| 2 | History | `historyPath` per report: a `history.jsonl` published with the report, restored before and written back after each generation, `historyLimit: 30` | trends and flaky detection without Allure's storage service; the Pages guide's "no history" applies only to its minimal example |
 | 3 | First input | the **JUnit XML** Maven already writes (Allure 3's `junitxml` reader); `allure-jupiter` (3.x) only in R2 | a useful report without touching a test |
 | 4 | Reports | four, each with its own history: **integration**, **end-to-end**, **fault injection** (Linux, nightly), **Kubernetes** (nightly) | a green push never hides last night's red nightly suite |
 | 5 | When | integration and end-to-end on every push to `main`; the nightly ones after their scheduled or manual run on `main` | the README always shows the current `main` |
-| 6 | Where | **GitHub Pages** from a `gh-pages` branch, one folder per report and a landing page | public like the repository, no extra service |
+| 6 | Where | **GitHub Pages deployed from the workflow** (no `gh-pages` branch, so no commits besides the maintainer's), one folder per report and a landing page; the state the next run needs is a `state.tar.gz` inside the published site | public like the repository, no extra service, nothing grows in git |
 | 7 | Who publishes | one workflow, `reports.yml`, on `workflow_run` of `ci`, `linux-tests` and `k8s-tests`; serialized; pull requests never publish | the test jobs need no write permission; a privileged job that only reads data |
 | 8 | README | a shields.io endpoint badge per report (count and status), each linking to its report, plus a "test reports" link to the landing page | live numbers without a badge service of our own |
 | 9 | PR feedback | `allure-framework/allure-action` summaries and a quality-gate check on pull requests (R3) | Dependabot and outside pull requests get a readable result |
@@ -42,10 +42,10 @@ The existing report artifacts stay as they are for runs that crash before writin
 
 ```text
 on: workflow_run [ci, linux-tests, k8s-tests] completed, branch main, event push | schedule | workflow_dispatch
-permissions: contents: write (gh-pages), actions: read (artifacts)
-concurrency: gh-pages (queued, never cancelled)
+permissions: actions: read (artifacts), pages: write, id-token: write (deploy-pages)
+concurrency: pages (queued, never cancelled)
 
-1. check out gh-pages (create it on the first run)
+1. restore the published site from <site>/state.tar.gz (empty on the first run)
 2. download the triggering run's results-* artifacts (data only; nothing from them is executed)
 3. per report found:
      restore <report>/history.jsonl
@@ -53,7 +53,7 @@ concurrency: gh-pages (queued, never cancelled)
        variables: commit, branch, run link, Java version, date)
      write badges/<report>.json (shields endpoint: "412 passed" / "3 failed", colour)
 4. regenerate index.html from every report's summary.json (status, counts, date, commit, links)
-5. commit to gh-pages and push
+5. pack the site into state.tar.gz and deploy it with actions/deploy-pages
 ```
 
 A report that has no results in the triggering run (a job that died before writing XML) keeps its previous content and
@@ -68,7 +68,8 @@ https://radiusward.github.io/radiusward-server/
   badges/<report>.json             shields.io endpoint data
 ```
 
-Only the latest HTML of each report is kept; history is the JSONL (≤ 30 runs), so `gh-pages` stays small.
+Only the latest HTML of each report is kept; history is the JSONL (≤ 30 runs). `scripts/test-reports.sh <results>
+<site>` builds the same site locally.
 
 ### README
 
@@ -102,7 +103,7 @@ On pull requests the integration and end-to-end reports are generated as an arti
 
 | # | Package | Content | Size |
 |---|---|---|---|
-| R1 | Reports and badges | results uploaded on every run, `junit.xml` from `k8s-tests.sh`, `reports.yml`, Allure config, landing page, `gh-pages` and Pages enabled, README badges, `docs/testing/strategy.md` | M |
+| R1 ✅ | Reports and badges | results uploaded on every run, `junit.xml` from `k8s-tests.sh`, `reports.yml` deploying to Pages, Allure config, landing page, README badges, `docs/testing/strategy.md` | M |
 | R2 | Richer reports | `allure-jupiter` profile, epics/features/ADR links, steps in `LocalCluster`/`ContainerCluster`/load, log attachments | M |
 | R3 | Pull requests | report artifact and `allure-action` summary and check on pull requests | S |
 
