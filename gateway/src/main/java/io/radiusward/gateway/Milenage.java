@@ -35,6 +35,14 @@ final class Milenage {
         this.opc = opc.clone();
     }
 
+    /**
+     * Zeroes this instance's copy of OPc. The AES key schedule lives inside the JCE cipher, which has no way to clear
+     * it; it goes with the instance.
+     */
+    void erase() {
+        java.util.Arrays.fill(opc, (byte) 0);
+    }
+
     /** OPc = E_K(OP) ⊕ OP. */
     static byte[] opc(byte[] k, byte[] op) {
         byte[] out = encrypt(aes(k), op);

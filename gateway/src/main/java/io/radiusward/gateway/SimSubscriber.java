@@ -65,6 +65,9 @@ record SimSubscriber(byte[] ki, byte[] opc, byte[] amf, long sqn, int algorithm,
         if (opc == null && op != null && ki != null) {
             opc = Milenage.opc(ki, op);
         }
+        if (op != null) {
+            java.util.Arrays.fill(op, (byte) 0);
+        }
         List<Milenage.Triplet> triplets = new java.util.ArrayList<>();
         for (int i = 0; i < 3; i++) {
             if (rand[i] != null && sres[i] != null && kc[i] != null) {
@@ -72,6 +75,16 @@ record SimSubscriber(byte[] ki, byte[] opc, byte[] amf, long sqn, int algorithm,
             }
         }
         return new SimSubscriber(ki, opc, amf, sqn, algorithm, List.copyOf(triplets));
+    }
+
+    /** Zeroes Ki and OPc once the vectors are computed; the subscriber is unusable afterwards. */
+    void erase() {
+        if (ki != null) {
+            java.util.Arrays.fill(ki, (byte) 0);
+        }
+        if (opc != null) {
+            java.util.Arrays.fill(opc, (byte) 0);
+        }
     }
 
     /** Whether vectors can be computed: a Ki and an OPc, and no COMP128 v1–3 (not supported, ADR 0061). */

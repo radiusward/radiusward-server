@@ -169,7 +169,7 @@ final class EapAka implements EapMethod {
                 return fail(); // logged by the handler's subscriber look-up
             }
             if (!subscriber.usesMilenage()) {
-                return fail(); // no Ki and OPc: AKA needs MILENAGE
+                return fail(); // no Ki and OPc: AKA needs MILENAGE (fail() erases what there is)
             }
             imsi = permanent;
         }
@@ -190,6 +190,10 @@ final class EapAka implements EapMethod {
         RANDOM.nextBytes(rand);
         Milenage.Quintet q = milenage.f2345(rand);
         byte[] autn = milenage.autn(rand, sqnBytes, amf);
+        milenage.erase();
+        if (resynchronised) {
+            forgetSubscriber(); // no second resynchronisation: Ki and OPc are not needed again
+        }
         xres = q.res();
         SimMessage.Builder b = new SimMessage.Builder(CHALLENGE)
                 .reserved(SimMessage.AT_RAND, rand)
@@ -225,6 +229,7 @@ final class EapAka implements EapMethod {
             return fail();
         }
         state = State.DONE;
+        forgetSubscriber();
         return Step.succeeded(keys.msk());
     }
 
@@ -233,7 +238,9 @@ final class EapAka implements EapMethod {
         if (state != State.CHALLENGE || resynchronised || auts == null || auts.length != 14) {
             return fail();
         }
-        byte[] sqnMs = new Milenage(subscriber.ki(), subscriber.opc()).resync(rand, auts);
+        Milenage milenage = new Milenage(subscriber.ki(), subscriber.opc());
+        byte[] sqnMs = milenage.resync(rand, auts);
+        milenage.erase();
         if (sqnMs == null) {
             return fail(); // MAC-S does not verify: not from this USIM
         }
@@ -342,10 +349,19 @@ final class EapAka implements EapMethod {
         return prime ? SimKeys.macSha256(kAut, packet, extra) : SimKeys.macSha1(kAut, packet, extra);
     }
 
+    /** Zeroes Ki and OPc, kept until the challenge is answered in case the USIM asks for resynchronisation. */
+    private void forgetSubscriber() {
+        if (subscriber != null) {
+            subscriber.erase();
+            subscriber = null;
+        }
+    }
+
     /** Fails the authentication: no identity authorized, the handed-out re-authentication identity forgotten. */
     private Step fail() {
         state = State.DONE;
         imsi = null;
+        forgetSubscriber();
         identities.drop(nextReauthId);
         nextReauthId = null;
         return Step.FAILED;

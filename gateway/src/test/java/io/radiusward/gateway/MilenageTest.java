@@ -86,6 +86,16 @@ class MilenageTest {
     }
 
     @Test
+    void eraseLeavesTheCallersOpcAlone() {
+        byte[] opc = hex("cd63cb71954a9f4e48a5994e37a02baf");
+        Milenage m = new Milenage(hex("465b5ce8b199b49faa5f0a2ee238a6bc"), opc);
+        byte[] before = m.f2345(new byte[16]).res();
+        m.erase();
+        assertThat(opc).as("the instance zeroes its own copy").isEqualTo(hex("cd63cb71954a9f4e48a5994e37a02baf"));
+        assertThat(m.f2345(new byte[16]).res()).as("computed without OPc now").isNotEqualTo(before);
+    }
+
+    @Test
     void badSizes() {
         assertThatThrownBy(() -> new Milenage(new byte[15], new byte[16])).isInstanceOf(IllegalArgumentException.class);
         Milenage m = new Milenage(new byte[16], new byte[16]);

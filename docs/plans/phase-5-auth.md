@@ -1,6 +1,6 @@
 # Plan: Phase 5 — authentication and authorization
 
-Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.36 done (ADR 0020–0060). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
+Status: done (2026-11-10); decisions 1–7 taken; work packages 5.1–5.36 done (ADR 0020–0060), then 5.37–5.41 (EAP-SIM/AKA, ADR 0061). Starts with PAP and CHAP; MS-CHAPv2, EAP (TLS, PEAP, TTLS) and
 RadSec follow in the same architecture (roadmap: "external auth adapter → cluster decision, EAP design review,
 RadSec").
 
@@ -133,6 +133,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.34 ✅ | Authentication log | every accept and reject with its cause to daily JSON-lines files and/or a PostgreSQL table, through a bounded queue ([ADR 0058](../adr/0058-authentication-log.md)) | S |
 | 5.35 ✅ | IPv6 pools | delegated and framed IPv6 prefixes (or addresses) from pools, held while their device is online, several pools per user ([ADR 0059](../adr/0059-ipv6-pools.md)) | M |
 | 5.36 ✅ | Expire-After | accounts expire a set time after their first exported session ([ADR 0060](../adr/0060-expire-after.md)) | S |
+| 5.37–5.41 ✅ | EAP-SIM, EAP-AKA, EAP-AKA′ | devices with SIM cards on Wi-Fi with keys from the identity store: MILENAGE, SQN in the cluster (state version 8), pseudonyms, fast re-authentication ([plan](eap-sim-aka.md), [ADR 0061](../adr/0061-eap-sim-aka.md)) | L |
 
 ## Tests
 

@@ -56,6 +56,17 @@ class SimSubscriberTest {
     }
 
     @Test
+    void eraseZeroesKiAndOpc() {
+        SimSubscriber s = SimSubscriber.of(List.of(
+                item("SIM-Ki", "465b5ce8b199b49faa5f0a2ee238a6bc"),
+                item("SIM-OPc", "cd63cb71954a9f4e48a5994e37a02baf")));
+        s.erase();
+        assertThat(s.ki()).containsOnly(0);
+        assertThat(s.opc()).containsOnly(0);
+        SimSubscriber.of(List.of()).erase(); // no keys: nothing to zero
+    }
+
+    @Test
     void badValuesNameTheItemButNotTheValue() {
         for (AttributeItem bad : List.of(
                 item("SIM-Ki", "0x1234"),

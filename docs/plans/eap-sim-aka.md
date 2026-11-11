@@ -112,7 +112,9 @@ Each with an ADR, docs (`configuration.md`, the EAP section of the ADR index, st
 ## Risks
 
 - **Key protection**: Ki and OPc are as sensitive as passwords; they stay in the store (protect `radcheck` and the
-  users file), are never logged or traced, and are zeroed after use.
+  users file) and are never logged or traced. A gateway zeroes its copies as soon as the vectors are computed
+  (EAP-AKA keeps them until the challenge is answered, for a resynchronisation); the AES key schedule inside the JCE
+  cipher cannot be cleared and goes with the short-lived Milenage instance.
 - **Real devices**: Android and iOS EAP-SIM/AKA support depends on carrier configuration; tests with a programmable
   SIM (e.g. sysmoISIM) and a phone are worth doing before announcing it.
 - **SQN under load**: one cluster command per full authentication; the existing reservation path handles that rate,

@@ -11,7 +11,9 @@ public final class SimVectors {
 
     /** SRES (4 bytes) and Kc (8 bytes) for {@code rand} from Ki and OPc. */
     public static byte[][] gsm(byte[] ki, byte[] opc, byte[] rand) {
-        Milenage.Triplet t = new Milenage(ki, opc).gsm(rand);
+        Milenage milenage = new Milenage(ki, opc);
+        Milenage.Triplet t = milenage.gsm(rand);
+        milenage.erase();
         return new byte[][] {t.sres(), t.kc()};
     }
 }

@@ -155,6 +155,7 @@ final class EapSim implements EapMethod {
             return fail();
         }
         Milenage.Triplet[] triplets = triplets(subscriber);
+        subscriber.erase();
         if (triplets == null) {
             return fail();
         }
@@ -188,6 +189,7 @@ final class EapSim implements EapMethod {
                 RANDOM.nextBytes(rand);
                 t[i] = milenage.gsm(rand);
             }
+            milenage.erase();
             return t;
         }
         if (subscriber.triplets().size() != 3) {
