@@ -18,6 +18,11 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>test-images</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>cluster-node</artifactId>
         </dependency>
         <dependency>

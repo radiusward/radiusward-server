@@ -1,7 +1,9 @@
 # Samba AD test domain controller
 
 A Samba Active Directory domain controller for the LDAP store and Netlogon tests — never for production. Built by
-the tests (Testcontainers) from this directory; runs privileged (Samba keeps ACLs in extended attributes).
+the tests (Testcontainers) from this directory when `ghcr.io/radiusward/radiusward-test-images:samba-ad-<hash>` is not
+published ([test images](../../docs/testing/strategy.md#test-images)); runs privileged (Samba keeps ACLs in extended
+attributes).
 
 Domain `CORP.TEST` (NetBIOS `CORP`), provisioned at first start by `start.sh`:
 

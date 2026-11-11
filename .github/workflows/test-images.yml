@@ -1,0 +1,53 @@
+name: test-images
+
+# Prebuilt test images (docs/testing/strategy.md#test-images): eapol_test, radsecproxy, Samba AD, the bases of the
+# Linux images and the interop tests' server packages (for ci.yml), in the public package
+# ghcr.io/radiusward/radiusward-test-images as <image>-<hash> and <image>-latest.
+# Tests pull the tag of their inputs' hash and build locally only when it is not published, so test runs no longer
+# depend on package mirrors. An existing hash tag is never rebuilt; -latest always points at the current one.
+# Weekly as well, so a lost package is published again.
+on:
+  push:
+    branches: [main]
+    paths:
+      - testing/eapol-test/**
+      - testing/radsec-client/**
+      - testing/samba-ad/**
+      - testing/interop-debs/**
+      - testing/linux-tests/docker/Dockerfile.*-base
+      - testing/linux-tests/docker/lazyfs-statfs.patch
+      - testing/test-images/images.txt
+      - scripts/test-images.sh
+      - .github/workflows/test-images.yml
+  schedule:
+    - cron: '41 3 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: test-images
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180   # Samba AD and LazyFS under QEMU for arm64
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push the images whose hash is not published
+        run: |
+          for image in $(scripts/test-images.sh list); do
+            echo "::group::$image ($(scripts/test-images.sh tag "$image"))"
+            scripts/test-images.sh build "$image" --push
+            echo "::endgroup::"
+          done

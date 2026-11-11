@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.radiusward</groupId>
+        <artifactId>radiusward-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>test-images</artifactId>
+    <name>radiusward :: test images</name>
+    <description>The prebuilt test images (testing/test-images/images.txt): pulled from ghcr.io when published, built
+        locally otherwise. Test-scope dependency only, never shipped.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <!-- every module using these images has Testcontainers in test scope already -->
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>

@@ -42,6 +42,7 @@ scripts/test-reports.sh <results> <site>        # the published Allure test repo
 scripts/bench.py [--quick] [--jmh]              # benchmark ladders, failover, JMH → one JSON (docs/testing/benchmarks.md; weekly in CI)
 java -jar tools/radclient/target/radclient.jar --help
 scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dictionaries
+scripts/test-images.sh list|tag|ref|build <image>   # prebuilt test images (docs/testing/strategy.md#test-images)
 ```
 
 ## Modules
@@ -64,6 +65,8 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
 | `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `cluster-backup`, `cluster-restore`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster`, `DevCluster` |
+| `testing/test-images` | `TestImages`: the prebuilt test images from GHCR, built locally when not published |
+| `testing/interop-debs` | the interop tests' server packages as `.deb` files for CI, installed without a package mirror |
 | `testing/e2e-tests` | Process-based end-to-end tests (`-Pe2e`) |
 | `testing/linux-tests` | Fault injection in containers with Testcontainers and LazyFS (`-Plinux`) |
 | `radius-dictionary` | Dictionary model + FreeRADIUS-format parser (v3 + v4 subset), strict/lenient modes, `dictionary.d` overrides |

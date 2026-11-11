@@ -11,3 +11,6 @@ A second radsecproxy instance in the same container listens on `127.0.0.1:1912` 
 
 `ProxyRadsecproxyIT` uses the same image the other way round: radsecproxy as a RadSec server (TLS on 2083, mapped by
 Testcontainers) relaying the gateway's proxied requests over UDP to a fake home server on the host.
+
+Published as `ghcr.io/radiusward/radiusward-test-images:radsec-client-<hash>`; tests pull it and build from this
+directory only when that tag is missing ([test images](../../docs/testing/strategy.md#test-images)).

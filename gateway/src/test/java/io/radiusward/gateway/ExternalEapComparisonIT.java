@@ -11,6 +11,7 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
+import io.radiusward.testing.images.TestImages;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -27,7 +28,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -120,9 +120,7 @@ class ExternalEapComparisonIT {
         settings.put("auth.eap.peap.client.certificate", "true");
         certificateGateway = launch(settings, "certificate");
 
-        Path image = Path.of("../testing/eapol-test").toAbsolutePath().normalize();
-        peer = new GenericContainer<>(new ImageFromDockerfile("radiusward-eapol-test:test", false)
-                        .withFileFromPath("Dockerfile", image.resolve("Dockerfile")))
+        peer = new GenericContainer<>(TestImages.image("eapol-test"))
                 .withExtraHost("host.docker.internal", "host-gateway");
         peer.start();
         copy(pki.caPem, "ca.pem");

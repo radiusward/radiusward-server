@@ -24,10 +24,13 @@ if [[ -z "${DOCKER_HOST:-}" && -S "$HOME/.colima/default/docker.sock" ]]; then
 fi
 
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
-    ./mvnw -q -B install -DskipTests
+    ./mvnw -q -B install -DskipTests -DskipITs
     docker build -q -f deploy/docker/Dockerfile -t radiusward:dev .
-    docker build -q -f testing/linux-tests/docker/Dockerfile.test -t radiusward-test:dev .
-    docker build -q -f testing/linux-tests/docker/Dockerfile.systemd -t radiusward-systemd:dev .
+    # the bases come prebuilt from ghcr.io/radiusward/radiusward-test-images (built here only when not published)
+    docker build -q -f testing/linux-tests/docker/Dockerfile.test \
+        --build-arg BASE_IMAGE="$(scripts/test-images.sh ref linux-test-base)" -t radiusward-test:dev .
+    docker build -q -f testing/linux-tests/docker/Dockerfile.systemd \
+        --build-arg BASE_IMAGE="$(scripts/test-images.sh ref systemd-base)" -t radiusward-systemd:dev .
 fi
 
 args=(-B -Plinux,reports verify -pl testing/linux-tests)

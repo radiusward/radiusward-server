@@ -1,0 +1,14 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# The prebuilt test images (docs/testing/strategy.md#test-images), all in ghcr.io/radiusward/radiusward-test-images,
+# tagged <image>-<hash>. One line per image: name, build context, Dockerfile, then the inputs whose content makes the
+# hash (files, or directories taken recursively without *.md). Paths are relative to the repository root. An optional
+# platforms=<list> entry limits the published platforms (default linux/amd64,linux/arm64); it is not an input.
+# scripts/test-images.sh and io.radiusward.testing.images.TestImages both read this file.
+eapol-test       testing/eapol-test          testing/eapol-test/Dockerfile                      testing/eapol-test
+radsec-client    testing/radsec-client       testing/radsec-client/Dockerfile                   testing/radsec-client
+samba-ad         testing/samba-ad            testing/samba-ad/Dockerfile                        testing/samba-ad
+linux-test-base  testing/linux-tests/docker  testing/linux-tests/docker/Dockerfile.test-base    testing/linux-tests/docker/Dockerfile.test-base testing/linux-tests/docker/lazyfs-statfs.patch
+systemd-base     testing/linux-tests/docker  testing/linux-tests/docker/Dockerfile.systemd-base testing/linux-tests/docker/Dockerfile.systemd-base
+interop-debs     testing/interop-debs        testing/interop-debs/Dockerfile                    testing/interop-debs platforms=linux/amd64

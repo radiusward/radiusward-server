@@ -38,6 +38,7 @@
         <module>auth-api</module>
         <module>stores/file</module>
         <module>stores/sql</module>
+        <module>testing/test-images</module>
         <module>stores/ldap</module>
         <module>verifiers/netlogon</module>
         <module>gateway</module>
@@ -240,6 +241,11 @@
             <dependency>
                 <groupId>io.radiusward</groupId>
                 <artifactId>gateway</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>test-images</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -1,0 +1,19 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST ONLY base of Dockerfile.systemd, published as ghcr.io/radiusward/radiusward-test-images:systemd-base-<hash>
+# (docs/testing/strategy.md#test-images): the release image's Java runtime, user and directories with systemd as
+# PID 1, so a test run only adds the radiusward jar and the units of deploy/systemd and needs no package mirror.
+#
+#   scripts/test-images.sh build systemd-base
+FROM eclipse-temurin:25-jre-noble
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends systemd systemd-sysv dbus \
+    && rm -rf /var/lib/apt/lists/* \
+    # the units run /usr/local/bin/radiusward, which execs java from systemd's PATH, not the image's
+    && ln -s /opt/java/openjdk/bin/java /usr/bin/java \
+    # net.core.* cannot be set from inside a container (not namespaced); the file is installed anyway
+    && systemctl mask systemd-sysctl.service getty@tty1.service console-getty.service systemd-logind.service \
+    && groupadd --system --gid 10001 radiusward \
+    && useradd --system --uid 10001 --gid radiusward --home-dir /var/lib/radiusward --shell /usr/sbin/nologin radiusward \
+    && mkdir -p /opt/radiusward /etc/radiusward/dictionary.d /var/lib/radiusward \
+    && chown -R radiusward:radiusward /var/lib/radiusward

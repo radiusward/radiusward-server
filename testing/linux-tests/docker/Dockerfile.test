@@ -1,47 +1,24 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# TEST ONLY image for testing/linux-tests, never published: the release image plus
-#   - LazyFS (https://github.com/dsrhaslab/lazyfs, MIT), a FUSE filesystem that keeps writes in its own cache
-#     until fsync. With RADIUSWARD_TEST_LAZYFS=1 the data directory lives on it; killing the container kills
-#     LazyFS, so everything not fsynced is lost, as in a power cut;
-#     lazyfs-statfs.patch adds the missing statfs (upstream reports 0 bytes free, so Aeron Archive refuses
-#     to record);
-#   - iptables, to cut network links (needs NET_ADMIN).
-# Runs as root (FUSE mount, iptables).
+# TEST ONLY image for testing/linux-tests, never published: the prebuilt base (Dockerfile.test-base: LazyFS, fuse3,
+# iptables) plus radiusward from the release image. With RADIUSWARD_TEST_LAZYFS=1 the data directory lives on
+# LazyFS; killing the container kills LazyFS, so everything not fsynced is lost, as in a power cut. Runs as root
+# (FUSE mount, iptables). Needs no network: nothing is installed here.
 #
-#   docker build -f testing/linux-tests/docker/Dockerfile.test -t radiusward-test:dev .
-ARG BASE=radiusward:dev
-ARG LAZYFS_REF=d93e54a
+#   docker build -f testing/linux-tests/docker/Dockerfile.test \
+#       --build-arg BASE_IMAGE=$(scripts/test-images.sh ref linux-test-base) -t radiusward-test:dev .
+ARG BASE_IMAGE
+ARG RELEASE=radiusward:dev
+FROM ${RELEASE} AS release
 
-FROM ubuntu:24.04 AS build
-ARG LAZYFS_REF
-RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
-        g++ cmake make git ca-certificates libfuse3-dev pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-COPY testing/linux-tests/docker/lazyfs-statfs.patch /src/lazyfs-statfs.patch
-# spdlog by git, not the archive URL in LazyFS's CMakeLists (GitHub archive downloads fail intermittently)
-RUN git clone -q https://github.com/dsrhaslab/lazyfs.git /src/lazyfs \
-    && git -C /src/lazyfs checkout -q "$LAZYFS_REF" \
-    && git -C /src/lazyfs apply /src/lazyfs-statfs.patch \
-    && git clone -q --depth 1 -b v1.10.0 https://github.com/gabime/spdlog.git /src/spdlog \
-    && cmake -S /src/lazyfs/libs/libpcache -B /src/lazyfs/libs/libpcache/build \
-        -DFETCHCONTENT_SOURCE_DIR_SPDLOG=/src/spdlog \
-    && cmake --build /src/lazyfs/libs/libpcache/build \
-    && ln -sfn /src/spdlog /src/lazyfs/libs/libpcache/build/_deps/spdlog-src \
-    && cmake -S /src/lazyfs/lazyfs -B /src/lazyfs/lazyfs/build -DLAZYFS_BUILD_TESTS=OFF \
-    && cmake --build /src/lazyfs/lazyfs/build \
-    && mkdir -p /out/lib && cp -P /src/lazyfs/libs/libpcache/build/*.so* /out/lib/
-
-FROM ${BASE}
-USER root
-RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends fuse3 iptables \
-    && rm -rf /var/lib/apt/lists/* \
-    && echo user_allow_other >> /etc/fuse.conf
-COPY --from=build /src/lazyfs/lazyfs/build/lazyfs /usr/local/bin/lazyfs
-COPY --from=build /out/lib/ /usr/local/lib/
-RUN ldconfig
+FROM ${BASE_IMAGE}
+COPY --from=release /opt/radiusward/ /opt/radiusward/
+COPY --from=release /usr/local/bin/radiusward /usr/local/bin/radiusward
 COPY testing/linux-tests/docker/lazyfs.toml /etc/lazyfs.toml
 COPY testing/linux-tests/docker/test-entrypoint.sh /usr/local/bin/test-entrypoint
+WORKDIR /var/lib/radiusward
+ENV RADIUSWARD_PROFILE=small
+VOLUME ["/var/lib/radiusward"]
 ENTRYPOINT ["/usr/local/bin/test-entrypoint"]
 CMD ["version"]

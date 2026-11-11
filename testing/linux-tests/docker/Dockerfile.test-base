@@ -1,0 +1,46 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST ONLY base of Dockerfile.test, published as ghcr.io/radiusward/radiusward-test-images:linux-test-base-<hash>
+# (docs/testing/strategy.md#test-images): everything Dockerfile.test needs from package mirrors and GitHub, so a
+# test run only adds the radiusward jar on top of it and needs no network.
+#   - LazyFS (https://github.com/dsrhaslab/lazyfs, MIT), a FUSE filesystem that keeps writes in its own cache
+#     until fsync; lazyfs-statfs.patch adds the missing statfs (upstream reports 0 bytes free, so Aeron Archive
+#     refuses to record);
+#   - fuse3 and iptables, to cut network links (needs NET_ADMIN);
+#   - the Java runtime, user and directories of deploy/docker/Dockerfile.
+#
+#   scripts/test-images.sh build linux-test-base
+ARG LAZYFS_REF=d93e54a
+
+FROM ubuntu:24.04 AS build
+ARG LAZYFS_REF
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+        g++ cmake make git ca-certificates libfuse3-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+COPY lazyfs-statfs.patch /src/lazyfs-statfs.patch
+# spdlog by git, not the archive URL in LazyFS's CMakeLists (GitHub archive downloads fail intermittently)
+RUN git clone -q https://github.com/dsrhaslab/lazyfs.git /src/lazyfs \
+    && git -C /src/lazyfs checkout -q "$LAZYFS_REF" \
+    && git -C /src/lazyfs apply /src/lazyfs-statfs.patch \
+    && git clone -q --depth 1 -b v1.10.0 https://github.com/gabime/spdlog.git /src/spdlog \
+    && cmake -S /src/lazyfs/libs/libpcache -B /src/lazyfs/libs/libpcache/build \
+        -DFETCHCONTENT_SOURCE_DIR_SPDLOG=/src/spdlog \
+    && cmake --build /src/lazyfs/libs/libpcache/build \
+    && ln -sfn /src/spdlog /src/lazyfs/libs/libpcache/build/_deps/spdlog-src \
+    && cmake -S /src/lazyfs/lazyfs -B /src/lazyfs/lazyfs/build -DLAZYFS_BUILD_TESTS=OFF \
+    && cmake --build /src/lazyfs/lazyfs/build \
+    && mkdir -p /out/lib && cp -P /src/lazyfs/libs/libpcache/build/*.so* /out/lib/
+
+# the release image's base, so the jar runs on the same runtime
+FROM eclipse-temurin:25-jre-noble
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends fuse3 iptables \
+    && rm -rf /var/lib/apt/lists/* \
+    && echo user_allow_other >> /etc/fuse.conf \
+    && groupadd --system --gid 10001 radiusward \
+    && useradd --system --uid 10001 --gid radiusward --home-dir /var/lib/radiusward --shell /usr/sbin/nologin radiusward \
+    && mkdir -p /opt/radiusward /etc/radiusward/dictionary.d /var/lib/radiusward \
+    && chown -R radiusward:radiusward /var/lib/radiusward
+COPY --from=build /src/lazyfs/lazyfs/build/lazyfs /usr/local/bin/lazyfs
+COPY --from=build /out/lib/ /usr/local/lib/
+RUN ldconfig

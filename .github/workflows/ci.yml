@@ -25,19 +25,39 @@ jobs:
           cache: maven
       - name: External RADIUS server for the interop tests
         timeout-minutes: 10
-        # Ubuntu's server and client tools; the package starts a service on 1812/1813, which the tests do not need
-        # retried: the runners' package mirror or DNS sometimes fails for a moment
+        # Ubuntu's server and client tools; the package starts a service on 1812/1813, which the tests do not need.
+        # The .deb files come from the prebuilt interop-debs image (docs/testing/strategy.md#test-images), so no
+        # package mirror is needed; only when it is not published (a changed Dockerfile) or does not fit the runner
+        # (an installed package newer than the image's) apt downloads them.
         run: |
-          # the runners' Azure mirror sometimes cannot be reached; apt falls back to the main archive
-          echo "http://archive.ubuntu.com/ubuntu/	priority:2" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
-          for attempt in 1 2 3 4; do
-            if sudo apt-get -o Acquire::Retries=5 update -qq && \
-               sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -qq -y freeradius freeradius-utils >/dev/null; then
-              break
-            fi
-            [ "$attempt" = 4 ] && exit 1
-            echo "package install failed (attempt $attempt), retrying in 20 s"; sleep 20
-          done
+          image=ghcr.io/radiusward/radiusward-test-images:$(scripts/test-images.sh tag interop-debs)
+          from_image() {
+            # /tmp/debs is a local apt repository and, as the archive cache, holds every file: nothing is downloaded
+            docker pull -q "$image" >/dev/null || return 1
+            docker create --name interop-debs "$image" none >/dev/null
+            docker cp interop-debs:/debs /tmp/debs
+            docker rm interop-debs >/dev/null
+            echo "deb [trusted=yes] file:/tmp/debs ./" | sudo tee /etc/apt/sources.list.d/interop-debs.list >/dev/null
+            sudo apt-get update -qq -o Dir::Etc::sourcelist=sources.list.d/interop-debs.list -o Dir::Etc::sourceparts=- &&
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -qq -y -o Dir::Cache::archives=/tmp/debs \
+                freeradius freeradius-utils >/dev/null
+            local status=$?
+            sudo rm -f /etc/apt/sources.list.d/interop-debs.list
+            return $status
+          }
+          if ! from_image; then
+            echo "$image is not published or does not fit; installing from the package mirror"
+            # the runners' Azure mirror sometimes cannot be reached; apt falls back to the main archive
+            echo "http://archive.ubuntu.com/ubuntu/	priority:2" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
+            for attempt in 1 2 3 4; do
+              if sudo apt-get -o Acquire::Retries=5 update -qq && \
+                 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -qq -y freeradius freeradius-utils >/dev/null; then
+                break
+              fi
+              [ "$attempt" = 4 ] && exit 1
+              echo "package install failed (attempt $attempt), retrying in 20 s"; sleep 20
+            done
+          fi
           sudo systemctl disable --now freeradius
           /usr/sbin/freeradius -v | head -1
       - name: Build and test

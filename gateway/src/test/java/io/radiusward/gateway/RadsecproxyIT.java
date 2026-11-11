@@ -10,6 +10,7 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
+import io.radiusward.testing.images.TestImages;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -24,7 +25,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -55,9 +55,7 @@ class RadsecproxyIT {
     static void start() throws Exception {
         DockerRequirement.check(
                 DockerClientFactory.instance().isDockerAvailable(), Boolean.getBoolean("radiusward.require.docker"));
-        Path image = Path.of("../testing/radsec-client").toAbsolutePath().normalize();
-        proxy = new GenericContainer<>(new ImageFromDockerfile("radiusward-radsec-client:test", false)
-                        .withFileFromPath("Dockerfile", image.resolve("Dockerfile")))
+        proxy = new GenericContainer<>(TestImages.image("radsec-client"))
                 .withExtraHost("host.docker.internal", "host-gateway");
         proxy.start();
 

@@ -20,6 +20,7 @@ import io.radiusward.gateway.RadsecConfig;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.testing.images.TestImages;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -38,7 +39,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 import org.testcontainers.utility.MountableFile;
 
 /**
@@ -70,9 +70,7 @@ class AkaEapolIT {
     static void start() throws Exception {
         DockerRequirement.check(
                 DockerClientFactory.instance().isDockerAvailable(), Boolean.getBoolean("radiusward.require.docker"));
-        Path image = Path.of("../eapol-test").toAbsolutePath().normalize();
-        peer = new GenericContainer<>(new ImageFromDockerfile("radiusward-eapol-test:test", false)
-                        .withFileFromPath("Dockerfile", image.resolve("Dockerfile")))
+        peer = new GenericContainer<>(TestImages.image("eapol-test"))
                 .withExtraHost("host.docker.internal", "host-gateway");
         peer.start();
 

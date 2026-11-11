@@ -6,6 +6,9 @@ and TEAP — never for production. Built by `EapolTestIT` in the gateway module 
 test copies a network configuration and certificates into `/work` and runs `eapol_test` once per case against the
 gateway on the host (`host.docker.internal`, mapped to the host gateway).
 
+Published as `ghcr.io/radiusward/radiusward-test-images:eapol-test-<hash>`; tests pull it and build from this
+directory only when that tag is missing ([test images](../../docs/testing/strategy.md#test-images)).
+
 Run by hand:
 
 ```bash

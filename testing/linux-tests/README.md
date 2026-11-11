@@ -4,7 +4,10 @@ Fault injection in Linux containers with Testcontainers ([ADR 0016](../../docs/a
 Uses the release image `radiusward:dev`, a test image `radiusward-test:dev` for the members (LazyFS,
 iptables; [docker/Dockerfile.test](docker/Dockerfile.test)), a systemd image `radiusward-systemd:dev` with the
 units of `deploy/systemd` ([docker/Dockerfile.systemd](docker/Dockerfile.systemd)) and the configuration files of
-`deploy/compose`. In CI, *Run workflow* on `linux-tests` takes a `tests` input to run single classes.
+`deploy/compose`. Both are built per run on prebuilt bases from `ghcr.io/radiusward/radiusward-test-images`
+(`linux-test-base`, `systemd-base`: [Dockerfile.test-base](docker/Dockerfile.test-base),
+[Dockerfile.systemd-base](docker/Dockerfile.systemd-base); [test images](../../docs/testing/strategy.md#test-images))
+and only add the jar, so a run installs no packages. In CI, *Run workflow* on `linux-tests` takes a `tests` input to run single classes.
 
 ```bash
 scripts/linux-tests.sh                    # builds jar + images, runs everything (~15 min)

@@ -67,6 +67,43 @@
 | Logging | `NonBlockingLoggingIT` | `./mvnw verify` | async, garbage-free, never blocks on a full ring |
 | Benchmarks | `testing/benchmarks`, `-Pbench` | manual | throughput baselines |
 
+## Test images
+
+The images tests run next to radiusward are prebuilt and published, so a test run does not depend on package mirrors
+or GitHub downloads: all of them in the public package `ghcr.io/radiusward/radiusward-test-images`, tagged
+`<image>-<hash>`, with `<image>-latest` pointing at the newest build. Never for production.
+
+| Image | Dockerfile | Used by | Platforms |
+|---|---|---|---|
+| `eapol-test` | [testing/eapol-test](../../testing/eapol-test) | `EapolTestIT`, `ExternalEapComparisonIT`, `AkaEapolIT` | amd64, arm64 |
+| `radsec-client` | [testing/radsec-client](../../testing/radsec-client) | `RadsecproxyIT`, `ProxyRadsecproxyIT` | amd64, arm64 |
+| `samba-ad` | [testing/samba-ad](../../testing/samba-ad) | LDAP store and Netlogon tests | amd64, arm64 |
+| `linux-test-base` | [Dockerfile.test-base](../../testing/linux-tests/docker/Dockerfile.test-base) | base of `radiusward-test:dev` (LazyFS, iptables) | amd64, arm64 |
+| `systemd-base` | [Dockerfile.systemd-base](../../testing/linux-tests/docker/Dockerfile.systemd-base) | base of `radiusward-systemd:dev` | amd64, arm64 |
+| `interop-debs` | [testing/interop-debs](../../testing/interop-debs) | `ci.yml`: the interop tests' server packages as `.deb` files, installed without a mirror | amd64 |
+
+- **The hash** is the first 12 hex digits of sha256 over the image's inputs
+  ([testing/test-images/images.txt](../../testing/test-images/images.txt): files, or directories without `*.md`) in
+  bytewise path order, each as its repository-relative path, a NUL byte, its content and a NUL byte. A changed
+  input gives a new tag, so a test never runs an image built from other inputs. `scripts/test-images.sh` and
+  `TestImages` (module `testing/test-images`) compute it the same way; `TestImagesTest` pins both to one value.
+- **Tests** call `TestImages.image("<image>")`: the published tag when it exists (checked anonymously against the
+  registry), otherwise a local build from the Dockerfile, as before. `-Dradiusward.test.images=build` always builds
+  locally, `=pull` fails when the tag is missing; the default is `auto`.
+- **The Linux images** (`radiusward-test:dev`, `radiusward-systemd:dev`) still carry the jar of the commit under
+  test: `scripts/linux-tests.sh` builds them from the published base and copies `/opt/radiusward` from
+  `radiusward:dev`, with no package installs.
+- **Publishing:** [test-images.yml](../../.github/workflows/test-images.yml) runs on pushes to `main` that change an
+  input, weekly and on demand; it builds only the tags that are not published yet and moves `-latest`. Until it has
+  run for a change, CI builds the changed image itself.
+
+```bash
+scripts/test-images.sh list                 # the images
+scripts/test-images.sh tag eapol-test       # eapol-test-<hash>
+scripts/test-images.sh ref samba-ad         # the published image, or a local build; prints the reference
+scripts/test-images.sh build samba-ad       # build it here
+```
+
 ## Published test reports
 
 The integration, end-to-end, fault-injection and Kubernetes suites publish Allure 3 reports with the history of their

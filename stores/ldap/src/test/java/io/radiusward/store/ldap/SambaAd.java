@@ -4,6 +4,7 @@
  */
 package io.radiusward.store.ldap;
 
+import io.radiusward.testing.images.TestImages;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -11,7 +12,6 @@ import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.containers.wait.strategy.WaitAllStrategy;
-import org.testcontainers.images.builder.ImageFromDockerfile;
 
 /**
  * A Samba AD domain controller for tests ({@code testing/samba-ad}): domain CORP.TEST, users alice (VPN Users, Staff;
@@ -32,10 +32,7 @@ final class SambaAd {
         DockerRequirement.check(
                 DockerClientFactory.instance().isDockerAvailable(), Boolean.getBoolean("radiusward.require.docker"));
         if (container == null) {
-            Path dir = Path.of("../../testing/samba-ad").toAbsolutePath().normalize();
-            GenericContainer<?> c = new GenericContainer<>(new ImageFromDockerfile("radiusward-samba-ad:test", false)
-                            .withFileFromPath("Dockerfile", dir.resolve("Dockerfile"))
-                            .withFileFromPath("start.sh", dir.resolve("start.sh")))
+            GenericContainer<?> c = new GenericContainer<>(TestImages.image("samba-ad"))
                     .withPrivilegedMode(true) // Samba keeps ACLs in extended attributes
                     .withExposedPorts(389, 636)
                     .waitingFor(new WaitAllStrategy()
