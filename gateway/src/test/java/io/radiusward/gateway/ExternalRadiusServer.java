@@ -34,9 +34,10 @@ final class ExternalRadiusServer implements AutoCloseable {
             return Optional.of(Path.of(configured)).filter(Files::isExecutable);
         }
         Stream<String> path = Stream.of(System.getenv().getOrDefault("PATH", "").split(java.io.File.pathSeparator));
-        return Stream.concat(path, Stream.of("/opt/homebrew/bin", "/usr/local/bin", "/usr/sbin"))
+        // radiusd from Homebrew or a source build; freeradius from the Debian and Ubuntu package (CI)
+        return Stream.concat(path, Stream.of("/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin", "/usr/sbin"))
                 .filter(d -> !d.isBlank())
-                .map(d -> Path.of(d, "radiusd"))
+                .flatMap(d -> Stream.of(Path.of(d, "radiusd"), Path.of(d, "freeradius")))
                 .filter(Files::isExecutable)
                 .findFirst();
     }
@@ -53,7 +54,10 @@ final class ExternalRadiusServer implements AutoCloseable {
      */
     static ExternalRadiusServer start(Path binary, Path dir, String body) throws Exception {
         Path prefix = binary.toRealPath().getParent().getParent();
-        Path dictionaries = find(prefix.resolve("share"), "dictionary", 2)
+        Path dictionaries = Stream.of(prefix.resolve("share/freeradius/dictionary"))
+                .filter(Files::isRegularFile)
+                .findFirst()
+                .or(() -> find(prefix.resolve("share"), "dictionary", 2))
                 .map(Path::getParent)
                 .orElseThrow();
         Path modules = Stream.of("rlm_always.so", "rlm_always.dylib")

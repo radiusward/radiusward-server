@@ -36,7 +36,7 @@ class FreeRadiusInteropIT {
     @Test
     void fixturesAreAcceptedByFreeRadius(@TempDir Path dir) throws Exception {
         assumeTrue(Boolean.getBoolean("radiusward.interop"), "interop profile not active");
-        Optional<Path> radiusd = findOnPath("radiusd");
+        Optional<Path> radiusd = findOnPath("radiusd").or(() -> findOnPath("freeradius")); // Debian/Ubuntu name
         assumeTrue(radiusd.isPresent(), "radiusd not installed");
 
         int port;
@@ -101,7 +101,7 @@ class FreeRadiusInteropIT {
                 confdir = %s
                 run_dir = %s/run
                 db_dir = %s
-                libdir = ${exec_prefix}/lib
+                libdir = %s
                 pidfile = ${run_dir}/radiusd.pid
                 max_request_time = 5
                 cleanup_delay = 1
@@ -135,7 +135,8 @@ class FreeRadiusInteropIT {
                         ok
                     }
                 }
-                """.formatted(prefix, dir, dir, dir, dir, dir, dir, dir, port));
+                """.formatted(
+                        prefix, dir, dir, dir, dir, dir, dir, dir, moduleDir(prefix), port));
     }
 
     private static void waitForReady(Path log, Process server) throws Exception {
@@ -150,6 +151,15 @@ class FreeRadiusInteropIT {
             Thread.sleep(100);
         }
         throw new AssertionError("radiusd did not start:\n" + Files.readString(log));
+    }
+
+    /** Where the server's modules are: {@code <prefix>/lib} (Homebrew) or {@code <prefix>/lib/freeradius} (Debian). */
+    private static Path moduleDir(Path prefix) throws IOException {
+        Path lib = prefix.resolve("lib");
+        try (Stream<Path> files =
+                Files.find(lib, 3, (p, a) -> p.getFileName().toString().startsWith("rlm_always."))) {
+            return files.findFirst().map(Path::getParent).orElse(lib);
+        }
     }
 
     private static Optional<Path> findOnPath(String binary) {

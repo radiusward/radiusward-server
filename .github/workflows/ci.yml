@@ -23,8 +23,15 @@ jobs:
           distribution: temurin
           java-version: ${{ matrix.java }}
           cache: maven
+      - name: External RADIUS server for the interop tests
+        # Ubuntu's server and client tools; the package starts a service on 1812/1813, which the tests do not need
+        run: |
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -qq -y freeradius freeradius-utils >/dev/null
+          sudo systemctl disable --now freeradius
+          /usr/sbin/freeradius -v | head -1
       - name: Build and test
-        run: ./mvnw -B -ntp -Preports verify -Dradiusward.require.docker=true
+        run: ./mvnw -B -ntp -Preports -Pinterop verify -Dradiusward.require.docker=true
       - name: Benchmarks compile
         if: matrix.java == '25'
         run: ./mvnw -B -ntp -Pbench -pl testing/benchmarks -am package -DskipTests
