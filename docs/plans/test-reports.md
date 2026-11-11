@@ -1,6 +1,6 @@
 # Plan: published test reports (Allure 3 on GitHub Pages)
 
-Status: **R1 and R2 done** (2026-11-11), R3 in progress. ADR [0064](../adr/0064-test-reports.md). Work packages R1–R3.
+Status: **done** (2026-11-11): R1–R3; the pull-request summary runs for the first time on the next pull request. ADR [0064](../adr/0064-test-reports.md). Work packages R1–R3.
 
 ## Goal
 
@@ -125,7 +125,7 @@ On pull requests the integration and end-to-end reports are generated as an arti
 |---|---|---|---|
 | R1 ✅ | Reports and badges | results uploaded on every run, `junit.xml` from `k8s-tests.sh`, `reports.yml` deploying to Pages, Allure config, landing page, README badges, `docs/testing/strategy.md` | M |
 | R2 ✅ | Richer reports | `-Preports` profile with `allure-jupiter`, epics/features/ADR links on every `*IT`, steps in `LocalCluster`/`ProcessCluster`/`ContainerCluster`/load, log attachments on failure | M |
-| R3 | Pull requests | report artifact and `allure-action` summary and check on pull requests | S |
+| R3 ✅ | Pull requests | `pr-report` job in `ci.yml`: report artifact `test-reports` and `allure-action` (v0.12.0, pinned by commit) summary with new and flaky tests and the quality-gate check; skipped for forks (read-only token) | S |
 
 ## Risks
 

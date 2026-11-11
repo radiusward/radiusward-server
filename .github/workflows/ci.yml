@@ -72,6 +72,44 @@ jobs:
             testing/e2e-tests/target/allure-results/
           if-no-files-found: warn
 
+  pr-report:
+    # pull requests: the integration and end-to-end reports as an artifact (never published, ADR 0064) and an Allure
+    # summary comment with new and flaky tests on the pull request
+    name: test report (pull request)
+    if: github.event_name == 'pull_request' && !cancelled()
+    needs: [build, e2e]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write   # the summary comment
+      checks: write          # the quality-gate check
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: results-*
+          path: results
+      - name: Build the reports
+        env:
+          REPORT_COMMIT: ${{ github.event.pull_request.head.sha }}
+          REPORT_BRANCH: ${{ github.head_ref }}
+          REPORT_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: scripts/test-reports.sh results test-reports
+      - uses: actions/upload-artifact@v7
+        with:
+          name: test-reports
+          path: test-reports
+      - name: Summary on the pull request
+        # forks get a read-only token; their reports stay in the artifact
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
+        uses: allure-framework/allure-action@4729c7af3b9b1bf9305d8ace73db4028822fe78b # v0.12.0
+        with:
+          report-directory: test-reports
+          sections: |
+            new
+            flaky
+
   chart:
     name: helm chart
     runs-on: ubuntu-24.04
