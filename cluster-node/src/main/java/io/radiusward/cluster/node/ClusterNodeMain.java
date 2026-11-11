@@ -28,9 +28,10 @@ public final class ClusterNodeMain {
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));
         ClusterNodeConfig nodeConfig = ClusterNodeConfig.from(config);
         java.time.Duration seed = config.duration("cluster.seed.timeout", java.time.Duration.ZERO);
-        if (!seed.isZero() && ClusterSeed.empty(nodeConfig)) { // a replaced volume (ADR 0063)
+        String restoreFrom = config.string("cluster.restore.from", "");
+        if (!seed.isZero() && ClusterSeed.empty(nodeConfig)) { // a replaced volume (ADR 0063), a lost quorum (0065)
             ClusterNode.awaitOwnAddress(nodeConfig.host(), ClusterNode.OWN_NAME_WAIT_MS);
-            ClusterSeed.seedIfEmpty(nodeConfig, seed);
+            ClusterSeed.prepare(nodeConfig, seed, restoreFrom.isBlank() ? null : java.nio.file.Path.of(restoreFrom));
         }
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
                 ClusterNode node = ClusterNode.launch(nodeConfig, barrier::signalAll);

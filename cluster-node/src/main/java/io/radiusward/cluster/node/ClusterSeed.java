@@ -36,14 +36,44 @@ public final class ClusterSeed {
         return !new File(new File(config.dataDir(), "cluster"), "recording.log").exists();
     }
 
+    /** What {@link #prepare} did with the member's data directory. */
+    public enum Outcome {
+        /** it holds cluster state already: nothing to do */
+        NOT_EMPTY,
+        /** copied from the running cluster (ADR 0063) */
+        SEEDED,
+        /** the cluster runs but has no snapshot yet: the member catches up from the others' logs */
+        CATCHES_UP,
+        /** no member answered and a backup was configured: restored from it (ADR 0065) */
+        RESTORED,
+        /** starts empty: a new cluster, or seeding off, or nothing usable to copy from */
+        STARTS_EMPTY
+    }
+
     /**
      * Seeds the member's data directory from the other members if it is empty.
      *
      * @return whether it was seeded; {@code false} if it was not empty or no member answered in time
      */
     public static boolean seedIfEmpty(ClusterNodeConfig config, Duration timeout) {
+        return prepare(config, timeout, null) == Outcome.SEEDED;
+    }
+
+    /**
+     * Prepares an empty data directory before the member starts: seeds it from the running cluster; if no member
+     * answers and {@code restoreFrom} holds a backup, restores it from there (ADR 0065) — after a lost quorum every
+     * member does, and they start from the same backup. A cluster that answers always wins over the backup.
+     *
+     * @param timeout how long to wait for the cluster; zero: neither seeding nor restoring (nothing tells whether a
+     *     cluster runs)
+     * @param restoreFrom a backup directory ({@code cluster.restore.from}), {@code null} for none
+     */
+    public static Outcome prepare(ClusterNodeConfig config, Duration timeout, Path restoreFrom) {
         if (!empty(config)) {
-            return false;
+            return Outcome.NOT_EMPTY;
+        }
+        if (timeout.isZero() || timeout.isNegative()) {
+            return Outcome.STARTS_EMPTY;
         }
         LOG.info(
                 "member {} has no cluster state: seeding it from the other members (up to {})",
@@ -56,18 +86,37 @@ public final class ClusterSeed {
             // others' logs, which a copy of only the live log would prevent
             LOG.info("member {}: the cluster has no snapshot yet, catching up from the log instead", config.nodeId());
             deleteState(config);
-            return false;
+            return Outcome.CATCHES_UP;
         }
         if (reached == State.SEEDED) {
             LOG.info("member {} seeded in {} ms", config.nodeId(), (System.nanoTime() - start) / 1_000_000);
-            return true;
+            return Outcome.SEEDED;
+        }
+        deleteState(config);
+        if (reached == State.NO_ANSWER && restoreFrom != null) {
+            if (Files.isRegularFile(restoreFrom.resolve("cluster").resolve("recording.log"))) {
+                try {
+                    long files = ClusterRestore.restore(restoreFrom, config);
+                    LOG.warn(
+                            "member {}: no other member answered; restored from the backup in {} ({} files) — after"
+                                    + " a lost quorum every member does and they go on from the backup's position",
+                            config.nodeId(),
+                            restoreFrom,
+                            files);
+                    return Outcome.RESTORED;
+                } catch (RuntimeException e) {
+                    LOG.warn("member {}: restoring from {} failed: {}", config.nodeId(), restoreFrom, e.getMessage());
+                    deleteState(config);
+                }
+            } else {
+                LOG.warn("member {}: no backup in {} yet", config.nodeId(), restoreFrom);
+            }
         }
         LOG.warn(
                 "member {} not seeded ({}): starting empty — right for a new cluster, a gap for a replaced member",
                 config.nodeId(),
                 reached == State.NO_ANSWER ? "no other member answered" : "the copy did not finish");
-        deleteState(config);
-        return false;
+        return Outcome.STARTS_EMPTY;
     }
 
     enum State {

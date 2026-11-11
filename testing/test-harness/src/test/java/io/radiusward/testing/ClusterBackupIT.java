@@ -15,6 +15,7 @@ import io.radiusward.cluster.node.ClusterBackupNode;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.node.ClusterNodeConfig;
 import io.radiusward.cluster.node.ClusterRestore;
+import io.radiusward.cluster.node.ClusterSeed;
 import io.radiusward.cluster.node.LogPurgeConfig;
 import java.io.File;
 import java.io.IOException;
@@ -23,8 +24,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.stream.Stream;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * A backup outside the cluster (ADR 0065) keeps the latest snapshot and the live log; after every member lost its data
@@ -40,8 +42,13 @@ class ClusterBackupIT {
     @TempDir
     Path dir;
 
-    @Test
-    void aClusterThatLostEveryMemberIsRestoredFromTheBackup() throws Exception {
+    /**
+     * @param automatic whether the members restore themselves when they find no cluster ({@code cluster.restore.from},
+     *     as on ECS), or the operator runs {@code cluster-restore} for each
+     */
+    @ParameterizedTest(name = "automatic restore: {0}")
+    @ValueSource(booleans = {false, true})
+    void aClusterThatLostEveryMemberIsRestoredFromTheBackup(boolean automatic) throws Exception {
         try (LocalCluster cluster = LocalCluster.start(
                 dir.toFile(),
                 3,
@@ -95,6 +102,9 @@ class ClusterBackupIT {
                         .contains("radiusward_backup_live_log_position_bytes ");
                 long applied = leader.stats().applied();
 
+                long[] connects = cluster.gateways().stream()
+                        .mapToLong(g -> g.stats().get(io.radiusward.gateway.GatewayStats.Counter.CLUSTER_CONNECTS))
+                        .toArray();
                 // every member loses its data: no quorum, nothing to seed from
                 for (int i = 0; i < 3; i++) {
                     cluster.stopNode(i);
@@ -114,9 +124,27 @@ class ClusterBackupIT {
                 assertThatThrownBy(() -> ClusterRestore.restore(dir.resolve("nothing"), cluster.nodeConfig(0)))
                         .as("a directory without a snapshot is no backup")
                         .isInstanceOf(IllegalStateException.class);
-                for (int i = 0; i < 3; i++) {
-                    assertThat(ClusterRestore.restore(settings.dataDir().toPath(), cluster.nodeConfig(i)))
-                            .isPositive();
+                if (automatic) {
+                    assertThat(ClusterSeed.prepare(
+                                    cluster.nodeConfig(0), Duration.ofSeconds(2), dir.resolve("nothing")))
+                            .as("no cluster and no backup: a new cluster")
+                            .isEqualTo(ClusterSeed.Outcome.STARTS_EMPTY);
+                    assertThat(ClusterSeed.empty(cluster.nodeConfig(0))).isTrue();
+                    for (int i = 0; i < 3; i++) {
+                        assertThat(ClusterSeed.prepare(
+                                        cluster.nodeConfig(i),
+                                        Duration.ofSeconds(2),
+                                        settings.dataDir().toPath()))
+                                .as("member %d finds no cluster and restores itself", i)
+                                .isEqualTo(ClusterSeed.Outcome.RESTORED);
+                    }
+                    assertThat(ClusterSeed.prepare(cluster.nodeConfig(0), Duration.ofSeconds(2), null))
+                            .isEqualTo(ClusterSeed.Outcome.NOT_EMPTY);
+                } else {
+                    for (int i = 0; i < 3; i++) {
+                        assertThat(ClusterRestore.restore(settings.dataDir().toPath(), cluster.nodeConfig(i)))
+                                .isPositive();
+                    }
                 }
                 assertThatThrownBy(
                                 () -> ClusterRestore.restore(settings.dataDir().toPath(), cluster.nodeConfig(0)))
@@ -132,6 +160,20 @@ class ClusterBackupIT {
                             .as("member %d has every acknowledged event", i)
                             .isEqualTo(applied);
                 }
+                // the gateways' sessions belonged to the cluster before the loss: they reconnect first
+                LocalCluster.await(Duration.ofSeconds(60), "gateways reconnected", () -> {
+                    for (int g = 0; g < connects.length; g++) {
+                        if (cluster.gateways()
+                                        .get(g)
+                                        .stats()
+                                        .get(io.radiusward.gateway.GatewayStats.Counter.CLUSTER_CONNECTS)
+                                <= connects[g]) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+                cluster.awaitGatewaysConnected();
                 LogPurgeIT.load(cluster, 300_000); // and accepts new ones
                 cluster.awaitConverged();
             }

@@ -23,6 +23,11 @@ are purged below their snapshots.
 - It runs the same everywhere: a `backup` StatefulSet with its own volume in the Helm chart (on by default), a
   `backup` profile in compose, `radiusward-backup.service` for systemd. On Kubernetes `scripts/k8s-restore.sh` does
   the whole restore through temporary pods that mount one volume at a time, so node-local volumes work.
+- **Automatic restore** (`cluster.restore.from`): a member with an empty data directory that finds no other member
+  while seeding restores itself from a backup directory it can read, such as the backup's EFS volume on ECS, where
+  task replacement always means an empty disk. After a total loss all three do and start from the same backup; a
+  cluster that answers always wins, and a configured directory without a backup leaves the member empty, as for a
+  new cluster. `ClusterBackupIT` runs the restore both by hand and automatically.
 - Copies to object storage or another site are file copies of the stopped backup's directory with the operator's
   tools; radiusward gets no storage dependency.
 
