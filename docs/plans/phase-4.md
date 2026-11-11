@@ -1,6 +1,6 @@
 # Phase 4 plan: Kubernetes, bare metal, backup and operations
 
-Status: **in progress** (4.8 done 2026-11-11; next 4.1) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
+Status: **in progress** (4.8 and 4.1 done 2026-11-11, [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md); next 4.2) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
 [Phase 3](phase-3.md) (exporter, metrics), [Phase 5](phase-5-auth.md) (authentication) · Roadmap: [roadmap.md](roadmap.md)
 
 ## Goal
@@ -34,11 +34,11 @@ contract changes: an Accounting-Response is still sent only after the commit on 
 
 | # | Question | Proposal | Why |
 |---|---|---|---|
-| 1 | How members find each other when a pod's IP changes on restart | StatefulSet pod DNS names (`radiusward-node-0.radiusward-node…`) in `cluster.members`, Aeron's re-resolution of endpoint names; **proved first** (4.1). Fallback: `hostNetwork` members pinned to three nodes | static membership stays; the names are stable, the IPs are not |
-| 2 | How NAS packets reach gateways with their source address | Service `type: LoadBalancer` (cloud NLB, MetalLB on bare metal) with `externalTrafficPolicy: Local` and `sessionAffinity: ClientIP`; alternative in the chart: gateways as a DaemonSet with `hostNetwork` on edge nodes behind a VIP | NAS secrets are looked up by source address; multi-round EAP state lives in one gateway, so a NAS must stay on it |
+| 1 | How members find each other when a pod's IP changes on restart | StatefulSet pod DNS names (`radiusward-node-0.radiusward-node…`) in `cluster.members`, Aeron's re-resolution of endpoint names — **proved in 4.1** (ADR 0062); a member waits for its own name before it starts | static membership stays; the names are stable, the IPs are not |
+| 2 | How NAS packets reach gateways with their source address | **one LoadBalancer Service per gateway** (cloud NLB, MetalLB on bare metal) with `externalTrafficPolicy: Local`, NAS devices configured with two gateways as primary and secondary (ADR 0062: a node loss cost nothing this way, 7.6 % of requests with one shared Service); a shared Service with `sessionAffinity: ClientIP` for small setups; alternative: gateways with `hostNetwork` on edge nodes | NAS secrets are looked up by source address; multi-round EAP state lives in one gateway, so a NAS must stay on it |
 | 3 | Source address of packets a gateway sends (CoA, proxying, RadSec to home servers) | documented: they leave with the node's address (SNAT); NAS and home servers allow the nodes' addresses, or use the `hostNetwork` mode for a fixed one | Kubernetes has no portable egress IP; no extra controller required |
-| 4 | Leader heartbeat timeout | `2.5s` in the chart's values (decided in Phase 2), configurable | pod networks pause longer than dedicated hosts; a crashed leader costs one NAS retransmission |
-| 5 | Upgrade order | StatefulSet `RollingUpdate`, readiness = `/ready`, extended from "leader known" to "caught up with the commit position", so the next pod waits until the restarted one is a full member again; one election when the leader's pod restarts | Aeron has no leadership transfer; one election is within the retransmission budget; state versions activate on their own (ADR 0005) |
+| 4 | Leader heartbeat timeout | `1.5s`, as everywhere (ADR 0062 withdrew Phase 2's 2.5 s for Kubernetes), configurable | measured on kind: 1.5 s replaced a dead leader without NAS retransmissions, 2.5 s caused them |
+| 5 | Upgrade order | StatefulSet `RollingUpdate`, readiness = `/ready`, extended from "leader known" to "caught up with the commit position", so the next pod waits until the restarted one is a full member again (ADR 0062: without it a rolling restart lost 14 % of acknowledgements); one election when the leader's pod restarts | Aeron has no leadership transfer; one election is within the retransmission budget; state versions activate on their own (ADR 0005) |
 | 6 | Storage | one PVC per member (default 100 Gi), a storage class that honours fsync; local volumes recommended, network block storage supported with higher commit latency | the commit path is an fsync on a majority |
 | 7 | Memory limits | limit = heap + direct + `/dev/shm` (emptyDir `Memory` counts against the pod) + 15 %; the image's `small`/`standard`/`large` profiles as chart presets | an emptyDir in memory is charged to the container; the OOM killer must never hit a member |
 | 8 | Backup | a `cluster-backup` pod running Aeron's `ClusterBackup` into its own PVC (snapshots and log), plus a CronJob copying it to object storage with a plain `rclone`/`aws` image (optional) | survives losing every member; no new runtime dependency in radiusward |
@@ -56,7 +56,8 @@ contract changes: an Accounting-Response is still sent only after the commit on 
   `/dev/shm` emptyDir `Memory` with `sizeLimit`; required pod anti-affinity by hostname (zone spread optional);
   PDB `maxUnavailable: 1`; `terminationGracePeriodSeconds` long enough for a clean shutdown; probes: liveness
   `/health`, readiness `/ready`, startup probe for long log replays.
-- **Gateways:** Deployment (default 2), or a DaemonSet in `hostNetwork` mode; a UDP Service for 1812/1813 and 3799,
+- **Gateways:** StatefulSet without volumes (default 2, spread over nodes; `gateway.id` from the pod index), or a
+  DaemonSet in `hostNetwork` mode; a UDP Service per gateway (and optionally a shared one) for 1812/1813 and 3799,
   TCP for RadSec 2083 (DTLS on UDP 2083); `gateway.egress.host` = the pod IP from the downward API; PDB
   `minAvailable: 1`; readiness turns false on SIGTERM so the load balancer stops sending, then the gateway drains
   for a few seconds before it exits.
@@ -116,9 +117,9 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 
 ### Backup and recovery runbooks (`docs/operations/`)
 
-- **Replace a member** (lost disk or node): delete the PVC and pod; the member starts empty and catches up from the
-  leader's snapshot and log. Whether Aeron replicates the snapshot when the log below it was purged is checked in
-  4.1; if not, the runbook copies the latest snapshot from the backup first.
+- **Replace a member** (lost disk or node): an empty member cannot catch up once the log below the snapshot is purged
+  (checked in 4.1, ADR 0062), so it is seeded first: the backup's latest snapshot and log are copied into its new
+  volume (an init step of the chart, 4.6), then it joins and catches up the rest from the leader.
 - **Lost quorum** (two members gone): seed a new cluster from the backup's latest snapshot and log
   (`cluster-tool`), accept the loss of records after the last backed-up position (stated with the backup lag
   metric).
@@ -129,9 +130,9 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 
 | # | Package | Content | Size |
 |---|---|---|---|
-| 4.1 | Spike: members on Kubernetes | kind cluster, three members by DNS name, pods deleted and rescheduled with new IPs, re-resolution settings; empty member catching up after log purge. Decides decisions 1 and the member-replacement runbook | M |
-| 4.2 | Helm chart: members | `/ready` reports a member that is behind the commit position as not ready (code); StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
-| 4.3 | Helm chart: gateways | Deployment and `hostNetwork` DaemonSet modes, UDP/TCP Services with source-IP preservation and affinity, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
+| 4.1 ✅ | Spike: members on Kubernetes ([ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md)) | kind cluster, three members by DNS name, pods deleted and rescheduled with new IPs, re-resolution settings; empty member catching up after log purge. Decides decisions 1 and the member-replacement runbook | M |
+| 4.2 | Helm chart: members | `/ready` reports a member that is behind the commit position as not ready, a member waits for its own name (code); StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
+| 4.3 | Helm chart: gateways | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
 | 4.4 | Chart checks in CI | `helm lint`, `kubeconform` against current Kubernetes versions, template snapshot tests; OCI chart in the release workflow | S |
 | 4.5 | `-Pk8s` tests (nightly) | kind + Testcontainers: install, accounting and EAP through the LoadBalancer (MetalLB in kind), leader pod deleted under load, rolling upgrade, node drain with the PDB, member replacement | L |
 | 4.6 | Backup | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |
@@ -149,8 +150,7 @@ chart), 4.5 (proof), 4.6 (backup), 4.7, 4.8, 4.9 and 4.10 alongside. The first r
 
 ## Risks
 
-- **Re-resolution:** if Aeron keeps a stale address after a pod moves, members stay apart until restarted; fallback
-  is `hostNetwork` members (decision 1). 4.1 settles it before the chart is written.
+- **Re-resolution:** settled in 4.1 — members rejoin by name after their pods move (ADR 0062).
 - **Load balancers differ:** source-IP preservation and UDP affinity behave differently across clouds and MetalLB
   modes; the guide lists the tested ones (kind + MetalLB in CI, cloud ones as reported by users).
 - **fsync on network storage:** commit latency rises with the volume's fsync time; the guide gives the measured

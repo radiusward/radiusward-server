@@ -63,5 +63,6 @@
 | [0059](0059-ipv6-pools.md) | IPv6 prefix pools (delegated, framed prefix or address), entries held while their device is online | Accepted |
 | [0060](0060-expire-after.md) | Expire-After: accounts end a set time after their first exported session | Accepted |
 | [0061](0061-eap-sim-aka.md) | EAP-SIM, EAP-AKA, EAP-AKA′ with local SIM keys: Milenage, SQN in the cluster, encrypted pseudonyms | Accepted |
+| [0062](0062-members-and-gateways-on-kubernetes.md) | Members and gateways on Kubernetes: DNS names, 1.5 s heartbeat, caught-up readiness, a Service per gateway (spike results) | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

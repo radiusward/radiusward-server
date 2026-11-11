@@ -104,7 +104,7 @@ give-up times (3–5 s × 3 attempts).
 
 | # | Change | Expected effect |
 |---|---|---|
-| 1 | Default `cluster.leader.heartbeat.timeout` **1.5 s** (compose, dedicated hosts); **2.5 s** in the Kubernetes Helm values (Phase 4). Configurable. Heartbeat interval stays at Aeron's 200 ms (5–7 missed heartbeats before an election) | detection 3 s → 1.5 s |
+| 1 | Default `cluster.leader.heartbeat.timeout` **1.5 s** (compose, dedicated hosts); **2.5 s** in the Kubernetes Helm values (Phase 4; withdrawn by [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md): 1.5 s measured without retransmissions on Kubernetes). Configurable. Heartbeat interval stays at Aeron's 200 ms (5–7 missed heartbeats before an election) | detection 3 s → 1.5 s |
 | 2 | **`cluster.election.timeout` = 0.5 s** (new key → Aeron `electionTimeoutNs`) | election 1.1 s → ~0.5–0.6 s |
 | 3 | Gateway **resubmits all pending requests on `onNewLeader`**; each pending slot keeps its encoded command (~1 KiB slots, ~16 MiB per gateway in the small profile; larger commands fall back to NAS retransmission). Resubmit-on-retransmit (ADR 0011) stays as fallback | removes up to one NAS retry interval (3–5 s) |
 | 4 | Assertion in local e2e and Linux tests: during a leader `kill -9` under load **no request needs more than one attempt** with a 3 s client timeout | guards the target |
