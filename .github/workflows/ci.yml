@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install kubeconform
         run: |
-          curl -sSLo kubeconform.tar.gz \
+          curl --proto "=https" --tlsv1.2 -sSLo kubeconform.tar.gz \
             "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM/kubeconform-linux-amd64.tar.gz"
           echo "$KUBECONFORM_SHA256  kubeconform.tar.gz" | sha256sum -c -
           tar xzf kubeconform.tar.gz kubeconform && sudo mv kubeconform /usr/local/bin/
