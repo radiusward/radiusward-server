@@ -5,12 +5,12 @@ Three members survive the loss of one; a member whose volume was replaced copies
 cluster — radiusward keeps a **continuous backup outside the cluster** ([ADR 0065](../adr/0065-cluster-backup.md)):
 the latest snapshot and the live log, recorded from a follower, in a member's layout.
 
-| | Kubernetes (Helm) | Docker compose | systemd |
-|---|---|---|---|
-| Backup | `backup` StatefulSet, on by default (`backup.*` values) | `docker compose --profile backup up -d` | `radiusward-backup.service`, `/etc/radiusward/backup.properties` |
-| Data | its PVC `data-<release>-radiusward-backup-0` | volume `radiusward_backup` | `/var/lib/radiusward/backup` |
-| Status | `/ready`, `/metrics` of the backup pod | `127.0.0.1:9193` | management port |
-| Restore | `scripts/k8s-restore.sh -n <ns> -r <release>` | the commands below | the commands below |
+| | Kubernetes (Helm) | Docker compose | systemd | Amazon ECS ([aws-ecs.md](aws-ecs.md)) |
+|---|---|---|---|---|
+| Backup | `backup` StatefulSet, on by default (`backup.*` values) | `docker compose --profile backup up -d` | `radiusward-backup.service`, `/etc/radiusward/backup.properties` | `backup` service on Fargate |
+| Data | its PVC `data-<release>-radiusward-backup-0` | volume `radiusward_backup` | `/var/lib/radiusward/backup` | EFS, copied to S3 nightly |
+| Status | `/ready`, `/metrics` of the backup pod | `127.0.0.1:9193` | management port | the task's port 9090 |
+| Restore | `scripts/k8s-restore.sh -n <ns> -r <release>` | the commands below | the commands below | automatic: members mount the EFS backup read-only and restore themselves when nobody answers (`cluster.restore.from`) |
 
 Settings (`backup.host`, `backup.port`, `backup.source`, `backup.interval`, `backup.data.dir`): see
 [configuration.md](../configuration.md#cluster-backup). Run the backup on another machine or volume than the members.

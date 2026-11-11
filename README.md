@@ -100,6 +100,8 @@ helm install radiusward deploy/helm/radiusward -n radius --create-namespace -f m
 
 Three members and two gateways, each gateway with its own address for the NAS's primary and secondary server —
 [docs/operations/kubernetes.md](docs/operations/kubernetes.md).
+On Amazon ECS: [docs/operations/aws-ecs.md](docs/operations/aws-ecs.md) with example CloudFormation and Terraform
+templates in [deploy/aws](deploy/aws).
 
 ## Quickstart without Docker
 

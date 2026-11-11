@@ -1,0 +1,7 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+# an example module: no provider lock file, no state
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*

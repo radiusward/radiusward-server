@@ -28,8 +28,8 @@ jobs:
         # retried: the runners' package mirror or DNS sometimes fails for a moment
         run: |
           for attempt in 1 2 3 4; do
-            if sudo apt-get update -qq && \
-               sudo DEBIAN_FRONTEND=noninteractive apt-get install -qq -y freeradius freeradius-utils >/dev/null; then
+            if sudo apt-get -o Acquire::Retries=5 update -qq && \
+               sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -qq -y freeradius freeradius-utils >/dev/null; then
               break
             fi
             [ "$attempt" = 4 ] && exit 1
@@ -149,6 +149,26 @@ jobs:
                 -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
             done
           done
+
+  aws-templates:
+    # the example AWS templates (docs/operations/aws-ecs.md) are linted only, never deployed by the project
+    name: aws templates
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_wrapper: false
+      - name: CloudFormation (cfn-lint)
+        run: |
+          pip install --quiet cfn-lint==1.60.0
+          cfn-lint deploy/aws/cloudformation/radiusward-ecs.yaml
+      - name: Terraform (tofu fmt and validate)
+        working-directory: deploy/aws/terraform
+        run: |
+          tofu fmt -check
+          tofu init -backend=false -input=false
+          tofu validate
 
   coverage:
     name: coverage (Java 25)

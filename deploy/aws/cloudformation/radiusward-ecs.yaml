@@ -1,0 +1,656 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# radiusward on Amazon ECS — an EXAMPLE stack (docs/operations/aws-ecs.md). The project validates it with cfn-lint
+# only; it has not been deployed in AWS by the project. Review sizes, subnets and security groups before use.
+#
+# Three cluster members as three ECS services on EC2 (one member per instance, /dev/shm, host sysctls, an ECS-managed
+# EBS volume each, a Cloud Map name each), two gateways on Fargate behind one Network Load Balancer each (UDP, client
+# IP kept; NAS devices use both as primary and secondary), the continuous backup on Fargate with EFS, and a nightly
+# copy of the backup to S3. A member whose volume is new seeds itself from the others; after a total loss it restores
+# itself from the backup on EFS (cluster.seed.timeout, cluster.restore.from; ADR 0063, ADR 0065).
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::LanguageExtensions
+Description: radiusward on ECS (example) - three members on EC2, two gateways and the backup on Fargate
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: the VPC's CIDR (load balancer health checks and the management port)
+  MemberSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: private subnets, one per availability zone (three recommended), for members, backup and EFS
+  GatewaySubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: subnets for the gateways and their load balancers (public ones for an internet-facing scheme)
+  LoadBalancerScheme:
+    Type: String
+    Default: internal
+    AllowedValues: [internal, internet-facing]
+  NasCidr:
+    Type: String
+    Default: 10.0.0.0/8
+    Description: where NAS devices send from (RADIUS UDP 1812/1813 to the gateways)
+  Image:
+    Type: String
+    Default: ghcr.io/radiusward/radiusward-server:0.1.0
+  Profile:
+    Type: String
+    Default: small
+    AllowedValues: [small, standard, large]
+  MemberInstanceType:
+    Type: String
+    Default: m6i.large
+    Description: one member per instance (its task takes all 2 vCPU); larger profiles need larger instances
+  EcsAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id
+  MemberVolumeGiB:
+    Type: Number
+    Default: 100
+  Namespace:
+    Type: String
+    Default: radiusward.local
+    Description: private DNS namespace; members are node-0, node-1 and node-2 in it
+
+Resources:
+  # ---------------------------------------------------------------- logs, secrets, gateway configuration
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /radiusward/${AWS::StackName}
+      RetentionInDays: 30
+
+  NasSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: the RADIUS shared secret of the NAS entry 'site' (set it to what the NAS devices use)
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  # The gateways' properties: NAS entries and anything else (docs/configuration.md). Edit the parameter to add NAS
+  # entries or identity stores, then restart the gateway services; a stack update writes this default again.
+  GatewayConfig:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /radiusward/${AWS::StackName}/gateway.properties
+      Type: String
+      Value: !Sub |
+        # NAS devices of ${NasCidr}; their secret comes from Secrets Manager as NAS_SECRET
+        nas.site.address=${NasCidr}
+        nas.site.secret=${!env:NAS_SECRET}
+        nas.site.id=1001
+
+  # ---------------------------------------------------------------- security groups
+  MemberSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: radiusward members
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 9090, ToPort: 9090, CidrIp: !Ref VpcCidr, Description: management and metrics}
+  GatewaySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: radiusward gateways
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: udp, FromPort: 1812, ToPort: 1813, CidrIp: !Ref NasCidr, Description: RADIUS from NAS devices}
+        - {IpProtocol: tcp, FromPort: 9090, ToPort: 9090, CidrIp: !Ref VpcCidr, Description: health checks, metrics}
+  BackupSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: radiusward cluster backup
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - {IpProtocol: tcp, FromPort: 9090, ToPort: 9090, CidrIp: !Ref VpcCidr, Description: management and metrics}
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: radiusward backup file system
+      VpcId: !Ref VpcId
+  # Aeron between members, gateways and the backup: fixed ports (cluster.base.port + 100 x id + 0..5, backup.port
+  # + 0..3) and ephemeral ones (replies, replication), so all UDP among the three groups
+  MembersFromMembers:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
+  MembersFromGateways:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref GatewaySecurityGroup}
+  MembersFromBackup:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref BackupSecurityGroup}
+  GatewaysFromMembers:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref GatewaySecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
+  BackupFromMembers:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref BackupSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
+  EfsFromMembers:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref EfsSecurityGroup, IpProtocol: tcp, FromPort: 2049, ToPort: 2049, SourceSecurityGroupId: !Ref MemberSecurityGroup}
+  EfsFromBackup:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties: {GroupId: !Ref EfsSecurityGroup, IpProtocol: tcp, FromPort: 2049, ToPort: 2049, SourceSecurityGroupId: !Ref BackupSecurityGroup}
+
+  # ---------------------------------------------------------------- IAM
+  ExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy]
+      Policies:
+        - PolicyName: configuration
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: !Ref NasSecret}
+              - Effect: Allow
+                Action: ssm:GetParameters
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GatewayConfig}
+  # ECS creates and attaches the members' EBS volumes with this role
+  VolumeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns: [arn:aws:iam::aws:policy/service-role/AmazonECSInfrastructureRolePolicyForVolumes]
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: {Roles: [!Ref InstanceRole]}
+  SyncTaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ecs-tasks.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: backup-bucket
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: s3:ListBucket, Resource: !GetAtt BackupBucket.Arn}
+              - {Effect: Allow, Action: [s3:PutObject, s3:GetObject, s3:DeleteObject], Resource: !Sub '${BackupBucket.Arn}/*'}
+  SchedulerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: scheduler.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: run-sync
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - {Effect: Allow, Action: ecs:RunTask, Resource: !Ref SyncTaskDefinition}
+              - {Effect: Allow, Action: iam:PassRole, Resource: [!GetAtt ExecutionRole.Arn, !GetAtt SyncTaskRole.Arn]}
+
+  # ---------------------------------------------------------------- ECS cluster and member capacity
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterSettings: [{Name: containerInsights, Value: enabled}]
+  MemberLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref EcsAmi
+        InstanceType: !Ref MemberInstanceType
+        IamInstanceProfile: {Arn: !GetAtt InstanceProfile.Arn}
+        MetadataOptions: {HttpTokens: required}
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            echo "ECS_CLUSTER=${Cluster}" >> /etc/ecs/ecs.config
+            # room for Aeron's UDP socket buffers (docs/operations/bare-metal.md)
+            printf 'net.core.rmem_max = 4194304\nnet.core.wmem_max = 4194304\n' > /etc/sysctl.d/99-radiusward.conf
+            sysctl --system
+  MemberAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      MinSize: '3'
+      MaxSize: '4'
+      DesiredCapacity: '3'
+      VPCZoneIdentifier: !Ref MemberSubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref MemberLaunchTemplate
+        Version: !GetAtt MemberLaunchTemplate.LatestVersionNumber
+  MemberCapacityProvider:
+    Type: AWS::ECS::CapacityProvider
+    Properties:
+      AutoScalingGroupProvider:
+        AutoScalingGroupArn: !Ref MemberAutoScalingGroup
+        ManagedScaling: {Status: DISABLED}
+        ManagedTerminationProtection: DISABLED
+  CapacityProviders:
+    Type: AWS::ECS::ClusterCapacityProviderAssociations
+    Properties:
+      Cluster: !Ref Cluster
+      CapacityProviders: [FARGATE, !Ref MemberCapacityProvider]
+      DefaultCapacityProviderStrategy: [{CapacityProvider: FARGATE, Weight: 1}]
+
+  # ---------------------------------------------------------------- service discovery: node-0, node-1, node-2
+  DnsNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Ref Namespace
+      Vpc: !Ref VpcId
+  Fn::ForEach::MemberNames:
+    - Id
+    - ['0', '1', '2']
+    - NodeDiscovery${Id}:
+        Type: AWS::ServiceDiscovery::Service
+        Properties:
+          Name: !Sub node-${Id}
+          NamespaceId: !Ref DnsNamespace
+          DnsConfig:
+            RoutingPolicy: MULTIVALUE
+            DnsRecords: [{Type: A, TTL: 5}]
+          HealthCheckCustomConfig: {FailureThreshold: 1}
+
+  # ---------------------------------------------------------------- backup file system
+  BackupFileSystem:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+  Fn::ForEach::MountTargets:
+    - Index
+    - ['0', '1', '2']
+    - BackupMountTarget${Index}:
+        Type: AWS::EFS::MountTarget
+        Properties:
+          FileSystemId: !Ref BackupFileSystem
+          SubnetId: !Select [!Ref Index, !Ref MemberSubnetIds]
+          SecurityGroups: [!Ref EfsSecurityGroup]
+  BackupAccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref BackupFileSystem
+      PosixUser: {Uid: '10001', Gid: '10001'}
+      RootDirectory:
+        Path: /radiusward-backup
+        CreationInfo: {OwnerUid: '10001', OwnerGid: '10001', Permissions: '750'}
+
+  # ---------------------------------------------------------------- members
+  # One task definition and one service per member: the member id is fixed per service, and minimum 0 / maximum
+  # 100 % makes ECS stop a member's task before it starts the next — never two tasks with the same id.
+  Fn::ForEach::Members:
+    - Id
+    - ['0', '1', '2']
+    - NodeTaskDefinition${Id}:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+          Family: !Sub ${AWS::StackName}-node-${Id}
+          RequiresCompatibilities: [EC2]
+          NetworkMode: awsvpc
+          Cpu: '2048'
+          Memory: '3072'
+          ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+          Volumes:
+            - {Name: data, ConfiguredAtLaunch: true}
+            - Name: backup
+              EFSVolumeConfiguration:
+                FilesystemId: !Ref BackupFileSystem
+                TransitEncryption: ENABLED
+                AuthorizationConfig: {AccessPointId: !Ref BackupAccessPoint, IAM: DISABLED}
+          ContainerDefinitions:
+            - Name: node
+              Image: !Ref Image
+              Essential: true
+              StopTimeout: 60
+              EntryPoint: [/bin/sh, -c]
+              # every key from the environment (ADR 0010); the process wants one --config file
+              Command: [': > /tmp/radiusward.properties && exec /usr/local/bin/radiusward cluster-node --config /tmp/radiusward.properties']
+              Environment:
+                - {Name: RADIUSWARD_PROFILE, Value: !Ref Profile}
+                - {Name: RADIUSWARD_CLUSTER_NODE_ID, Value: !Ref Id}
+                - {Name: RADIUSWARD_CLUSTER_MEMBERS, Value: !Sub 'node-0.${Namespace},node-1.${Namespace},node-2.${Namespace}'}
+                - {Name: RADIUSWARD_CLUSTER_SEED_TIMEOUT, Value: 20s}
+                - {Name: RADIUSWARD_CLUSTER_RESTORE_FROM, Value: /mnt/backup/backup}
+                - {Name: RADIUSWARD_MANAGEMENT_HTTP_HOST, Value: 0.0.0.0}
+              PortMappings: [{ContainerPort: 9090, Protocol: tcp}]
+              LinuxParameters: {SharedMemorySize: 512, InitProcessEnabled: true}
+              MountPoints:
+                - {SourceVolume: data, ContainerPath: /var/lib/radiusward}
+                - {SourceVolume: backup, ContainerPath: /mnt/backup, ReadOnly: true}
+              HealthCheck:
+                Command: [CMD, radiusward, probe, http://127.0.0.1:9090/health]
+                Interval: 15
+                Timeout: 5
+                Retries: 4
+                StartPeriod: 120
+              LogConfiguration:
+                LogDriver: awslogs
+                Options:
+                  awslogs-group: !Ref LogGroup
+                  awslogs-region: !Ref AWS::Region
+                  awslogs-stream-prefix: !Sub node-${Id}
+      NodeService${Id}:
+        Type: AWS::ECS::Service
+        DependsOn: [CapacityProviders, BackupMountTarget0, BackupMountTarget1, BackupMountTarget2]
+        Properties:
+          ServiceName: !Sub node-${Id}
+          Cluster: !Ref Cluster
+          TaskDefinition: !Ref
+            Fn::Sub: NodeTaskDefinition${Id}
+          DesiredCount: 1
+          DeploymentConfiguration: {MinimumHealthyPercent: 0, MaximumPercent: 100}
+          CapacityProviderStrategy: [{CapacityProvider: !Ref MemberCapacityProvider, Weight: 1}]
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              Subnets: !Ref MemberSubnetIds
+              SecurityGroups: [!Ref MemberSecurityGroup]
+          ServiceRegistries:
+            - RegistryArn: !GetAtt
+                - Fn::Sub: NodeDiscovery${Id}
+                - Arn
+          # recreated with each task: a replaced task seeds itself from the others (ADR 0063)
+          VolumeConfigurations:
+            - Name: data
+              ManagedEBSVolume:
+                RoleArn: !GetAtt VolumeRole.Arn
+                SizeInGiB: !Ref MemberVolumeGiB
+                VolumeType: gp3
+                FilesystemType: ext4
+                Encrypted: true
+          EnableExecuteCommand: true
+
+  # ---------------------------------------------------------------- gateways, one load balancer each
+  Fn::ForEach::Gateways:
+    - Id
+    - ['0', '1']
+    - GatewayTaskDefinition${Id}:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+          Family: !Sub ${AWS::StackName}-gateway-${Id}
+          RequiresCompatibilities: [FARGATE]
+          NetworkMode: awsvpc
+          Cpu: '1024'
+          Memory: '2048'
+          ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+          ContainerDefinitions:
+            - Name: gateway
+              Image: !Ref Image
+              Essential: true
+              StopTimeout: 30
+              EntryPoint: [/bin/sh, -c]
+              # the properties come from SSM; the members send replies to the task's own address
+              Command:
+                - >-
+                  printf '%s\n' "$GATEWAY_PROPERTIES" > /tmp/gateway.properties &&
+                  ip=$(hostname -i) && export RADIUSWARD_GATEWAY_EGRESS_HOST=${ip%% *} &&
+                  exec /usr/local/bin/radiusward gateway --config /tmp/gateway.properties
+              Environment:
+                - {Name: RADIUSWARD_PROFILE, Value: !Ref Profile}
+                - {Name: RADIUSWARD_GATEWAY_ID, Value: !Ref Id}
+                - {Name: RADIUSWARD_CLUSTER_MEMBERS, Value: !Sub 'node-0.${Namespace},node-1.${Namespace},node-2.${Namespace}'}
+                - {Name: RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN, Value: 5s}
+                - {Name: RADIUSWARD_GATEWAY_AERON_DIR, Value: /tmp/aeron-gateway}
+                - {Name: RADIUSWARD_MANAGEMENT_HTTP_HOST, Value: 0.0.0.0}
+              Secrets:
+                - {Name: NAS_SECRET, ValueFrom: !Ref NasSecret}
+                - {Name: GATEWAY_PROPERTIES, ValueFrom: !Ref GatewayConfig}
+              PortMappings:
+                - {ContainerPort: 1812, Protocol: udp}
+                - {ContainerPort: 1813, Protocol: udp}
+                - {ContainerPort: 9090, Protocol: tcp}
+              HealthCheck:
+                Command: [CMD, radiusward, probe, http://127.0.0.1:9090/health]
+                Interval: 15
+                Timeout: 5
+                Retries: 4
+                StartPeriod: 60
+              LogConfiguration:
+                LogDriver: awslogs
+                Options:
+                  awslogs-group: !Ref LogGroup
+                  awslogs-region: !Ref AWS::Region
+                  awslogs-stream-prefix: !Sub gateway-${Id}
+      GatewayLoadBalancer${Id}:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        Properties:
+          Type: network
+          Scheme: !Ref LoadBalancerScheme
+          Subnets: !Ref GatewaySubnetIds
+          LoadBalancerAttributes: [{Key: load_balancing.cross_zone.enabled, Value: 'true'}]
+      GatewayAuthTarget${Id}:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+          VpcId: !Ref VpcId
+          Protocol: UDP
+          Port: 1812
+          TargetType: ip
+          HealthCheckProtocol: HTTP
+          HealthCheckPort: '9090'
+          HealthCheckPath: /ready
+          # NAS entries are found by the source address: it must reach the gateway unchanged
+          TargetGroupAttributes:
+            - {Key: preserve_client_ip.enabled, Value: 'true'}
+            - {Key: deregistration_delay.timeout_seconds, Value: '10'}
+      GatewayAcctTarget${Id}:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        Properties:
+          VpcId: !Ref VpcId
+          Protocol: UDP
+          Port: 1813
+          TargetType: ip
+          HealthCheckProtocol: HTTP
+          HealthCheckPort: '9090'
+          HealthCheckPath: /ready
+          TargetGroupAttributes:
+            - {Key: preserve_client_ip.enabled, Value: 'true'}
+            - {Key: deregistration_delay.timeout_seconds, Value: '10'}
+      GatewayAuthListener${Id}:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+          LoadBalancerArn: !Ref
+            Fn::Sub: GatewayLoadBalancer${Id}
+          Protocol: UDP
+          Port: 1812
+          DefaultActions:
+            - Type: forward
+              TargetGroupArn: !Ref
+                Fn::Sub: GatewayAuthTarget${Id}
+      GatewayAcctListener${Id}:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        Properties:
+          LoadBalancerArn: !Ref
+            Fn::Sub: GatewayLoadBalancer${Id}
+          Protocol: UDP
+          Port: 1813
+          DefaultActions:
+            - Type: forward
+              TargetGroupArn: !Ref
+                Fn::Sub: GatewayAcctTarget${Id}
+      GatewayService${Id}:
+        Type: AWS::ECS::Service
+        DependsOn:
+          - CapacityProviders
+          - Fn::Sub: GatewayAuthListener${Id}
+          - Fn::Sub: GatewayAcctListener${Id}
+        Properties:
+          ServiceName: !Sub gateway-${Id}
+          Cluster: !Ref Cluster
+          TaskDefinition: !Ref
+            Fn::Sub: GatewayTaskDefinition${Id}
+          DesiredCount: 1
+          DeploymentConfiguration: {MinimumHealthyPercent: 0, MaximumPercent: 100}
+          CapacityProviderStrategy: [{CapacityProvider: FARGATE, Weight: 1}]
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              Subnets: !Ref GatewaySubnetIds
+              SecurityGroups: [!Ref GatewaySecurityGroup]
+          LoadBalancers:
+            - ContainerName: gateway
+              ContainerPort: 1812
+              TargetGroupArn: !Ref
+                Fn::Sub: GatewayAuthTarget${Id}
+            - ContainerName: gateway
+              ContainerPort: 1813
+              TargetGroupArn: !Ref
+                Fn::Sub: GatewayAcctTarget${Id}
+          HealthCheckGracePeriodSeconds: 60
+
+  # ---------------------------------------------------------------- the continuous backup (ADR 0065)
+  BackupTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-backup
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '1024'
+      Memory: '2048'
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      Volumes:
+        - Name: backup
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref BackupFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig: {AccessPointId: !Ref BackupAccessPoint, IAM: DISABLED}
+      ContainerDefinitions:
+        - Name: backup
+          Image: !Ref Image
+          Essential: true
+          StopTimeout: 30
+          EntryPoint: [/bin/sh, -c]
+          # the members answer the backup at the task's own address
+          Command:
+            - >-
+              : > /tmp/backup.properties &&
+              ip=$(hostname -i) && export RADIUSWARD_BACKUP_HOST=${ip%% *} &&
+              exec /usr/local/bin/radiusward cluster-backup --config /tmp/backup.properties
+          Environment:
+            - {Name: RADIUSWARD_PROFILE, Value: !Ref Profile}
+            - {Name: RADIUSWARD_CLUSTER_MEMBERS, Value: !Sub 'node-0.${Namespace},node-1.${Namespace},node-2.${Namespace}'}
+            - {Name: RADIUSWARD_BACKUP_DATA_DIR, Value: /var/lib/radiusward/backup}
+            - {Name: RADIUSWARD_BACKUP_AERON_DIR, Value: /tmp/aeron-backup}
+            - {Name: RADIUSWARD_BACKUP_SOURCE, Value: follower}
+            - {Name: RADIUSWARD_BACKUP_INTERVAL, Value: 30m}
+            - {Name: RADIUSWARD_MANAGEMENT_HTTP_HOST, Value: 0.0.0.0}
+          PortMappings: [{ContainerPort: 9090, Protocol: tcp}]
+          MountPoints: [{SourceVolume: backup, ContainerPath: /var/lib/radiusward}]
+          HealthCheck:
+            Command: [CMD, radiusward, probe, http://127.0.0.1:9090/health]
+            Interval: 30
+            Timeout: 5
+            Retries: 4
+            StartPeriod: 60
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backup
+  BackupService:
+    Type: AWS::ECS::Service
+    DependsOn: [CapacityProviders, BackupMountTarget0, BackupMountTarget1, BackupMountTarget2]
+    Properties:
+      ServiceName: backup
+      Cluster: !Ref Cluster
+      TaskDefinition: !Ref BackupTaskDefinition
+      DesiredCount: 1
+      DeploymentConfiguration: {MinimumHealthyPercent: 0, MaximumPercent: 100}
+      CapacityProviderStrategy: [{CapacityProvider: FARGATE, Weight: 1}]
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref MemberSubnetIds
+          SecurityGroups: [!Ref BackupSecurityGroup]
+
+  # ---------------------------------------------------------------- nightly copy of the backup to S3
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration: {Status: Enabled}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration: [{ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}}]
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules: [{Id: old-versions, Status: Enabled, NoncurrentVersionExpiration: {NoncurrentDays: 30}}]
+  # The backup keeps writing while it is copied: a copy taken under load may end mid-write; the bucket keeps
+  # versions, and docs/operations/aws-ecs.md says how to take a quiet copy.
+  SyncTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-backup-to-s3
+      RequiresCompatibilities: [FARGATE]
+      NetworkMode: awsvpc
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt ExecutionRole.Arn
+      TaskRoleArn: !GetAtt SyncTaskRole.Arn
+      Volumes:
+        - Name: backup
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref BackupFileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig: {AccessPointId: !Ref BackupAccessPoint, IAM: DISABLED}
+      ContainerDefinitions:
+        - Name: sync
+          Image: public.ecr.aws/aws-cli/aws-cli:latest
+          Essential: true
+          Command: [s3, sync, /backup/backup, !Sub 's3://${BackupBucket}/backup/', --delete]
+          MountPoints: [{SourceVolume: backup, ContainerPath: /backup, ReadOnly: true}]
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: backup-to-s3
+  SyncSchedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Description: copy the cluster backup to S3 every night
+      ScheduleExpression: cron(0 3 * * ? *)
+      FlexibleTimeWindow: {Mode: 'OFF'}
+      Target:
+        Arn: !GetAtt Cluster.Arn
+        RoleArn: !GetAtt SchedulerRole.Arn
+        EcsParameters:
+          TaskDefinitionArn: !Ref SyncTaskDefinition
+          LaunchType: FARGATE
+          NetworkConfiguration:
+            AwsvpcConfiguration:
+              Subnets: !Ref MemberSubnetIds
+              SecurityGroups: [!Ref BackupSecurityGroup]
+              AssignPublicIp: DISABLED
+
+Outputs:
+  Gateway0Address:
+    Description: primary RADIUS server for the NAS devices (UDP 1812/1813)
+    Value: !GetAtt GatewayLoadBalancer0.DNSName
+  Gateway1Address:
+    Description: secondary RADIUS server for the NAS devices
+    Value: !GetAtt GatewayLoadBalancer1.DNSName
+  NasSecretArn:
+    Description: set this secret to the shared secret your NAS devices use, then restart the gateway services
+    Value: !Ref NasSecret
+  GatewayConfigParameter:
+    Description: the gateways' properties (NAS entries, identity stores)
+    Value: !Ref GatewayConfig
+  BackupBucketName:
+    Value: !Ref BackupBucket
+  BackupFileSystemId:
+    Value: !Ref BackupFileSystem
