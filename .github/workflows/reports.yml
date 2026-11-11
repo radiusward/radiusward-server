@@ -65,5 +65,16 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: site
-      - id: deploy
+      - id: first
+        # the artifact API sometimes lists a just-uploaded artifact a moment late ("Found 0 artifact(s)")
+        continue-on-error: true
         uses: actions/deploy-pages@v5
+      - name: Wait before the second attempt
+        if: steps.first.outcome == 'failure'
+        run: sleep 30
+      - id: second
+        if: steps.first.outcome == 'failure'
+        uses: actions/deploy-pages@v5
+      - id: deploy
+        name: Page URL
+        run: echo "page_url=${{ steps.first.outputs.page_url || steps.second.outputs.page_url }}" >> "$GITHUB_OUTPUT"
