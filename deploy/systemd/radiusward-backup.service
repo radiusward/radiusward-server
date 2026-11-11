@@ -1,0 +1,45 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# The cluster backup (ADR 0065, docs/operations/backup.md): on a fourth machine, or a gateway host — not on a member.
+# Settings: /etc/radiusward/backup.properties (cluster.members, backup.host, backup.port).
+[Unit]
+Description=radiusward cluster backup
+Documentation=https://github.com/radiusward/radiusward-server/blob/main/docs/operations/bare-metal.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=radiusward
+Group=radiusward
+EnvironmentFile=/etc/radiusward/radiusward.env
+Environment=RADIUSWARD_MANAGEMENT_HTTP_HOST=0.0.0.0
+ExecStart=/usr/local/bin/radiusward cluster-backup --config /etc/radiusward/backup.properties
+WorkingDirectory=/var/lib/radiusward
+# SIGTERM closes the consensus module and archive in order; a member that is still flushing gets the time it needs
+KillSignal=SIGTERM
+# the JVM ends with 128 + SIGTERM after a clean shutdown; without this a stop leaves the unit 'failed'
+SuccessExitStatus=143
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=65536
+# its media driver lives in /dev/shm/radiusward-backup, its copy in /var/lib/radiusward/backup
+ReadWritePaths=/var/lib/radiusward /dev/shm
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

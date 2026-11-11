@@ -52,6 +52,23 @@ node:
   config: {}
   extraEnv: []
 
+# A continuous backup outside the cluster (ADR 0065): restore after a lost quorum with cluster-restore
+# (docs/operations/backup.md). Give it a volume in another failure domain than the members' where you can.
+backup:
+  enabled: true
+  port: 9900                       # its four ports: consensus, catch-up, archive control and replication
+  source: follower                 # follower | leader | any: copy from a follower to spare the leader
+  interval: 30m                    # how often it fetches a newer snapshot (members take one every snapshot.interval)
+  persistence:
+    size: 100Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  resources:
+    requests: {cpu: 250m, memory: 768Mi}
+    limits: {memory: 768Mi}
+  nodeSelector: {}
+  tolerations: []
+
 gateway:
   replicas: 2
   terminationGracePeriodSeconds: 30

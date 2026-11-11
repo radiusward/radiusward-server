@@ -53,6 +53,24 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `service.exact.key.window` | `15m` | remember exact keys of events without progress values |
 | `service.sweep.interval` | `60s` | housekeeping timer |
 
+## Cluster backup
+
+`radiusward cluster-backup --config <file>` ([ADR 0065](adr/0065-cluster-backup.md), [backup.md](operations/backup.md));
+it also reads `cluster.members`, `cluster.base.port`, `archive.file.sync.level` and `archive.segment.length` (the
+cluster's value).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `backup.host` | `localhost` | the address the members reach the backup at (the pod IP on Kubernetes) |
+| `backup.port` | `9900` | the first of its four UDP ports: consensus, catch-up, archive control, archive replication |
+| `backup.data.dir` | `.local/data/backup` (image: `/var/lib/radiusward/backup`) | the copy, in a member's layout (`archive/`, `cluster/`) |
+| `backup.aeron.dir` | temp dir (image: `/dev/shm/radiusward-backup`) | the backup's media driver directory |
+| `backup.source` | `follower` | `follower`, `leader` or `any`: the member it copies from |
+| `backup.interval` | `30m` | how often it fetches a newer snapshot |
+
+`radiusward cluster-restore --from <backup dir> --config <cluster.properties>` copies a stopped backup into the empty
+data directory of the member `cluster.node.id`.
+
 ## Gateway
 
 | Key | Default | Meaning |

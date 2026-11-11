@@ -107,6 +107,12 @@ the other members (`node.seedTimeout`, 20 s; [ADR 0063](../adr/0063-seeding-a-re
 4 s under load and the member was ready 10 s after it started. While it is away the other two keep the quorum. The
 first install waits `node.seedTimeout` once, as there is nobody to copy from yet.
 
+## Backup and a lost quorum
+
+The chart runs a continuous backup outside the cluster (`backup.enabled`, its own 100 Gi volume,
+[ADR 0065](../adr/0065-cluster-backup.md)). After a lost quorum `scripts/k8s-restore.sh -n <namespace> -r <release>`
+restores all three members from it; see [backup.md](backup.md).
+
 ## Upgrades
 
 `helm upgrade` rolls the members one at a time: a restarted member counts as ready only once its election is
@@ -133,6 +139,4 @@ rolls the gateways and replaces a member's volume after a purge; a lost request 
 
 ## Not yet in the chart
 
-- **A backup outside the cluster** (Phase 4.6, second part): losing two members at once still loses the quorum;
-  restoring then needs a snapshot kept elsewhere.
 - Gateways do not yet drain on shutdown; a restarting gateway's requests in flight are retried by the NAS.

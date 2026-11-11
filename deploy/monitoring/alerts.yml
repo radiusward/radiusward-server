@@ -131,3 +131,28 @@ groups:
         annotations:
           summary: "EAP-AKA on gateway {{ $labels.gateway }} gets no sequence numbers from the cluster"
           description: "capacity: raise service.sim.subscribers.max; unsupported: state version 8 is not active yet (a member runs an older release)."
+
+      # cluster backup (ADR 0065)
+      - alert: RadiuswardBackupNotBackingUp
+        expr: max(radiusward_backup_state{state="backing_up"}) == 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: The cluster backup is not recording the live log
+          description: Look at the backup's log and /ready; until it records again a lost quorum can only be restored to its last position.
+
+      - alert: RadiuswardBackupBehind
+        expr: max(radiusward_cluster_log_position_bytes) - max(radiusward_backup_live_log_position_bytes) > 64 * 1024 * 1024
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: The cluster backup is more than 64 MiB of log behind the members
+          description: A restore after a lost quorum would lose what the backup has not recorded; check the network between the backup and the members.
+
+      - alert: RadiuswardBackupSnapshotOld
+        expr: time() - max(radiusward_backup_snapshot_timestamp_seconds) > 3 * 3600
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: The newest snapshot in the cluster backup is older than 3 hours
+          description: The members take one every snapshot.interval (1 h); the backup fetches it every backup.interval. A restore replays the log since then.

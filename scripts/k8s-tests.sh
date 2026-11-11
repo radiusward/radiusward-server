@@ -10,7 +10,8 @@
 #   scripts/k8s-tests.sh                 # build, create the cluster, run every scenario, delete the cluster
 #   KEEP=1 scripts/k8s-tests.sh          # keep the cluster afterwards (kubectl --context kind-rw-k8s-test)
 #   SKIP_BUILD=1 scripts/k8s-tests.sh    # use an image radiusward:k8s-test that is already built
-#   scripts/k8s-tests.sh leader-kill     # only the named scenarios (baseline leader-kill member-roll gateway-roll replace-volume)
+#   scripts/k8s-tests.sh leader-kill     # only the named scenarios (baseline leader-kill member-roll gateway-roll
+#                                        # replace-volume restore-quorum)
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -19,7 +20,7 @@ ns=radiusward
 release=rw
 image=radiusward:k8s-test
 out="$root/testing/k8s-tests/target"
-scenarios=("${@:-baseline leader-kill member-roll gateway-roll replace-volume}")
+scenarios=("${@:-baseline leader-kill member-roll gateway-roll replace-volume restore-quorum}")
 read -r -a scenarios <<<"${scenarios[*]}"
 failures=0
 # per scenario, for the JUnit XML the published test report reads (docs/plans/test-reports.md)
@@ -121,6 +122,9 @@ profile: small
 node:
   persistence: {size: 2Gi, storageClass: standard}
   config: {archive.segment.length: 4m, log.purge.interval: 10s}
+backup:
+  persistence: {size: 2Gi, storageClass: standard}
+  interval: 20s
 gateway:
   service: {type: ClusterIP}
   nas:
@@ -271,6 +275,52 @@ scenario_replace-volume() {
   else
     fail "replace-volume: log positions differ ($p0, $p1, $p2)"
   fi
+}
+
+backup_metric() {
+  k exec "$release-radiusward-backup-0" -- radiusward probe http://127.0.0.1:9090/metrics 2>/dev/null |
+    sed -n "s/^$1 \([0-9-]*\).*/\1/p"
+}
+
+applied() {
+  k exec "$release-radiusward-node-$1" -- radiusward probe http://127.0.0.1:9090/state 2>/dev/null |
+    grep -o '"applied":[0-9]*' | head -1 | cut -d: -f2
+}
+
+scenario_restore-quorum() {
+  log "restore-quorum: every member's volume lost, the cluster restored from the backup (ADR 0065)"
+  start_load 40 --sessions 500 --rate 200 --interim 10s --first-session 1500000 # events before the snapshot
+  finish_load "restore-quorum load before the snapshot"
+  snapshot
+  start_load 20 --sessions 300 --rate 150 --interim 5s --first-session 1600000 # and after it: only the live log
+  finish_load "restore-quorum load after the snapshot"
+  local l position deadline
+  l=$(leader)
+  position=$(log_position "$l")
+  deadline=$((SECONDS + 180))
+  until k exec "$release-radiusward-backup-0" -- radiusward probe http://127.0.0.1:9090/ready 2>/dev/null |
+    grep -q '"UP"' && [[ "$(backup_metric radiusward_backup_live_log_position_bytes)" -ge "$position" ]]; do
+    ((SECONDS < deadline)) || { fail "restore-quorum: the backup did not catch up"; return; }
+    sleep 5
+  done
+  local before
+  before=$(applied "$l")
+  log "  backup caught up (live log $(backup_metric radiusward_backup_live_log_position_bytes) >= $position);" \
+    "$before events applied; deleting every member's volume"
+  k scale statefulset "$release-radiusward-node" --replicas=0 >/dev/null
+  k wait --for=delete pod -l "app.kubernetes.io/component=node" --timeout=180s >/dev/null 2>&1 || true
+  for i in 0 1 2; do k delete pvc "data-$release-radiusward-node-$i" --wait >/dev/null; done
+  "$root/scripts/k8s-restore.sh" -n "$ns" -r "$release" --context "kind-$cluster" | sed 's/^/  /'
+  await_members_ready
+  local i a ok=1
+  for i in 0 1 2; do
+    a=$(applied "$i")
+    log "  member $i: $a events applied"
+    [[ "$a" == "$before" ]] || ok=0
+  done
+  ((ok)) || { fail "restore-quorum: members restored with other counts than $before"; return; }
+  start_load 30 --sessions 200 --rate 100 --interim 10s --first-session 2000000
+  finish_load restore-quorum
 }
 
 mkdir -p "$out"

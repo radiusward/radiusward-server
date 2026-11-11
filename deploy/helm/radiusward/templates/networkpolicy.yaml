@@ -7,6 +7,7 @@ to the monitoring namespaces and to the other pods of the release.
 {{- if .Values.networkPolicy.enabled }}
 {{- $node := include "radiusward.selector" (dict "root" . "component" "node") | fromYaml -}}
 {{- $gw := include "radiusward.selector" (dict "root" . "component" "gateway") | fromYaml -}}
+{{- $backup := include "radiusward.selector" (dict "root" . "component" "backup") | fromYaml -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -19,6 +20,7 @@ spec:
     - from:
         - podSelector: {matchLabels: {{ toJson $node }}}
         - podSelector: {matchLabels: {{ toJson $gw }}}
+        - podSelector: {matchLabels: {{ toJson $backup }}}
     - from:
         - namespaceSelector: {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
       ports: [{port: 9090, protocol: TCP}]
@@ -52,4 +54,21 @@ spec:
         {{- if .Values.gateway.radsec.enabled }}
         - {port: {{ .Values.gateway.radsec.port }}, protocol: TCP}
         {{- end }}
+{{- if .Values.backup.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "radiusward.fullname" . }}-backup
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+spec:
+  podSelector: {matchLabels: {{ toJson $backup }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {{ toJson $node }}}
+    - from:
+        - namespaceSelector: {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
+      ports: [{port: 9090, protocol: TCP}]
+{{- end }}
 {{- end }}

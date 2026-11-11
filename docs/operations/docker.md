@@ -95,6 +95,11 @@ docker compose -f deploy/compose/compose.yaml run --rm --entrypoint sh tools -c 
 `sink.pg.mode=sessions+events`; no export: `RADIUSWARD_EXPORT_SINKS=` (empty). Details:
 [export.md](export.md).
 
+## Backup
+
+`docker compose -f deploy/compose/compose.yaml --profile backup up -d` adds a continuous backup outside the cluster
+(volume `radiusward_backup`, status on 127.0.0.1:9193); restoring after a lost quorum: [backup.md](backup.md).
+
 ## Monitoring
 
 `docker compose -f deploy/compose/compose.yaml --profile monitoring up -d` adds Prometheus

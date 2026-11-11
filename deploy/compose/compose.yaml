@@ -110,6 +110,23 @@ services:
       timeout: 4s
       retries: 12
 
+  # docker compose --profile backup up -d   → a continuous backup outside the cluster (docs/operations/backup.md)
+  backup:
+    image: ${RADIUSWARD_IMAGE:-radiusward:dev}
+    profiles: ["backup"]
+    command: ["cluster-backup", "--config", "/etc/radiusward/backup.properties"]
+    shm_size: 256m
+    mem_limit: 768m
+    restart: unless-stopped
+    volumes: ["backup:/var/lib/radiusward", "./config/backup.properties:/etc/radiusward/backup.properties:ro"]
+    networks: {radius: {ipv4_address: 172.28.0.50}}
+    ports: ["127.0.0.1:9193:9090"]
+    healthcheck:
+      test: ["CMD", "radiusward", "probe", "http://127.0.0.1:9090/health"]
+      interval: 10s
+      timeout: 4s
+      retries: 6
+
   # docker compose run --rm tools <radclient arguments>
   tools:
     image: ${RADIUSWARD_IMAGE:-radiusward:dev}
@@ -144,6 +161,7 @@ networks:
       config: [{subnet: 172.28.0.0/24}]
 
 volumes:
+  backup:
   postgres:
   node-0:
   node-1:

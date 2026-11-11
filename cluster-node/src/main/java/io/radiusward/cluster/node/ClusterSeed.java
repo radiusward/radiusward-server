@@ -4,12 +4,8 @@
  */
 package io.radiusward.cluster.node;
 
-import io.aeron.archive.Archive;
-import io.aeron.archive.ArchiveThreadingMode;
 import io.aeron.archive.client.AeronArchive;
 import io.aeron.cluster.ClusterBackup;
-import io.aeron.driver.MediaDriver;
-import io.aeron.driver.ThreadingMode;
 import java.io.File;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -18,7 +14,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.stream.Stream;
-import org.agrona.CloseHelper;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -33,7 +28,6 @@ import org.apache.logging.log4j.Logger;
 public final class ClusterSeed {
 
     private static final Logger LOG = LogManager.getLogger(ClusterSeed.class);
-    private static final String LOCAL_CONTROL = "aeron:ipc?term-length=64k";
 
     private ClusterSeed() {}
 
@@ -83,60 +77,27 @@ public final class ClusterSeed {
     }
 
     private static State run(ClusterNodeConfig config, Duration timeout) {
-        String host = config.host();
         int id = config.nodeId();
-        File archiveDir = new File(config.dataDir(), "archive");
-        File clusterDir = new File(config.dataDir(), "cluster");
-        String aeronDir = config.aeronDir() + "-seed";
-        MediaDriver driver = null;
-        Archive archive = null;
-        ClusterBackup backup = null;
-        try {
-            driver = MediaDriver.launch(new MediaDriver.Context()
-                    .aeronDirectoryName(aeronDir)
-                    .threadingMode(ThreadingMode.SHARED)
-                    .dirDeleteOnStart(true)
-                    .dirDeleteOnShutdown(true));
-            archive = Archive.launch(new Archive.Context()
-                    .errorHandler(t -> LOG.warn("seeding member {} (archive): {}", id, t.toString()))
-                    .aeronDirectoryName(aeronDir)
-                    .archiveDir(archiveDir)
-                    .archiveId(id)
-                    .controlChannel("aeron:udp?endpoint=" + host + ":"
-                            + config.port(id, ClusterNodeConfig.ARCHIVE_CONTROL_OFFSET))
-                    .localControlChannel(LOCAL_CONTROL)
-                    .replicationChannel("aeron:udp?endpoint=" + host + ":"
-                            + config.port(id, ClusterNodeConfig.ARCHIVE_REPLICATION_OFFSET))
-                    .recordingEventsEnabled(false)
-                    .threadingMode(ArchiveThreadingMode.SHARED)
-                    .fileSyncLevel(config.fileSyncLevel())
-                    .catalogFileSyncLevel(config.fileSyncLevel())
-                    .segmentFileLength(config.purge().segmentLength()));
-            backup = ClusterBackup.launch(new ClusterBackup.Context()
-                    .aeronDirectoryName(aeronDir)
-                    .clusterDir(clusterDir)
-                    .clusterConsensusEndpoints(otherConsensusEndpoints(config))
-                    .consensusChannel(
-                            "aeron:udp?endpoint=" + host + ":" + config.port(id, ClusterNodeConfig.CONSENSUS_OFFSET))
-                    .catchupEndpoint(host + ":" + config.port(id, ClusterNodeConfig.CATCHUP_OFFSET))
-                    .sourceType(ClusterBackup.SourceType.ANY)
-                    .archiveContext(new AeronArchive.Context()
-                            .aeronDirectoryName(aeronDir)
-                            .controlRequestChannel(LOCAL_CONTROL)
-                            .controlResponseChannel(LOCAL_CONTROL))
-                    .clusterArchiveContext(new AeronArchive.Context()
-                            .aeronDirectoryName(aeronDir)
-                            .controlRequestChannel("aeron:udp") // the backup puts the member's archive endpoint in
-                            .controlResponseChannel("aeron:udp?endpoint=" + host + ":0"))
-                    .clusterBackupResponseTimeoutNs(Duration.ofSeconds(2).toNanos())
-                    .errorHandler(t -> LOG.warn("seeding member {}: {}", id, t.toString()))
-                    .deleteDirOnStart(false));
-            return await(backup, clusterDir, aeronDir, timeout);
+        try (BackupProcess backup = BackupProcess.launch(
+                config.dataDir(),
+                config.aeronDir() + "-seed",
+                id,
+                new BackupProcess.Endpoints( // the member's own ports: free until it starts
+                        config.host(),
+                        config.port(id, ClusterNodeConfig.CONSENSUS_OFFSET),
+                        config.port(id, ClusterNodeConfig.CATCHUP_OFFSET),
+                        config.port(id, ClusterNodeConfig.ARCHIVE_CONTROL_OFFSET),
+                        config.port(id, ClusterNodeConfig.ARCHIVE_REPLICATION_OFFSET)),
+                otherConsensusEndpoints(config),
+                ClusterBackup.SourceType.ANY,
+                Duration.ofHours(1),
+                config.fileSyncLevel(),
+                config.purge().segmentLength(),
+                t -> LOG.warn("seeding member {}: {}", id, t.toString()))) {
+            return await(backup, timeout);
         } catch (RuntimeException e) {
             LOG.warn("seeding member {} failed: {}", id, e.toString());
             return State.INCOMPLETE;
-        } finally {
-            CloseHelper.quietCloseAll(backup, archive, driver);
         }
     }
 
@@ -146,21 +107,18 @@ public final class ClusterSeed {
      * the current term without an election (measured on Kubernetes and in ClusterSeedIT: closing the backup as soon as
      * it reported {@code BACKING_UP} left the recording megabytes short).
      */
-    private static State await(ClusterBackup backup, File clusterDir, String aeronDir, Duration timeout) {
+    private static State await(BackupProcess backup, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
         boolean answered = false;
-        try (AeronArchive local = AeronArchive.connect(new AeronArchive.Context()
-                .aeronDirectoryName(aeronDir)
-                .controlRequestChannel(LOCAL_CONTROL)
-                .controlResponseChannel(LOCAL_CONTROL))) {
+        try (AeronArchive local = backup.connectLocal()) {
             while (System.nanoTime() < deadline) {
-                ClusterBackup.State state =
-                        ClusterBackup.State.get(backup.context().stateCounter());
+                ClusterBackup.State state = backup.state();
                 if (state != ClusterBackup.State.BACKUP_QUERY && state != ClusterBackup.State.RESET_BACKUP) {
                     answered = true;
                 }
                 if (state == ClusterBackup.State.BACKING_UP
-                        && (!hasSnapshot(clusterDir) || logReachesSnapshot(local, clusterDir))) {
+                        && (!hasSnapshot(backup.clusterDir())
+                                || BackupProcess.logReachesSnapshot(local, backup.clusterDir()))) {
                     return State.SEEDED; // without a snapshot the caller discards the copy at once
                 }
                 sleep(100);
@@ -169,37 +127,13 @@ public final class ClusterSeed {
         return answered ? State.INCOMPLETE : State.NO_ANSWER;
     }
 
-    /** Whether the recorded log reaches the latest snapshot and the beginning of the last leadership term. */
-    static boolean logReachesSnapshot(AeronArchive archive, File clusterDir) {
-        try (io.aeron.cluster.RecordingLog log = new io.aeron.cluster.RecordingLog(clusterDir, false)) {
-            io.aeron.cluster.RecordingLog.Entry snapshot =
-                    log.getLatestSnapshot(io.aeron.cluster.ConsensusModule.Configuration.SERVICE_ID);
-            io.aeron.cluster.RecordingLog.Entry term = log.findLastTerm();
-            if (snapshot == null || term == null) {
-                return false;
-            }
-            long position = archive.getRecordingPosition(term.recordingId);
-            if (position == io.aeron.archive.client.AeronArchive.NULL_POSITION) {
-                position = archive.getStopPosition(term.recordingId);
-            }
-            // a member joining the current term without an election needs the log up to where that term began
-            return position >= Math.max(snapshot.logPosition, term.termBaseLogPosition);
-        } catch (RuntimeException e) {
-            return false; // the recording log is being written
-        }
-    }
-
     /** Whether the seeded recording log holds a snapshot of the consensus module. */
     static boolean hasSnapshot(ClusterNodeConfig config) {
         return hasSnapshot(new File(config.dataDir(), "cluster"));
     }
 
     static boolean hasSnapshot(File clusterDir) {
-        try (io.aeron.cluster.RecordingLog log = new io.aeron.cluster.RecordingLog(clusterDir, false)) {
-            return log.getLatestSnapshot(io.aeron.cluster.ConsensusModule.Configuration.SERVICE_ID) != null;
-        } catch (RuntimeException e) {
-            return false;
-        }
+        return BackupProcess.latestSnapshot(clusterDir) != null;
     }
 
     static String otherConsensusEndpoints(ClusterNodeConfig config) {
@@ -216,7 +150,7 @@ public final class ClusterSeed {
         return sb.toString();
     }
 
-    private static void deleteState(ClusterNodeConfig config) {
+    static void deleteState(ClusterNodeConfig config) {
         for (String dir : new String[] {"archive", "cluster"}) {
             Path p = new File(config.dataDir(), dir).toPath();
             if (!Files.exists(p)) {

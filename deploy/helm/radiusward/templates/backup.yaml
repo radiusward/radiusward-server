@@ -1,0 +1,80 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+The cluster backup outside the cluster (ADR 0065): the latest snapshot and the live log on a volume of its own, the
+source of cluster-restore after a lost quorum (docs/operations/backup.md).
+*/ -}}
+{{- if .Values.backup.enabled }}
+{{- $fn := include "radiusward.fullname" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fn }}-backup
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+spec:
+  serviceName: {{ $fn }}-backup
+  replicas: 1
+  selector:
+    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "backup") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "radiusward.labels" . | nindent 8 }}
+        app.kubernetes.io/component: backup
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/backup-configmap.yaml") . | sha256sum }}
+        {{- include "radiusward.scrapeAnnotations" . | nindent 8 }}
+    spec:
+      securityContext: {{- include "radiusward.podSecurity" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backup.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.backup.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: backup
+          image: {{ include "radiusward.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["cluster-backup", "--config", "/etc/radiusward/backup.properties"]
+          env:
+            - name: RADIUSWARD_BACKUP_HOST
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - {name: RADIUSWARD_PROFILE, value: {{ .Values.profile | quote }}}
+          ports:
+            - {name: management, containerPort: 9090, protocol: TCP}
+          resources: {{- toYaml .Values.backup.resources | nindent 12 }}
+          securityContext: {{- include "radiusward.containerSecurity" . | nindent 12 }}
+          livenessProbe:
+            httpGet: {path: /health, port: management}
+            periodSeconds: 10
+            failureThreshold: 6
+          # /health, not /ready: the backup serves no traffic, and a new cluster has no snapshot yet, so /ready ("a
+          # restore would work now") would hold back helm install --wait; the alerts watch that instead
+          readinessProbe:
+            httpGet: {path: /health, port: management}
+            periodSeconds: 10
+          volumeMounts:
+            - {name: config, mountPath: /etc/radiusward/backup.properties, subPath: backup.properties}
+            - {name: data, mountPath: /var/lib/radiusward}
+            - {name: shm, mountPath: /dev/shm}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: {{ $fn }}-backup}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 256Mi}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: {{ toJson .Values.backup.persistence.accessModes }}
+        {{- with .Values.backup.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: {requests: {storage: {{ .Values.backup.persistence.size }}}}
+{{- end }}

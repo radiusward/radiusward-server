@@ -18,6 +18,7 @@ case "$component:$profile" in
     gateway:standard)      heap=384m ;;
     gateway:large)         heap=768m ;;
     radclient:*)           heap=512m ;;
+    cluster-backup:*)      heap=256m;  direct=256m ;;    # a media driver and an archive, no sessions (ADR 0065)
     admin:*)               heap=256m ;;   # verifiers keep the last event of every session of an ack log
     *)                     heap=64m ;;    # probe, version, cluster-tool
 esac
@@ -26,6 +27,8 @@ esac
 export RADIUSWARD_CLUSTER_DATA_DIR="${RADIUSWARD_CLUSTER_DATA_DIR:-/var/lib/radiusward}"
 export RADIUSWARD_CLUSTER_AERON_DIR="${RADIUSWARD_CLUSTER_AERON_DIR:-/dev/shm/radiusward-node}"
 export RADIUSWARD_GATEWAY_AERON_DIR="${RADIUSWARD_GATEWAY_AERON_DIR:-/dev/shm/radiusward-gateway}"
+export RADIUSWARD_BACKUP_AERON_DIR="${RADIUSWARD_BACKUP_AERON_DIR:-/dev/shm/radiusward-backup}"
+export RADIUSWARD_BACKUP_DATA_DIR="${RADIUSWARD_BACKUP_DATA_DIR:-/var/lib/radiusward/backup}"
 export RADIUSWARD_DICTIONARY_DIR="${RADIUSWARD_DICTIONARY_DIR:-/etc/radiusward/dictionary.d}"
 export RADIUSWARD_MANAGEMENT_HTTP_HOST="${RADIUSWARD_MANAGEMENT_HTTP_HOST:-0.0.0.0}"
 

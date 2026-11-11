@@ -60,7 +60,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `testing/eapol-test` | wpa_supplicant's `eapol_test` image, with its SIM/USIM simulator, for the EAP interop tests (`EapolTestIT`, `AkaEapolIT`) |
 | `testing/radsec-client` | radsecproxy, `radclient` and `eapol_test` image for the RadSec and DTLS interop test (`RadsecproxyIT`) |
 | `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
-| `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `radclient`, `admin`, `probe`, `cluster-tool` |
+| `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `cluster-backup`, `cluster-restore`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster`, `DevCluster` |
 | `testing/e2e-tests` | Process-based end-to-end tests (`-Pe2e`) |
 | `testing/linux-tests` | Fault injection in containers with Testcontainers and LazyFS (`-Plinux`) |

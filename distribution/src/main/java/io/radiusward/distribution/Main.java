@@ -23,6 +23,8 @@ public final class Main {
             switch (args[0]) {
                 case "cluster-node" -> ClusterNodeMain.main(rest);
                 case "gateway" -> GatewayMain.main(rest);
+                case "cluster-backup" -> io.radiusward.cluster.node.ClusterBackupMain.main(rest);
+                case "cluster-restore" -> io.radiusward.cluster.node.ClusterRestore.main(rest);
                 case "cluster-tool" -> io.aeron.cluster.ClusterTool.main(rest); // e.g. <cluster-dir> snapshot
                 case "radclient" -> io.radiusward.tools.radclient.RadClient.main(rest);
                 case "admin" -> io.radiusward.tools.admin.AdminMain.main(rest);
@@ -48,6 +50,8 @@ public final class Main {
         System.err.println("""
                 usage: radiusward cluster-node --config <file.properties> [--config ...]
                        radiusward gateway      --config <file.properties> [--config ...]
+                       radiusward cluster-backup --config <file.properties>   (continuous backup outside the cluster)
+                       radiusward cluster-restore --from <backup dir> --config <cluster.properties>
                        radiusward cluster-tool <cluster-dir> <command>   (Aeron ClusterTool: describe, snapshot, ...)
                        radiusward radclient ...                          (test client: acct, replay, decode, load)
                        radiusward admin state|verify-acks ...            (query the replicated state)

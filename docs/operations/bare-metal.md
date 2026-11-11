@@ -51,6 +51,12 @@ sudo systemctl daemon-reload && sudo systemctl enable --now radiusward-gateway
 - Firewall: members talk to each other on `cluster.base.port + 100 × id + 0…5` (UDP); gateways reach the members'
   ingress ports; NAS devices reach the gateways on 1812/1813 UDP (and 2083 TCP for RadSec).
 
+## Backup
+
+`radiusward-backup.service` (in `deploy/systemd`) runs the continuous backup outside the cluster with
+`/etc/radiusward/backup.properties` ([ADR 0065](../adr/0065-cluster-backup.md)); put it on a fourth machine or a
+gateway host, never on a member. Restoring after a lost quorum: [backup.md](backup.md).
+
 ## Operations
 
 - `systemctl stop radiusward-node` closes the member cleanly; stopping one member at a time keeps the quorum. Restart a
