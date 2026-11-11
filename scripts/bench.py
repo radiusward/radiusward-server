@@ -525,7 +525,7 @@ def jmh(args):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--steps", default="500,1000,2000,4000,8000,16000", help="request rates per second")
+    p.add_argument("--steps", default="500,1000,2000,4000,8000,16000,32000", help="request rates per second")
     p.add_argument("--duration", type=int, default=60, help="seconds per step")
     p.add_argument("--interim", type=int, default=10, help="interim interval of the accounting sessions")
     p.add_argument("--generators", type=int, default=4, help="load containers per step")

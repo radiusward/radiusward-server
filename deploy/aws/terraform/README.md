@@ -38,6 +38,7 @@ configure the NAS devices with both `gateway_addresses` as primary and secondary
 | `internal` | `true` | internal load balancers (NAS devices over VPN / Direct Connect) |
 | `nas_cidrs` | — | where NAS devices send from |
 | `gateway_properties` | one NAS entry | the gateways' properties file (NAS entries, identity stores; [configuration.md](../../../docs/configuration.md)) |
+| `gateway_users` | a comment | a users file, written to `/tmp/users` in each gateway task (a secret; a store with `type=file` and that `path` uses it) |
 | `image` | `ghcr.io/radiusward/radiusward-server:0.1.0` | the image |
 | `profile` | `small` | `small` or `standard`: `RADIUSWARD_PROFILE` and the task sizes ([aws-ecs.md](../../../docs/operations/aws-ecs.md#sizes-per-profile-on-graviton)) |
 | `member_instance_type` | by profile | Graviton instance for the members: `small` c7g.large, `standard` m7g.large |

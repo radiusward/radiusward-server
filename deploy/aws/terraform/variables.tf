@@ -51,6 +51,13 @@ variable "gateway_properties" {
   EOT
 }
 
+variable "gateway_users" {
+  description = "the gateways' users file, written to /tmp/users (identity store with type file and that path in gateway_properties)"
+  type        = string
+  sensitive   = true
+  default     = "# users file of the gateways (docs/configuration.md#identity-stores)"
+}
+
 variable "image" {
   type    = string
   default = "ghcr.io/radiusward/radiusward-server:0.1.0"

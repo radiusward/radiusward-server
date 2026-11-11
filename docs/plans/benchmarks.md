@@ -1,7 +1,8 @@
 # Plan: benchmarks and published benchmark reports
 
 Status: **in progress** (2026-11-11): B1, B2 and B3 done, the ladder refined after the first GitHub run
-([findings](#findings-from-the-first-github-run)); B4 (AWS) is planned [below](#b4-aws) and needs an account. ADR [0066](../adr/0066-benchmarks.md). Builds on the test reports
+([findings](#findings-from-the-first-github-run)); B4a and B4b done, B4c and B4d need an AWS account
+([B4](#b4-aws)). ADR [0066](../adr/0066-benchmarks.md). Builds on the test reports
 ([test-reports.md](test-reports.md)) and Phase 4 ([phase-4.md](phase-4.md)).
 
 ## Goal
@@ -54,6 +55,11 @@ answers, a 100 ms catch-up window and a 10 ms timeout scan in `radclient load`; 
 and every probe. What remains is the machine itself: **only separate machines for the generators give a real
 ceiling**, which is what B4 is for.
 
+**The run after the fixes** (2026-11-11, same runner type) confirmed it: authentication passed every step up to
+16,000/s with p99 200 ms (≥ 15,053/s, four times the first figure), the mix reached 6,821/s, and accounting 3,731/s,
+stopped by p99 at 4,000/s with the runner's four cores busy. A leader kill at 2,611/s lost nothing and needed no
+retransmission. The default ladder now goes up to 32,000/s.
+
 ## B4: AWS
 
 **Goal:** the ceiling of accounting, authentication and the mix for the `small` and `standard` profiles on the
@@ -104,8 +110,8 @@ OIDC role (a template comes with B4b).
 
 | # | Step | Needs AWS |
 |---|---|---|
-| B4a | `bench.py` remote mode, process CPU metric, ECS failover | no |
-| B4b | `bench-aws.sh`, generator stack, OIDC role template, `bench-aws.yml` | no (validated with cfn-lint) |
+| B4a ✅ | `bench.py` remote mode, process CPU metric, ECS failover | no |
+| B4b ✅ | `bench-aws.sh`, generator stack, OIDC role template, `bench-aws.yml`; a users file secret for the gateways in both ECS templates | no (validated with cfn-lint and tofu) |
 | B4c | first run per profile from a workstation, results on the pages and in the ECS guide | yes |
 | B4d | on demand in GitHub Actions | yes (OIDC role) |
 

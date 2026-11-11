@@ -88,8 +88,10 @@ with a small `sh -c` that writes it and then runs the image's entrypoint:
 - **Task addresses:** members reply to a gateway, and send backups, to an address the task only knows at runtime
   (awsvpc networking). The start command sets `RADIUSWARD_GATEWAY_EGRESS_HOST` and `RADIUSWARD_BACKUP_HOST` from
   `hostname -i`, which is the task's ENI address on ECS.
-- **Users file or SQL store:** add the store to the gateway properties; a users file can be another SSM parameter
-  written to `/tmp/users` the same way, or use the SQL store (`auth.store.<name>.type=sql`) against RDS.
+- **Users file or SQL store:** a users file is a Secrets Manager secret (CloudFormation `GatewayUsers`, output
+  `GatewayUsersSecretArn`; Terraform `gateway_users`) that each gateway writes to `/tmp/users` at start; add a store
+  with `auth.store.<name>.type=file` and `auth.store.<name>.path=/tmp/users` to the gateway properties. Or use the
+  SQL store (`auth.store.<name>.type=sql`) against RDS.
 
 ## Failover and recovery
 
@@ -138,8 +140,11 @@ templates, shows CPU and memory per task. Logs go to CloudWatch Logs (`/radiuswa
 
 ## Throughput test
 
-To find the ceiling of a profile, load generators run **outside the cluster** on c7g.xlarge (arm64) instances in the
-VPC, sending through both load balancers as NAS devices do, with the image's `radclient`:
+`scripts/bench-aws.sh` measures the ceiling of a profile end to end: it deploys this stack with a test-only
+generator stack, runs the benchmark ladder with the generators on their own instances, and deletes everything
+again ([benchmarks](../testing/benchmarks.md#on-amazon-ecs)). By hand, load generators run **outside the cluster** on
+c7g.xlarge (arm64) instances in the VPC, sending through both load balancers as NAS devices do, with the image's
+`radclient`:
 
 ```bash
 docker run --rm --network host ghcr.io/radiusward/radiusward-server:<version> radclient load \

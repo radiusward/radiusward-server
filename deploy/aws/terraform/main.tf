@@ -57,6 +57,17 @@ resource "aws_secretsmanager_secret" "nas" {
   description = "the RADIUS shared secret of the NAS devices (NAS_SECRET in the gateway properties)"
 }
 
+# a users file for the gateways, written to /tmp/users in each gateway task (identity store type file)
+resource "aws_secretsmanager_secret" "users" {
+  name_prefix = "${var.name}-users-"
+  description = "the gateways' users file (/tmp/users; identity store type file)"
+}
+
+resource "aws_secretsmanager_secret_version" "users" {
+  secret_id     = aws_secretsmanager_secret.users.id
+  secret_string = var.gateway_users
+}
+
 resource "aws_ssm_parameter" "gateway_properties" {
   name  = "/${var.name}/gateway.properties"
   type  = "String"
@@ -173,7 +184,7 @@ resource "aws_iam_role_policy" "execution_configuration" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = aws_secretsmanager_secret.nas.arn },
+      { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = [aws_secretsmanager_secret.nas.arn, aws_secretsmanager_secret.users.arn] },
       { Effect = "Allow", Action = "ssm:GetParameters", Resource = aws_ssm_parameter.gateway_properties.arn },
     ]
   })
@@ -486,9 +497,11 @@ resource "aws_ecs_task_definition" "gateway" {
     essential   = true
     stopTimeout = 30
     entryPoint  = ["/bin/sh", "-c"]
-    # the properties come from SSM; the members send replies to the task's own address
+    # the properties come from SSM, the users file from Secrets Manager; the members send replies to the task's
+    # own address
     command = [join(" && ", [
       "printf '%s\\n' \"$GATEWAY_PROPERTIES\" > /tmp/gateway.properties",
+      "printf '%s\\n' \"$GATEWAY_USERS\" > /tmp/users",
       "ip=$(hostname -i)",
       "export RADIUSWARD_GATEWAY_EGRESS_HOST=$${ip%% *}",
       "exec /usr/local/bin/radiusward gateway --config /tmp/gateway.properties",
@@ -504,6 +517,7 @@ resource "aws_ecs_task_definition" "gateway" {
     secrets = [
       { name = "NAS_SECRET", valueFrom = aws_secretsmanager_secret.nas.arn },
       { name = "GATEWAY_PROPERTIES", valueFrom = aws_ssm_parameter.gateway_properties.arn },
+      { name = "GATEWAY_USERS", valueFrom = aws_secretsmanager_secret_version.users.secret_arn },
     ]
     portMappings = [
       { containerPort = 1812, protocol = "udp" },

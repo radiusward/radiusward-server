@@ -183,7 +183,8 @@ jobs:
       - name: CloudFormation (cfn-lint)
         run: |
           pip install --quiet --only-binary :all: cfn-lint==1.60.0
-          cfn-lint deploy/aws/cloudformation/radiusward-ecs.yaml
+          cfn-lint deploy/aws/cloudformation/radiusward-ecs.yaml deploy/aws/bench/*.yaml
+          bash -n scripts/bench-aws.sh
       - name: Terraform (tofu fmt and validate)
         working-directory: deploy/aws/terraform
         run: |

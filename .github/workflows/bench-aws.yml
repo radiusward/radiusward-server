@@ -1,0 +1,74 @@
+name: bench-aws
+
+# The benchmark on Amazon ECS (docs/plans/benchmarks.md, B4): scripts/bench-aws.sh deploys the generator stack and
+# the radiusward stack, runs the ladder and the failover, and deletes both again. On demand only; it costs money.
+# Credentials come through OpenID Connect from the role of deploy/aws/bench/github-oidc.yaml (repository variable
+# AWS_BENCH_ROLE_ARN); nothing secret is stored. reports.yml publishes the result as the environments aws-<profile>.
+on:
+  workflow_dispatch:
+    inputs:
+      profiles:
+        description: 'radiusward profiles, one run each'
+        type: choice
+        options: [small, standard, 'small standard']
+        default: small
+      region:
+        description: 'AWS region (empty: the repository variable AWS_BENCH_REGION)'
+        required: false
+      generators:
+        description: 'generator instances (2-4)'
+        default: '2'
+      steps:
+        description: 'request rates per second'
+        default: '1000,2000,4000,8000,16000,32000'
+
+permissions:
+  contents: read
+  id-token: write   # OIDC credentials for AWS
+
+concurrency:
+  group: bench-aws
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    runs-on: ubuntu-24.04
+    outputs:
+      profiles: ${{ steps.list.outputs.profiles }}
+    steps:
+      - id: list
+        env:
+          PROFILES: ${{ inputs.profiles }}
+        run: echo "profiles=$(jq -cn --arg p "$PROFILES" '$p | split(" ")')" >> "$GITHUB_OUTPUT"
+
+  bench:
+    needs: setup
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      max-parallel: 1   # one stack at a time: fewer vCPUs at once, a smaller bill if something goes wrong
+      fail-fast: false
+      matrix:
+        profile: ${{ fromJSON(needs.setup.outputs.profiles) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_BENCH_ROLE_ARN }}
+          aws-region: ${{ inputs.region || vars.AWS_BENCH_REGION }}
+          role-duration-seconds: 14400
+      - name: Benchmark on ECS (the stacks are deleted at the end)
+        env:
+          PROFILE: ${{ matrix.profile }}
+          GENERATORS: ${{ inputs.generators }}
+          STEPS: ${{ inputs.steps }}
+        run: scripts/bench-aws.sh --profile "$PROFILE" --region "$AWS_REGION" --commit "$GITHUB_SHA" --generators "$GENERATORS" --steps "$STEPS"
+      - name: Upload the result (published by reports.yml)
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-bench-aws-${{ matrix.profile }}
+          path: testing/benchmarks/target/bench/
+          if-no-files-found: ignore
+          retention-days: 90

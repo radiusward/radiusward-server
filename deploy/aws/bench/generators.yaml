@@ -1,0 +1,246 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST ONLY: the network and the load generators for benchmarking the ECS stack (docs/plans/benchmarks.md, B4;
+# scripts/bench-aws.sh). Not for production. A VPC with three public subnets (generators, NAT) and three private ones
+# (the radiusward stack), one NAT gateway, a results bucket, and two to four Graviton instances with Docker that run
+# `radclient load`; the first also runs scripts/bench.py. They are reached through SSM only (no SSH, no inbound
+# rules). scripts/bench-aws.sh deploys it, runs the benchmark and deletes it again.
+AWSTemplateFormatVersion: '2010-09-09'
+Description: radiusward benchmark (test only) - network and load generators
+
+Parameters:
+  VpcCidr:
+    Type: String
+    Default: 10.80.0.0/16
+  GeneratorCount:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    MaxValue: 4
+  GeneratorInstanceType:
+    Type: String
+    Default: c7g.xlarge
+  GeneratorAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  Image:
+    Type: String
+    Default: ghcr.io/radiusward/radiusward-server:edge
+    Description: the radiusward image whose radclient generates the load
+
+Conditions:
+  ThreeGenerators: !Not [!Equals [!Ref GeneratorCount, 2]]
+  FourGenerators: !Equals [!Ref GeneratorCount, 4]
+
+Resources:
+  # ---------------------------------------------------------------- network
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: !Ref AWS::StackName}]
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway}
+  PublicRoutes:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  PublicDefault:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties: {RouteTableId: !Ref PublicRoutes, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref InternetGateway}
+  PrivateRoutes:
+    Type: AWS::EC2::RouteTable
+    Properties: {VpcId: !Ref Vpc}
+  NatAddress:
+    Type: AWS::EC2::EIP
+    DependsOn: GatewayAttachment
+    Properties: {Domain: vpc}
+  Nat:
+    Type: AWS::EC2::NatGateway
+    Properties: {AllocationId: !GetAtt NatAddress.AllocationId, SubnetId: !Ref Public0}
+  PrivateDefault:
+    Type: AWS::EC2::Route
+    Properties: {RouteTableId: !Ref PrivateRoutes, DestinationCidrBlock: 0.0.0.0/0, NatGatewayId: !Ref Nat}
+
+  Public0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Select [0, !Cidr [!Ref VpcCidr, 6, 12]]
+      MapPublicIpOnLaunch: true
+  Public1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Select [1, !Cidr [!Ref VpcCidr, 6, 12]]
+      MapPublicIpOnLaunch: true
+  Public2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !Select [2, !Cidr [!Ref VpcCidr, 6, 12]]
+      MapPublicIpOnLaunch: true
+  Private0:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Select [3, !Cidr [!Ref VpcCidr, 6, 12]]
+  Private1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: !Select [4, !Cidr [!Ref VpcCidr, 6, 12]]
+  Private2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [2, !GetAZs '']
+      CidrBlock: !Select [5, !Cidr [!Ref VpcCidr, 6, 12]]
+  Public0Routes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref Public0, RouteTableId: !Ref PublicRoutes}
+  Public1Routes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref Public1, RouteTableId: !Ref PublicRoutes}
+  Public2Routes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref Public2, RouteTableId: !Ref PublicRoutes}
+  Private0Routes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref Private0, RouteTableId: !Ref PrivateRoutes}
+  Private1Routes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref Private1, RouteTableId: !Ref PrivateRoutes}
+  Private2Routes:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties: {SubnetId: !Ref Private2, RouteTableId: !Ref PrivateRoutes}
+
+  # ---------------------------------------------------------------- generators
+  GeneratorSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: load generators (no inbound; SSM and RADIUS outbound)
+      VpcId: !Ref Vpc
+      SecurityGroupEgress: [{IpProtocol: '-1', CidrIp: 0.0.0.0/0}]
+
+  Results:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules: [{Id: expire, Status: Enabled, ExpirationInDays: 7}]
+
+  GeneratorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement: [{Effect: Allow, Principal: {Service: ec2.amazonaws.com}, Action: sts:AssumeRole}]
+      ManagedPolicyArns: [!Sub 'arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore']
+      Policies:
+        - PolicyName: benchmark
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # find the radiusward tasks for their metrics, stop the leader's task for the failover
+              - {Effect: Allow, Action: [ecs:ListTasks, ecs:DescribeTasks, ecs:StopTask], Resource: '*'}
+              # the first generator starts radclient on the others
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*'
+                Condition: {StringEquals: {'ssm:resourceTag/radiusward-bench': !Ref AWS::StackName}}
+              - Effect: Allow
+                Action: ssm:SendCommand
+                Resource: !Sub 'arn:${AWS::Partition}:ssm:${AWS::Region}::document/AWS-RunShellScript'
+              - {Effect: Allow, Action: ssm:GetCommandInvocation, Resource: '*'}
+              - {Effect: Allow, Action: s3:PutObject, Resource: !Sub '${Results.Arn}/*'}
+  GeneratorProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties: {Roles: [!Ref GeneratorRole]}
+
+  GeneratorTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: !Ref GeneratorAmi
+        InstanceType: !Ref GeneratorInstanceType
+        IamInstanceProfile: {Arn: !GetAtt GeneratorProfile.Arn}
+        SecurityGroupIds: [!Ref GeneratorSecurityGroup]
+        MetadataOptions: {HttpTokens: required}
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - {Key: radiusward-bench, Value: !Ref AWS::StackName}
+              - {Key: Name, Value: !Sub '${AWS::StackName}-generator'}
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -eux
+            dnf install -y docker git python3
+            # many UDP sockets and in-flight requests per generator
+            printf 'net.core.rmem_max = 4194304\nnet.core.wmem_max = 4194304\n' > /etc/sysctl.d/99-bench.conf
+            sysctl --system
+            systemctl enable --now docker
+            docker pull ${Image}
+            touch /var/lib/radiusward-bench-ready
+
+  Generator0:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate: {LaunchTemplateId: !Ref GeneratorTemplate, Version: !GetAtt GeneratorTemplate.LatestVersionNumber}
+      SubnetId: !Ref Public0
+  Generator1:
+    Type: AWS::EC2::Instance
+    Properties:
+      LaunchTemplate: {LaunchTemplateId: !Ref GeneratorTemplate, Version: !GetAtt GeneratorTemplate.LatestVersionNumber}
+      SubnetId: !Ref Public1
+  Generator2:
+    Type: AWS::EC2::Instance
+    Condition: ThreeGenerators
+    Properties:
+      LaunchTemplate: {LaunchTemplateId: !Ref GeneratorTemplate, Version: !GetAtt GeneratorTemplate.LatestVersionNumber}
+      SubnetId: !Ref Public2
+  Generator3:
+    Type: AWS::EC2::Instance
+    Condition: FourGenerators
+    Properties:
+      LaunchTemplate: {LaunchTemplateId: !Ref GeneratorTemplate, Version: !GetAtt GeneratorTemplate.LatestVersionNumber}
+      SubnetId: !Ref Public0
+
+Outputs:
+  VpcId:
+    Value: !Ref Vpc
+  VpcCidr:
+    Value: !Ref VpcCidr
+  PrivateSubnetIds:
+    Description: for the radiusward stack's members and gateways, in zone order
+    Value: !Join [',', [!Ref Private0, !Ref Private1, !Ref Private2]]
+  AvailabilityZones:
+    Value: !Join [',', [!GetAtt Private0.AvailabilityZone, !GetAtt Private1.AvailabilityZone, !GetAtt Private2.AvailabilityZone]]
+  ResultsBucket:
+    Value: !Ref Results
+  Controller:
+    Description: runs scripts/bench.py and a share of the generators
+    Value: !Ref Generator0
+  Generators:
+    Description: the other generator instances
+    Value: !Join
+      - ','
+      - - !Ref Generator1
+        - !If [ThreeGenerators, !Ref Generator2, !Ref AWS::NoValue]
+        - !If [FourGenerators, !Ref Generator3, !Ref AWS::NoValue]

@@ -109,6 +109,15 @@ Resources:
         PasswordLength: 32
         ExcludePunctuation: true
 
+  # A users file for the gateways, written to /tmp/users in each gateway task: to use it, add an identity store
+  # with auth.store.<name>.type=file and auth.store.<name>.path=/tmp/users to the properties, set this secret to
+  # the file's content, then restart the gateway services.
+  GatewayUsers:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: the gateways' users file (/tmp/users; identity store type file)
+      SecretString: '# users file of the gateways (docs/configuration.md#identity-stores)'
+
   # The gateways' properties: NAS entries and anything else (docs/configuration.md). Edit the parameter to add NAS
   # entries or identity stores, then restart the gateway services; a stack update writes this default again.
   GatewayConfig:
@@ -187,7 +196,7 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: !Ref NasSecret}
+              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: [!Ref NasSecret, !Ref GatewayUsers]}
               - Effect: Allow
                 Action: ssm:GetParameters
                 Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GatewayConfig}
@@ -439,10 +448,12 @@ Resources:
               Essential: true
               StopTimeout: 30
               EntryPoint: [/bin/sh, -c]
-              # the properties come from SSM; the members send replies to the task's own address
+              # the properties come from SSM, the users file from Secrets Manager; the members send replies to the
+              # task's own address
               Command:
                 - >-
                   printf '%s\n' "$GATEWAY_PROPERTIES" > /tmp/gateway.properties &&
+                  printf '%s\n' "$GATEWAY_USERS" > /tmp/users &&
                   ip=$(hostname -i) && export RADIUSWARD_GATEWAY_EGRESS_HOST=${ip%% *} &&
                   exec /usr/local/bin/radiusward gateway --config /tmp/gateway.properties
               Environment:
@@ -455,6 +466,7 @@ Resources:
               Secrets:
                 - {Name: NAS_SECRET, ValueFrom: !Ref NasSecret}
                 - {Name: GATEWAY_PROPERTIES, ValueFrom: !Ref GatewayConfig}
+                - {Name: GATEWAY_USERS, ValueFrom: !Ref GatewayUsers}
               PortMappings:
                 - {ContainerPort: 1812, Protocol: udp}
                 - {ContainerPort: 1813, Protocol: udp}
@@ -700,6 +712,11 @@ Outputs:
   GatewayConfigParameter:
     Description: the gateways' properties (NAS entries, identity stores)
     Value: !Ref GatewayConfig
+  GatewayUsersSecretArn:
+    Description: the gateways' users file, written to /tmp/users (identity store type file)
+    Value: !Ref GatewayUsers
+  ClusterName:
+    Value: !Ref Cluster
   BackupBucketName:
     Value: !Ref BackupBucket
   BackupFileSystemId:

@@ -41,6 +41,7 @@ scripts/k8s-tests.sh [scenario ...]             # Helm chart on kind under load:
 scripts/test-reports.sh <results> <site>        # the published Allure test reports from JUnit XML (docs/plans/test-reports.md)
 scripts/bench.py [--quick] [--jmh]              # benchmark ladders, failover, JMH → one JSON (docs/testing/benchmarks.md; weekly in CI)
 scripts/bench-pages.py <results> <site>         # the published benchmark pages from bench-*.json
+scripts/bench-aws.sh --profile small --region <r>   # the benchmark on Amazon ECS; deletes its stacks (docs/testing/benchmarks.md)
 scripts/k8s-restore.sh -n <namespace> -r <release>   # restore a Kubernetes cluster from its backup (docs/operations/backup.md)
 scripts/sync-chart-monitoring.sh                # copy deploy/monitoring's dashboards and alerts into the Helm chart
 java -jar tools/radclient/target/radclient.jar --help
@@ -56,7 +57,8 @@ scripts/test-images.sh list|tag|hash|inputs|platforms|ref|build [--push] <image>
 | `linux-tests.yml` | nightly, on demand (`tests`) | fault injection in containers (`-Plinux`) |
 | `k8s-tests.yml` | nightly, on demand (`scenarios`) | the Helm chart on kind under load |
 | `bench.yml` | Sundays, on demand (`steps`) | the benchmark ladders, failover and JMH |
-| `reports.yml` | after ci, linux-tests, k8s-tests and bench on `main`; on demand | publishes the test reports and benchmark pages to GitHub Pages |
+| `bench-aws.yml` | on demand (`profiles`, `region`) | the benchmark on Amazon ECS through an OIDC role; deletes its stacks |
+| `reports.yml` | after ci, linux-tests, k8s-tests, bench and bench-aws on `main`; on demand | publishes the test reports and benchmark pages to GitHub Pages |
 | `test-images.yml` | when a test image's inputs change on `main`, weekly, on demand | publishes the prebuilt test images |
 | `release.yml` | pushes to `main` (`edge`) and tags | the container image, the Helm chart and the GitHub release |
 

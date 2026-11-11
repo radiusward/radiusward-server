@@ -2,13 +2,13 @@ name: reports
 
 # Publishes the test reports to GitHub Pages (docs/plans/test-reports.md, ADR 0064): after ci, linux-tests or
 # k8s-tests finished on main, their results-* artifacts become Allure 3 reports with history, badges and a landing
-# page; the results of the weekly benchmarks (bench) become the Benchmarks pages (ADR 0066). The site is deployed from
-# this workflow (no branch, no commits); what the next run needs — the other reports, every history.jsonl and the
+# page; the results of the benchmarks (bench weekly, bench-aws on demand) become the Benchmarks pages (ADR 0066). The
+# site is deployed from this workflow (no branch, no commits); what the next run needs — the other reports, every history.jsonl and the
 # benchmark runs — is restored from state.tar.gz inside the published site. The only workflow that deploys Pages;
 # it runs the code of main and only reads the downloaded results as data. Pull requests never publish.
 on:
   workflow_run:
-    workflows: [ci, linux-tests, k8s-tests, bench]
+    workflows: [ci, linux-tests, k8s-tests, bench, bench-aws]
     types: [completed]
     branches: [main]
   workflow_dispatch:

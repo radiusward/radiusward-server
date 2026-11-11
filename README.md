@@ -90,9 +90,11 @@ Test reports of the integration, end-to-end, fault-injection and Kubernetes suit
 accounting, authentication and a mix, kills the leader under load and runs the JMH suite
 ([docs/testing/benchmarks.md](docs/testing/benchmarks.md), [ADR 0066](docs/adr/0066-benchmarks.md)). It runs weekly
 on a GitHub runner and the results are [published](https://radiusward.github.io/radiusward-server/benchmarks/). On a
-shared 4-vCPU runner, where members, gateways and load generators share the CPUs — a lower bound — the first run
-carried **3,788 accounting requests/s**, **3,701 Access-Requests/s** and **1,929/s mixed**, and a leader killed at
-2,651/s lost nothing. The hot path alone handles about 930k packets/s per core (JMH).
+shared 4-vCPU runner, where three members, two gateways and the load generators share the CPUs — a lower bound — it
+carried **3,731 accounting requests/s** (each replicated to three members with fsync), **at least 15,053
+Access-Requests/s** (every step up to 16,000/s passed) and **6,821/s mixed**, and a leader killed under load lost
+nothing. The hot path alone handles about 1.3 million packets/s on one core (JMH). The ceilings per profile on AWS,
+with the generators on their own machines, are measured with `scripts/bench-aws.sh`.
 
 Details: [docs/architecture.md](docs/architecture.md) · what an ACK guarantees:
 [docs/accounting-contract.md](docs/accounting-contract.md) · decisions: [docs/adr](docs/adr) · every setting:

@@ -1,0 +1,120 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST ONLY: the role GitHub Actions assumes to run the AWS benchmark (.github/workflows/bench-aws.yml,
+# docs/plans/benchmarks.md, B4). Deploy it once, in an account meant for testing, then store its RoleArn output as the
+# repository variable AWS_BENCH_ROLE_ARN. No secret is stored anywhere: the workflow gets short-lived credentials
+# through OpenID Connect, and only runs of the given repository's branch may assume the role.
+#
+#   aws cloudformation deploy --stack-name radiusward-bench-github --template-file deploy/aws/bench/github-oidc.yaml \
+#       --capabilities CAPABILITY_NAMED_IAM [--parameter-overrides CreateProvider=false]
+AWSTemplateFormatVersion: '2010-09-09'
+Description: radiusward benchmark (test only) - role for GitHub Actions via OIDC
+
+Parameters:
+  Repository:
+    Type: String
+    Default: radiusward/radiusward-server
+  Branch:
+    Type: String
+    Default: main
+  CreateProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: false when the account already has the token.actions.githubusercontent.com OIDC provider
+
+Conditions:
+  NewProvider: !Equals [!Ref CreateProvider, 'true']
+
+Resources:
+  Provider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: NewProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: radiusward-bench-github
+      MaxSessionDuration: 14400
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - NewProvider
+                - !Ref Provider
+                - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub 'repo:${Repository}:ref:refs/heads/${Branch}'
+      Policies:
+        - PolicyName: benchmark-stacks
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # the two stacks (scripts/bench-aws.sh names them radiusward-bench-*) and what they contain
+              - Effect: Allow
+                Action: cloudformation:*
+                Resource: !Sub 'arn:${AWS::Partition}:cloudformation:*:${AWS::AccountId}:stack/radiusward-bench-*'
+              - Effect: Allow
+                Action: [cloudformation:CreateChangeSet, cloudformation:ValidateTemplate, cloudformation:DescribeStacks]
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                  - ecs:*
+                  - elasticloadbalancing:*
+                  - elasticfilesystem:*
+                  - autoscaling:*
+                  - servicediscovery:*
+                  - route53:*
+                  - logs:*
+                  - scheduler:*
+                  - ssm:*
+                  - secretsmanager:*
+                  - s3:*
+                Resource: '*'
+              # roles and instance profiles only with the stacks' prefix
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:TagRole
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PassRole
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/radiusward-bench-*'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/radiusward-bench-*'
+              - Effect: Allow
+                Action: iam:CreateServiceLinkedRole
+                Resource: '*'
+                Condition:
+                  StringLike:
+                    iam:AWSServiceName:
+                      - ecs.amazonaws.com
+                      - elasticloadbalancing.amazonaws.com
+                      - autoscaling.amazonaws.com
+                      - elasticfilesystem.amazonaws.com
+                      - ssm.amazonaws.com
+
+Outputs:
+  RoleArn:
+    Description: store as the repository variable AWS_BENCH_ROLE_ARN
+    Value: !GetAtt Role.Arn

@@ -15,7 +15,7 @@ The image is `radiusward:dev` (`--image` or `RADIUSWARD_IMAGE` for another). Res
 
 | Option | Default | |
 |---|---|---|
-| `--steps` | `500,1000,2000,4000,8000,16000` | target request rates per second |
+| `--steps` | `500,1000,2000,4000,8000,16000,32000` | target request rates per second |
 | `--duration` | `60` | seconds per step |
 | `--generators` | `4` | radclient containers per step |
 | `--max-generators` | `8` | a step short of its rate with latency fine is repeated with up to this many |
@@ -69,17 +69,57 @@ and the harness waits until every member is ready again.
 |---|---|---|
 | any machine | `scripts/bench.py` | a lower bound: members, gateways and generators share the CPUs (`environment.shared_host`) |
 | GitHub runner | `bench.yml`, Sundays and on demand; artifact `results-bench` | a weekly trend on a 4-vCPU runner |
-| AWS | the ECS stack with generators on their own instances (planned) | the ceiling per profile |
+| AWS | `scripts/bench-aws.sh` or `bench-aws.yml` on demand: the ECS stack with generators on their own instances ([below](#on-amazon-ecs)) | the ceiling per profile |
 
 On a MacBook (Colima, 8 vCPU) the first runs carried accounting at 1,000/s (p99 61 ms), authentication at 2,000/s
 (p99 29 ms) and the mix at 2,000/s with every step passing; a leader kill at 700/s lost nothing and caused no
 retransmission (longest wait 2.2 s).
 
-The first run on a GitHub runner (4 vCPU shared by members, gateways and generators; the members and gateways kept
-the CPUs saturated) carried accounting at **3,788/s** (p99 265 ms), authentication at **3,701/s** and the mix at **1,929/s**; a leader
-killed at 2,651/s lost nothing (239 retransmissions, longest wait 3.4 s). JMH: the full receive path at 0.93
-operations/µs, about 930k packets per second per core. Every later run is on the
+On a GitHub runner (4 vCPU shared by three members, two gateways, PostgreSQL and the generators), the run of
+2026-11-11 with the refined ladder carried:
+
+| Workload | Ceiling | Stopped by | CPU at the ceiling |
+|---|---|---|---|
+| accounting | **3,731/s** | p99 609 ms at 4,000/s | members 0.5–0.7 cores each, gateways 0.6 each: the runner's 4 cores busy |
+| authentication | **≥ 15,053/s** | nothing: every step up to 16,000/s passed, p99 200 ms | gateways 0.7 each, members 0.2 |
+| mix (70/30) | **6,821/s** | p99 708 ms at 7,500/s | |
+
+A leader killed at 2,611/s lost nothing and caused no retransmission (longest wait 2.5 s). JMH: the full receive
+path at 1.3 operations/µs, about 1.3 million packets per second on one core. Accounting is bounded by replication
+and fsync on three members sharing four cores; authentication runs on the gateways and stays far from its limit. The
+numbers of one shared runner vary from run to run (the mix carried more accounting than the accounting ladder
+alone), so the pages show the trend. The first run, before the ladder was refined, reported 3,788 / 3,701 /
+1,929 per second: its authentication and mix figures were limits of the coarse steps and the load generators
+([findings](../plans/benchmarks.md#findings-from-the-first-github-run)). Every run is on the
 [published pages](https://radiusward.github.io/radiusward-server/benchmarks/).
+
+## On Amazon ECS
+
+`scripts/bench-aws.sh` runs the same harness against the ECS stack ([aws-ecs.md](../operations/aws-ecs.md)) with the
+load generators on their own Graviton instances, so the result is radiusward's ceiling on that profile, not a
+shared machine's:
+
+```bash
+aws sso login --profile <aws profile>
+AWS_PROFILE=<aws profile> scripts/bench-aws.sh --profile small --region eu-central-1   # then --profile standard
+```
+
+1. Deploys `deploy/aws/bench/generators.yaml` (test only: a VPC with public and private subnets, one NAT gateway, a
+   results bucket, two to four c7g.xlarge generators reachable only through SSM) and the radiusward stack in its
+   private subnets with internal load balancers.
+2. Configures the gateways for the benchmark: a fresh NAS secret, a NAS entry for the VPC, the `load` user in the
+   users file secret, authentication on.
+3. Runs `scripts/bench.py` on the first generator through SSM (`--target`, `--ecs-cluster`, `--generator-hosts`):
+   generators on every instance, CPU per process from `/metrics`, the failover by stopping the leader's task.
+4. Copies the result to `testing/benchmarks/target/bench/` and **deletes both stacks**, also after a failure or
+   Ctrl-C (`--keep` leaves them, `--delete-only` removes them later).
+
+It takes about an hour per profile and costs a few dollars. Credentials are short-lived (IAM Identity Center); the
+account needs room for about 16 vCPUs of on-demand standard instances. From GitHub Actions, `bench-aws.yml` runs it
+on demand with OpenID Connect: deploy `deploy/aws/bench/github-oidc.yaml` once (a role only this repository's
+`main` may assume, limited to `radiusward-bench-*` stacks and roles), store its `RoleArn` as the repository variable
+`AWS_BENCH_ROLE_ARN` and the region as `AWS_BENCH_REGION`; `reports.yml` publishes the results as `aws-small` and
+`aws-standard`.
 
 ## Published results
 
