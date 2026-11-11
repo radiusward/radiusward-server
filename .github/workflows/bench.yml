@@ -1,0 +1,44 @@
+name: bench
+
+# Benchmarks (ADR 0066, docs/testing/benchmarks.md): the accounting, authentication and mix ladders, a leader kill at
+# 70 % of the accounting ceiling and the JMH suite on a GitHub runner. Weekly for the trend, and on demand. On a shared
+# 4-vCPU runner the numbers are a lower bound, comparable from week to week.
+on:
+  schedule:
+    - cron: '23 4 * * 0'   # Sundays
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: 'Request rates per second (empty: the default ladder)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: maven
+      - name: Build radiusward and the image
+        run: |
+          ./mvnw -B -ntp -q install -DskipTests -DskipITs -Djacoco.skip=true
+          docker build -q -f deploy/docker/Dockerfile -t radiusward:dev .
+      - name: Benchmark
+        env:
+          BENCH_WHERE: github-ubuntu-24.04
+          STEPS: ${{ inputs.steps }}
+        run: python3 scripts/bench.py --jmh ${STEPS:+--steps "$STEPS"}
+      - name: Upload the result
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-bench
+          path: testing/benchmarks/target/bench/

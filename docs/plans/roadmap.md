@@ -10,7 +10,7 @@
 | **4** | Helm chart (StatefulSet, PDB, anti-affinity, UDP LB with source IP preservation), systemd units, observability dashboards, chaos and load tests, ClusterBackup / DR runbooks | Kubernetes, bare metal | ✅ done ([plan + report](phase-4.md#phase-4-report)) |
 | **5** | Authentication and authorization (identity stores, Active Directory, EAP-TLS/PEAP/TTLS/TEAP/pwd), Simultaneous-Use through the cluster, RadSec, DTLS, CoA/Disconnect, proxying; EAP-SIM/AKA/AKA′ with local SIM keys | local, Docker | ✅ done: 5.1–5.36 ([plan](phase-5-auth.md)), 5.37–5.41 ([SIM/AKA plan](eap-sim-aka.md)) |
 
-Alongside the phases: published test reports for the integration, end-to-end, fault-injection and Kubernetes suites
+Alongside the phases: benchmarks ([plan](benchmarks.md), [ADR 0066](../adr/0066-benchmarks.md)) and published test reports for the integration, end-to-end, fault-injection and Kubernetes suites
 ([plan](test-reports.md), [ADR 0064](../adr/0064-test-reports.md)).
 
 State-machine versions are gated since 2026-11-09 ([ADR 0005](../adr/0005-log-determinism-versioning.md)): version 5 is

@@ -67,5 +67,6 @@
 | [0063](0063-seeding-a-replaced-member.md) | A member with an empty volume is seeded from the others with Aeron ClusterBackup before it starts | Accepted |
 | [0064](0064-test-reports.md) | Published test reports: Allure 3 per suite with history on GitHub Pages, README badges | Accepted |
 | [0065](0065-cluster-backup.md) | A continuous backup outside the cluster (Aeron ClusterBackup) and restore after a lost quorum | Accepted |
+| [0066](0066-benchmarks.md) | Benchmarks with one harness everywhere: ladders to the ceiling, failover at load, JMH; weekly on GitHub, AWS for the ceiling | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.
