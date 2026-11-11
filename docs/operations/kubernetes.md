@@ -123,6 +123,14 @@ State-machine changes activate on their own once every member runs the new versi
 ([ADR 0005](../adr/0005-log-determinism-versioning.md)); after that, going back to an image older than the active
 state version is refused.
 
+## Tests
+
+`scripts/k8s-tests.sh` builds the image, creates a kind cluster with three workers, installs the chart and runs
+accounting and Access-Request load from a pod through both gateways while it kills the leader, rolls the members,
+rolls the gateways and replaces a member's volume after a purge; a lost request fails the run. It runs nightly in CI
+(`k8s-tests.yml`, pod logs as an artifact) and takes about 20 minutes; `KEEP=1` keeps the cluster, and scenario names
+(`baseline leader-kill member-roll gateway-roll replace-volume`) run a subset.
+
 ## Not yet in the chart
 
 - **A backup outside the cluster** (Phase 4.6, second part): losing two members at once still loses the quorum;
