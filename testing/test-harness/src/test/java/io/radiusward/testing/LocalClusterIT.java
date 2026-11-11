@@ -6,6 +6,8 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.gateway.EventKeys;
 import io.radiusward.gateway.NasRegistry;
@@ -35,6 +37,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** The whole stack in one JVM: 3 cluster members (real Aeron, fsync) and 2 gateways (real UDP). */
+@Epic("Accounting")
+@Feature("Whole stack in one JVM")
 class LocalClusterIT {
 
     static final byte[] SECRET = LocalCluster.SECRET.getBytes(StandardCharsets.US_ASCII);

@@ -4,9 +4,13 @@
  */
 package io.radiusward.e2e;
 
+import io.radiusward.testing.Reports;
 import java.nio.file.Path;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtensionContext;
+import org.junit.jupiter.api.extension.RegisterExtension;
+import org.junit.jupiter.api.extension.TestWatcher;
 import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -18,6 +22,19 @@ abstract class E2eTestBase {
 
     ProcessCluster cluster;
     Nas nas;
+
+    /** The end of every process log, attached to a failed test's report (ADR 0064). */
+    @RegisterExtension
+    final TestWatcher processLogs = new TestWatcher() {
+        @Override
+        public void testFailed(ExtensionContext context, Throwable cause) {
+            if (cluster != null) {
+                for (String name : cluster.names()) {
+                    Reports.attach(name + ".log", cluster.logTail(name));
+                }
+            }
+        }
+    };
 
     @BeforeEach
     void setUp() throws Exception {

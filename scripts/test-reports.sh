@@ -28,16 +28,23 @@ suites=(
 
 generate() {
   local id=$1 title=$2 tmp
-  local xml
-  xml=$(find "$results/results-$id" -type f -name '*.xml' 2>/dev/null | grep -E '/(TEST-[^/]*|junit)\.xml$' || true)
-  if [[ -z "$xml" ]]; then
+  local files kind
+  # Allure results (-Preports: labels, steps, attachments) when the suite has them, else its JUnit XML; never both,
+  # or every test would count twice
+  files=$(find "$results/results-$id" -type f -path '*/allure-results/*' 2>/dev/null || true)
+  kind="Allure results"
+  if ! grep -q -- '-result\.json$' <<<"$files"; then
+    files=$(find "$results/results-$id" -type f -name '*.xml' 2>/dev/null | grep -E '/(TEST-[^/]*|junit)\.xml$' || true)
+    kind="JUnit XML"
+  fi
+  if [[ -z "$files" ]]; then
     return
   fi
   tmp=$(mktemp -d)
   mkdir "$tmp/xml"
-  while IFS= read -r f; do cp "$f" "$tmp/xml/"; done <<<"$xml"
+  while IFS= read -r f; do cp "$f" "$tmp/xml/"; done <<<"$files"
   [[ -f "$site/$id/history.jsonl" ]] && cp "$site/$id/history.jsonl" "$tmp/history.jsonl"
-  echo "$id: $(ls "$tmp/xml" | wc -l | tr -d ' ') result files"
+  echo "$id: $(ls "$tmp/xml" | wc -l | tr -d ' ') files of $kind"
   REPORT_NAME="radiusward · $title" REPORT_OUTPUT="$tmp/report" REPORT_HISTORY="$tmp/history.jsonl" \
     npx -y "allure@$allure_version" generate "$tmp/xml" -c "$root/.github/allure/allurerc.mjs" >/dev/null
   cp "$tmp/history.jsonl" "$tmp/report/history.jsonl"

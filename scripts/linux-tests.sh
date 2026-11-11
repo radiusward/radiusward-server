@@ -28,7 +28,7 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     docker build -q -f testing/linux-tests/docker/Dockerfile.test -t radiusward-test:dev .
 fi
 
-args=(-B -Plinux verify -pl testing/linux-tests)
+args=(-B -Plinux,reports verify -pl testing/linux-tests)
 # shellcheck disable=SC2206
 args+=(${LINUX_TESTS_ARGS:-})
 if [[ $# -gt 0 ]]; then

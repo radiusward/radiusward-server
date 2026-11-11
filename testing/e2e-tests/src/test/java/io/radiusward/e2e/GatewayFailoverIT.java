@@ -6,11 +6,19 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.tools.admin.AdminClient;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /** Gateway dies after the cluster committed but before it answered: the retry via the other gateway is a duplicate. */
+@Epic("Cluster")
+@Feature("Gateway failover")
+@Link(
+        name = "ADR 0003",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0003-event-key-and-dedup.md")
 class GatewayFailoverIT extends E2eTestBase {
 
     @Override

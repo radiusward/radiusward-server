@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.gateway.AuthConfig;
 import io.radiusward.gateway.CoaConfig;
@@ -35,6 +38,11 @@ import org.junit.jupiter.api.io.TempDir;
  * The store sweep (ADR 0036) with 3 members: users online are looked up again; one rejected since is disconnected,
  * one whose reply items changed gets a CoA with them, one no store has any more is left alone.
  */
+@Epic("Authentication")
+@Feature("Store sweep")
+@Link(
+        name = "ADR 0036",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0036-coa-and-session-identity.md")
 class StoreSweepIT {
 
     static final byte[] SECRET = LocalCluster.SECRET.getBytes(StandardCharsets.US_ASCII);

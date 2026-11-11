@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.gateway.AuthConfig;
 import io.radiusward.gateway.Gateway;
@@ -33,6 +36,11 @@ import org.junit.jupiter.api.io.TempDir;
  * Simultaneous use across two gateways and a three-member cluster (ADR 0023): the limit holds whichever gateway a
  * device uses, a reservation keeps the place between Accept and Accounting-Start, and a Stop frees it.
  */
+@Epic("Authentication")
+@Feature("Simultaneous-Use")
+@Link(
+        name = "ADR 0023",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0023-simultaneous-use.md")
 class SimultaneousUseIT {
 
     static final byte[] SECRET = LocalCluster.SECRET.getBytes(StandardCharsets.US_ASCII);

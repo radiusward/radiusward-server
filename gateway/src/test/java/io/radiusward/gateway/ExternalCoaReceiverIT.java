@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +32,11 @@ import org.junit.jupiter.api.io.TempDir;
  * {@code /usr/sbin}, or {@code -Dradiusward.interop.radiusd=<binary>}); its dictionaries and modules are found next to
  * it. The server gets a configuration of its own: a CoA listener on a free port that NAKs user {@code carol}.
  */
+@Epic("Authentication")
+@Feature("CoA and Disconnect")
+@Link(
+        name = "ADR 0036",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0036-coa-and-session-identity.md")
 class ExternalCoaReceiverIT {
 
     static final byte[] SECRET = "coa-interop-secret".getBytes(StandardCharsets.US_ASCII);

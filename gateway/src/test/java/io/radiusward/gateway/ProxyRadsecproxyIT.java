@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -32,6 +35,9 @@ import org.testcontainers.utility.MountableFile;
  * {@code radsec}) and by the gateway ({@code radsec} to the NAS's secret) must still be the home server's key. Skipped
  * where Docker is missing, a failure where it is required.
  */
+@Epic("Proxying")
+@Feature("Interop with radsecproxy")
+@Link(name = "ADR 0037", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0037-proxying.md")
 class ProxyRadsecproxyIT {
 
     @TempDir

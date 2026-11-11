@@ -7,6 +7,9 @@ package io.radiusward.verifier.netlogon;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.auth.CredentialVerifier;
 import io.radiusward.auth.StoreContext;
 import io.radiusward.auth.StoreUnavailableException;
@@ -22,6 +25,12 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /** The Netlogon verifier against a Samba AD domain controller (milestone 4). */
+@Epic("Authentication")
+@Feature("Active Directory over Netlogon")
+@Link(
+        name = "ADR 0025",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0025-credential-verifiers-and-ldap.md")
 class NetlogonVerifierIT {
 
     static final String ALICE = "Alice-Passw0rd!";

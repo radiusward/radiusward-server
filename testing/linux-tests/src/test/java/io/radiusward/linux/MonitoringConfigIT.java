@@ -6,6 +6,8 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import java.nio.file.Path;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
@@ -14,6 +16,8 @@ import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
 /** The shipped alert rules and Prometheus configuration pass {@code promtool} of the image compose uses. */
+@Epic("Operations")
+@Feature("Alert rules")
 class MonitoringConfigIT {
 
     private static final Path MONITORING =

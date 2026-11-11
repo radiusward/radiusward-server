@@ -6,10 +6,18 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.tools.admin.AdminClient;
 import org.junit.jupiter.api.Test;
 
 /** Identical retransmits hit the gateway cache; changed retransmits are recognised by the cluster. */
+@Epic("Accounting")
+@Feature("Retransmissions and deduplication")
+@Link(
+        name = "ADR 0003",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0003-event-key-and-dedup.md")
 class RetransmitIT extends E2eTestBase {
 
     @Test

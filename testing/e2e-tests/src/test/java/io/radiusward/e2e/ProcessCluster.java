@@ -5,6 +5,7 @@
 package io.radiusward.e2e;
 
 import io.radiusward.testing.LocalCluster;
+import io.radiusward.testing.Reports;
 import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
 import java.io.IOException;
@@ -143,15 +144,26 @@ final class ProcessCluster implements AutoCloseable {
     }
 
     void startAll() throws Exception {
-        for (String name : managementPorts.keySet()) {
-            start(name);
-        }
-        for (String name : managementPorts.keySet()) {
-            awaitReady(name);
-        }
+        Reports.step("start " + String.join(", ", managementPorts.keySet()), () -> {
+            for (String name : managementPorts.keySet()) {
+                startProcess(name);
+            }
+            for (String name : managementPorts.keySet()) {
+                awaitReady(name);
+            }
+        });
+    }
+
+    /** Names of the processes: node-0..2 and the gateways. */
+    java.util.Set<String> names() {
+        return managementPorts.keySet();
     }
 
     void start(String name) throws IOException {
+        Reports.step("start " + name, () -> startProcess(name));
+    }
+
+    private void startProcess(String name) throws IOException {
         if (processes.containsKey(name) && processes.get(name).isAlive()) {
             throw new IllegalStateException(name + " already running");
         }
@@ -187,6 +199,10 @@ final class ProcessCluster implements AutoCloseable {
 
     /** {@code kill -HUP}: a gateway reloads its configuration files (ADR 0054). */
     void hangUp(String name) throws IOException, InterruptedException {
+        Reports.step("SIGHUP " + name, () -> hangUpProcess(name));
+    }
+
+    private void hangUpProcess(String name) throws IOException, InterruptedException {
         Process kill = new ProcessBuilder(
                         "kill", "-HUP", Long.toString(processes.get(name).pid()))
                 .inheritIO()
@@ -198,13 +214,19 @@ final class ProcessCluster implements AutoCloseable {
 
     /** {@code kill -9}. */
     void kill(String name) throws InterruptedException {
-        Process p = processes.remove(name);
-        p.destroyForcibly();
-        p.waitFor();
+        Reports.step("kill -9 " + name, () -> {
+            Process p = processes.remove(name);
+            p.destroyForcibly();
+            p.waitFor();
+        });
     }
 
     /** Graceful stop (SIGTERM). */
     void stop(String name) throws InterruptedException {
+        Reports.step("stop " + name, () -> stopProcess(name));
+    }
+
+    private void stopProcess(String name) throws InterruptedException {
         Process p = processes.remove(name);
         p.destroy();
         if (!p.waitFor(
@@ -301,6 +323,10 @@ final class ProcessCluster implements AutoCloseable {
     }
 
     String awaitLeader() {
+        return Reports.step("leader elected", this::awaitLeaderQuietly);
+    }
+
+    private String awaitLeaderQuietly() {
         String[] leader = new String[1];
         try {
             LocalCluster.await(Duration.ofSeconds(60), "leader", () -> {
@@ -321,6 +347,10 @@ final class ProcessCluster implements AutoCloseable {
 
     /** Waits until all running members report the same applied count and digest. */
     void awaitConverged() {
+        Reports.step("replicas converged", this::awaitConvergedQuietly);
+    }
+
+    private void awaitConvergedQuietly() {
         LocalCluster.await(Duration.ofSeconds(60), "replicas converged", () -> {
             String digest = null;
             long applied = -1;

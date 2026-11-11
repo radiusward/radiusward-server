@@ -6,6 +6,9 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.testing.LocalCluster;
 import io.radiusward.tools.admin.AdminClient;
@@ -18,6 +21,11 @@ import org.junit.jupiter.api.Test;
  * log position. A member then started with the older release stops instead of applying entries wrongly. The newer
  * release is simulated with {@code debug.state.version.supported}.
  */
+@Epic("Cluster")
+@Feature("Rolling upgrade")
+@Link(
+        name = "ADR 0005",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0005-log-determinism-versioning.md")
 class RollingUpgradeIT extends E2eTestBase {
 
     static final int OLD = AccountingStateMachine.STATE_VERSION;

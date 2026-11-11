@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNodeConfig;
 import io.radiusward.cluster.node.ClusterSeed;
 import io.radiusward.cluster.node.LogPurgeConfig;
@@ -23,6 +26,11 @@ import org.junit.jupiter.api.io.TempDir;
  * A member that lost its volume after the log was purged is seeded from the others and catches up (ADR 0063); without
  * seeding it could not (the Kubernetes spike, ADR 0062).
  */
+@Epic("Cluster")
+@Feature("Seeding a replaced member")
+@Link(
+        name = "ADR 0063",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0063-seeding-a-replaced-member.md")
 class ClusterSeedIT {
 
     @TempDir

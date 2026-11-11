@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -23,6 +26,11 @@ import org.testcontainers.containers.Container.ExecResult;
  * OOM-killed, unreclaimable memory stays below the limit, every event is acknowledged eventually and the
  * replicas are consistent afterwards.
  */
+@Epic("Fault injection")
+@Feature("Overload")
+@Link(
+        name = "ADR 0004",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0004-memory-budget.md")
 class OverloadIT {
 
     private static final int GENERATORS = 8;

@@ -8,6 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.aeron.Aeron;
 import io.aeron.archive.client.AeronArchive;
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.cluster.service.Outcomes;
@@ -29,6 +32,9 @@ import org.junit.jupiter.api.io.TempDir;
  * second state machine; the replica must end with the cluster's digest — from a snapshot and from position 0,
  * across a leader failover, on every member.
  */
+@Epic("Export")
+@Feature("Log replica")
+@Link(name = "ADR 0017", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0017-exporter.md")
 class LogReplicaSpikeIT {
 
     @TempDir

@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.node.LogPurgeConfig;
 import io.radiusward.tools.radclient.LoadGenerator;
@@ -26,6 +29,9 @@ import org.junit.jupiter.api.io.TempDir;
  * member's log starts beyond 0 (bounded by the second-latest snapshot), and a member stopped before a purge
  * catches up again afterwards.
  */
+@Epic("Cluster")
+@Feature("Log purge")
+@Link(name = "ADR 0014", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0014-log-purge.md")
 class LogPurgeIT {
 
     private static final Pattern LOG_START = Pattern.compile("\"logStart\":(\\d+)");
@@ -104,6 +110,10 @@ class LogPurgeIT {
     }
 
     static void load(LocalCluster cluster, int firstSession) {
+        Reports.step("load: 3000 sessions from session " + firstSession, () -> runLoad(cluster, firstSession));
+    }
+
+    private static void runLoad(LocalCluster cluster, int firstSession) {
         try {
             LoadGenerator.Result result = new LoadGenerator(
                             new LoadGenerator.Settings(
@@ -128,6 +138,7 @@ class LogPurgeIT {
                                     firstSession),
                             new PrintStream(System.out))
                     .run();
+            Reports.attach("radclient load", result.toString());
             if (result.failed() > 0) {
                 cluster.gateways().forEach(g -> System.out.println("gateway after failed load: " + g.stateJson()));
             }

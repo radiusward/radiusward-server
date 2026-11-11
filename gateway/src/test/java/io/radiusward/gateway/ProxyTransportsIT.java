@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -24,6 +27,12 @@ import org.junit.jupiter.api.io.TempDir;
  * B, which decides from its users file. The TCP realm is rewritten on the way: Calling-Station-Id removed and an
  * Operator-Name added before B sees it (B's check items require both), Class removed from B's answer.
  */
+@Epic("Proxying")
+@Feature("Proxying over TCP and DTLS")
+@Link(
+        name = "ADR 0055",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0055-proxy-transports-and-rewriting.md")
 class ProxyTransportsIT {
 
     static final String TCP_SECRET = "tcp-home-secret";

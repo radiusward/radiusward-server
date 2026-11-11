@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
@@ -20,6 +23,11 @@ import org.junit.jupiter.api.Test;
  *   <li>The member is replaced with an empty disk and catches up; no acknowledged event is lost.
  * </ol>
  */
+@Epic("Fault injection")
+@Feature("Full disk")
+@Link(
+        name = "ADR 0016",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0016-fault-injection-tests.md")
 class DiskFullIT {
 
     private static final String DATA = "/var/lib/radiusward";

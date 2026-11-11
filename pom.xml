@@ -62,6 +62,10 @@
 
         <!-- test -->
         <junit.version>5.14.4</junit.version><!-- aligned with jqwik's JUnit Platform -->
+        <!-- Allure Java adapter for the published test reports (ADR 0064): the 2.x line is built for JUnit 5 (3.x needs
+             JUnit 6); Allure Report 3 reads its results. Test scope only, never shipped. -->
+        <allure.version>2.35.6</allure.version>
+        <radiusward.reports>false</radiusward.reports>
         <assertj.version>3.27.7</assertj.version>
         <pgjdbc.version>42.7.14</pgjdbc.version>
         <testcontainers.version>2.0.5</testcontainers.version>
@@ -329,6 +333,16 @@
                 <artifactId>jmh-generator-annprocess</artifactId>
                 <version>${jmh.version}</version>
             </dependency>
+            <dependency>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-java-commons</artifactId>
+                <version>${allure.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.qameta.allure</groupId>
+                <artifactId>allure-jupiter</artifactId>
+                <version>${allure.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -342,6 +356,13 @@
         <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- labels (@Epic, @Feature, @Link) and steps for the published test reports; the listener that records them
+             comes only with -Preports (docs/plans/test-reports.md) -->
+        <dependency>
+            <groupId>io.qameta.allure</groupId>
+            <artifactId>allure-java-commons</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
@@ -374,6 +395,9 @@
                         <argLine>@{jacocoArgLine} ${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
                         <systemPropertyVariables>
                             <radiusward.require.docker>${radiusward.require.docker}</radiusward.require.docker>
+                            <!-- unit tests stay out of the published reports (-Preports adds the Allure listener); a
+                                 system property, because Surefire's configurationParameters do not reach the launcher -->
+                            <junit.platform.execution.listeners.deactivate>io.qameta.allure.*</junit.platform.execution.listeners.deactivate>
                         </systemPropertyVariables>
                     </configuration>
                 </plugin>
@@ -388,6 +412,8 @@
                         <systemPropertyVariables>
                             <radiusward.interop>${radiusward.interop}</radiusward.interop>
                             <radiusward.require.docker>${radiusward.require.docker}</radiusward.require.docker>
+                            <radiusward.reports>${radiusward.reports}</radiusward.reports>
+                            <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
                         </systemPropertyVariables>
                     </configuration>
                     <executions>
@@ -628,6 +654,21 @@
                     </plugin>
                 </plugins>
             </build>
+        </profile>
+        <profile>
+            <!-- Allure results of the integration tests for the published test reports (ADR 0064):
+                 ./mvnw -Preports verify → <module>/target/allure-results; scripts/test-reports.sh builds the report -->
+            <id>reports</id>
+            <properties>
+                <radiusward.reports>true</radiusward.reports>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>io.qameta.allure</groupId>
+                    <artifactId>allure-jupiter</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
         </profile>
         <profile>
             <!-- interop tests against a locally installed FreeRADIUS (brew install freeradius-server) -->

@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +42,12 @@ import org.testcontainers.utility.MountableFile;
  * client certificate with and without one, and EAP-SIM with stored triplets (ADR 0061). Skipped without the interop profile or an installed {@code radiusd}, and
  * where Docker is missing (a failure where it is required).
  */
+@Epic("EAP")
+@Feature("Interop with another RADIUS server")
+@Link(
+        name = "ADR 0039",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0039-peap-alignment.md")
+@Link(name = "ADR 0061", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0061-eap-sim-aka.md")
 class ExternalEapComparisonIT {
 
     static final String SECRET = "comparison-secret";

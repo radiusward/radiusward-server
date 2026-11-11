@@ -6,6 +6,9 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.nio.file.Files;
 import java.time.Duration;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,11 @@ import org.junit.jupiter.api.Test;
  * requests answered; after its file names the right address and the gateway gets SIGHUP, it does — the process keeps
  * running, its other settings unchanged.
  */
+@Epic("Operations")
+@Feature("Configuration reload")
+@Link(
+        name = "ADR 0054",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0054-config-reload.md")
 class ConfigReloadIT extends E2eTestBase {
 
     @Override

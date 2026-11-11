@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,6 +19,11 @@ import org.junit.jupiter.api.Test;
  * write path): a backlog of ~60k events is built with PostgreSQL down, then drained; it must drain faster than
  * the intake (3k events/s here). Prints rows/s, bytes per row and table sizes.
  */
+@Epic("Export")
+@Feature("Export throughput")
+@Link(
+        name = "ADR 0018",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0018-storage-model.md")
 class ExportThroughputIT {
 
     private record Variant(String name, String mode, String attributes) {}

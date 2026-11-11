@@ -1,6 +1,6 @@
 # Plan: published test reports (Allure 3 on GitHub Pages)
 
-Status: **R1 done** (2026-11-11), R2 and R3 in progress. ADR [0064](../adr/0064-test-reports.md). Work packages R1–R3.
+Status: **R1 and R2 done** (2026-11-11), R3 in progress. ADR [0064](../adr/0064-test-reports.md). Work packages R1–R3.
 
 ## Goal
 
@@ -93,6 +93,26 @@ and the same for end-to-end, fault injection and Kubernetes, next to the CI, Cod
   summary, a `/metrics` snapshot; collected without masking the original failure.
 - **Run details** on every report: commit, run link, Java version, profile, Kubernetes version.
 
+### R2 as built
+
+- **Adapter**: `io.qameta.allure:allure-jupiter` **2.35.6**, not 3.x: the 3.x Java adapter is built for JUnit 6 and this
+  build runs JUnit 5.14 (aligned with jqwik); the 2.x results are the format Allure Report 3 reads. Test scope only,
+  never in what ships: `allure-java-commons` (annotations, steps) is a test dependency of every module (compile scope in
+  `testing/test-harness`, whose `Reports` helper is test infrastructure); the listener comes only with `-Preports`.
+- **Profile**: `./mvnw -Preports verify` writes `<module>/target/allure-results` for Failsafe tests; unit tests keep
+  the listener off (`junit.platform.execution.listeners.deactivate` as a Surefire system property). CI runs the
+  verify and e2e jobs and `scripts/linux-tests.sh` with it; `scripts/test-reports.sh` prefers a suite's Allure results
+  and falls back to its JUnit XML (Kubernetes), never both.
+- **Labels**: all 70 `*IT` classes carry `@Epic`, `@Feature` and, where the class is about one, `@Link` to the ADR
+  (Accounting 10, Authentication 13, EAP 4, Transports 7, Proxying 8, Cluster 11, Export 7, Operations 5, Fault
+  injection 5 — no class is tagged Kubernetes; that report comes from the script's XML).
+- **Steps**: `Reports.step` around the shared helpers — `LocalCluster` (start cluster, members, gateways; stop a
+  member; gateways connected; replicas converged), `ProcessCluster` (start/stop/kill -9/SIGHUP a process, leader
+  elected, converged), `ContainerCluster` (start, kill, restart, power loss, isolate/heal, PostgreSQL stop/start, load)
+  and the shared load of `LogPurgeIT`/`ClusterSeedIT`. Without `-Preports` a step just runs its body.
+- **Attachments**: every radclient load summary; on failure the end of every process log (e2e, a `TestWatcher` in
+  `E2eTestBase`) and of every container log (linux, `FailureLogs`, auto-registered in that module only).
+
 ### Pull requests (R3)
 
 On pull requests the integration and end-to-end reports are generated as an artifact (never published) and
@@ -104,7 +124,7 @@ On pull requests the integration and end-to-end reports are generated as an arti
 | # | Package | Content | Size |
 |---|---|---|---|
 | R1 ✅ | Reports and badges | results uploaded on every run, `junit.xml` from `k8s-tests.sh`, `reports.yml` deploying to Pages, Allure config, landing page, README badges, `docs/testing/strategy.md` | M |
-| R2 | Richer reports | `allure-jupiter` profile, epics/features/ADR links, steps in `LocalCluster`/`ContainerCluster`/load, log attachments | M |
+| R2 ✅ | Richer reports | `-Preports` profile with `allure-jupiter`, epics/features/ADR links on every `*IT`, steps in `LocalCluster`/`ProcessCluster`/`ContainerCluster`/load, log attachments on failure | M |
 | R3 | Pull requests | report artifact and `allure-action` summary and check on pull requests | S |
 
 ## Risks

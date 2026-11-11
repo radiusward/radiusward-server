@@ -73,7 +73,11 @@ The integration, end-to-end, fault-injection and Kubernetes suites publish Allur
 last 30 runs to [radiusward.github.io/radiusward-server](https://radiusward.github.io/radiusward-server/); the README
 badges link to them ([ADR 0064](../adr/0064-test-reports.md), [plan](../plans/test-reports.md)). The test workflows
 upload their JUnit XML on every run (`results-*` artifacts); `reports.yml` turns the results of runs on `main` into the
-reports. `scripts/test-reports.sh <results> <site>` builds the same site locally.
+reports. With `-Preports` (CI does this) the Failsafe tests also write Allure results: every `*IT` carries `@Epic`,
+`@Feature` and its ADR as `@Link`, the shared harnesses (`LocalCluster`, `ProcessCluster`, `ContainerCluster`) record
+their actions as steps through `Reports.step`, load summaries and, on failure, process and container logs are
+attached. New `*IT` classes get an epic and feature too. `scripts/test-reports.sh <results> <site>` builds the same
+site locally.
 
 ## Coverage
 

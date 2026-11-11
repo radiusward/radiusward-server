@@ -6,6 +6,9 @@ package io.radiusward.cluster.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.lang.management.BufferPoolMXBean;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
@@ -19,6 +22,11 @@ import org.junit.jupiter.api.Test;
  * GC and direct memory must stay within what a 1 GiB member leaves for them. In seconds, without containers: the
  * guard that {@code OverloadIT} (linux tests) would otherwise be the first to trip.
  */
+@Epic("Cluster")
+@Feature("Memory footprint")
+@Link(
+        name = "ADR 0004",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0004-memory-budget.md")
 class StateFootprintIT {
 
     static final int SESSIONS = 2_000_000;

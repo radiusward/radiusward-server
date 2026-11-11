@@ -24,7 +24,7 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - name: Build and test
-        run: ./mvnw -B -ntp verify -Dradiusward.require.docker=true
+        run: ./mvnw -B -ntp -Preports verify -Dradiusward.require.docker=true
       - name: Benchmarks compile
         if: matrix.java == '25'
         run: ./mvnw -B -ntp -Pbench -pl testing/benchmarks -am package -DskipTests
@@ -39,7 +39,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: results-integration
-          path: '**/target/failsafe-reports/TEST-*.xml'
+          path: |
+            **/target/failsafe-reports/TEST-*.xml
+            **/target/allure-results/
           if-no-files-found: warn
 
   e2e:
@@ -53,7 +55,7 @@ jobs:
           java-version: '25'
           cache: maven
       - name: End-to-end tests (separate JVMs)
-        run: ./mvnw -B -ntp -Pe2e verify -Dradiusward.require.docker=true
+        run: ./mvnw -B -ntp -Pe2e,reports verify -Dradiusward.require.docker=true
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7
@@ -65,7 +67,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: results-e2e
-          path: testing/e2e-tests/target/failsafe-reports/TEST-*.xml
+          path: |
+            testing/e2e-tests/target/failsafe-reports/TEST-*.xml
+            testing/e2e-tests/target/allure-results/
           if-no-files-found: warn
 
   chart:

@@ -7,6 +7,8 @@ package io.radiusward.tools.radclient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -27,6 +29,8 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>Runs only with {@code -Pinterop} and when {@code radiusd} is on the PATH
  * ({@code brew install freeradius-server}); skipped otherwise. No Docker involved.
  */
+@Epic("Accounting")
+@Feature("Interop with another RADIUS server")
 class FreeRadiusInteropIT {
 
     @Test

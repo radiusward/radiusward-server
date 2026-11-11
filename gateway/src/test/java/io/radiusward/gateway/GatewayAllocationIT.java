@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.protocol.AccountingCommandDecoder;
 import io.radiusward.protocol.AccountingCommittedEncoder;
 import io.radiusward.protocol.MessageHeaderDecoder;
@@ -29,6 +32,11 @@ import org.junit.jupiter.api.Test;
  * build and send the response — must not allocate. One sender, so the JDK reuses its cached sender address
  * (with many NAS the JDK allocates ~80 bytes per sender change; documented in ADR 0011).
  */
+@Epic("Accounting")
+@Feature("No allocation per packet")
+@Link(
+        name = "ADR 0011",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0011-gateway-pipeline.md")
 class GatewayAllocationIT {
 
     private static final com.sun.management.ThreadMXBean THREADS =

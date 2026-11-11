@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -34,6 +37,11 @@ import org.junit.jupiter.api.io.TempDir;
  * NAS entry that does not allow TCP refused at once, a malformed length closing the connection. Accounting over TCP
  * with a cluster: {@code RadsecAccountingIT}.
  */
+@Epic("Transports")
+@Feature("RADIUS over TCP")
+@Link(
+        name = "ADR 0045",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0045-radius-over-tcp.md")
 class RadiusTcpIT {
 
     @TempDir

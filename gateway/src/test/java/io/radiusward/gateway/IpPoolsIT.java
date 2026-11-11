@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -28,6 +31,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * no address of an open exported session, reuse after the lease, an empty pool, concurrent allocations without
  * duplicates. Skipped where Docker is missing, a failure where it is required.
  */
+@Epic("Authentication")
+@Feature("IP pools")
+@Link(name = "ADR 0050", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0050-ip-pools.md")
 class IpPoolsIT {
 
     private PostgreSQLContainer postgres;

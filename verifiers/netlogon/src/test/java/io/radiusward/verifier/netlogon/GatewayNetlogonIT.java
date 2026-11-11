@@ -6,6 +6,9 @@ package io.radiusward.verifier.netlogon;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.Profile;
 import io.radiusward.common.config.Config;
 import io.radiusward.gateway.AuthConfig;
@@ -41,6 +44,12 @@ import org.junit.jupiter.api.io.TempDir;
  * The whole chain through a real gateway over UDP: users from the LDAP store (the domain's directory, with a group
  * policy), credentials checked by the Netlogon verifier against the domain controller.
  */
+@Epic("Authentication")
+@Feature("Active Directory over Netlogon")
+@Link(
+        name = "ADR 0025",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0025-credential-verifiers-and-ldap.md")
 class GatewayNetlogonIT {
 
     static final byte[] SECRET = "testing123".getBytes(StandardCharsets.US_ASCII);

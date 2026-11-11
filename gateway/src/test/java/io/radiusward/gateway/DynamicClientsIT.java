@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -34,6 +37,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * the entry is looked up; the NAS's retransmission is answered, signed with the secret from the table. Skipped where
  * Docker is missing, a failure where it is required.
  */
+@Epic("Transports")
+@Feature("Dynamic NAS entries")
+@Link(
+        name = "ADR 0046",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0046-dynamic-clients.md")
 class DynamicClientsIT {
 
     static final byte[] SECRET = "from-the-table".getBytes(StandardCharsets.US_ASCII);

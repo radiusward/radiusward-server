@@ -7,11 +7,20 @@ package io.radiusward.verifier.netlogon;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 /** Milestones 1–2 against a Samba AD domain controller: endpoint mapper, bind, secure-channel authentication. */
+@Epic("Authentication")
+@Feature("Active Directory over Netlogon")
+@Link(
+        name = "ADR 0025",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0025-credential-verifiers-and-ldap.md")
 class SecureChannelIT {
 
     static final Duration TIMEOUT = Duration.ofSeconds(5);

@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -22,6 +25,11 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * counts only the part of a session after the period began, octets count the sessions seen in the period. Skipped
  * where Docker is missing, a failure where it is required.
  */
+@Epic("Authentication")
+@Feature("Usage counters")
+@Link(
+        name = "ADR 0049",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0049-time-and-usage-limits.md")
 class UsageCountersIT {
 
     private PostgreSQLContainer postgres;

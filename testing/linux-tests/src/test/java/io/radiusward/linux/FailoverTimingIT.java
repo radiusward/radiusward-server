@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,11 @@ import org.junit.jupiter.api.Test;
  * 3 s client timeout, so no NAS has to retransmit (ADR 0011: gateways resubmit pending commands to the new
  * leader).
  */
+@Epic("Fault injection")
+@Feature("Leader killed under load")
+@Link(
+        name = "ADR 0011",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0011-gateway-pipeline.md")
 class FailoverTimingIT {
 
     @Test

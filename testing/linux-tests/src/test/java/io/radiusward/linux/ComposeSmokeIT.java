@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -18,6 +21,11 @@ import org.junit.jupiter.api.Test;
  * The shipped {@code deploy/compose} file as an operator would use it: {@code up --wait}, one accounting
  * request through each gateway from the tools container, {@code down -v}.
  */
+@Epic("Operations")
+@Feature("Compose stack")
+@Link(
+        name = "ADR 0015",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0015-container-image.md")
 class ComposeSmokeIT {
 
     private static final String PROJECT = "radiusward-smoke";

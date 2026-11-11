@@ -6,12 +6,16 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import io.radiusward.tools.admin.AdminClient;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 /** After a snapshot and a restart of every member, old events are still recognised as duplicates. */
+@Epic("Cluster")
+@Feature("Snapshots")
 class SnapshotRestoreIT extends E2eTestBase {
 
     @Test

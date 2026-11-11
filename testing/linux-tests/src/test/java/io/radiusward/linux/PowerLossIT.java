@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
@@ -18,6 +21,11 @@ import org.testcontainers.containers.Container.ExecResult;
  * all: its catalog is zeroed), otherwise the setup does not simulate a power loss and the first test proves
  * nothing.
  */
+@Epic("Fault injection")
+@Feature("Power loss")
+@Link(
+        name = "ADR 0016",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0016-fault-injection-tests.md")
 class PowerLossIT {
 
     /** {@code verify == null}: the cluster did not recover. */

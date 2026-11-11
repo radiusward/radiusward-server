@@ -6,6 +6,9 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.protocol.SessionStatus;
 import io.radiusward.tools.admin.AdminClient;
 import io.radiusward.tools.radclient.LoadGenerator;
@@ -20,6 +23,11 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /** kill -9 of the leader under load: every acknowledged event is in the replicated state, none twice. */
+@Epic("Cluster")
+@Feature("Leader failover")
+@Link(
+        name = "ADR 0002",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0002-ack-boundary.md")
 class LeaderFailoverIT extends E2eTestBase {
 
     @Test

@@ -109,6 +109,9 @@ final class ContainerCluster implements AutoCloseable {
     static final String POSTGRES_IP = "172.28.0.40";
     static final String JDBC_URL = "jdbc:postgresql://" + POSTGRES_IP + ":5432/radius";
 
+    /** Where clusters closed during the current test saved their logs, for {@link FailureLogs}. */
+    static final List<Path> savedLogs = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     ContainerCluster(String testName, Options options) {
         this.testName = testName;
         this.options = options;
@@ -215,6 +218,10 @@ final class ContainerCluster implements AutoCloseable {
 
     /** Starts everything and waits until all members and gateways report ready; cleans up if that fails. */
     ContainerCluster start() {
+        return Reports.step("start " + nodes.size() + " members and " + gateways.size() + " gateways", this::startAll);
+    }
+
+    private ContainerCluster startAll() {
         try {
             tools.start();
             if (postgres != null) {
@@ -236,12 +243,16 @@ final class ContainerCluster implements AutoCloseable {
 
     /** Stops the database container (connections refused) without removing it. */
     void stopPostgres() {
-        docker.stopContainerCmd(postgres.getContainerId()).withTimeout(5).exec();
+        Reports.step("stop PostgreSQL", () -> {
+            docker.stopContainerCmd(postgres.getContainerId()).withTimeout(5).exec();
+        });
     }
 
     void startPostgres() {
-        docker.startContainerCmd(postgres.getContainerId()).exec();
-        awaitPostgres(Duration.ofSeconds(60));
+        Reports.step("start PostgreSQL", () -> {
+            docker.startContainerCmd(postgres.getContainerId()).exec();
+            awaitPostgres(Duration.ofSeconds(60));
+        });
     }
 
     private void awaitPostgres(Duration timeout) {
@@ -360,28 +371,36 @@ final class ContainerCluster implements AutoCloseable {
 
     /** {@code kill -9} of the container's main process. LazyFS dies with it: unsynced writes are gone. */
     void kill(Member m) {
-        docker.killContainerCmd(m.container().getContainerId())
-                .withSignal("KILL")
-                .exec();
+        Reports.step("kill -9 " + m.name(), () -> {
+            docker.killContainerCmd(m.container().getContainerId())
+                    .withSignal("KILL")
+                    .exec();
+        });
     }
 
     /** Starts a killed container again (same filesystem, same address). */
     void restart(Member m) {
-        docker.startContainerCmd(m.container().getContainerId()).exec();
+        Reports.step("restart " + m.name(), () -> {
+            docker.startContainerCmd(m.container().getContainerId()).exec();
+        });
     }
 
     /** All three members lose power at once, then come back. */
     void powerLoss() {
-        nodes.parallelStream().forEach(this::kill);
-        nodes.parallelStream().forEach(this::restart);
+        Reports.step("power loss of every member", () -> {
+            nodes.parallelStream().forEach(this::kill);
+            nodes.parallelStream().forEach(this::restart);
+        });
     }
 
     /** Drops all traffic between {@code m} and the given addresses, both directions (iptables in {@code m}). */
     void isolate(Member m, List<String> peers) {
-        for (String peer : peers) {
-            execOrFail(m.container(), "iptables", "-A", "INPUT", "-s", peer, "-j", "DROP");
-            execOrFail(m.container(), "iptables", "-A", "OUTPUT", "-d", peer, "-j", "DROP");
-        }
+        Reports.step("isolate " + m.name() + " from " + peers, () -> {
+            for (String peer : peers) {
+                execOrFail(m.container(), "iptables", "-A", "INPUT", "-s", peer, "-j", "DROP");
+                execOrFail(m.container(), "iptables", "-A", "OUTPUT", "-d", peer, "-j", "DROP");
+            }
+        });
     }
 
     /** Runs {@code sh -c <command>} in a member or gateway container (as root in the test image). */
@@ -390,7 +409,7 @@ final class ContainerCluster implements AutoCloseable {
     }
 
     void heal(Member m) {
-        execOrFail(m.container(), "iptables", "-F");
+        Reports.step("heal " + m.name(), () -> execOrFail(m.container(), "iptables", "-F"));
     }
 
     boolean oomKilled(Member m) {
@@ -547,6 +566,12 @@ final class ContainerCluster implements AutoCloseable {
 
     /** As above, numbering sessions from {@code firstSession} (distinct sessions for consecutive loads). */
     LoadResult load(int nas, int sessions, int rate, Duration duration, String ackLog, int firstSession) {
+        return Reports.step(
+                "load: " + sessions + " sessions, " + rate + "/s for " + duration.toSeconds() + " s",
+                () -> runLoad(nas, sessions, rate, duration, ackLog, firstSession));
+    }
+
+    private LoadResult runLoad(int nas, int sessions, int rate, Duration duration, String ackLog, int firstSession) {
         ExecResult r = radiusward(
                 "radclient",
                 "load",
@@ -570,6 +595,7 @@ final class ContainerCluster implements AutoCloseable {
                 "--ack-log",
                 ackLog);
         System.out.println(r.getStdout());
+        Reports.attach("radclient load", r.getStdout());
         return LoadResult.parse(r.getStdout());
     }
 
@@ -622,6 +648,7 @@ final class ContainerCluster implements AutoCloseable {
     public void close() {
         Path dir = Path.of(System.getProperty("radiusward.logs.dir", "target/container-logs"))
                 .resolve(testName);
+        savedLogs.add(dir);
         List<Member> all = new ArrayList<>(nodes);
         all.addAll(gateways);
         for (Member m : all) {

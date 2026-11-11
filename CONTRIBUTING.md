@@ -30,6 +30,7 @@ Phase 3b (more sinks) and Phase 4 (Kubernetes) follow — see the [roadmap](docs
                                                 # rewrite fixture packet: lines after editing a fixture
 ./mvnw -Pbench -pl testing/benchmarks -am package -DskipTests && java -jar testing/benchmarks/target/benchmarks.jar
 ./mvnw -Pe2e verify                             # end-to-end tests against separate radiusward processes
+./mvnw -Preports verify                         # also Allure results of the *IT tests (labels, steps) for the test reports
 ./mvnw -Pinterop verify                         # also runs against a local FreeRADIUS (brew install freeradius-server)
 scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 gateways (docs/operations/local-cluster.md)
 docker build -f deploy/docker/Dockerfile -t radiusward:dev .   # image (after ./mvnw install -DskipTests)

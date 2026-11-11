@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.exporter.ExportConfig;
 import io.radiusward.exporter.SinkConfig;
@@ -36,6 +39,9 @@ import org.junit.jupiter.api.io.TempDir;
  * is stopped, the lease moves, and afterwards the union of all members' files holds every applied event and
  * the cluster's final state of every session.
  */
+@Epic("Export")
+@Feature("Export lease and failover")
+@Link(name = "ADR 0017", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0017-exporter.md")
 class ExporterIT {
 
     private static final Pattern FIELD = Pattern.compile("\"(\\w+)\":(\"[^\"]*\"|-?\\d+|null)");

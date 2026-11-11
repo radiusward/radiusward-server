@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -21,6 +24,15 @@ import org.junit.jupiter.api.io.TempDir;
  * Inner tunnel credentials checked by home servers over RadSec and plain TCP (ADR 0044, 0055): a gateway with RadSec
  * and TCP listeners is the home server of two realms; the inner proxy's verdicts come back over both.
  */
+@Epic("Proxying")
+@Feature("Inner-tunnel proxying")
+@Link(
+        name = "ADR 0044",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0044-inner-tunnel-proxying.md")
+@Link(
+        name = "ADR 0055",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0055-proxy-transports-and-rewriting.md")
 class InnerProxyStreamIT {
 
     @TempDir

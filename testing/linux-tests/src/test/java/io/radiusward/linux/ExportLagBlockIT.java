@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,11 @@ import org.junit.jupiter.api.Test;
  * new accounting once the sink is 30 s behind ({@code EXPORT_LAG}), and acknowledges again as soon as the sink has
  * caught up. Nothing acknowledged is missing in the database.
  */
+@Epic("Export")
+@Feature("Required sink stops acknowledgements")
+@Link(
+        name = "ADR 0007",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0007-sink-spi-lag-policy.md")
 class ExportLagBlockIT {
 
     @Test

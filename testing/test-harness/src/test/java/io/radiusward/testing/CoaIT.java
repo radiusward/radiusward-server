@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.ManagementServer;
@@ -50,6 +53,12 @@ import org.junit.jupiter.api.io.TempDir;
  * Acct-Session-Id, requests to a fake NAS over UDP — through the gateway's HTTP API and {@code admin} — and to a NAS
  * on its RadSec connection.
  */
+@Epic("Authentication")
+@Feature("CoA and Disconnect")
+@Link(
+        name = "ADR 0036",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0036-coa-and-session-identity.md")
+@Link(name = "ADR 0043", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0043-coa-relay.md")
 class CoaIT {
 
     static final String TOKEN = "coa-token-0123456789";

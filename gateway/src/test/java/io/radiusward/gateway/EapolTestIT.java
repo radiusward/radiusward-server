@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -29,6 +32,19 @@ import org.testcontainers.utility.MountableFile;
  * EAP-TLS, PEAP and TTLS over TLS 1.2 and 1.3, fragments both ways, wrong credentials, MPPE keys compared with the
  * peer's MSK. Skipped where Docker is missing, a failure where it is required.
  */
+@Epic("EAP")
+@Feature("EAP-TLS, PEAP, TTLS, TEAP, EAP-pwd")
+@Link(
+        name = "ADR 0035",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0035-eap-session-resumption.md")
+@Link(
+        name = "ADR 0040",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0040-ttls-inner-methods.md")
+@Link(name = "ADR 0041", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0041-teap.md")
+@Link(name = "ADR 0042", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0042-eap-pwd.md")
+@Link(
+        name = "ADR 0044",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0044-inner-tunnel-proxying.md")
 class EapolTestIT {
 
     static final String SECRET = "eapol-secret";

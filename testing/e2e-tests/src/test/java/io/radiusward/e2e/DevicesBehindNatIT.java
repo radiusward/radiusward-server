@@ -6,6 +6,9 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.protocol.SessionStatus;
 import io.radiusward.tools.admin.AdminClient;
 import org.junit.jupiter.api.Test;
@@ -14,6 +17,11 @@ import org.junit.jupiter.api.Test;
  * Access points behind one address (ADR 0019): the NAS entry identifies them by NAS-Identifier, so equal
  * Acct-Session-Ids stay separate sessions and an Accounting-On stops only the rebooted device's sessions.
  */
+@Epic("Accounting")
+@Feature("Devices behind one address")
+@Link(
+        name = "ADR 0019",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0019-nas-device-identity.md")
 class DevicesBehindNatIT extends E2eTestBase {
 
     @Override

@@ -6,12 +6,20 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.tools.admin.AdminClient;
 import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** No majority, no Accounting-Response; once a majority is back the retransmit is acknowledged exactly once. */
+@Epic("Accounting")
+@Feature("Acknowledged only after commit")
+@Link(
+        name = "ADR 0002",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0002-ack-boundary.md")
 class AckAfterCommitIT extends E2eTestBase {
 
     @Test

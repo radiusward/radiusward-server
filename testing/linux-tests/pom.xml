@@ -47,6 +47,10 @@
                         <radiusward.logs.dir>${project.build.directory}/container-logs</radiusward.logs.dir>
                     </systemPropertyVariables>
                     <runOrder>alphabetical</runOrder>
+                    <properties>
+                        <!-- FailureLogs attaches container logs to failed tests' reports (META-INF/services) -->
+                        <configurationParameters>junit.jupiter.extensions.autodetection.enabled = true</configurationParameters>
+                    </properties>
                 </configuration>
             </plugin>
             <plugin>

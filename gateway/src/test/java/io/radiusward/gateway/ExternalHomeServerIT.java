@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -26,6 +29,9 @@ import org.junit.jupiter.api.io.TempDir;
  * Reply-Message, Reject — must pass our checks and reach the NAS signed for it; it also answers our Status-Server.
  * Runs only with {@code -Pinterop} and an installed {@code radiusd}.
  */
+@Epic("Proxying")
+@Feature("Interop with another RADIUS server")
+@Link(name = "ADR 0037", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0037-proxying.md")
 class ExternalHomeServerIT {
 
     @TempDir

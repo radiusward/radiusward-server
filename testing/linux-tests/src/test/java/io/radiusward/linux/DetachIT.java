@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,11 @@ import org.junit.jupiter.api.Test;
  * detached once over its limit (it no longer holds the log) and re-attaches when it has caught up, as long as the
  * log still holds its position.
  */
+@Epic("Export")
+@Feature("Optional sink detaches")
+@Link(
+        name = "ADR 0007",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0007-sink-spi-lag-policy.md")
 class DetachIT {
 
     @Test

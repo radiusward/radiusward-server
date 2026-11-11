@@ -6,6 +6,8 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +17,8 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /** Every vendor fixture through a gateway: acknowledged and in the replicated state. */
+@Epic("Accounting")
+@Feature("Vendor fixtures")
 class VendorFixturesIT extends E2eTestBase {
 
     @Test

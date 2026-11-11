@@ -6,10 +6,14 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** A follower killed with -9 catches up from the log after restart. */
+@Epic("Cluster")
+@Feature("Member restart")
 class NodeRestartIT extends E2eTestBase {
 
     @Test

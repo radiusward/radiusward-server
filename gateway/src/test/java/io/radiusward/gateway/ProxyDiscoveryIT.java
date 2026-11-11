@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -24,6 +27,9 @@ import org.junit.jupiter.api.io.TempDir;
  * answered; the NAS's retransmission gets the home server's answer. A realm publishing nothing gets no answer, and DNS
  * is not asked again before the negative TTL.
  */
+@Epic("Proxying")
+@Feature("Dynamic discovery (RFC 7585)")
+@Link(name = "ADR 0037", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0037-proxying.md")
 class ProxyDiscoveryIT {
 
     @TempDir

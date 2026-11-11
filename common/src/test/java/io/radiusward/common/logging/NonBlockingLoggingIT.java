@@ -6,6 +6,9 @@ package io.radiusward.common.logging;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.lang.management.ManagementFactory;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -30,6 +33,12 @@ import org.junit.jupiter.api.TestMethodOrder;
  * instead of blocking. Runs under Failsafe with the small-profile ring size (8192 slots).
  */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
+@Epic("Operations")
+@Feature("Non-blocking logging")
+@Link(
+        name = "ADR 0013",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0013-operational-endpoints-logging.md")
 class NonBlockingLoggingIT {
 
     private static final com.sun.management.ThreadMXBean THREADS =

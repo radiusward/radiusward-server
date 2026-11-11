@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import io.radiusward.radius.codec.RadiusCode;
@@ -31,6 +34,14 @@ import org.junit.jupiter.api.io.TempDir;
  * after the delay, an accept at once, a retransmission during the delay gets no second answer; both decisions are
  * logged with the reject's cause.
  */
+@Epic("Authentication")
+@Feature("Reject delay and authentication log")
+@Link(
+        name = "ADR 0057",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0057-reject-delay.md")
+@Link(
+        name = "ADR 0058",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0058-authentication-log.md")
 class RejectDelayIT {
 
     @TempDir

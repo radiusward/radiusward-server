@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.gateway.AuthConfig;
 import io.radiusward.gateway.CoaConfig;
@@ -45,6 +48,9 @@ import org.testcontainers.utility.MountableFile;
  * 1). Covers both methods, a USIM ahead of the server (resynchronisation), an anonymous outer identity, a subscriber
  * stored with OP, a wrong key and an unknown IMSI. Skipped where Docker is missing, a failure where it is required.
  */
+@Epic("EAP")
+@Feature("EAP-SIM, EAP-AKA, EAP-AKA′")
+@Link(name = "ADR 0061", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0061-eap-sim-aka.md")
 class AkaEapolIT {
 
     static final String SECRET = "testing123";

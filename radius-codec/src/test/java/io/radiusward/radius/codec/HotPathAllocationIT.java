@@ -6,6 +6,8 @@ package io.radiusward.radius.codec;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import io.radiusward.radius.codec.attributes.AccountingAttributeExtractor;
 import io.radiusward.radius.codec.attributes.AccountingFields;
 import io.radiusward.radius.dictionary.DictionaryLoader;
@@ -19,6 +21,8 @@ import org.junit.jupiter.api.Test;
  *
  * <p>Runs under Failsafe without the JaCoCo agent so instrumentation cannot distort the numbers.
  */
+@Epic("Accounting")
+@Feature("No allocation per packet")
 class HotPathAllocationIT {
 
     private static final com.sun.management.ThreadMXBean THREADS =

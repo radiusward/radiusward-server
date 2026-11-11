@@ -110,12 +110,14 @@ public final class LocalCluster implements AutoCloseable {
         cluster.export = export;
         cluster.purge = purge;
         try {
-            for (int i = 0; i < members; i++) {
-                cluster.startNode(i);
-            }
-            for (int g = 0; g < gatewayCount; g++) {
-                cluster.startGateway(g + 1, radiusPorts[g]);
-            }
+            Reports.step("start " + members + " members and " + gatewayCount + " gateways", () -> {
+                for (int i = 0; i < members; i++) {
+                    cluster.startNode(i);
+                }
+                for (int g = 0; g < gatewayCount; g++) {
+                    cluster.startGateway(g + 1, radiusPorts[g]);
+                }
+            });
             return cluster;
         } catch (RuntimeException e) {
             cluster.close();
@@ -160,13 +162,17 @@ public final class LocalCluster implements AutoCloseable {
         if (nodes[id] != null) {
             throw new IllegalStateException("node " + id + " already running");
         }
-        nodes[id] = ClusterNode.launch(nodeConfig(id), null);
+        Reports.step("start member " + id, () -> {
+            nodes[id] = ClusterNode.launch(nodeConfig(id), null);
+        });
     }
 
     /** Stops a member (graceful close; for kill -9 use the e2e tests). */
     public void stopNode(int id) {
-        CloseHelper.close(nodes[id]);
-        nodes[id] = null;
+        Reports.step("stop member " + id, () -> {
+            CloseHelper.close(nodes[id]);
+            nodes[id] = null;
+        });
     }
 
     public ClusterNode node(int id) {
@@ -257,7 +263,9 @@ public final class LocalCluster implements AutoCloseable {
                 new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
                 null,
                 Duration.ZERO);
-        Gateway gateway = Gateway.launchWith(config, registry, auth, handler, radsec, coa, proxy);
+        Gateway gateway = Reports.step(
+                "start gateway " + gatewayId,
+                () -> Gateway.launchWith(config, registry, auth, handler, radsec, coa, proxy));
         gateways.add(gateway);
         return gateway;
     }
@@ -304,14 +312,20 @@ public final class LocalCluster implements AutoCloseable {
 
     /** Waits until every gateway is connected to the cluster. */
     public void awaitGatewaysConnected() {
-        await(
-                Duration.ofSeconds(30),
+        Reports.step(
                 "gateways connected",
-                () -> gateways.stream().allMatch(g -> g.stats().connected()));
+                () -> await(
+                        Duration.ofSeconds(30),
+                        "gateways connected",
+                        () -> gateways.stream().allMatch(g -> g.stats().connected())));
     }
 
     /** Waits until all running members applied the same log (same applied count and digest). */
     public void awaitConverged() {
+        Reports.step("replicas converged", () -> awaitConvergedQuietly());
+    }
+
+    private void awaitConvergedQuietly() {
         await(Duration.ofSeconds(30), "replicas converged", () -> {
             Long digest = null;
             Long applied = null;

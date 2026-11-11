@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -32,6 +35,10 @@ import org.testcontainers.utility.MountableFile;
  * gateway encrypts them with the RadSec secret, radsecproxy re-encrypts them for its UDP client). Skipped where Docker
  * is missing, a failure where it is required.
  */
+@Epic("Transports")
+@Feature("Interop with radsecproxy")
+@Link(name = "ADR 0034", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0034-radsec.md")
+@Link(name = "ADR 0038", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0038-dtls.md")
 class RadsecproxyIT {
 
     static final String UDP_SECRET = "proxy-secret";

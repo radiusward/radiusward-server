@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -28,6 +31,9 @@ import org.junit.jupiter.api.io.TempDir;
  * An IPv6 NAS (ADR 0047): the gateway listens on {@code ::}, the NAS entry is {@code ::1}, and an Access-Request from
  * {@code [::1]} is answered with that entry's secret; the same gateway still answers its IPv4 NAS.
  */
+@Epic("Transports")
+@Feature("IPv6 NAS")
+@Link(name = "ADR 0047", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0047-ipv6-nas.md")
 class Ipv6IT {
 
     @TempDir

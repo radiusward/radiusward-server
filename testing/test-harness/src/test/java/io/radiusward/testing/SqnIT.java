@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.gateway.AccessHandler;
 import io.radiusward.gateway.AuthConfig;
@@ -33,6 +36,9 @@ import org.junit.jupiter.api.io.TempDir;
  * SIM sequence numbers through the cluster (state version 8, ADR 0061): an access handler asks for the next SQN of a
  * subscriber and answers with it. Two gateways share one sequence, a floor lifts it, and a new leader continues it.
  */
+@Epic("EAP")
+@Feature("SIM sequence numbers")
+@Link(name = "ADR 0061", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0061-eap-sim-aka.md")
 class SqnIT {
 
     static final byte[] SECRET = LocalCluster.SECRET.getBytes(StandardCharsets.US_ASCII);

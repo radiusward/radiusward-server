@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -24,6 +27,9 @@ import org.junit.jupiter.api.io.TempDir;
  * with a client certificate; B decides from its own store. The NAS talks UDP to A and gets B's answer, signed for it.
  * A home server whose certificate does not carry the expected name gets nothing.
  */
+@Epic("Proxying")
+@Feature("Proxying over RadSec")
+@Link(name = "ADR 0037", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0037-proxying.md")
 class ProxyRadsecIT {
 
     @TempDir

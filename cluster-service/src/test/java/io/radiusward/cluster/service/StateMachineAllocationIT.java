@@ -6,10 +6,14 @@ package io.radiusward.cluster.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import java.lang.management.ManagementFactory;
 import org.junit.jupiter.api.Test;
 
 /** Steady state (interims and duplicates on existing sessions) must not allocate. */
+@Epic("Cluster")
+@Feature("No allocation in the state machine")
 class StateMachineAllocationIT {
 
     private static final com.sun.management.ThreadMXBean THREADS =

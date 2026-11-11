@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.exporter.ExportConfig;
 import io.radiusward.exporter.SinkConfig;
 import io.radiusward.radius.codec.RadiusAuthenticator;
@@ -30,6 +33,9 @@ import org.junit.jupiter.api.io.TempDir;
  * Accounting of a proxied realm (ADR 0037, milestone 5) with 3 members: committed and answered by the cluster like
  * any other, then forwarded by the {@code radius} sink to the realm's home server; a local user's stays local.
  */
+@Epic("Proxying")
+@Feature("Accounting of proxied realms")
+@Link(name = "ADR 0037", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0037-proxying.md")
 class ProxyAccountingIT {
 
     static final byte[] HOME_SECRET = "home-acct".getBytes(StandardCharsets.US_ASCII);

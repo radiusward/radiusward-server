@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.exporter.ExportConfig;
 import io.radiusward.exporter.SinkConfig;
@@ -40,6 +43,9 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
  * the lease moves with a new epoch, and afterwards every applied event is in {@code accounting_event} exactly
  * once and every session equals the replicated state. Skipped without Docker (fails in CI).
  */
+@Epic("Export")
+@Feature("PostgreSQL export")
+@Link(name = "ADR 0017", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0017-exporter.md")
 class PostgresExportIT {
 
     private static PostgreSQLContainer postgres;

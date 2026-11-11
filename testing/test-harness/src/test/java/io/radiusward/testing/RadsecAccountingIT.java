@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.gateway.AuthConfig;
 import io.radiusward.gateway.DtlsClient;
@@ -33,6 +36,13 @@ import org.junit.jupiter.api.io.TempDir;
  * with the secret of the transport, and the same event later over another transport from the same NAS entry is a
  * duplicate — one NAS, one set of keys, whichever transport it uses.
  */
+@Epic("Transports")
+@Feature("Accounting over RadSec, DTLS and TCP")
+@Link(name = "ADR 0034", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0034-radsec.md")
+@Link(name = "ADR 0038", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0038-dtls.md")
+@Link(
+        name = "ADR 0045",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0045-radius-over-tcp.md")
 class RadsecAccountingIT {
 
     static final byte[] RADSEC = "radsec".getBytes(StandardCharsets.US_ASCII);

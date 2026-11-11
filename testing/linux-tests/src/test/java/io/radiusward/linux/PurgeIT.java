@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +20,9 @@ import org.junit.jupiter.api.Test;
  * and PostgreSQL attached: the archive on every member stays bounded while far more log than that is written,
  * and nothing acknowledged is missing in the database.
  */
+@Epic("Cluster")
+@Feature("Log purge")
+@Link(name = "ADR 0014", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0014-log-purge.md")
 class PurgeIT {
 
     @Test

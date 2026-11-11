@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,11 @@ import org.junit.jupiter.api.Test;
  * whole time (the log on disk is the buffer, far below maxLag 4h), the sink falls behind and afterwards catches
  * up; every acknowledged session ends up in the database, equal to the cluster.
  */
+@Epic("Export")
+@Feature("PostgreSQL outage")
+@Link(
+        name = "ADR 0007",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0007-sink-spi-lag-policy.md")
 class PostgresOutageIT {
 
     @Test

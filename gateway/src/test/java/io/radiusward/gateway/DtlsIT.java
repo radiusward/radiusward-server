@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import java.io.File;
@@ -30,6 +33,9 @@ import org.junit.jupiter.api.io.TempDir;
  * outside DTLS and malformed packets discarded without closing; idle associations closed. Accounting over DTLS with a
  * cluster: {@code RadsecAccountingIT}; interop with radsecproxy: {@code RadsecproxyIT}.
  */
+@Epic("Transports")
+@Feature("DTLS")
+@Link(name = "ADR 0038", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0038-dtls.md")
 class DtlsIT {
 
     static final byte[] DTLS = "radius/dtls".getBytes(StandardCharsets.US_ASCII);

@@ -11,6 +11,9 @@ import io.aeron.cluster.client.EgressListener;
 import io.aeron.driver.MediaDriver;
 import io.aeron.driver.ThreadingMode;
 import io.aeron.logbuffer.Header;
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
 import io.radiusward.exporter.ExportConfig;
@@ -42,6 +45,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Three real cluster members in one JVM: commit, snapshot, leader loss and re-election. */
+@Epic("Cluster")
+@Feature("Commit, snapshot and re-election")
+@Link(
+        name = "ADR 0001",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0001-aeron-cluster.md")
 class ThreeNodeClusterIT {
 
     @TempDir

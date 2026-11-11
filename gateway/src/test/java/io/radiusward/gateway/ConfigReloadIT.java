@@ -8,6 +8,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.sun.net.httpserver.HttpServer;
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import io.radiusward.radius.codec.RadiusCode;
@@ -35,6 +38,11 @@ import org.junit.jupiter.api.io.TempDir;
  * Reloading a running gateway (ADR 0054): a new NAS secret and another users file take effect without a restart; a
  * configuration that does not load changes nothing; the same through {@code POST /reload}.
  */
+@Epic("Operations")
+@Feature("Configuration reload")
+@Link(
+        name = "ADR 0054",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0054-config-reload.md")
 class ConfigReloadIT {
 
     static final byte[] NEW_SECRET = "the-new-secret".getBytes(StandardCharsets.US_ASCII);

@@ -6,10 +6,14 @@ package io.radiusward.e2e;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
 import io.radiusward.tools.admin.AdminClient;
 import org.junit.jupiter.api.Test;
 
 /** Accounting-On from a rebooted NAS closes its open sessions. */
+@Epic("Accounting")
+@Feature("Accounting-On/Off")
 class AccountingOnOffIT extends E2eTestBase {
 
     @Test

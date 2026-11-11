@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
@@ -36,6 +39,9 @@ import org.junit.jupiter.api.io.TempDir;
  * Challenge (EAP stays on its home server), answers without Message-Authenticator ignored, failover to the next home
  * server when one is dead and back when it answers Status-Server again; users without a proxied realm stay local.
  */
+@Epic("Proxying")
+@Feature("Realms and home servers")
+@Link(name = "ADR 0037", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0037-proxying.md")
 class ProxyIT {
 
     static final byte[] NAS_SECRET = AuthAgentTest.SECRET;

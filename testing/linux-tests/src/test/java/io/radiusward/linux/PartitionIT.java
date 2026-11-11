@@ -6,6 +6,9 @@ package io.radiusward.linux;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +20,11 @@ import org.junit.jupiter.api.Test;
  * elects a new leader and the gateways move there; the old leader cannot commit, so whatever it might
  * acknowledge would show up as lost. After healing it rejoins as a follower with the same state.
  */
+@Epic("Fault injection")
+@Feature("Network partition")
+@Link(
+        name = "ADR 0016",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0016-fault-injection-tests.md")
 class PartitionIT {
 
     @Test

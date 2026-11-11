@@ -6,6 +6,9 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.Dictionary;
@@ -25,6 +28,12 @@ import org.junit.jupiter.api.io.TempDir;
  * store and the Netlogon verifier, against a Samba AD domain controller (Docker). The inner peers verify the server's
  * MS-CHAPv2 proof, which the gateway builds from the session key Netlogon returns.
  */
+@Epic("Authentication")
+@Feature("Active Directory over Netlogon")
+@Link(
+        name = "ADR 0025",
+        url =
+                "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0025-credential-verifiers-and-ldap.md")
 class TunnelNetlogonIT {
 
     static final String ALICE = "Alice-Passw0rd!";

@@ -7,6 +7,9 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -32,6 +35,9 @@ import org.junit.jupiter.api.io.TempDir;
  * flight on one connection, client certificates required and checked, NAS entries that do not allow RadSec,
  * malformed packets closing the connection. Accounting over RadSec with a cluster: {@code RadsecAccountingIT}.
  */
+@Epic("Transports")
+@Feature("RadSec")
+@Link(name = "ADR 0034", url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0034-radsec.md")
 class RadsecIT {
 
     static final byte[] RADSEC = "radsec".getBytes(StandardCharsets.US_ASCII);

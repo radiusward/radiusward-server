@@ -6,6 +6,9 @@ package io.radiusward.testing;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.qameta.allure.Epic;
+import io.qameta.allure.Feature;
+import io.qameta.allure.Link;
 import io.radiusward.gateway.UserKeys;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -26,6 +29,11 @@ import org.junit.jupiter.api.io.TempDir;
  * accounting Start with a user names its session in the admin reports — by key, by user, by page — and survives a
  * member that restarts from a snapshot.
  */
+@Epic("Accounting")
+@Feature("Session identity")
+@Link(
+        name = "ADR 0036",
+        url = "https://github.com/radiusward/radiusward-server/blob/main/docs/adr/0036-coa-and-session-identity.md")
 class SessionIdentityIT {
 
     static final byte[] SECRET = LocalCluster.SECRET.getBytes(StandardCharsets.US_ASCII);
