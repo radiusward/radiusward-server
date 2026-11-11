@@ -24,7 +24,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # OIDC credentials for AWS
 
 concurrency:
   group: bench-aws
@@ -46,6 +45,9 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 300
+    permissions:
+      contents: read
+      id-token: write   # OIDC credentials for AWS, only in this job
     strategy:
       max-parallel: 1   # one stack at a time: fewer vCPUs at once, a smaller bill if something goes wrong
       fail-fast: false
