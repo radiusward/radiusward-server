@@ -7,14 +7,14 @@ gateways. Its design and the measurements behind it: [ADR 0062](../adr/0062-memb
 ## Install
 
 ```bash
-helm install radiusward oci://ghcr.io/radiusward/charts/radiusward --version 0.1.0 \
+helm install radiusward oci://ghcr.io/radiusward/charts/radiusward --version 0.1.0-rc.1 \
      -n radius --create-namespace -f my-values.yaml          # a released chart (docs/operations/release.md)
 helm install radiusward deploy/helm/radiusward -n radius --create-namespace -f my-values.yaml   # from a checkout
 kubectl -n radius get pods -l app.kubernetes.io/instance=radiusward
 kubectl -n radius exec radiusward-node-0 -- radiusward probe http://127.0.0.1:9090/ready
 ```
 
-The OCI chart is published with the first release tag; until then install from a checkout.
+Every release tag publishes the chart (first: `0.1.0-rc.1`); a checkout installs the state of `main`.
 
 A minimal `my-values.yaml`:
 

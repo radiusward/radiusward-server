@@ -60,7 +60,7 @@ variable "gateway_users" {
 
 variable "image" {
   type    = string
-  default = "ghcr.io/radiusward/radiusward-server:0.1.0"
+  default = "ghcr.io/radiusward/radiusward-server:0.1.0-rc.1"
 }
 
 variable "profile" {

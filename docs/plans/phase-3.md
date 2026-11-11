@@ -426,4 +426,4 @@ PostgreSQL 17 in a container on the same VM. Absolute rates are not bare-metal n
 - Phase 3b: generic JDBC sink with dialects (MySQL/MariaDB, SQL Server, Oracle, Db2, Firebird, SQLite), Kafka sink;
   remaining benchmark variants.
 - Phase 4: Helm chart, Kubernetes, dashboards per deployment; the exporter as a sidecar if isolation is needed.
-- First release tag (`v0.2.0-rc.1` or a Phase 3 tag) when the maintainer decides.
+- First release tag when the maintainer decides (done: `v0.1.0-rc.1`, 2026-11-11).

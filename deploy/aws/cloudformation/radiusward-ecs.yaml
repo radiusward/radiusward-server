@@ -39,7 +39,7 @@ Parameters:
     Description: where NAS devices send from (RADIUS UDP 1812/1813 to the gateways)
   Image:
     Type: String
-    Default: ghcr.io/radiusward/radiusward-server:0.1.0
+    Default: ghcr.io/radiusward/radiusward-server:0.1.0-rc.1
   Profile:
     Type: String
     Default: small

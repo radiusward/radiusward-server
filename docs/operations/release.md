@@ -20,7 +20,7 @@ GitHub creates new organization packages as private. Once per package an organiz
 organization **Settings → Packages → Package creation** must allow **Public**, then on the package's page **Package
 settings → Change visibility → Public**, and under **Manage Actions access** the `radiusward-server` repository keeps
 **Write**. Done for the image `ghcr.io/radiusward/radiusward-server` (2026-11-11); the Helm chart
-`oci://ghcr.io/radiusward/charts/radiusward` appears with the first tag and needs the same once. The test-image
+`oci://ghcr.io/radiusward/charts/radiusward` is public since the first tag (`0.1.0-rc.1`, 2026-11-11). The test-image
 package `ghcr.io/radiusward/radiusward-test-images` is public too (2026-11-11,
 [test images](../testing/strategy.md#test-images)). Check without
 credentials: `DOCKER_CONFIG=$(mktemp -d) docker pull ghcr.io/radiusward/radiusward-server:edge`.

@@ -1,7 +1,6 @@
 # Phase 2 build plan: containers, Linux durability, production defaults
 
-Status: **done** (2026-11-08) except the first release tag, which waits for the maintainer (the nightly CI
-runs now) · Created: 2026-11-08 · Builds on: [Phase 1](phase-1.md) · Report: [below](#phase-2-report)
+Status: **done** (2026-11-08); the first release candidate `v0.1.0-rc.1` followed on 2026-11-11 · Created: 2026-11-08 · Builds on: [Phase 1](phase-1.md) · Report: [below](#phase-2-report)
 
 ## Goal
 
@@ -214,7 +213,7 @@ Container results come from that VM; absolute latencies are not bare-metal numbe
 | P2.4 linux tests | ✅ 7 tests green locally (`PowerLossIT` ×2 incl. control, `PartitionIT`, `DiskFullIT`, `OverloadIT`, `FailoverTimingIT`, `ComposeSmokeIT`); nightly job prepared, runs after the push |
 | P2.5 latency | ✅ table in [strategy.md](../testing/strategy.md#latency-in-containers-phase-2); gateway default now `backoff-100us` |
 | P2.6 memory | ✅ 2M sessions under overload: member ≤ 448 MiB unreclaimable of 1 GiB, gateway ≤ 321 MiB of 384 MiB, no OOM kill |
-| P2.7 CI and releases | 🟡 `ci.yml` e2e job, `linux-tests.yml`, `release.yml` written; first RC tag waits for the maintainer |
+| P2.7 CI and releases | 🟡 `ci.yml` e2e job, `linux-tests.yml`, `release.yml` written; first release candidate `v0.1.0-rc.1` (2026-11-11) |
 | P2.8 vendor captures | 🟡 `radclient decode --fixture --anonymise` + [guide](../testing/vendor-captures.md); captures need real devices |
 | P2.9 docs | ✅ ADR 0015, 0016; ADR 0004/0009/0011 amended; docker.md, release.md, vendor-captures.md; configuration, failure matrix, architecture, READMEs |
 
@@ -258,8 +257,8 @@ Container results come from that VM; absolute latencies are not bare-metal numbe
 
 ### Open items for Phase 3
 
-- Push, then let the first nightly `linux-tests` run on GitHub; tag the first RC (`v0.2.0-rc.1`) when the
-  maintainer decides.
+- Push, then let the first nightly `linux-tests` run on GitHub; tag the first RC when the maintainer decides
+  (done: `v0.1.0-rc.1`, 2026-11-11).
 - Replace synthetic fixtures with anonymised captures (needs devices).
 - Measure fsync-bound commit latency on real SSDs; the gateway at 384 MiB has ~16 % headroom.
 - Phase 3: exporter tailing the log, sink SPI, Postgres sink, lag policy, Prometheus metrics (`/metrics`
