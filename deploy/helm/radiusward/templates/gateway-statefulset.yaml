@@ -1,0 +1,136 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+Gateways (ADR 0062): a StatefulSet without volumes so that gateway.id is the pod index; each gets its own Service.
+*/ -}}
+{{- $fn := include "radiusward.fullname" . -}}
+{{- $g := .Values.gateway -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fn }}-gateway
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  serviceName: {{ $fn }}-gateway
+  replicas: {{ $g.replicas }}
+  minReadySeconds: {{ $g.minReadySeconds }}
+  podManagementPolicy: Parallel
+  updateStrategy: {type: RollingUpdate}
+  selector:
+    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "gateway") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "radiusward.labels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway
+      annotations:
+        # a change of configuration, users files or passwords restarts the gateways (they are stateless)
+        checksum/config: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- include "radiusward.scrapeAnnotations" . | nindent 8 }}
+        {{- with $g.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
+    spec:
+      terminationGracePeriodSeconds: {{ $g.terminationGracePeriodSeconds }}
+      securityContext: {{- include "radiusward.podSecurity" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with include "radiusward.affinity" (dict "root" . "component" "gateway" "mode" $g.antiAffinity) }}
+      affinity: {{- . | nindent 8 }}
+      {{- end }}
+      {{- with $g.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $g.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: gateway
+          image: {{ include "radiusward.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["gateway", "--config", "/etc/radiusward/gateway.properties"]
+          env:
+            - name: RADIUSWARD_GATEWAY_ID
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
+            - name: RADIUSWARD_GATEWAY_EGRESS_HOST
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - {name: RADIUSWARD_PROFILE, value: {{ .Values.profile | quote }}}
+            {{- range $i, $n := $g.nas }}
+            - name: RW_NAS_{{ $i }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $n.existingSecret | default (include "radiusward.secretName" $) }}
+                  key: {{ ternary ($n.existingSecretKey | default "secret") (printf "nas-%d" $i) (not (empty $n.existingSecret)) }}
+            {{- end }}
+            {{- range $s := $g.auth.stores }}
+            {{- if and (eq $s.type "sql") (or $s.password $s.existingSecret) }}
+            - name: RW_STORE_{{ $s.name | upper | replace "-" "_" }}_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $s.existingSecret | default (include "radiusward.secretName" $) }}
+                  key: {{ ternary ($s.existingSecretKey | default "password") (printf "store-%s-password" $s.name) (not (empty $s.existingSecret)) }}
+            {{- end }}
+            {{- end }}
+            {{- with $g.extraEnv }}{{ toYaml . | nindent 12 }}{{ end }}
+          ports:
+            - {name: auth, containerPort: {{ $g.ports.auth }}, protocol: UDP}
+            - {name: acct, containerPort: {{ $g.ports.acct }}, protocol: UDP}
+            {{- if $g.coa.enabled }}
+            - {name: coa, containerPort: {{ $g.coa.port }}, protocol: UDP}
+            {{- end }}
+            {{- if $g.radsec.enabled }}
+            - {name: radsec, containerPort: {{ $g.radsec.port }}, protocol: TCP}
+            {{- end }}
+            - {name: management, containerPort: 9090, protocol: TCP}
+          resources: {{- include "radiusward.gatewayResources" . | nindent 12 }}
+          securityContext: {{- include "radiusward.containerSecurity" . | nindent 12 }}
+          livenessProbe:
+            httpGet: {path: /health, port: management}
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet: {path: /ready, port: management}
+            periodSeconds: 2
+          volumeMounts:
+            - {name: config, mountPath: /etc/radiusward/gateway.properties, subPath: gateway.properties}
+            - {name: shm, mountPath: /dev/shm}
+            - {name: tmp, mountPath: /tmp}
+            - {name: work, mountPath: /var/lib/radiusward}
+            {{- range $s := $g.auth.stores }}
+            {{- if eq $s.type "file" }}
+            - {name: store-{{ $s.name }}, mountPath: /etc/radiusward/stores/{{ $s.name }}, readOnly: true}
+            {{- end }}
+            {{- end }}
+            {{- if $g.auth.eap.tls.existingSecret }}
+            - {name: eap-tls, mountPath: /etc/radiusward/tls/eap, readOnly: true}
+            {{- end }}
+            {{- if $g.radsec.enabled }}
+            - {name: radsec-tls, mountPath: /etc/radiusward/tls/radsec, readOnly: true}
+            {{- end }}
+      volumes:
+        - name: config
+          configMap: {name: {{ $fn }}-gateway}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: {{ include "radiusward.gatewayShm" . }}}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+        - name: work
+          emptyDir: {sizeLimit: 256Mi}
+        {{- range $s := $g.auth.stores }}
+        {{- if eq $s.type "file" }}
+        - name: store-{{ $s.name }}
+          secret:
+            secretName: {{ $s.existingSecret | default (include "radiusward.secretName" $) }}
+            items:
+              - key: {{ ternary ($s.existingSecretKey | default "users") (printf "store-%s-users" $s.name) (not (empty $s.existingSecret)) }}
+                path: users
+        {{- end }}
+        {{- end }}
+        {{- if $g.auth.eap.tls.existingSecret }}
+        - name: eap-tls
+          secret: {secretName: {{ $g.auth.eap.tls.existingSecret }}}
+        {{- end }}
+        {{- if $g.radsec.enabled }}
+        - name: radsec-tls
+          secret: {secretName: {{ required "gateway.radsec.existingSecret is required with radsec" $g.radsec.existingSecret }}}
+        {{- end }}

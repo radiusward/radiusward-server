@@ -1,0 +1,14 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: v2
+name: radiusward
+description: Replicated RADIUS server on Aeron Cluster — three members and RADIUS gateways
+type: application
+version: 0.1.0
+appVersion: "0.1.0-SNAPSHOT"
+home: https://github.com/radiusward/radiusward-server
+sources:
+  - https://github.com/radiusward/radiusward-server
+keywords: [radius, accounting, authentication, aaa, aeron]
+annotations:
+  artifacthub.io/license: Apache-2.0

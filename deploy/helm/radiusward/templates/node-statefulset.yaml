@@ -1,0 +1,106 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+Three cluster members (ADR 0062): DNS names, id from the pod index, readiness = election closed.
+*/ -}}
+{{- $fn := include "radiusward.fullname" . -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $fn }}-node
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node
+spec:
+  serviceName: {{ $fn }}-node
+  replicas: 3
+  # all members start together (none is ready without a quorum); updates still go one at a time
+  podManagementPolicy: Parallel
+  updateStrategy: {type: RollingUpdate}
+  selector:
+    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "node") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "radiusward.labels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/node-configmap.yaml") . | sha256sum }}
+        {{- include "radiusward.scrapeAnnotations" . | nindent 8 }}
+        {{- with .Values.node.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.node.terminationGracePeriodSeconds }}
+      securityContext: {{- include "radiusward.podSecurity" . | nindent 8 }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with include "radiusward.affinity" (dict "root" . "component" "node" "mode" .Values.node.antiAffinity) }}
+      affinity: {{- . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.node.zoneSpread }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "node") | nindent 14 }}
+      {{- end }}
+      {{- with .Values.node.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.node.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: node
+          image: {{ include "radiusward.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["cluster-node", "--config", "/etc/radiusward/cluster.properties"]
+          env:
+            - name: RADIUSWARD_CLUSTER_NODE_ID
+              valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
+            - {name: RADIUSWARD_PROFILE, value: {{ .Values.profile | quote }}}
+            {{- with .Values.node.export.postgres }}
+            {{- if and .enabled (or .password .existingSecret) }}
+            - name: RW_PG_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .existingSecret | default (include "radiusward.secretName" $) }}
+                  key: {{ ternary .existingSecretKey "postgres-password" (ne .existingSecret "") }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.node.extraEnv }}{{ toYaml . | nindent 12 }}{{ end }}
+          ports:
+            - {name: management, containerPort: 9090, protocol: TCP}
+          resources: {{- include "radiusward.nodeResources" . | nindent 12 }}
+          securityContext: {{- include "radiusward.containerSecurity" . | nindent 12 }}
+          startupProbe:
+            httpGet: {path: /health, port: management}
+            periodSeconds: 5
+            failureThreshold: 120    # long log replays after a restart
+          livenessProbe:
+            httpGet: {path: /health, port: management}
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet: {path: /ready, port: management}
+            periodSeconds: 2
+            failureThreshold: 2
+          volumeMounts:
+            - {name: config, mountPath: /etc/radiusward/cluster.properties, subPath: cluster.properties}
+            - {name: data, mountPath: /var/lib/radiusward}
+            - {name: shm, mountPath: /dev/shm}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: config
+          configMap: {name: {{ $fn }}-node}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: {{ include "radiusward.nodeShm" . }}}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: {{ toJson .Values.node.persistence.accessModes }}
+        {{- with .Values.node.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources: {requests: {storage: {{ .Values.node.persistence.size }}}}

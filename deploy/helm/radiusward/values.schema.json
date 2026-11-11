@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "profile": {"type": "string", "enum": ["small", "standard", "large"]},
+    "clusterDomain": {"type": "string"},
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {"type": "string"},
+        "tag": {"type": "string"},
+        "pullPolicy": {"type": "string", "enum": ["Always", "IfNotPresent", "Never"]}
+      }
+    },
+    "node": {
+      "type": "object",
+      "properties": {
+        "replicas": {"type": "integer", "const": 3},
+        "basePort": {"type": "integer", "minimum": 1024, "maximum": 65000},
+        "leaderHeartbeatTimeout": {"type": "string", "pattern": "^[0-9]+(ms|s)$"},
+        "electionTimeout": {"type": "string", "pattern": "^[0-9]+(ms|s)$"},
+        "antiAffinity": {"type": "string", "enum": ["hard", "soft", "none"]},
+        "zoneSpread": {"type": "boolean"},
+        "persistence": {
+          "type": "object",
+          "properties": {"size": {"type": "string"}, "storageClass": {"type": "string"}}
+        },
+        "config": {"type": "object"},
+        "export": {
+          "type": "object",
+          "properties": {
+            "postgres": {
+              "type": "object",
+              "properties": {
+                "enabled": {"type": "boolean"},
+                "url": {"type": "string"},
+                "mode": {"type": "string", "enum": ["sessions", "sessions+events"]}
+              }
+            }
+          }
+        }
+      }
+    },
+    "gateway": {
+      "type": "object",
+      "properties": {
+        "replicas": {"type": "integer", "minimum": 1},
+        "antiAffinity": {"type": "string", "enum": ["hard", "soft", "none"]},
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {"type": "string", "enum": ["LoadBalancer", "NodePort", "ClusterIP"]},
+            "externalTrafficPolicy": {"type": "string", "enum": ["Local", "Cluster"]}
+          }
+        },
+        "nas": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "address"],
+            "properties": {
+              "name": {"type": "string", "pattern": "^[a-zA-Z0-9_-]+$"},
+              "address": {"type": "string"},
+              "secret": {"type": "string"},
+              "existingSecret": {"type": "string"},
+              "existingSecretKey": {"type": "string"},
+              "vendor": {"type": "string"},
+              "id": {"type": "integer"}
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "stores": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "type"],
+                "properties": {
+                  "name": {"type": "string", "pattern": "^[a-z0-9-]+$"},
+                  "type": {"type": "string"},
+                  "chap": {"type": "boolean"},
+                  "mschap": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "config": {"type": "object"}
+      }
+    }
+  }
+}

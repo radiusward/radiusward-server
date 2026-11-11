@@ -1,6 +1,6 @@
 # Phase 4 plan: Kubernetes, bare metal, backup and operations
 
-Status: **in progress** (4.8 and 4.1 done 2026-11-11, [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md); next 4.2) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
+Status: **in progress** (4.8, 4.1, 4.2, 4.3 done 2026-11-11, [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md); chart in `deploy/helm/radiusward`) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
 [Phase 3](phase-3.md) (exporter, metrics), [Phase 5](phase-5-auth.md) (authentication) · Roadmap: [roadmap.md](roadmap.md)
 
 ## Goal
@@ -131,8 +131,8 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 | # | Package | Content | Size |
 |---|---|---|---|
 | 4.1 ✅ | Spike: members on Kubernetes ([ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md)) | kind cluster, three members by DNS name, pods deleted and rescheduled with new IPs, re-resolution settings; empty member catching up after log purge. Decides decisions 1 and the member-replacement runbook | M |
-| 4.2 | Helm chart: members | code done 2026-11-11: `/ready` false while the election is open, a member waits for its own name, a 1 s JVM name cache (ADR 0062); chart: StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
-| 4.3 | Helm chart: gateways | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
+| 4.2 ✅ | Helm chart: members | code done 2026-11-11: `/ready` false while the election is open, a member waits for its own name, a 1 s JVM name cache (ADR 0062); chart: StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
+| 4.3 ✅ | Helm chart: gateways (drain on SIGTERM still open) | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
 | 4.4 | Chart checks in CI | `helm lint`, `kubeconform` against current Kubernetes versions, template snapshot tests; OCI chart in the release workflow | S |
 | 4.5 | `-Pk8s` tests (nightly) | kind + Testcontainers: install, accounting and EAP through the LoadBalancer (MetalLB in kind), leader pod deleted under load, rolling upgrade, node drain with the PDB, member replacement | L |
 | 4.6 | Backup | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |

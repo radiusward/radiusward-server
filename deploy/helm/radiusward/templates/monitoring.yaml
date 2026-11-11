@@ -1,0 +1,53 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+PodMonitor, alert rules and Grafana dashboards. files/ is a copy of deploy/monitoring (MonitoringConfigTest keeps
+the two identical; scripts/sync-chart-monitoring.sh copies them).
+*/ -}}
+{{- $fn := include "radiusward.fullname" . -}}
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $fn }}
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  podMetricsEndpoints:
+    - port: management
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval }}
+---
+{{- end }}
+{{- if .Values.metrics.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ $fn }}
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+    {{- with .Values.metrics.prometheusRule.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  groups: {{- (.Files.Get "files/alerts.yml" | fromYaml).groups | toYaml | nindent 4 }}
+---
+{{- end }}
+{{- if .Values.metrics.dashboards.enabled }}
+{{- range $path, $_ := .Files.Glob "files/dashboards/*.json" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $fn }}-{{ base $path | trimSuffix ".json" }}
+  labels: {{- include "radiusward.labels" $ | nindent 4 }}
+    {{- with $.Values.metrics.dashboards.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+  {{- with $.Values.metrics.dashboards.annotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  {{ base $path }}: |-
+{{ $.Files.Get $path | indent 4 }}
+---
+{{- end }}
+{{- end }}

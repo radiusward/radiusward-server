@@ -1,0 +1,17 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+Headless: DNS names of the members (ADR 0062). Not-ready addresses are published, so members find each other
+before any of them is ready.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "radiusward.fullname" . }}-node
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector: {{- include "radiusward.selector" (dict "root" . "component" "node") | nindent 4 }}
+  ports:
+    - {name: management, port: 9090, protocol: TCP}

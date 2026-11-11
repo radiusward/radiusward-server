@@ -25,7 +25,8 @@ data source, namespace (Kubernetes), member and gateway:
 | **transports and proxying** | RadSec, DTLS and TCP, dynamic NAS entries, proxied requests and home servers alive, inner-tunnel proxying, CoA relay |
 | **resources** | heap, direct memory, GC, threads, uptime, dropped log messages; on Kubernetes container memory against the limit and CPU throttling (cAdvisor, kube-state-metrics) |
 
-Panels of features that are not configured stay empty. Grafana provisions them from the directory (compose mounts it;
+On Kubernetes the Helm chart ships the same dashboards and alerts as ConfigMaps for the Grafana sidecar and a
+PrometheusRule ([kubernetes.md](kubernetes.md)). Panels of features that are not configured stay empty. Grafana provisions them from the directory (compose mounts it;
 any Grafana can import the JSON files). `MonitoringConfigTest` checks that every metric they and the alert rules use
 is exported and every exported metric is documented below.
 

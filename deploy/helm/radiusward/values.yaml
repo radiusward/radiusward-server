@@ -1,0 +1,147 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# radiusward: three cluster members (StatefulSet) and RADIUS gateways (StatefulSet, one Service each).
+# Every setting of docs/configuration.md stays reachable through node.config and gateway.config.
+
+image:
+  repository: ghcr.io/radiusward/radiusward-server
+  tag: ""                      # default: the chart's appVersion
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# small (500k–2M sessions, 1 CPU members), standard (5M) or large (20M): JVM sizes of the image (ADR 0004) and the
+# resources below; override node.resources / gateway.resources to size them yourself.
+profile: small
+
+clusterDomain: cluster.local
+
+node:
+  # fixed: the cluster is three members (static membership, ADR 0062)
+  replicas: 3
+  basePort: 9000
+  leaderHeartbeatTimeout: 1500ms   # ADR 0062: 1.5 s replaced a dead leader on Kubernetes without NAS retransmissions
+  electionTimeout: 500ms
+  terminationGracePeriodSeconds: 60
+  persistence:
+    size: 100Gi
+    storageClass: ""             # "" = the cluster's default; use one that honours fsync (local volumes recommended)
+    accessModes: [ReadWriteOnce]
+  # Resources per profile; requests = limits (guaranteed CPU: a throttled leader looks dead). Memory = heap + direct
+  # + /dev/shm + ~15 % (the emptyDir in memory is charged to the pod).
+  resources: {}                  # overrides the profile's
+  shmSize: ""                    # overrides the profile's /dev/shm size
+  antiAffinity: hard             # hard | soft | none (by node)
+  zoneSpread: false              # also spread over topology.kubernetes.io/zone
+  nodeSelector: {}
+  tolerations: []
+  podAnnotations: {}
+  # Export of committed accounting (docs/operations/export.md). Empty sinks: no export.
+  export:
+    postgres:
+      enabled: false
+      url: ""                    # jdbc:postgresql://host:5432/radius
+      user: radiusward
+      password: ""               # creates a Secret; or use existingSecret
+      existingSecret: ""
+      existingSecretKey: password
+      mode: sessions             # sessions | sessions+events
+      radacctView: false
+  # more properties for the members, e.g. snapshot.interval: 1h
+  config: {}
+  extraEnv: []
+
+gateway:
+  replicas: 2
+  terminationGracePeriodSeconds: 30
+  minReadySeconds: 10              # a restarted gateway serves this long before the next one restarts
+  resources: {}
+  shmSize: ""
+  antiAffinity: hard
+  nodeSelector: {}
+  tolerations: []
+  podAnnotations: {}
+  # One Service per gateway: configure every NAS with two gateways as primary and secondary RADIUS servers
+  # (ADR 0062: losing a node then costs nothing).
+  service:
+    type: LoadBalancer
+    externalTrafficPolicy: Local # keeps the NAS source address: NAS entries are matched by it
+    annotations: {}
+    loadBalancerSourceRanges: []
+    # per gateway pod index: e.g. {"0": {loadBalancerIP: 192.0.2.10}, "1": {...}}
+    perGateway: {}
+  # One Service for all gateways (small setups): a failed node's NAS wait until Kubernetes notices (~40–50 s).
+  sharedService:
+    enabled: false
+    type: LoadBalancer
+    externalTrafficPolicy: Local
+    annotations: {}
+  ports:
+    auth: 1812
+    acct: 1813
+  # NAS clients. secret: creates a Secret; or existingSecret/existingSecretKey.
+  nas: []
+  #  - name: branch-routers
+  #    address: 10.20.0.0/16
+  #    secret: change-me
+  #    vendor: cisco
+  #    id: 1001
+  auth:
+    enabled: false                 # true needs at least one store
+    # identity stores, asked in order
+    stores: []
+    #  - name: local
+    #    type: file
+    #    users: |                   # the users file (kept in a Secret); or existingSecret/existingSecretKey
+    #      alice Cleartext-Password := "secret"
+    #    chap: true
+    #    mschap: true
+    #  - name: db
+    #    type: sql
+    #    url: jdbc:postgresql://postgres:5432/radius
+    #    user: radius
+    #    existingSecret: radius-db
+    #    existingSecretKey: password
+    eap:
+      methods: []                  # e.g. [peap, ttls, tls]
+      tls:
+        existingSecret: ""         # a kubernetes.io/tls Secret (tls.crt, tls.key) and optionally ca.crt
+  coa:
+    enabled: false
+    port: 3799
+  radsec:
+    enabled: false
+    port: 2083
+    existingSecret: ""             # tls.crt, tls.key, ca.crt
+  # more properties for the gateways
+  config: {}
+  extraEnv: []
+
+networkPolicy:
+  enabled: false
+  # namespaces allowed to reach the management port (metrics, /ready, CoA API)
+  monitoringNamespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: monitoring
+  # RADIUS clients allowed to reach the gateways; empty = anywhere
+  radiusClientCIDRs: []
+
+metrics:
+  podAnnotations: true             # prometheus.io/scrape, /port, /path
+  serviceMonitor:
+    enabled: false                 # a PodMonitor for members and gateways (Prometheus Operator)
+    interval: 15s
+    labels: {}
+  prometheusRule:
+    enabled: false                 # the alerts of deploy/monitoring/alerts.yml
+    labels: {}
+  dashboards:
+    enabled: false                 # ConfigMaps for the Grafana sidecar
+    labels:
+      grafana_dashboard: "1"
+    annotations: {}
+
+securityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001

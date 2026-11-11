@@ -1,0 +1,13 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "radiusward.fullname" . }}-gateway
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "gateway") | nindent 6 }}

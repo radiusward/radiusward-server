@@ -83,6 +83,15 @@ deploy/compose/demo-failover.sh                              # kill -9 the leade
 
 Released images: `ghcr.io/radiusward/radiusward-server` ([docs/operations/docker.md](docs/operations/docker.md)).
 
+## Kubernetes
+
+```bash
+helm install radiusward deploy/helm/radiusward -n radius --create-namespace -f my-values.yaml
+```
+
+Three members and two gateways, each gateway with its own address for the NAS's primary and secondary server —
+[docs/operations/kubernetes.md](docs/operations/kubernetes.md).
+
 ## Quickstart without Docker
 
 Requirements: JDK 25+.

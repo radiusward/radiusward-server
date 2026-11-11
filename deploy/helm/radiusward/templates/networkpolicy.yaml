@@ -1,0 +1,55 @@
+{{- /*
+Copyright 2026 The radiusward Authors
+SPDX-License-Identifier: Apache-2.0
+Members talk Aeron (UDP, fixed and ephemeral ports) with each other and with gateways; the management port is open
+to the monitoring namespaces and to the other pods of the release.
+*/ -}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $node := include "radiusward.selector" (dict "root" . "component" "node") | fromYaml -}}
+{{- $gw := include "radiusward.selector" (dict "root" . "component" "gateway") | fromYaml -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "radiusward.fullname" . }}-node
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+spec:
+  podSelector: {matchLabels: {{ toJson $node }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {{ toJson $node }}}
+        - podSelector: {matchLabels: {{ toJson $gw }}}
+    - from:
+        - namespaceSelector: {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
+      ports: [{port: 9090, protocol: TCP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "radiusward.fullname" . }}-gateway
+  labels: {{- include "radiusward.labels" . | nindent 4 }}
+spec:
+  podSelector: {matchLabels: {{ toJson $gw }}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {{ toJson $node }}}
+    - from:
+        - namespaceSelector: {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
+      ports: [{port: 9090, protocol: TCP}]
+    - {{- with .Values.networkPolicy.radiusClientCIDRs }}
+      from:
+        {{- range . }}
+        - ipBlock: {cidr: {{ . }}}
+        {{- end }}
+      {{- end }}
+      ports:
+        - {port: {{ .Values.gateway.ports.auth }}, protocol: UDP}
+        - {port: {{ .Values.gateway.ports.acct }}, protocol: UDP}
+        {{- if .Values.gateway.coa.enabled }}
+        - {port: {{ .Values.gateway.coa.port }}, protocol: UDP}
+        {{- end }}
+        {{- if .Values.gateway.radsec.enabled }}
+        - {port: {{ .Values.gateway.radsec.port }}, protocol: TCP}
+        {{- end }}
+{{- end }}

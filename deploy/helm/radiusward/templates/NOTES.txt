@@ -1,0 +1,15 @@
+radiusward {{ .Chart.AppVersion }} is starting: three members and {{ .Values.gateway.replicas }} gateways in {{ .Release.Namespace }}.
+
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/instance={{ .Release.Name }}
+  kubectl -n {{ .Release.Namespace }} exec {{ include "radiusward.fullname" . }}-node-0 -- radiusward probe http://127.0.0.1:9090/ready
+
+Every gateway has its own address. Configure each NAS with two of them as primary and secondary RADIUS servers
+(authentication {{ .Values.gateway.ports.auth }}/udp, accounting {{ .Values.gateway.ports.acct }}/udp): when a node fails, the NAS retries
+through the other gateway and the cluster recognises the retry.
+{{ range $i := until (int .Values.gateway.replicas) }}
+  gateway {{ $i }}: kubectl -n {{ $.Release.Namespace }} get svc {{ include "radiusward.fullname" $ }}-gateway-{{ $i }}
+{{- end }}
+
+NAS entries match the source address of the packets: keep externalTrafficPolicy Local (or hostNetwork) so the
+address is not rewritten. Before production, read docs/operations/kubernetes.md: node sysctls for Aeron, storage
+that honours fsync, upgrades.

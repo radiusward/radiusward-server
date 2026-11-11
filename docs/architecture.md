@@ -153,10 +153,12 @@ member.
   tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)).
 - **Phase 3 (done):** the exporter runs in the member process; compose adds PostgreSQL and an optional
   Prometheus + Grafana profile.
-- **Phase 4:** Helm chart — cluster as a StatefulSet with a headless Service and one PVC (~100 GB) per
-  node, `/dev/shm` as `emptyDir: Memory`, anti-affinity, `PodDisruptionBudget maxUnavailable: 1`;
-  gateways behind a UDP LoadBalancer with `externalTrafficPolicy: Local` so the NAS source IP is kept.
-  systemd units for bare metal.
+- **Phase 4 (in progress):** Helm chart ([kubernetes.md](operations/kubernetes.md),
+  [ADR 0062](adr/0062-members-and-gateways-on-kubernetes.md)) — members as a StatefulSet found by DNS name, with a
+  headless Service and one PVC (~100 GB) each, `/dev/shm` as `emptyDir: Memory`, anti-affinity,
+  `PodDisruptionBudget maxUnavailable: 1`; gateways as a StatefulSet with one UDP LoadBalancer Service each
+  (`externalTrafficPolicy: Local`, so the NAS source IP is kept), NAS devices configured with two of them.
+  systemd units for bare metal follow.
 - Inter-node traffic is always `aeron:udp`; shared memory is only used inside a pod.
 - Images built by GitHub Actions on Java 25 (amd64 + arm64, SBOM, provenance), published to GHCR
   ([release.md](operations/release.md)).

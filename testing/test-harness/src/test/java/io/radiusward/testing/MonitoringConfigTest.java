@@ -22,7 +22,8 @@ import org.junit.jupiter.api.Test;
 /**
  * The Grafana dashboards and Prometheus alerts of {@code deploy/monitoring} against the metrics the code exports: every
  * {@code radiusward_*} name they use is exported somewhere, and every exported metric is documented in
- * {@code docs/operations/monitoring.md}. Needs no Docker; {@code MonitoringConfigIT} runs promtool in CI.
+ * {@code docs/operations/monitoring.md}, and the Helm chart's copies equal them. Needs no Docker;
+ * {@code MonitoringConfigIT} runs promtool in CI.
  */
 class MonitoringConfigTest {
 
@@ -125,6 +126,28 @@ class MonitoringConfigTest {
         assertThat(missing)
                 .as("exported but not in docs/operations/monitoring.md")
                 .isEmpty();
+    }
+
+    @Test
+    void theHelmChartCarriesIdenticalCopies() throws IOException {
+        Path chart = ROOT.resolve("deploy/helm/radiusward/files");
+        assertThat(read(chart.resolve("alerts.yml")))
+                .as("run scripts/sync-chart-monitoring.sh")
+                .isEqualTo(read(ROOT.resolve("deploy/monitoring/alerts.yml")));
+        List<String> copies;
+        try (Stream<Path> files = Files.list(chart.resolve("dashboards"))) {
+            copies = files.map(p -> p.getFileName().toString()).sorted().toList();
+        }
+        assertThat(copies)
+                .as("run scripts/sync-chart-monitoring.sh")
+                .isEqualTo(dashboards().stream()
+                        .map(p -> p.getFileName().toString())
+                        .toList());
+        for (Path dashboard : dashboards()) {
+            assertThat(read(chart.resolve("dashboards").resolve(dashboard.getFileName())))
+                    .as("run scripts/sync-chart-monitoring.sh: " + dashboard.getFileName())
+                    .isEqualTo(read(dashboard));
+        }
     }
 
     @Test
