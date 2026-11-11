@@ -24,9 +24,12 @@ jobs:
           java-version: ${{ matrix.java }}
           cache: maven
       - name: External RADIUS server for the interop tests
+        timeout-minutes: 10
         # Ubuntu's server and client tools; the package starts a service on 1812/1813, which the tests do not need
         # retried: the runners' package mirror or DNS sometimes fails for a moment
         run: |
+          # the runners' Azure mirror sometimes cannot be reached; apt falls back to the main archive
+          echo "http://archive.ubuntu.com/ubuntu/	priority:2" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
           for attempt in 1 2 3 4; do
             if sudo apt-get -o Acquire::Retries=5 update -qq && \
                sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -qq -y freeradius freeradius-utils >/dev/null; then
