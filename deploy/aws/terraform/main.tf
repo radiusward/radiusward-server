@@ -1,14 +1,31 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# radiusward on Amazon ECS — an EXAMPLE module (docs/operations/aws-ecs.md), the same layout as
+# radiusward on Amazon ECS on Graviton (arm64) — an EXAMPLE module (docs/operations/aws-ecs.md), the same layout as
 # deploy/aws/cloudformation/radiusward-ecs.yaml. The project validates it with `tofu validate` only; it has not been
 # applied in AWS by the project. Review sizes, subnets and security groups before use.
 
 data "aws_region" "current" {}
 
 data "aws_ssm_parameter" "ecs_ami" {
-  name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id"
+  name = "/aws/service/ecs/optimized-ami/amazon-linux-2023/arm64/recommended/image_id"
+}
+
+# the zone of each member subnet: member i is pinned to the zone of subnet i (one member per zone and per instance)
+data "aws_subnet" "member" {
+  for_each = { for i, id in var.member_subnet_ids : tostring(i) => id }
+  id       = each.value
+}
+
+locals {
+  # task sizes per profile: heap + direct memory + /dev/shm of deploy/docker/entrypoint.sh plus about 15 % (ADR 0004)
+  sizes = {
+    small    = { member_cpu = 1024, member_memory = 1536, member_shm = 512, member_instance = "c7g.large", gateway_cpu = 1024, gateway_memory = 2048 }
+    standard = { member_cpu = 2048, member_memory = 4096, member_shm = 1024, member_instance = "m7g.large", gateway_cpu = 2048, gateway_memory = 4096 }
+  }
+  size         = local.sizes[var.profile]
+  member_zones = { for i, s in data.aws_subnet.member : i => s.availability_zone }
+  arm64        = { cpu_architecture = "ARM64", operating_system_family = "LINUX" }
 }
 
 locals {
@@ -246,7 +263,7 @@ resource "aws_ecs_cluster" "radiusward" {
 resource "aws_launch_template" "member" {
   name_prefix   = "${var.name}-member-"
   image_id      = data.aws_ssm_parameter.ecs_ami.value
-  instance_type = var.member_instance_type
+  instance_type = coalesce(var.member_instance_type, local.size.member_instance)
   iam_instance_profile {
     arn = aws_iam_instance_profile.instance.arn
   }
@@ -263,10 +280,11 @@ resource "aws_launch_template" "member" {
   )
 }
 
+# one instance per availability zone: the group balances across the three subnets, and member i is pinned to zone i
 resource "aws_autoscaling_group" "member" {
   name_prefix         = "${var.name}-member-"
   min_size            = 3
-  max_size            = 4
+  max_size            = 3
   desired_capacity    = 3
   vpc_zone_identifier = var.member_subnet_ids
   launch_template {
@@ -360,9 +378,13 @@ resource "aws_ecs_task_definition" "node" {
   family                   = "${var.name}-node-${each.key}"
   requires_compatibilities = ["EC2"]
   network_mode             = "awsvpc"
-  cpu                      = "2048"
-  memory                   = "3072"
+  cpu                      = tostring(local.size.member_cpu)
+  memory                   = tostring(local.size.member_memory)
   execution_role_arn       = aws_iam_role.execution.arn
+  runtime_platform {
+    cpu_architecture        = local.arm64.cpu_architecture
+    operating_system_family = local.arm64.operating_system_family
+  }
   volume {
     name                = "data"
     configure_at_launch = true
@@ -395,7 +417,7 @@ resource "aws_ecs_task_definition" "node" {
       { name = "RADIUSWARD_MANAGEMENT_HTTP_HOST", value = "0.0.0.0" },
     ]
     portMappings    = [{ containerPort = 9090, protocol = "tcp" }]
-    linuxParameters = { sharedMemorySize = 512, initProcessEnabled = true }
+    linuxParameters = { sharedMemorySize = local.size.member_shm, initProcessEnabled = true }
     mountPoints = [
       { sourceVolume = "data", containerPath = "/var/lib/radiusward" },
       { sourceVolume = "backup", containerPath = "/mnt/backup", readOnly = true },
@@ -418,8 +440,13 @@ resource "aws_ecs_service" "node" {
     capacity_provider = aws_ecs_capacity_provider.member.name
     weight            = 1
   }
+  # member i in zone i: one member per zone and per instance, spread over failure domains
+  placement_constraints {
+    type       = "memberOf"
+    expression = "attribute:ecs.availability-zone == ${local.member_zones[each.key]}"
+  }
   network_configuration {
-    subnets         = var.member_subnet_ids
+    subnets         = [var.member_subnet_ids[tonumber(each.key)]]
     security_groups = [aws_security_group.member.id]
   }
   service_registries {
@@ -446,9 +473,13 @@ resource "aws_ecs_task_definition" "gateway" {
   family                   = "${var.name}-gateway-${each.key}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = "1024"
-  memory                   = "2048"
+  cpu                      = tostring(local.size.gateway_cpu)
+  memory                   = tostring(local.size.gateway_memory)
   execution_role_arn       = aws_iam_role.execution.arn
+  runtime_platform {
+    cpu_architecture        = local.arm64.cpu_architecture
+    operating_system_family = local.arm64.operating_system_family
+  }
   container_definitions = jsonencode([{
     name        = "gateway"
     image       = var.image
@@ -560,9 +591,13 @@ resource "aws_ecs_task_definition" "backup" {
   family                   = "${var.name}-backup"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = "1024"
-  memory                   = "2048"
+  cpu                      = "512"
+  memory                   = "1024"
   execution_role_arn       = aws_iam_role.execution.arn
+  runtime_platform {
+    cpu_architecture        = local.arm64.cpu_architecture
+    operating_system_family = local.arm64.operating_system_family
+  }
   volume {
     name = "backup"
     efs_volume_configuration {
@@ -672,7 +707,12 @@ resource "aws_ecs_task_definition" "sync" {
   cpu                      = "256"
   memory                   = "512"
   execution_role_arn       = aws_iam_role.execution.arn
-  task_role_arn            = aws_iam_role.sync.arn
+  # the AWS CLI image is amd64 + arm64
+  runtime_platform {
+    cpu_architecture        = local.arm64.cpu_architecture
+    operating_system_family = local.arm64.operating_system_family
+  }
+  task_role_arn = aws_iam_role.sync.arn
   volume {
     name = "backup"
     efs_volume_configuration {

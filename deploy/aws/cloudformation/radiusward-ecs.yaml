@@ -4,10 +4,10 @@
 # radiusward on Amazon ECS — an EXAMPLE stack (docs/operations/aws-ecs.md). The project validates it with cfn-lint
 # only; it has not been deployed in AWS by the project. Review sizes, subnets and security groups before use.
 #
-# Three cluster members as three ECS services on EC2 (one member per instance, /dev/shm, host sysctls, an ECS-managed
-# EBS volume each, a Cloud Map name each), two gateways on Fargate behind one Network Load Balancer each (UDP, client
-# IP kept; NAS devices use both as primary and secondary), the continuous backup on Fargate with EFS, and a nightly
-# copy of the backup to S3. A member whose volume is new seeds itself from the others; after a total loss it restores
+# Graviton (arm64) throughout. Three cluster members as three ECS services on EC2, one per availability zone and so
+# one per instance (/dev/shm, host sysctls, an ECS-managed EBS volume each, a Cloud Map name each), two gateways on
+# Fargate behind one Network Load Balancer each (UDP, client IP kept; NAS devices use both as primary and secondary),
+# the continuous backup on Fargate with EFS, and a nightly copy of the backup to S3. Task sizes follow the profile. A member whose volume is new seeds itself from the others; after a total loss it restores
 # itself from the backup on EFS (cluster.seed.timeout, cluster.restore.from; ADR 0063, ADR 0065).
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::LanguageExtensions
@@ -22,7 +22,10 @@ Parameters:
     Description: the VPC's CIDR (load balancer health checks and the management port)
   MemberSubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: private subnets, one per availability zone (three recommended), for members, backup and EFS
+    Description: exactly three private subnets in three different availability zones (member i runs in subnet i), for members, backup and EFS
+  MemberAvailabilityZones:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Description: the availability zones of MemberSubnetIds, in the same order (member i is pinned to zone i)
   GatewaySubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
     Description: subnets for the gateways and their load balancers (public ones for an internet-facing scheme)
@@ -40,14 +43,16 @@ Parameters:
   Profile:
     Type: String
     Default: small
-    AllowedValues: [small, standard, large]
+    AllowedValues: [small, standard]
+    Description: memory profile (ADR 0004); sets RADIUSWARD_PROFILE, the task sizes and the default member instance type
   MemberInstanceType:
     Type: String
-    Default: m6i.large
-    Description: one member per instance (its task takes all 2 vCPU); larger profiles need larger instances
+    Default: ''
+    Description: Graviton instance for the members; empty = by profile (small c7g.large, standard m7g.large)
   EcsAmi:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ecs/optimized-ami/amazon-linux-2023/recommended/image_id
+    Default: /aws/service/ecs/optimized-ami/amazon-linux-2023/arm64/recommended/image_id
+    Description: ECS-optimized Amazon Linux 2023 for arm64 (Graviton)
   MemberVolumeGiB:
     Type: Number
     Default: 100
@@ -55,6 +60,38 @@ Parameters:
     Type: String
     Default: radiusward.local
     Description: private DNS namespace; members are node-0, node-1 and node-2 in it
+
+Rules:
+  MemberZonesMatchSubnets:
+    Assertions:
+      - Assert:
+          Fn::EachMemberIn:
+            - Fn::ValueOf: [MemberSubnetIds, AvailabilityZone]
+            - Ref: MemberAvailabilityZones
+        AssertDescription: MemberAvailabilityZones must be the zones of MemberSubnetIds (three, in the same order)
+
+# Task sizes per profile: heap + direct memory + /dev/shm of deploy/docker/entrypoint.sh plus about 15 % (ADR 0004).
+# The member CPU is what the profile needs, not the whole instance: one member per availability zone (and one
+# instance per zone) keeps members apart.
+Mappings:
+  Sizes:
+    small:
+      MemberCpu: '1024'
+      MemberMemory: '1536'
+      MemberShm: 512
+      MemberInstance: c7g.large
+      GatewayCpu: '1024'
+      GatewayMemory: '2048'
+    standard:
+      MemberCpu: '2048'
+      MemberMemory: '4096'
+      MemberShm: 1024
+      MemberInstance: m7g.large
+      GatewayCpu: '2048'
+      GatewayMemory: '4096'
+
+Conditions:
+  InstanceTypeGiven: !Not [!Equals [!Ref MemberInstanceType, '']]
 
 Resources:
   # ---------------------------------------------------------------- logs, secrets, gateway configuration
@@ -211,7 +248,7 @@ Resources:
     Properties:
       LaunchTemplateData:
         ImageId: !Ref EcsAmi
-        InstanceType: !Ref MemberInstanceType
+        InstanceType: !If [InstanceTypeGiven, !Ref MemberInstanceType, !FindInMap [Sizes, !Ref Profile, MemberInstance]]
         IamInstanceProfile: {Arn: !GetAtt InstanceProfile.Arn}
         MetadataOptions: {HttpTokens: required}
         UserData:
@@ -221,11 +258,12 @@ Resources:
             # room for Aeron's UDP socket buffers (docs/operations/bare-metal.md)
             printf 'net.core.rmem_max = 4194304\nnet.core.wmem_max = 4194304\n' > /etc/sysctl.d/99-radiusward.conf
             sysctl --system
+  # one instance per availability zone: the group balances across the three subnets, and member i is pinned to zone i
   MemberAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       MinSize: '3'
-      MaxSize: '4'
+      MaxSize: '3'
       DesiredCapacity: '3'
       VPCZoneIdentifier: !Ref MemberSubnetIds
       LaunchTemplate:
@@ -299,9 +337,10 @@ Resources:
         Properties:
           Family: !Sub ${AWS::StackName}-node-${Id}
           RequiresCompatibilities: [EC2]
+          RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
           NetworkMode: awsvpc
-          Cpu: '2048'
-          Memory: '3072'
+          Cpu: !FindInMap [Sizes, !Ref Profile, MemberCpu]
+          Memory: !FindInMap [Sizes, !Ref Profile, MemberMemory]
           ExecutionRoleArn: !GetAtt ExecutionRole.Arn
           Volumes:
             - {Name: data, ConfiguredAtLaunch: true}
@@ -326,7 +365,9 @@ Resources:
                 - {Name: RADIUSWARD_CLUSTER_RESTORE_FROM, Value: /mnt/backup/backup}
                 - {Name: RADIUSWARD_MANAGEMENT_HTTP_HOST, Value: 0.0.0.0}
               PortMappings: [{ContainerPort: 9090, Protocol: tcp}]
-              LinuxParameters: {SharedMemorySize: 512, InitProcessEnabled: true}
+              LinuxParameters:
+                SharedMemorySize: !FindInMap [Sizes, !Ref Profile, MemberShm]
+                InitProcessEnabled: true
               MountPoints:
                 - {SourceVolume: data, ContainerPath: /var/lib/radiusward}
                 - {SourceVolume: backup, ContainerPath: /mnt/backup, ReadOnly: true}
@@ -353,9 +394,15 @@ Resources:
           DesiredCount: 1
           DeploymentConfiguration: {MinimumHealthyPercent: 0, MaximumPercent: 100}
           CapacityProviderStrategy: [{CapacityProvider: !Ref MemberCapacityProvider, Weight: 1}]
+          # member i in zone i: one member per zone and per instance, spread over failure domains
+          PlacementConstraints:
+            - Type: memberOf
+              Expression: !Sub
+                - 'attribute:ecs.availability-zone == ${Zone}'
+                - Zone: !Select [!Ref Id, !Ref MemberAvailabilityZones]
           NetworkConfiguration:
             AwsvpcConfiguration:
-              Subnets: !Ref MemberSubnetIds
+              Subnets: [!Select [!Ref Id, !Ref MemberSubnetIds]]
               SecurityGroups: [!Ref MemberSecurityGroup]
           ServiceRegistries:
             - RegistryArn: !GetAtt
@@ -381,9 +428,10 @@ Resources:
         Properties:
           Family: !Sub ${AWS::StackName}-gateway-${Id}
           RequiresCompatibilities: [FARGATE]
+          RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
           NetworkMode: awsvpc
-          Cpu: '1024'
-          Memory: '2048'
+          Cpu: !FindInMap [Sizes, !Ref Profile, GatewayCpu]
+          Memory: !FindInMap [Sizes, !Ref Profile, GatewayMemory]
           ExecutionRoleArn: !GetAtt ExecutionRole.Arn
           ContainerDefinitions:
             - Name: gateway
@@ -514,9 +562,10 @@ Resources:
     Properties:
       Family: !Sub ${AWS::StackName}-backup
       RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
       NetworkMode: awsvpc
-      Cpu: '1024'
-      Memory: '2048'
+      Cpu: '512'
+      Memory: '1024'
       ExecutionRoleArn: !GetAtt ExecutionRole.Arn
       Volumes:
         - Name: backup
@@ -596,6 +645,7 @@ Resources:
     Properties:
       Family: !Sub ${AWS::StackName}-backup-to-s3
       RequiresCompatibilities: [FARGATE]
+      RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX} # the AWS CLI image is amd64 + arm64
       NetworkMode: awsvpc
       Cpu: '256'
       Memory: '512'

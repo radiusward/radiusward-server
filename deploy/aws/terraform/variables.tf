@@ -17,7 +17,7 @@ variable "vpc_cidr" {
 }
 
 variable "member_subnet_ids" {
-  description = "private subnets, one per availability zone (three), for members, backup and EFS"
+  description = "exactly three private subnets in three different availability zones (member i runs in subnet i), for members, backup and EFS"
   type        = list(string)
   validation {
     condition     = length(var.member_subnet_ids) == 3
@@ -57,18 +57,19 @@ variable "image" {
 }
 
 variable "profile" {
-  type    = string
-  default = "small"
+  description = "memory profile (ADR 0004): RADIUSWARD_PROFILE, the task sizes and the default member instance type"
+  type        = string
+  default     = "small"
   validation {
-    condition     = contains(["small", "standard", "large"], var.profile)
-    error_message = "small, standard or large"
+    condition     = contains(["small", "standard"], var.profile)
+    error_message = "small or standard"
   }
 }
 
 variable "member_instance_type" {
-  description = "one member per instance (its task takes all 2 vCPU of the default type)"
+  description = "Graviton (arm64) instance for the members; null = by profile (small c7g.large, standard m7g.large)"
   type        = string
-  default     = "m6i.large"
+  default     = null
 }
 
 variable "member_volume_gib" {
