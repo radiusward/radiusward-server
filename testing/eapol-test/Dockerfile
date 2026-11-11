@@ -3,8 +3,8 @@
 FROM debian:trixie-slim AS build
 ARG WPA_VERSION=2.12
 ARG WPA_SHA256=08e23937e16d0155e55cab2b51f51fbe10d80a1aa91c4e15442645059b737ef6
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=5 update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
         build-essential pkg-config libssl-dev curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
@@ -21,8 +21,8 @@ RUN curl -fsSL -o wpa.tar.gz "https://w1.fi/releases/wpa_supplicant-${WPA_VERSIO
     && install -m 0755 eapol_test /usr/local/bin/eapol_test
 
 FROM debian:trixie-slim
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends libssl3t64 ca-certificates \
+RUN apt-get -o Acquire::Retries=5 update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends libssl3t64 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/eapol_test /usr/local/bin/eapol_test
 WORKDIR /work

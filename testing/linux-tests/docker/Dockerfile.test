@@ -16,7 +16,7 @@ ARG LAZYFS_REF=d93e54a
 
 FROM ubuntu:24.04 AS build
 ARG LAZYFS_REF
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
         g++ cmake make git ca-certificates libfuse3-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 COPY testing/linux-tests/docker/lazyfs-statfs.patch /src/lazyfs-statfs.patch
@@ -35,7 +35,7 @@ RUN git clone -q https://github.com/dsrhaslab/lazyfs.git /src/lazyfs \
 
 FROM ${BASE}
 USER root
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fuse3 iptables \
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends fuse3 iptables \
     && rm -rf /var/lib/apt/lists/* \
     && echo user_allow_other >> /etc/fuse.conf
 COPY --from=build /src/lazyfs/lazyfs/build/lazyfs /usr/local/bin/lazyfs

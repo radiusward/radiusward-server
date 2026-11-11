@@ -10,7 +10,7 @@
 ARG BASE=radiusward:dev
 FROM ${BASE}
 USER root
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv dbus \
+RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends systemd systemd-sysv dbus \
     && rm -rf /var/lib/apt/lists/* \
     # the units run /usr/local/bin/radiusward, which execs java from systemd's PATH, not the image's
     && ln -s /opt/java/openjdk/bin/java /usr/bin/java \

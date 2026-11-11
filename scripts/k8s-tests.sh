@@ -462,11 +462,14 @@ scenario_scale() {
   node=$(k get pod "$release-radiusward-node-$victim" -o jsonpath='{.spec.nodeName}')
   log "  +$((SECONDS - start)) s: draining $node (member $victim and what else runs there)"
   t0=$SECONDS
-  if kubectl --context "kind-$cluster" drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=300s \
-    >/dev/null 2>&1; then
+  # only radiusward's pods: the load generators are bare pods, which drain refuses to evict without --force
+  local drained
+  if drained=$(kubectl --context "kind-$cluster" drain "$node" --ignore-daemonsets --delete-emptydir-data \
+    --pod-selector "app.kubernetes.io/instance=$release" --timeout=300s 2>&1); then
     log "  drained in $((SECONDS - t0)) s"
   else
     fail "scale: the drain of $node did not complete within 300 s"
+    log "  $(tail -3 <<<"$drained" | tr '\n' ' ')"
   fi
   sleep 20 # the member waits for its node (node-local volume); the gateway's NAS use the other one meanwhile
   kubectl --context "kind-$cluster" uncordon "$node" >/dev/null

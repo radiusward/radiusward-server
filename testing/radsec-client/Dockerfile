@@ -1,8 +1,8 @@
 # An independent RadSec client for radiusward's tests (never for production): radsecproxy forwards what radclient
 # and eapol_test send over UDP to the gateway over TLS (RFC 6614) or DTLS (RFC 7360).
 FROM debian:trixie-slim
-RUN apt-get update \
-    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends radsecproxy freeradius-utils eapoltest ca-certificates \
+RUN apt-get -o Acquire::Retries=5 update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends radsecproxy freeradius-utils eapoltest ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /work
 CMD ["sleep", "infinity"]
