@@ -63,6 +63,7 @@ public final class GatewayMain {
     }
 
     public static void main(String[] args) {
+        io.radiusward.common.net.DnsCache.shortLived(); // members are found by name; pods change address (ADR 0062)
         TlsCredentials.statefulSessions(); // before anything loads the JDK's TLS classes
         java.util.List<java.nio.file.Path> files =
                 ConfigArgs.files(args, "gateway --config <file.properties> [--config ...]");

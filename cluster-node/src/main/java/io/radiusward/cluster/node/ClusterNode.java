@@ -42,6 +42,7 @@ import org.apache.logging.log4j.Logger;
  */
 public final class ClusterNode implements AutoCloseable {
 
+    static final long OWN_NAME_WAIT_MS = 60_000;
     private static final Logger LOG = LogManager.getLogger(ClusterNode.class);
 
     /**
@@ -184,6 +185,7 @@ public final class ClusterNode implements AutoCloseable {
 
     /** Launches the member and returns once its components are running (not necessarily elected). */
     public static ClusterNode launch(ClusterNodeConfig config, Runnable terminationHook) {
+        awaitOwnAddress(config.host(), OWN_NAME_WAIT_MS);
         long deadline = System.currentTimeMillis() + MARK_FILE_WAIT_MS;
         Launched launched;
         while (true) {
@@ -303,6 +305,17 @@ public final class ClusterNode implements AutoCloseable {
         purgeAeron = null;
     }
 
+    /** The consensus module's election state; {@code null} if it cannot be read. */
+    io.aeron.cluster.ElectionState electionState() {
+        try {
+            io.aeron.Counter counter =
+                    clusteredMediaDriver.consensusModule().context().electionStateCounter();
+            return counter == null || counter.isClosed() ? null : io.aeron.cluster.ElectionState.get(counter);
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
     /** Requests a snapshot when this member is the leader; followers take theirs as part of it. */
     void snapshotIfLeader() {
         try {
@@ -340,7 +353,51 @@ public final class ClusterNode implements AutoCloseable {
         return terminated ? Health.down("terminated") : Health.up("cluster node " + config.nodeId() + " running");
     }
 
-    /** Ready when the service has started, a leader is known and the data directory has space left. */
+    /**
+     * Waits until {@code host} resolves to an address of this machine (ADR 0062). On Kubernetes a member's pod can
+     * start before its DNS record carries the pod's new address; Aeron would fail to bind its own endpoints and the
+     * member would crash into back-off. Gives up after {@code waitMillis} and lets Aeron report the problem.
+     */
+    static boolean awaitOwnAddress(String host, long waitMillis) {
+        long deadline = System.currentTimeMillis() + waitMillis;
+        boolean warned = false;
+        while (true) {
+            String seen;
+            try {
+                java.net.InetAddress address = java.net.InetAddress.getByName(host);
+                if (address.isAnyLocalAddress()
+                        || address.isLoopbackAddress()
+                        || java.net.NetworkInterface.getByInetAddress(address) != null) {
+                    if (warned) {
+                        LOG.info("{} resolves to this member's address {}", host, address.getHostAddress());
+                    }
+                    return true;
+                }
+                seen = "resolves to " + address.getHostAddress() + ", not an address of this member";
+            } catch (java.io.IOException e) {
+                seen = "does not resolve";
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                LOG.warn("{} {} after {} ms; starting anyway", host, seen, waitMillis);
+                return false;
+            }
+            if (!warned) {
+                LOG.warn("{} {} yet; waiting up to {} ms (a new pod's DNS record)", host, seen, waitMillis);
+                warned = true;
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return false;
+            }
+        }
+    }
+
+    /**
+     * Ready when the service has started, a leader is known, the election is closed — a restarted member has caught
+     * up with the leader by then (ADR 0062) — and the data directory has space left.
+     */
     public Health ready() {
         ServiceStats s = service.stats();
         if (s.fatal() != null) {
@@ -369,6 +426,10 @@ public final class ClusterNode implements AutoCloseable {
         }
         if (s.leaderMemberId() < 0) {
             return Health.down("no leader");
+        }
+        io.aeron.cluster.ElectionState election = electionState();
+        if (election != null && election != io.aeron.cluster.ElectionState.CLOSED) {
+            return Health.down("election in progress: " + election);
         }
         return Health.up(s.role() + ", leader " + s.leaderMemberId());
     }

@@ -131,7 +131,7 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 | # | Package | Content | Size |
 |---|---|---|---|
 | 4.1 ✅ | Spike: members on Kubernetes ([ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md)) | kind cluster, three members by DNS name, pods deleted and rescheduled with new IPs, re-resolution settings; empty member catching up after log purge. Decides decisions 1 and the member-replacement runbook | M |
-| 4.2 | Helm chart: members | `/ready` reports a member that is behind the commit position as not ready, a member waits for its own name (code); StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
+| 4.2 | Helm chart: members | code done 2026-11-11: `/ready` false while the election is open, a member waits for its own name, a 1 s JVM name cache (ADR 0062); chart: StatefulSet, Services, PVCs, shm, probes, anti-affinity, PDB, presets, ConfigMap/Secrets, NetworkPolicy, security context | M |
 | 4.3 | Helm chart: gateways | StatefulSet and `hostNetwork` modes, a UDP/TCP Service per gateway (and a shared one) with source-IP preservation, downward API egress host, drain on SIGTERM (code: readiness off on shutdown) | M |
 | 4.4 | Chart checks in CI | `helm lint`, `kubeconform` against current Kubernetes versions, template snapshot tests; OCI chart in the release workflow | S |
 | 4.5 | `-Pk8s` tests (nightly) | kind + Testcontainers: install, accounting and EAP through the LoadBalancer (MetalLB in kind), leader pod deleted under load, rolling upgrade, node drain with the PDB, member replacement | L |

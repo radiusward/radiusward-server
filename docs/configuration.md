@@ -15,7 +15,7 @@ Gateways reload NAS entries, identity stores, counters, pools, TOTP, CUI, the re
 | `profile` | `small` | `small` \| `standard` \| `large` — Aeron term lengths, threading, idle strategy, logging ring, capacities ([ADR 0004](adr/0004-memory-budget.md)) |
 | `management.http.enabled` | `true` | management HTTP server on/off |
 | `management.http.host` | `127.0.0.1` | bind address (`0.0.0.0` inside a pod) |
-| `management.http.port` | node: `9090+id`, gateway: `9189+gateway.id` | `/health`, `/ready`, `/state` |
+| `management.http.port` | node: `9090+id`, gateway: `9189+gateway.id` | `/health`, `/ready` (a member: started, leader known, election closed, disk space left), `/state` |
 | `cluster.members` | `localhost,localhost,localhost` | member hosts in member-id order (nodes and gateways) |
 | `cluster.base.port` | `9000` | member *i* uses `base + 100·i + {ingress 0, consensus 1, log 2, catchup 3, archive 4, replication 5}` |
 

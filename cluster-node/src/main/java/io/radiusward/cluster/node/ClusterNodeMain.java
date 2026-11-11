@@ -22,6 +22,7 @@ public final class ClusterNodeMain {
 
     @SuppressWarnings("try") // the management server only has to stay open until shutdown
     public static void main(String[] args) {
+        io.radiusward.common.net.DnsCache.shortLived(); // members are found by name; pods change address (ADR 0062)
         Config config = Config.load(
                 ConfigArgs.files(args, "cluster-node --config <file.properties> [--config ...]"), System.getenv());
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));
