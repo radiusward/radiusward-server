@@ -21,6 +21,8 @@ ExecStart=/usr/local/bin/radiusward gateway --config /etc/radiusward/gateway.pro
 WorkingDirectory=/var/lib/radiusward
 ExecReload=/bin/kill -HUP $MAINPID
 KillSignal=SIGTERM
+# the JVM ends with 128 + SIGTERM after a clean shutdown; without this a stop leaves the unit 'failed'
+SuccessExitStatus=143
 TimeoutStopSec=30
 Restart=on-failure
 RestartSec=2s

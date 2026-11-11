@@ -6,6 +6,11 @@ on:
   schedule:
     - cron: '17 2 * * *'
   workflow_dispatch:
+    inputs:
+      tests:
+        description: 'Test classes to run, e.g. SystemdFailoverIT or PowerLossIT,PartitionIT (empty: all)'
+        required: false
+        default: ''
   push:
     tags: ['v*']
 
@@ -28,7 +33,9 @@ jobs:
           sudo modprobe fuse || true
           ls -l /dev/fuse
       - name: Build images and run the tests
-        run: scripts/linux-tests.sh
+        env:
+          TESTS: ${{ inputs.tests }}
+        run: scripts/linux-tests.sh ${TESTS:+"$TESTS"}
       - name: Upload test results (published by reports.yml)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

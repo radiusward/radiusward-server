@@ -1,0 +1,25 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# TEST ONLY image for testing/linux-tests (SystemdFailoverIT), never published: the release image with systemd as
+# PID 1 and the units, env file and sysctl file of deploy/systemd installed unchanged, as docs/operations/bare-metal.md
+# describes. The test copies the properties files and /etc/radiusward/radiusward.env in and enables a unit with
+# systemctl, as an operator would. Needs a privileged container with tmpfs on /run and /run/lock.
+#
+#   docker build -f testing/linux-tests/docker/Dockerfile.systemd -t radiusward-systemd:dev .
+ARG BASE=radiusward:dev
+FROM ${BASE}
+USER root
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends systemd systemd-sysv dbus \
+    && rm -rf /var/lib/apt/lists/* \
+    # the units run /usr/local/bin/radiusward, which execs java from systemd's PATH, not the image's
+    && ln -s /opt/java/openjdk/bin/java /usr/bin/java \
+    # net.core.* cannot be set from inside a container (not namespaced); the file is installed anyway
+    && systemctl mask systemd-sysctl.service getty@tty1.service console-getty.service systemd-logind.service \
+    && mkdir -p /etc/radiusward
+COPY deploy/systemd/radiusward-node.service deploy/systemd/radiusward-gateway.service /etc/systemd/system/
+COPY deploy/systemd/99-radiusward.conf /etc/sysctl.d/99-radiusward.conf
+WORKDIR /
+STOPSIGNAL SIGRTMIN+3
+ENTRYPOINT ["/sbin/init"]
+CMD []

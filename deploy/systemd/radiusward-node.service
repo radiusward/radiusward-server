@@ -19,6 +19,8 @@ ExecStart=/usr/local/bin/radiusward cluster-node --config /etc/radiusward/cluste
 WorkingDirectory=/var/lib/radiusward
 # SIGTERM closes the consensus module and archive in order; a member that is still flushing gets the time it needs
 KillSignal=SIGTERM
+# the JVM ends with 128 + SIGTERM after a clean shutdown; without this a stop leaves the unit 'failed'
+SuccessExitStatus=143
 TimeoutStopSec=60
 Restart=on-failure
 RestartSec=2s

@@ -63,4 +63,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now radiusward-gateway
   [monitoring.md](monitoring.md)).
 
 The units are hardened (`ProtectSystem=strict`, no capabilities, only the data directory and `/dev/shm` writable);
-`systemd-analyze security` rates the member unit 4.5 ("OK").
+`systemd-analyze security` rates the member unit 4.5 ("OK"). `SystemdFailoverIT` (nightly `linux-tests`) runs the
+units unchanged with systemd as PID 1 in containers: a killed member is restarted by `Restart=on-failure`, a stopped
+one ends `inactive` (the JVM's exit status 143 after SIGTERM counts as success, `SuccessExitStatus=143`), reload and
+the gateway's drain work, and no acknowledged event is lost.

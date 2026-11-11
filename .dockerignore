@@ -6,3 +6,4 @@
 !NOTICE
 !THIRD-PARTY-LICENSES.md
 !testing/linux-tests/docker/
+!deploy/systemd/

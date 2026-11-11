@@ -2,7 +2,9 @@
 
 Fault injection in Linux containers with Testcontainers ([ADR 0016](../../docs/adr/0016-fault-injection-tests.md)).
 Uses the release image `radiusward:dev`, a test image `radiusward-test:dev` for the members (LazyFS,
-iptables; [docker/Dockerfile.test](docker/Dockerfile.test)) and the configuration files of `deploy/compose`.
+iptables; [docker/Dockerfile.test](docker/Dockerfile.test)), a systemd image `radiusward-systemd:dev` with the
+units of `deploy/systemd` ([docker/Dockerfile.systemd](docker/Dockerfile.systemd)) and the configuration files of
+`deploy/compose`. In CI, *Run workflow* on `linux-tests` takes a `tests` input to run single classes.
 
 ```bash
 scripts/linux-tests.sh                    # builds jar + images, runs everything (~15 min)
@@ -25,9 +27,11 @@ LINUX_TESTS_ARGS="-Dradiusward.outage.minutes=3 -Dradiusward.purge.minutes=8" sc
 | `DetachIT` | optional sink, `maxLag` 20 s | detached without blocking ACKs, re-attaches, the lease stays put |
 | `ExportThroughputIT` | backlog drain per storage variant | faster than intake; rows/s and bytes per row |
 | `PurgeIT` | steady load (`radiusward.purge.minutes`, default 60), snapshots every minute | archive bounded, nothing acknowledged missing |
+| `SystemdFailoverIT` | systemd as PID 1, the shipped units: leader's member SIGKILLed, a follower stopped and started, a gateway reloaded, another stopped (drain) | `Restart=on-failure` brings the member back, a stop ends `inactive`, the draining gateway is not ready, nothing acknowledged missing, every unit `active` again |
 
 `ContainerCluster` is the harness: static addresses, `kill`, `restart`, `powerLoss`, `isolate`/`heal`,
-`memory` (cgroup), `state`, `load`, `verifyAcks`. Clients run in a tools container inside the network.
+`memory` (cgroup), `state`, `load`, `verifyAcks`; with `Options.systemd(true)` the containers boot systemd and the
+harness enables the units (`systemctl`, `unitState`, `unitRestarts`; logs from the journal). Clients run in a tools container inside the network.
 Container logs end up in `target/container-logs/<test>/`.
 
 Needs privileged containers and `/dev/fuse` (Linux, Colima, GitHub runners). The compose stack uses the same

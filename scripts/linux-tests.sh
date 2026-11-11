@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Fault-injection tests in Linux containers (testing/linux-tests): builds radiusward.jar, the release image
-# radiusward:dev and the test image radiusward-test:dev (LazyFS, iptables), then runs the tests.
+# radiusward:dev, the test image radiusward-test:dev (LazyFS, iptables) and radiusward-systemd:dev (systemd as PID 1
+# with the units of deploy/systemd, SystemdFailoverIT), then runs the tests.
 #
 #   scripts/linux-tests.sh                       all tests (~15 min)
 #   scripts/linux-tests.sh PowerLossIT           one test class (comma-separated list works too)
@@ -26,6 +27,7 @@ if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
     ./mvnw -q -B install -DskipTests
     docker build -q -f deploy/docker/Dockerfile -t radiusward:dev .
     docker build -q -f testing/linux-tests/docker/Dockerfile.test -t radiusward-test:dev .
+    docker build -q -f testing/linux-tests/docker/Dockerfile.systemd -t radiusward-systemd:dev .
 fi
 
 args=(-B -Plinux,reports verify -pl testing/linux-tests)

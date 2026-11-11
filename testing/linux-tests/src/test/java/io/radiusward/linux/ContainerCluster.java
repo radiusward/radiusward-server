@@ -40,6 +40,9 @@ final class ContainerCluster implements AutoCloseable {
 
     static final String IMAGE = System.getProperty("radiusward.image", "radiusward:dev");
     static final String TEST_IMAGE = System.getProperty("radiusward.test.image", "radiusward-test:dev");
+    /** systemd as PID 1 with the units of deploy/systemd (testing/linux-tests/docker/Dockerfile.systemd). */
+    static final String SYSTEMD_IMAGE = System.getProperty("radiusward.systemd.image", "radiusward-systemd:dev");
+
     static final Path COMPOSE_DIR = Path.of(System.getProperty("radiusward.compose.dir", "../../deploy/compose"));
     static final String SECRET = "testing123";
     static final int NAS_ID = 1001;
@@ -59,31 +62,44 @@ final class ContainerCluster implements AutoCloseable {
             long gatewayMemoryMib,
             long dataTmpfsMib,
             boolean postgres,
-            Map<String, String> nodeEnv) {
+            Map<String, String> nodeEnv,
+            boolean systemd) {
         static Options defaults() {
-            return new Options(2, false, 1024, 384, 0, false, Map.of());
+            return new Options(2, false, 1024, 384, 0, false, Map.of(), false);
+        }
+
+        /**
+         * Members and gateways in the systemd test image, started by the shipped units of {@code deploy/systemd}
+         * ({@link #SYSTEMD_IMAGE}, SystemdFailoverIT).
+         */
+        Options systemd(boolean on) {
+            return new Options(
+                    fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv, on);
         }
 
         Options fileSyncLevel(int level) {
-            return new Options(level, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv);
+            return new Options(
+                    level, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         Options lazyFs(boolean on) {
-            return new Options(fileSyncLevel, on, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv);
+            return new Options(
+                    fileSyncLevel, on, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         /** Data directory on a tmpfs of this size (0: the image volume), to run out of disk space. */
         Options dataTmpfsMib(long mib) {
-            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, mib, postgres, nodeEnv);
+            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, mib, postgres, nodeEnv, systemd);
         }
 
         Options memoryMib(long node, long gateway) {
-            return new Options(fileSyncLevel, lazyFs, node, gateway, dataTmpfsMib, postgres, nodeEnv);
+            return new Options(fileSyncLevel, lazyFs, node, gateway, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         /** PostgreSQL at the compose address with the compose sink {@code pg} enabled on the members. */
         Options postgres(boolean on) {
-            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, on, nodeEnv);
+            return new Options(
+                    fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, on, nodeEnv, systemd);
         }
 
         /** An extra environment variable for every member, e.g. {@code RADIUSWARD_SINK_PG_MAX_LAG=30s}. */
@@ -91,7 +107,14 @@ final class ContainerCluster implements AutoCloseable {
             Map<String, String> env = new LinkedHashMap<>(nodeEnv);
             env.put(name, value);
             return new Options(
-                    fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, Map.copyOf(env));
+                    fileSyncLevel,
+                    lazyFs,
+                    nodeMemoryMib,
+                    gatewayMemoryMib,
+                    dataTmpfsMib,
+                    postgres,
+                    Map.copyOf(env),
+                    systemd);
         }
     }
 
@@ -142,6 +165,9 @@ final class ContainerCluster implements AutoCloseable {
     }
 
     private GenericContainer<?> node(int id) {
+        if (options.systemd()) {
+            return systemdNode(id);
+        }
         String ip = "172.28.0.1" + id;
         GenericContainer<?> c = new GenericContainer<>(DockerImageName.parse(TEST_IMAGE))
                 .withNetwork(network)
@@ -180,6 +206,9 @@ final class ContainerCluster implements AutoCloseable {
     }
 
     private GenericContainer<?> gateway(int index) {
+        if (options.systemd()) {
+            return systemdGateway(index);
+        }
         String ip = "172.28.0.2" + index;
         return new GenericContainer<>(DockerImageName.parse(IMAGE))
                 .withNetwork(network)
@@ -207,6 +236,95 @@ final class ContainerCluster implements AutoCloseable {
                 });
     }
 
+    // ---- systemd (Options.systemd): the shipped units start radiusward, as docs/operations/bare-metal.md describes
+    // ----
+
+    static final String NODE_UNIT = "radiusward-node";
+    static final String GATEWAY_UNIT = "radiusward-gateway";
+
+    private GenericContainer<?> systemdNode(int id) {
+        StringBuilder env = new StringBuilder()
+                .append("RADIUSWARD_PROFILE=small\n")
+                .append("RADIUSWARD_CLUSTER_NODE_ID=")
+                .append(id)
+                .append('\n')
+                .append("RADIUSWARD_ARCHIVE_FILE_SYNC_LEVEL=")
+                .append(options.fileSyncLevel())
+                .append('\n')
+                .append("RADIUSWARD_EXPORT_SINKS=\n");
+        options.nodeEnv().forEach((k, v) -> env.append(k).append('=').append(v).append('\n'));
+        return systemdContainer("172.28.0.1" + id, "node-" + id, options.nodeMemoryMib(), 512)
+                .withCopyToContainer(config("cluster.properties"), "/etc/radiusward/cluster.properties")
+                .withCopyToContainer(Transferable.of(env.toString()), "/etc/radiusward/radiusward.env");
+    }
+
+    private GenericContainer<?> systemdGateway(int index) {
+        String ip = "172.28.0.2" + index;
+        String env = "RADIUSWARD_PROFILE=small\n"
+                + "RADIUSWARD_GATEWAY_ID=" + (index + 1) + "\n"
+                + "RADIUSWARD_GATEWAY_EGRESS_HOST=" + ip + "\n"
+                + "NAS_SECRET=" + SECRET + "\n";
+        return systemdContainer(ip, "gateway-" + (char) ('a' + index), options.gatewayMemoryMib(), 128)
+                .withCopyToContainer(config("gateway.properties"), "/etc/radiusward/gateway.properties")
+                .withCopyToContainer(config("nas-clients.properties"), "/etc/radiusward/nas-clients.properties")
+                .withCopyToContainer(config("users"), "/etc/radiusward/users")
+                .withCopyToContainer(Transferable.of(env), "/etc/radiusward/radiusward.env");
+    }
+
+    /** systemd as PID 1 needs a privileged container and tmpfs on /run; it gets a little memory of its own. */
+    private GenericContainer<?> systemdContainer(String ip, String host, long memoryMib, long shmMib) {
+        return new GenericContainer<>(DockerImageName.parse(SYSTEMD_IMAGE))
+                .withNetwork(network)
+                .withCreateContainerCmdModifier(cmd -> {
+                    cmd.withIpv4Address(ip).withHostName(host);
+                    cmd.getHostConfig()
+                            .withPrivileged(true)
+                            .withTmpFs(Map.of("/run", "rw", "/run/lock", "rw"))
+                            .withShmSize(shmMib * MIB)
+                            .withMemory((memoryMib + 128) * MIB)
+                            .withMemorySwap((memoryMib + 128) * MIB)
+                            .withNanoCPUs(1_000_000_000L);
+                });
+    }
+
+    /** The unit that runs radiusward in a member's or gateway's container. */
+    static String unit(Member m) {
+        return m.name().startsWith("node-") ? NODE_UNIT : GATEWAY_UNIT;
+    }
+
+    /** {@code systemctl <args>} in the container of {@code m}. */
+    ExecResult systemctl(Member m, String... args) {
+        String[] command = new String[args.length + 1];
+        command[0] = "systemctl";
+        System.arraycopy(args, 0, command, 1, args.length);
+        return exec(m.container(), command);
+    }
+
+    /** {@code systemctl is-active} of the member's or gateway's unit: active, activating, deactivating, inactive… */
+    String unitState(Member m) {
+        return systemctl(m, "is-active", unit(m)).getStdout().trim();
+    }
+
+    /** How often systemd restarted the unit ({@code Restart=on-failure}). */
+    long unitRestarts(Member m) {
+        String out = systemctl(m, "show", "-p", "NRestarts", "--value", unit(m))
+                .getStdout()
+                .trim();
+        return out.isEmpty() ? 0 : Long.parseLong(out);
+    }
+
+    /** Waits until systemd has booted, then enables and starts the unit, as an operator would. */
+    private void enableUnit(Member m) {
+        long deadline = System.nanoTime() + Duration.ofSeconds(60).toNanos();
+        while (!systemctl(m, "is-system-running").getStdout().trim().matches("running|degraded")) {
+            if (System.nanoTime() > deadline) {
+                throw new IllegalStateException(m.name() + ": systemd did not finish booting");
+            }
+            sleep(250);
+        }
+        execOrFail(m.container(), "systemctl", "enable", "--now", unit(m));
+    }
+
     private static Transferable config(String file) {
         try {
             return Transferable.of(
@@ -229,8 +347,14 @@ final class ContainerCluster implements AutoCloseable {
                 awaitPostgres(Duration.ofSeconds(60));
             }
             nodes.parallelStream().forEach(n -> n.container().start());
+            if (options.systemd()) {
+                nodes.parallelStream().forEach(this::enableUnit);
+            }
             awaitReady(nodes, Duration.ofSeconds(60));
             gateways.parallelStream().forEach(g -> g.container().start());
+            if (options.systemd()) {
+                gateways.parallelStream().forEach(this::enableUnit);
+            }
             awaitReady(gateways, Duration.ofSeconds(60));
             return this;
         } catch (RuntimeException e) {
@@ -655,8 +779,12 @@ final class ContainerCluster implements AutoCloseable {
             try {
                 if (m.container().getContainerId() != null) {
                     Files.createDirectories(dir);
-                    Files.writeString(
-                            dir.resolve(m.name() + ".log"), m.container().getLogs());
+                    String log = options.systemd()
+                            // radiusward logs to the journal under systemd; the container log is only the boot
+                            ? exec(m.container(), "journalctl", "--no-pager", "-o", "short-iso", "-u", unit(m))
+                                    .getStdout()
+                            : m.container().getLogs();
+                    Files.writeString(dir.resolve(m.name() + ".log"), log);
                 }
             } catch (IOException | RuntimeException e) {
                 System.err.println("could not save the log of " + m.name() + ": " + e);
