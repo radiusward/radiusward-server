@@ -59,7 +59,7 @@ final class AccessLoad {
 
     private final Settings settings;
     private final PrintStream out;
-    private final Random random = new Random(7);
+    private final Random random = new java.security.SecureRandom(); // request authenticators must not be predictable
     private final AccessCredentials credentials = new AccessCredentials(random);
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
     private final RadiusPacketEncoder encoder = new RadiusPacketEncoder();

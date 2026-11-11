@@ -24,7 +24,7 @@ final class StoreLookups {
     static final double[] BOUNDS = {0.0005, 0.001, 0.0025, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5};
 
     private final AtomicLongArray buckets = new AtomicLongArray(BOUNDS.length + 1);
-    private final AtomicLongArray results = new AtomicLongArray(RESULTS.length);
+    private final AtomicLongArray outcomes = new AtomicLongArray(RESULTS.length);
     private final java.util.concurrent.atomic.AtomicLong nanos = new java.util.concurrent.atomic.AtomicLong();
 
     void record(long elapsedNanos, int result) {
@@ -35,11 +35,11 @@ final class StoreLookups {
         }
         buckets.getAndIncrement(b);
         nanos.addAndGet(elapsedNanos);
-        results.getAndIncrement(result);
+        outcomes.getAndIncrement(result);
     }
 
     long result(int result) {
-        return results.get(result);
+        return outcomes.get(result);
     }
 
     /** Cumulative counts per bound and +Inf, as Prometheus wants them. */

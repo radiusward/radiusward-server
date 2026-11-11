@@ -44,6 +44,8 @@ import org.agrona.concurrent.UnsafeBuffer;
  */
 public final class RadClient {
 
+    private static final java.security.SecureRandom RANDOM = new java.security.SecureRandom();
+
     static final int EXIT_OK = 0;
     static final int EXIT_TIMEOUT = 1;
     static final int EXIT_BAD_RESPONSE = 2;
@@ -175,14 +177,13 @@ public final class RadClient {
         String user = o.required("user");
         String password = o.required("password");
         AccessCredentials.Method method = AccessCredentials.Method.parse(o.value("method", "pap"));
-        java.security.SecureRandom random = new java.security.SecureRandom();
         byte[] requestAuthenticator = new byte[16];
-        random.nextBytes(requestAuthenticator);
+        RANDOM.nextBytes(requestAuthenticator);
         byte[] secret = o.secret();
         PacketBuilder builder = new PacketBuilder(dictionary, RadiusCode.ACCESS_REQUEST, o.identifier());
         builder.authenticator(requestAuthenticator);
         builder.add("User-Name", user);
-        new AccessCredentials(random).write(builder.encoder(), requestAuthenticator, user, password, method, secret);
+        new AccessCredentials(RANDOM).write(builder.encoder(), requestAuthenticator, user, password, method, secret);
         builder.add("NAS-IP-Address", o.value("nas-ip", "127.0.0.1"));
         if (o.has("calling-station-id")) {
             builder.add("Calling-Station-Id", o.value("calling-station-id"));
