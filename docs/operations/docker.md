@@ -20,9 +20,11 @@ Docker Desktop.
 docker compose -f deploy/compose/compose.yaml up -d --wait      # small profile, fsync on
 docker compose -f deploy/compose/compose.yaml ps
 
-# one accounting request from inside the network
+# one accounting request and one Access-Request from inside the network
 docker compose -f deploy/compose/compose.yaml run --rm tools acct \
     --server gateway-a:1813 --secret testing123 --status start --session-id s1
+docker compose -f deploy/compose/compose.yaml run --rm tools auth \
+    --server gateway-a:1812 --secret testing123 --user alice --password secret --method mschapv2
 
 deploy/compose/demo-failover.sh                                 # load, kill -9 the leader, verify nothing lost
 docker compose -f deploy/compose/compose.yaml down -v           # -v also deletes the data volumes
@@ -31,7 +33,7 @@ docker compose -f deploy/compose/compose.yaml down -v           # -v also delete
 | Service | Address | Ports on the host |
 |---|---|---|
 | `node-0`, `node-1`, `node-2` | 172.28.0.10–12 | management 127.0.0.1:9090–9092 |
-| `gateway-a`, `gateway-b` | 172.28.0.20–21 | RADIUS 1813/udp and 1814/udp, management 127.0.0.1:9190–9191 |
+| `gateway-a`, `gateway-b` | 172.28.0.20–21 | accounting 1813/udp and 1814/udp, authentication 1812/udp and 1815/udp (demo users in `config/users`: PAP, CHAP, MS-CHAPv2), management 127.0.0.1:9190–9191 |
 | `tools` (profile `tools`) | dynamic | — (`radclient` as entrypoint) |
 
 Configuration lives in [deploy/compose/config](../../deploy/compose/config); per-container values
@@ -95,7 +97,7 @@ docker compose -f deploy/compose/compose.yaml run --rm --entrypoint sh tools -c 
 ## Monitoring
 
 `docker compose -f deploy/compose/compose.yaml --profile monitoring up -d` adds Prometheus
-(127.0.0.1:9095, with the alert rules) and Grafana (127.0.0.1:3000, dashboard "radiusward") —
+(127.0.0.1:9095, with the alert rules) and Grafana (127.0.0.1:3000, five dashboards tagged "radiusward") —
 [monitoring.md](monitoring.md).
 
 ## Querying the state

@@ -1,6 +1,6 @@
 # Phase 4 plan: Kubernetes, bare metal, backup and operations
 
-Status: **in progress** (4.8 first) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
+Status: **in progress** (4.8 done 2026-11-11; next 4.1) · Created: 2026-11-11 · Builds on: [Phase 2](phase-2.md) (image, fault injection),
 [Phase 3](phase-3.md) (exporter, metrics), [Phase 5](phase-5-auth.md) (authentication) · Roadmap: [roadmap.md](roadmap.md)
 
 ## Goal
@@ -90,8 +90,8 @@ saturated, home server down, certificate expiring within 14 days, SIM sequence-n
 
 The same dashboards and alerts ship with compose (`--profile monitoring`, Prometheus and Grafana in Docker) and the
 chart, and `MonitoringConfigIT` checks that every expression names a metric that is exported. So that the
-authentication dashboards show something in Docker, the compose gateways get authentication with a demo users file
-and RadSec, and `radclient` gets an `auth` command and an Access-Request mix in `load` (PAP, CHAP, MS-CHAPv2,
+authentication dashboards show something in Docker, the compose gateways get authentication with a demo users file,
+and `radclient` gets an `auth` command and an Access-Request mix in `load` (PAP, CHAP, MS-CHAPv2,
 rejects) — today it sends accounting only.
 
 ### Node prerequisites
@@ -136,7 +136,7 @@ Units `radiusward-node@.service` and `radiusward-gateway.service`, an environmen
 | 4.5 | `-Pk8s` tests (nightly) | kind + Testcontainers: install, accounting and EAP through the LoadBalancer (MetalLB in kind), leader pod deleted under load, rolling upgrade, node drain with the PDB, member replacement | L |
 | 4.6 | Backup | `cluster-backup` subcommand around Aeron `ClusterBackup`, backup lag metric, chart pod and optional CronJob; restore with `cluster-tool`; tests for backup and restore | M |
 | 4.7 | systemd | units, env file, tmpfs, sysctls, hardening; a `linux-tests` scenario with three systemd containers (failover and restart) | S |
-| 4.8 | Dashboards and alerts | compose gateways with authentication, `radclient auth` and an Access-Request load mix; the five dashboards above, the missing metrics (EAP method, latency histograms, reject causes, SQN, certificate expiry), authentication alerts, ServiceMonitor/PodMonitor, PrometheusRule, dashboard ConfigMaps; `MonitoringConfigIT` extended | M |
+| 4.8 ✅ | Dashboards and alerts (the chart's ServiceMonitor, PrometheusRule and ConfigMaps follow with 4.2) | compose gateways with authentication, `radclient auth` and an Access-Request load mix; the five dashboards above, the missing metrics (EAP method, latency histograms, reject causes, SQN, certificate expiry), authentication alerts, ServiceMonitor/PodMonitor, PrometheusRule, dashboard ConfigMaps; `MonitoringConfigIT` extended | M |
 | 4.9 | Load and chaos on Kubernetes | 500k sessions and the authentication mix through the LoadBalancer; pod kill, network partition (NetworkPolicy), node drain during load; results in the report | M |
 | 4.10 | Documentation | `docs/operations/kubernetes.md`, `bare-metal.md`, `backup.md`, runbooks; ADRs for decisions 1, 2, 8 | S |
 

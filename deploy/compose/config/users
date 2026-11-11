@@ -1,0 +1,6 @@
+# Demo users for the compose stack; never use them in production (real users: docs/configuration.md).
+# "load" is the default user of radclient load --access-rate; "alice" is for trying radclient auth by hand.
+alice Cleartext-Password := "secret"
+      Reply-Message = "Hello, alice"
+
+load Cleartext-Password := "load"

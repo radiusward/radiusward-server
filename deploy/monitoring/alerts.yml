@@ -80,3 +80,54 @@ groups:
         labels: {severity: critical}
         annotations:
           summary: "Gateway {{ $labels.gateway }} is not connected to the cluster"
+
+      # authentication (gateway.auth.enabled)
+      - alert: RadiuswardRejectRatioHigh
+        expr: |
+          sum by (gateway) (rate(radiusward_gateway_access_requests_total{result="rejected"}[10m]))
+            / (sum by (gateway) (rate(radiusward_gateway_access_requests_total{result=~"accepted|rejected"}[10m])) > 0.1)
+            > 0.5
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than half of the Access-Requests on gateway {{ $labels.gateway }} are rejected"
+          description: Look at radiusward_gateway_access_rejects_total by cause; a store that lost its users or a NAS with a wrong secret are common reasons.
+
+      - alert: RadiuswardIdentityStoreUnavailable
+        expr: sum by (gateway, store) (rate(radiusward_gateway_store_lookups_total{result="unavailable"}[5m])) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Identity store {{ $labels.store }} does not answer gateway {{ $labels.gateway }}"
+          description: Users it might know are not answered (never rejected on its behalf); the NAS retransmits.
+
+      - alert: RadiuswardAuthWorkersSaturated
+        expr: sum by (gateway) (rate(radiusward_gateway_access_requests_total{result="busy"}[5m])) > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Gateway {{ $labels.gateway }} has no free slot for Access-Requests"
+          description: Raise gateway.auth.workers or gateway.auth.pending, add gateways, or look at slow stores (radiusward_gateway_store_lookup_seconds).
+
+      - alert: RadiuswardHomeServerDown
+        expr: min by (gateway, home) (radiusward_gateway_proxy_home_alive) == 0
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Home server {{ $labels.home }} is marked dead on gateway {{ $labels.gateway }}"
+          description: Proxied realms fail over to other home servers of their pool, if there are any.
+
+      - alert: RadiuswardCertificateExpiring
+        expr: min by (gateway, use) (radiusward_tls_certificate_expiry_timestamp_seconds) - time() < 14 * 86400
+        labels: {severity: warning}
+        annotations:
+          summary: "The {{ $labels.use }} server certificate of gateway {{ $labels.gateway }} expires within 14 days"
+          description: Replace the files; gateways reload them without a restart.
+
+      - alert: RadiuswardSimSequenceNumbersUnavailable
+        expr: sum by (gateway) (rate(radiusward_gateway_sim_sqn_requests_total{outcome=~"capacity|unsupported"}[5m])) > 0
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "EAP-AKA on gateway {{ $labels.gateway }} gets no sequence numbers from the cluster"
+          description: "capacity: raise service.sim.subscribers.max; unsupported: state version 8 is not active yet (a member runs an older release)."

@@ -62,7 +62,10 @@ class PrometheusWriterTest {
                 radiusward_x_total{a="2"} +Inf
                 """);
         assertValid(text);
-        JvmMetrics.write(new PrometheusWriter());
+        PrometheusWriter jvm = new PrometheusWriter();
+        JvmMetrics.write(jvm);
+        assertThat(jvm.finish()).contains("radiusward_jvm_buffer_used_bytes{pool=\"direct\"} ");
+        assertValid(jvm.finish());
     }
 
     @Test

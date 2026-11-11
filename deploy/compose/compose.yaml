@@ -6,6 +6,8 @@
 #   docker compose -f deploy/compose/compose.yaml up -d
 #   docker compose -f deploy/compose/compose.yaml run --rm tools acct --server gateway-a:1813 \
 #          --secret "$NAS_SECRET" --status start --session-id s1
+#   docker compose -f deploy/compose/compose.yaml run --rm tools auth --server gateway-a:1812 \
+#          --secret "$NAS_SECRET" --user alice --password secret
 #
 # Test clients run inside this network: on macOS Docker rewrites the source address of UDP traffic through
 # published ports, so a host-side client would not match any NAS entry (see docs/operations/docker.md).
@@ -77,9 +79,9 @@ services:
       RADIUSWARD_GATEWAY_ID: "1"
       RADIUSWARD_GATEWAY_EGRESS_HOST: 172.28.0.20  # an IP, so the cluster never resolves a dead gateway's name
       NAS_SECRET: ${NAS_SECRET:-testing123}
-    volumes: ["./config/gateway.properties:/etc/radiusward/gateway.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro"]
+    volumes: ["./config/gateway.properties:/etc/radiusward/gateway.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro", "./config/users:/etc/radiusward/users:ro"]
     networks: {radius: {ipv4_address: 172.28.0.20}}
-    ports: ["1813:1813/udp", "127.0.0.1:9190:9090"]
+    ports: ["1812:1812/udp", "1813:1813/udp", "127.0.0.1:9190:9090"]
   gateway-b:
     <<: *gateway
     hostname: gateway-b
@@ -88,9 +90,9 @@ services:
       RADIUSWARD_GATEWAY_ID: "2"
       RADIUSWARD_GATEWAY_EGRESS_HOST: 172.28.0.21
       NAS_SECRET: ${NAS_SECRET:-testing123}
-    volumes: ["./config/gateway.properties:/etc/radiusward/gateway.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro"]
+    volumes: ["./config/gateway.properties:/etc/radiusward/gateway.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro", "./config/users:/etc/radiusward/users:ro"]
     networks: {radius: {ipv4_address: 172.28.0.21}}
-    ports: ["1814:1813/udp", "127.0.0.1:9191:9090"]
+    ports: ["1815:1812/udp", "1814:1813/udp", "127.0.0.1:9191:9090"]
 
   # the exporter's PostgreSQL (radiusward_export_* metrics; psql: docker compose exec postgres psql -U radiusward radius)
   postgres:

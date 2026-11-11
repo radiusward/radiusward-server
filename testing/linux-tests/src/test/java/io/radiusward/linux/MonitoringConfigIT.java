@@ -36,7 +36,7 @@ class MonitoringConfigIT {
 
     @Test
     void alertRulesAndScrapeConfigAreValid() {
-        assertThat(promtool("check", "rules", "/etc/prometheus/alerts.yml")).contains("SUCCESS: 10 rules found");
+        assertThat(promtool("check", "rules", "/etc/prometheus/alerts.yml")).contains("SUCCESS: 16 rules found");
         assertThat(promtool("check", "config", "/etc/prometheus/prometheus.yml"))
                 .contains("SUCCESS");
     }

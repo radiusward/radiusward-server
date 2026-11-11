@@ -31,6 +31,11 @@ public final class JvmMetrics {
         for (GarbageCollectorMXBean gc : ManagementFactory.getGarbageCollectorMXBeans()) {
             w.sample(Math.max(0, gc.getCollectionTime()) / 1000.0, "gc", gc.getName());
         }
+        w.gauge("radiusward_jvm_buffer_used_bytes", "Memory of NIO buffer pools: direct (sessions, Aeron) and mapped");
+        for (java.lang.management.BufferPoolMXBean pool :
+                ManagementFactory.getPlatformMXBeans(java.lang.management.BufferPoolMXBean.class)) {
+            w.sample(Math.max(0, pool.getMemoryUsed()), "pool", pool.getName());
+        }
         w.gauge("radiusward_jvm_threads", "Live threads")
                 .sample(ManagementFactory.getThreadMXBean().getThreadCount());
         w.gauge("radiusward_process_uptime_seconds", "Time since the JVM started")
