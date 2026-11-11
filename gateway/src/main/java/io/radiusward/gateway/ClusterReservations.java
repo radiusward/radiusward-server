@@ -26,6 +26,9 @@ import org.agrona.concurrent.ringbuffer.RingBufferDescriptor;
 final class ClusterReservations {
 
     static final int REQUEST_MSG = 1;
+    /** Outcomes of {@code nextSqn} for the metrics, in the order of their counters. */
+    static final String[] SQN_OUTCOMES = {"ok", "unsupported", "capacity", "unavailable"};
+
     private static final int RING_CAPACITY = 64 * 1024;
     private static final long TAG = 1L << 62; // apart from the accounting path's correlation ids
     private static final int WORKER_SHIFT = 40;
@@ -36,6 +39,7 @@ final class ClusterReservations {
     private final AtomicLongArray answered;
     private final AtomicIntegerArray results;
     private final AtomicLongArray sqns; // the SQN of an SqnResult, beside its outcome in results
+    private final AtomicLongArray sqnOutcomes = new AtomicLongArray(SQN_OUTCOMES.length);
     private final int gatewayId;
     private final long timeoutNs;
     private final int ttlSeconds;
@@ -81,6 +85,20 @@ final class ClusterReservations {
         answered.set(worker, correlationId); // last: a worker that sees its id reads the rest
     }
 
+    /** {@code nextSqn} answers by outcome: the cluster's three, and none in time ({@code unavailable}). */
+    void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String gateway) {
+        w.counter(
+                "radiusward_gateway_sim_sqn_requests_total",
+                "SIM sequence numbers asked of the cluster (EAP-AKA, AKA'), by outcome");
+        for (int i = 0; i < SQN_OUTCOMES.length; i++) {
+            w.sample(sqnOutcomes.get(i), "gateway", gateway, "outcome", SQN_OUTCOMES[i]);
+        }
+    }
+
+    long sqnOutcome(int index) {
+        return sqnOutcomes.get(index);
+    }
+
     /** The {@link SessionLimits} of worker {@code index}; used only on that worker's thread. */
     SessionLimits forWorker(int index) {
         return new Worker(index);
@@ -108,13 +126,14 @@ final class ClusterReservations {
                     .subscriberKey(subscriberKey)
                     .floor(floor);
             if (!requests.write(
-                    REQUEST_MSG, buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sqnEncoder.encodedLength())) {
+                            REQUEST_MSG, buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sqnEncoder.encodedLength())
+                    || !await(correlationId)) {
+                sqnOutcomes.getAndIncrement(3);
                 return SQN_UNAVAILABLE;
             }
-            if (!await(correlationId)) {
-                return SQN_UNAVAILABLE;
-            }
-            return switch (results.get(index)) {
+            int outcome = results.get(index);
+            sqnOutcomes.getAndIncrement(Math.min(outcome, 2));
+            return switch (outcome) {
                 case 0 -> sqns.get(index); // OK
                 case 1 -> SQN_UNSUPPORTED;
                 default -> SQN_UNAVAILABLE; // CAPACITY: no room for another subscriber

@@ -40,7 +40,13 @@ public final class AuthStats {
         REJECTS_DELAYED
     }
 
+    /** The cause of a reject whose handler recorded none. */
+    static final String UNKNOWN_CAUSE = "credentials or method rejected";
+
     private static final Counter[] COUNTERS = Counter.values();
+    // keyed by the handler's constant cause strings: a bounded set, nothing allocated after the first of each
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.atomic.LongAdder> rejects =
+            new java.util.concurrent.ConcurrentHashMap<>();
     private final AtomicLongArray values = new AtomicLongArray(COUNTERS.length);
     private volatile boolean bound;
     private volatile int inFlight;
@@ -48,6 +54,19 @@ public final class AuthStats {
 
     void increment(Counter counter) {
         values.getAndIncrement(counter.ordinal());
+    }
+
+    /** An Access-Reject and its recorded cause ({@code null}: none recorded). */
+    void rejected(String cause) {
+        rejects.computeIfAbsent(cause == null ? UNKNOWN_CAUSE : cause, k -> new java.util.concurrent.atomic.LongAdder())
+                .increment();
+    }
+
+    /** Access-Rejects by cause, the causes without their trailing colon, in name order. */
+    public java.util.SortedMap<String, Long> rejectsByCause() {
+        java.util.TreeMap<String, Long> out = new java.util.TreeMap<>();
+        rejects.forEach((cause, n) -> out.merge(AccessWorker.withoutTrailingColon(cause), n.sum(), Long::sum));
+        return out;
     }
 
     public long get(Counter counter) {

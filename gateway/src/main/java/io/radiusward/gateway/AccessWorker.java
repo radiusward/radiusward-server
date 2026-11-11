@@ -90,7 +90,10 @@ final class AccessWorker implements Agent {
         }
         switch (code) {
             case AccessHandler.ACCEPT -> stats.increment(AuthStats.Counter.ACCEPTED);
-            case AccessHandler.REJECT -> stats.increment(AuthStats.Counter.REJECTED);
+            case AccessHandler.REJECT -> {
+                stats.increment(AuthStats.Counter.REJECTED);
+                stats.rejected(context.reason());
+            }
             case AccessHandler.CHALLENGE -> stats.increment(AuthStats.Counter.CHALLENGED);
             default -> {
                 stats.increment(AuthStats.Counter.DROPPED);

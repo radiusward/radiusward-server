@@ -46,6 +46,7 @@ public final class Gateway implements AutoCloseable {
     private final AuthStats authStats;
     private final AccessHandler handler;
     private final AgentRunner[] runners;
+    private ClusterReservations reservations; // set once after construction; null without authentication
     private RadsecAgent radsecAgent;
     private DynamicAuthorization dynamicAuthorization;
     private CoaService coaService;
@@ -253,6 +254,7 @@ public final class Gateway implements AutoCloseable {
                 AgentRunner.startOnThread(runner);
             }
             Gateway gateway = new Gateway(config, stats, driver, udp, authAgent, authStats, handler, runners);
+            gateway.reservations = reservations;
             gateway.radsecAgent = radsecAgent;
             gateway.workers = java.util.List.copyOf(workers);
             gateway.registry = registry;
@@ -662,6 +664,8 @@ public final class Gateway implements AutoCloseable {
             for (AuthStats.Counter c : AuthStats.counters()) {
                 w.sample(authStats.get(c), "gateway", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
             }
+            w.counter("radiusward_gateway_access_rejects_total", "Access-Rejects by the cause the handler recorded");
+            authStats.rejectsByCause().forEach((cause, n) -> w.sample(n, "gateway", id, "cause", cause));
             w.gauge("radiusward_gateway_access_in_flight", "Access-Requests handed to the workers, not answered yet")
                     .sample(authStats.inFlight(), "gateway", id);
             w.gauge("radiusward_gateway_access_reply_cache_entries", "Replies kept for retransmissions")
@@ -669,7 +673,11 @@ public final class Gateway implements AutoCloseable {
             if (handler != null) {
                 handler.writeMetrics(w, id);
             }
+            if (reservations != null) {
+                reservations.writeMetrics(w, id);
+            }
         }
+        writeCertificateExpiry(w, id);
         if (radsecAgent != null) {
             radsecAgent.writeMetrics(w, id);
         }
@@ -699,6 +707,24 @@ public final class Gateway implements AutoCloseable {
                 .sample(NonBlockingQueueFullPolicy.dropped());
         JvmMetrics.write(w);
         return w.finish();
+    }
+
+    /** When the server certificates of EAP and RadSec/DTLS expire, so an alert fires before they do. */
+    private void writeCertificateExpiry(PrometheusWriter w, String id) {
+        java.util.TreeMap<String, TlsCredentials> credentials = new java.util.TreeMap<>();
+        if (handler instanceof StoreAccessHandler stores && stores.eapTls() != null) {
+            credentials.put("eap", stores.eapTls());
+        }
+        if (radsecAgent != null && radsecAgent.credentials() != null) {
+            credentials.put("radsec", radsecAgent.credentials());
+        }
+        if (credentials.isEmpty()) {
+            return;
+        }
+        w.gauge(
+                "radiusward_tls_certificate_expiry_timestamp_seconds",
+                "When the server certificate in use expires (Unix time), by what it serves");
+        credentials.forEach((use, c) -> w.sample(c.notAfterMillis() / 1000.0, "gateway", id, "use", use));
     }
 
     @Override

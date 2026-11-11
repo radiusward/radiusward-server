@@ -71,6 +71,7 @@ final class TlsCredentials {
     private final AtomicLong reloadFailures = new AtomicLong();
     private final AtomicLong resumptions = new AtomicLong();
     private volatile SSLContext context;
+    private volatile long notAfterMillis;
     private volatile SSLContext dtls; // built from the same files as context, on first use
     private volatile SSLContext dtlsOf;
     private volatile long nextCheck;
@@ -223,6 +224,11 @@ final class TlsCredentials {
         resumptions.incrementAndGet();
     }
 
+    /** Expiry of the server certificate last loaded (Unix milliseconds); 0 before one is loaded. */
+    long notAfterMillis() {
+        return notAfterMillis;
+    }
+
     long resumptions() {
         return resumptions.get();
     }
@@ -281,6 +287,9 @@ final class TlsCredentials {
             PrivateKey privateKey = EapTlsConfig.privateKey(key, prefix + "key");
             if (!matches(privateKey, certificates[0])) {
                 throw new ConfigException(prefix + "key: " + key + " is not the key of the certificate in " + chain);
+            }
+            if (certificates[0] instanceof java.security.cert.X509Certificate x509) {
+                notAfterMillis = x509.getNotAfter().getTime();
             }
             KeyStore keys = KeyStore.getInstance("PKCS12");
             keys.load(null, null);

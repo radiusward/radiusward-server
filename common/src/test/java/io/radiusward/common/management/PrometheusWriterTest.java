@@ -16,6 +16,31 @@ class PrometheusWriterTest {
     }
 
     @Test
+    void writesHistograms() {
+        String text = new PrometheusWriter()
+                .family("radiusward_lookup_seconds", "histogram", "Look-ups")
+                .histogram(new double[] {0.01, 0.1}, new long[] {2, 5, 6}, 0.75, "store", "sql")
+                .finish();
+        assertThat(text).isEqualTo("""
+                # HELP radiusward_lookup_seconds Look-ups
+                # TYPE radiusward_lookup_seconds histogram
+                radiusward_lookup_seconds_bucket{store="sql",le="0.01"} 2
+                radiusward_lookup_seconds_bucket{store="sql",le="0.1"} 5
+                radiusward_lookup_seconds_bucket{store="sql",le="+Inf"} 6
+                radiusward_lookup_seconds_sum{store="sql"} 0.75
+                radiusward_lookup_seconds_count{store="sql"} 6
+                """);
+        assertValid(text);
+        assertThatThrownBy(() -> new PrometheusWriter()
+                        .family("radiusward_h", "histogram", "h")
+                        .histogram(new double[] {1}, new long[] {1}, 0))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> assertValid("# TYPE radiusward_c counter\nradiusward_c_bucket 1"))
+                .as("only a histogram's family has _bucket samples")
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void writesFamiliesSamplesAndEscapedLabels() {
         String text = new PrometheusWriter()
                 .counter("radiusward_x_total", "Things\nwith a newline")

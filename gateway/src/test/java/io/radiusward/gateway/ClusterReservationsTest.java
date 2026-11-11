@@ -73,6 +73,12 @@ class ClusterReservationsTest {
                 .isGreaterThanOrEqualTo(Duration.ofMillis(300).toNanos());
         answerAll(SessionLimits.DENIED); // the late answer to the first request
         assertThat(reserveWhileAnswering(worker, SessionLimits.GRANTED)).isEqualTo(SessionLimits.GRANTED);
+        assertThat(worker.nextSqn(7, 0)).as("no SqnResult in time").isEqualTo(SessionLimits.SQN_UNAVAILABLE);
+        assertThat(reservations.sqnOutcome(3)).isEqualTo(1);
+        var metrics = new io.radiusward.common.management.PrometheusWriter();
+        reservations.writeMetrics(metrics, "0");
+        assertThat(metrics.finish())
+                .contains("radiusward_gateway_sim_sqn_requests_total{gateway=\"0\",outcome=\"unavailable\"} 1");
         reservations.deliver(5, SessionLimits.DENIED); // not a reservation id
         reservations.deliver((1L << 62) | (99L << 40), SessionLimits.DENIED); // no such worker
     }

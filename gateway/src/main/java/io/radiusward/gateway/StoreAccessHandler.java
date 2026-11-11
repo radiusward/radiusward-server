@@ -69,6 +69,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     };
 
     private volatile AuthStores stores; // replaced by a reload (ADR 0054)
+    private final java.util.concurrent.ConcurrentHashMap<String, StoreLookups> lookups =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** EAP outcomes by method type: {@code type * EAP_OUTCOMES.length + outcome}. */
+    private final java.util.concurrent.atomic.AtomicLongArray eapOutcomes =
+            new java.util.concurrent.atomic.AtomicLongArray(256 * EAP_OUTCOMES.length);
+
+    static final String[] EAP_OUTCOMES = {"succeeded", "failed", "too_many_rounds", "store_unavailable"};
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
     private volatile long ttlMillis;
@@ -445,12 +452,17 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 user = cached.user();
             } else {
                 IdentityStore store = stores.stores().get(name);
+                StoreLookups measured = lookups.computeIfAbsent(name, k -> new StoreLookups());
+                long started = System.nanoTime();
                 try {
                     user = store.lookup(userName);
                 } catch (StoreUnavailableException e) {
+                    measured.record(System.nanoTime() - started, StoreLookups.UNAVAILABLE);
                     unavailable = e;
                     continue;
                 }
+                measured.record(
+                        System.nanoTime() - started, user.isPresent() ? StoreLookups.FOUND : StoreLookups.NOT_FOUND);
                 if (ttlMillis > 0) {
                     if (users.size() >= stores.cacheMax()) {
                         users.clear(); // simple bound; a reconnect storm refills it within one TTL
@@ -691,6 +703,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             step = c.method.process(eap.identifier(), eap.data(), credentials);
         }
         if (step.unavailable()) {
+            eapOutcome(c.method.type(), 3);
             // the inner credential cannot be checked now: keep the conversation for the peer's retransmission
             if (round.state != null) {
                 conversations.putBack(round.state, c, clockMillis.getAsLong());
@@ -698,10 +711,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return DROP;
         }
         if (++c.rounds > stores.eap().maxRounds()) {
+            eapOutcome(c.method.type(), 2);
             return REJECT;
         }
         if (step.done()) {
             round.msk = step.msk();
+            eapOutcome(c.method.type(), step.success() ? 0 : 1);
             return step.success() ? ACCEPT : REJECT;
         }
         long now = clockMillis.getAsLong();
@@ -1944,12 +1959,37 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return count == null ? 0 : count.get();
     }
 
+    private void eapOutcome(int type, int outcome) {
+        eapOutcomes.getAndIncrement((type & 0xFF) * EAP_OUTCOMES.length + outcome);
+    }
+
+    long eapOutcome(String method, String outcome) {
+        return eapOutcomes.get(EapConfig.type(method) * EAP_OUTCOMES.length
+                + List.of(EAP_OUTCOMES).indexOf(outcome));
+    }
+
+    /** The EAP server certificate; {@code null} without EAP-TLS based methods. */
+    TlsCredentials eapTls() {
+        return stores.eap().tls() == null ? null : stores.eap().tls().context();
+    }
+
     @Override
     public void writeMetrics(PrometheusWriter w, String gateway) {
         w.counter(
                 "radiusward_gateway_access_reply_items_filtered_total",
                 "Vendor attributes left out of Access-Accepts because the NAS entry is of another vendor");
         new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "gateway", gateway, "nas", nas));
+        StoreLookups.write(w, gateway, new TreeMap<>(lookups));
+        if (!stores.eap().methods().isEmpty()) {
+            w.counter(
+                    "radiusward_gateway_eap_total",
+                    "EAP conversations by the outer method and how its method ended (authorization follows a success)");
+            for (String method : new java.util.TreeSet<>(stores.eap().methods())) {
+                for (String outcome : EAP_OUTCOMES) {
+                    w.sample(eapOutcome(method, outcome), "gateway", gateway, "method", method, "outcome", outcome);
+                }
+            }
+        }
         EapTlsConfig tls = stores.eap().tls();
         if (tls != null) {
             w.counter(

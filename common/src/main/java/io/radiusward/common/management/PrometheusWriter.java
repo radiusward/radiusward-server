@@ -89,6 +89,33 @@ public final class PrometheusWriter {
         return this;
     }
 
+    /**
+     * A histogram of the current family (started with {@code family(name, "histogram", help)}): {@code _bucket} lines
+     * for each upper bound and {@code +Inf}, then {@code _sum} and {@code _count}.
+     *
+     * @param bounds upper bounds in ascending order
+     * @param cumulative observations at or below each bound, {@code bounds.length + 1} values (the last is +Inf)
+     */
+    public PrometheusWriter histogram(double[] bounds, long[] cumulative, double sum, String... labels) {
+        if (cumulative.length != bounds.length + 1) {
+            throw new IllegalArgumentException("one count per bound and one for +Inf");
+        }
+        String base = family;
+        String[] withLe = java.util.Arrays.copyOf(labels, labels.length + 2);
+        withLe[labels.length] = "le";
+        for (int i = 0; i <= bounds.length; i++) {
+            withLe[labels.length + 1] = i < bounds.length ? Double.toString(bounds[i]) : "+Inf";
+            family = base + "_bucket";
+            sample(cumulative[i], withLe);
+        }
+        family = base + "_sum";
+        sample(sum, labels);
+        family = base + "_count";
+        sample(cumulative[bounds.length], labels);
+        family = base;
+        return this;
+    }
+
     public String finish() {
         return out.toString();
     }
@@ -105,6 +132,7 @@ public final class PrometheusWriter {
      */
     public static void validate(String text) {
         Set<String> typed = new HashSet<>();
+        Set<String> histograms = new HashSet<>();
         for (String line : text.split("\n")) {
             if (!LINE.matcher(line).matches()) {
                 throw new IllegalArgumentException("invalid metrics line: " + line);
@@ -113,9 +141,26 @@ public final class PrometheusWriter {
                 if (!typed.add(line.split(" ")[2])) {
                     throw new IllegalArgumentException("TYPE twice: " + line);
                 }
-            } else if (!line.startsWith("#") && !typed.contains(line.replaceAll("[{ ].*", ""))) {
+                if (line.endsWith(" histogram")) {
+                    histograms.add(line.split(" ")[2]);
+                }
+            } else if (!line.startsWith("#")
+                    && !typed.contains(sampleFamily(line.replaceAll("[{ ].*", ""), histograms))) {
                 throw new IllegalArgumentException("sample before its TYPE: " + line);
             }
         }
+    }
+
+    /** The family a sample belongs to: a histogram's {@code _bucket}, {@code _sum} and {@code _count} name it. */
+    private static String sampleFamily(String name, Set<String> histograms) {
+        for (String suffix : new String[] {"_bucket", "_sum", "_count"}) {
+            if (name.endsWith(suffix)) {
+                String base = name.substring(0, name.length() - suffix.length());
+                if (histograms.contains(base)) {
+                    return base;
+                }
+            }
+        }
+        return name;
     }
 }

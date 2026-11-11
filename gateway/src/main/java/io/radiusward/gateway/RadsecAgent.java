@@ -1113,6 +1113,11 @@ final class RadsecAgent implements Agent {
         return open;
     }
 
+    /** The server certificate of RadSec and DTLS; {@code null} without one. */
+    TlsCredentials credentials() {
+        return config.credentials();
+    }
+
     void writeMetrics(PrometheusWriter w, String gateway) {
         w.counter("radiusward_gateway_radsec_total", "RadSec connections and packets by what happened to them");
         for (Counter c : Counter.values()) {
