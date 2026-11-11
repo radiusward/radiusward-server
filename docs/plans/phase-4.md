@@ -151,7 +151,7 @@ chart), 4.5 (proof), 4.6 (backup), 4.7, 4.8, 4.9 and 4.10 alongside. The first r
 
 - **Re-resolution:** settled in 4.1 — members rejoin by name after their pods move (ADR 0062).
 - **Load balancers differ:** source-IP preservation and UDP affinity behave differently across clouds and MetalLB
-  modes. The tests use ClusterIP Services on kind (one per gateway); real LoadBalancers are not tested yet (open).
+  modes. The nightly tests use MetalLB (L2) with a NAS outside the cluster; cloud load balancers are not tested.
 - **fsync on network storage:** commit latency rises with the volume's fsync time; the guide gives the measured
   numbers and recommends local volumes.
 - **Election on pod pauses:** CPU throttling or long GC in a pod can look like a dead leader; members get guaranteed
@@ -188,6 +188,12 @@ to catch up after a purge, a seeded log recording short of the current term, rea
 snapshot, the systemd exit status, a restore from a read-only backup and from a copy that went through macOS, local
 volumes placed on the wrong node during a restore, and the backup's readiness holding back `helm install --wait`.
 
-**Open:** real LoadBalancers (cloud, MetalLB) in the tests; a node drain that runs to completion in the scale
-scenario; load beyond what a laptop generates (Phase 4 measured correctness, not the throughput limit).
+**Closed after the report (2026-11-11):** a LoadBalancer in the tests — MetalLB in L2 mode with
+`externalTrafficPolicy: Local` on kind; a NAS outside the cluster, known only by its /32 address, got its accounting
+and Access-Requests through both gateways without one packet from an unknown NAS (`loadbalancer`, nightly). The
+scale scenario now drains its node once every member is ready and requires the drain to complete and the member to
+come back.
+
+**Open:** cloud load balancers (AWS NLB, Azure, GCP), confirmed only in a cloud account; load beyond what a laptop
+generates (Phase 4 measured correctness, not the throughput limit).
 

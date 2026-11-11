@@ -11,7 +11,7 @@
 #   KEEP=1 scripts/k8s-tests.sh          # keep the cluster afterwards (kubectl --context kind-rw-k8s-test)
 #   SKIP_BUILD=1 scripts/k8s-tests.sh    # use an image radiusward:k8s-test that is already built
 #   scripts/k8s-tests.sh leader-kill     # only the named scenarios (baseline leader-kill member-roll gateway-roll
-#                                        # replace-volume restore-quorum; opt-in: scale)
+#                                        # replace-volume restore-quorum loadbalancer; opt-in: scale)
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -20,7 +20,7 @@ ns=radiusward
 release=rw
 image=radiusward:k8s-test
 out="$root/testing/k8s-tests/target"
-scenarios=("${@:-baseline leader-kill member-roll gateway-roll replace-volume restore-quorum}")
+scenarios=("${@:-baseline loadbalancer leader-kill member-roll gateway-roll replace-volume restore-quorum}")
 read -r -a scenarios <<<"${scenarios[*]}"
 failures=0
 # per scenario, for the JUnit XML the published test report reads (docs/plans/test-reports.md)
@@ -85,6 +85,7 @@ cleanup() {
   done
   k get pods,pvc,svc -o wide >"$out/logs/resources.txt" 2>&1 || true
   if [[ -z "${KEEP:-}" ]]; then
+    docker rm -f "$cluster-nas" >/dev/null 2>&1 || true
     kind delete cluster --name "$cluster" >/dev/null 2>&1 || true
   fi
 }
@@ -111,6 +112,49 @@ nodes:
   - role: worker
 EOF
   kind load docker-image "$image" --name "$cluster" >/dev/null
+  install_metallb
+}
+
+# MetalLB in L2 mode with addresses from kind's Docker network, so the gateways' LoadBalancer Services get addresses a
+# container outside the cluster reaches, as a NAS reaches a real load balancer
+metallb_version=v0.16.2
+install_metallb() {
+  log "installing MetalLB $metallb_version"
+  local subnet base
+  subnet=$(docker network inspect kind -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | tr ' ' '\n' | grep -m1 '\.')
+  base=$(cut -d. -f1-2 <<<"$subnet")
+  lb_range="$base.255.200-$base.255.250"
+  # the NAS outside the cluster: a container on kind's network (kind's network has no user subnet, so Docker picks the
+  # address); it waits, and the scenario runs radclient in it
+  docker rm -f "$cluster-nas" >/dev/null 2>&1 || true
+  docker run -d --name "$cluster-nas" --network kind --entrypoint sleep "$image" 86400 >/dev/null
+  outside_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$cluster-nas")
+  kubectl --context "kind-$cluster" apply -f \
+    "https://raw.githubusercontent.com/metallb/metallb/$metallb_version/config/manifests/metallb-native.yaml" >/dev/null
+  kubectl --context "kind-$cluster" -n metallb-system wait --for=condition=Available deployment/controller \
+    --timeout=180s >/dev/null
+  kubectl --context "kind-$cluster" -n metallb-system wait --for=condition=Ready pod -l component=speaker \
+    --timeout=180s >/dev/null
+  local attempt
+  for attempt in 1 2 3 4 5 6; do # the webhook takes a moment after the controller is available
+    if kubectl --context "kind-$cluster" apply -f - >/dev/null 2>&1 <<EOF
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata: {name: kind, namespace: metallb-system}
+spec: {addresses: ["$lb_range"]}
+---
+apiVersion: metallb.io/v1beta1
+kind: L2Advertisement
+metadata: {name: kind, namespace: metallb-system}
+spec: {ipAddressPools: [kind]}
+EOF
+    then
+      return
+    fi
+    sleep 10
+  done
+  log "MetalLB address pool not accepted"
+  return 1
 }
 
 install_chart() {
@@ -126,9 +170,11 @@ backup:
   persistence: {size: 2Gi, storageClass: standard}
   interval: 20s
 gateway:
-  service: {type: ClusterIP}
+  service: {type: LoadBalancer, externalTrafficPolicy: Local}
   nas:
     - {name: pods, address: 10.244.0.0/16, secret: testing123, id: 1001}
+    # the client outside the cluster, by its own address only: a rewritten source address would make it unknown
+    - {name: outside, address: $outside_ip/32, secret: testing123, id: 1002}
   auth:
     enabled: true
     stores:
@@ -323,6 +369,51 @@ scenario_restore-quorum() {
   finish_load restore-quorum
 }
 
+# loadbalancer: a NAS outside the cluster (a container on kind's network) reaches both gateways through their
+# LoadBalancer Services (MetalLB, externalTrafficPolicy: Local); its NAS entry is its own /32 address, so the
+# source address must arrive unchanged. Accounting and Access-Requests, nothing lost, no unknown NAS.
+scenario_loadbalancer() {
+  log "loadbalancer: a NAS outside the cluster through the gateways' LoadBalancer addresses"
+  local lb0="" lb1="" deadline=$((SECONDS + 120))
+  until [[ -n "$lb0" && -n "$lb1" ]]; do
+    lb0=$(k get svc "$release-radiusward-gateway-0" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    lb1=$(k get svc "$release-radiusward-gateway-1" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    ((SECONDS < deadline)) || { fail "loadbalancer: no LoadBalancer addresses"; return; }
+    sleep 3
+  done
+  log "  gateways at $lb0 and $lb1; the NAS at $outside_ip"
+  local before after out summary
+  before=$(unknown_nas)
+  out=$(docker exec "$cluster-nas" radiusward radclient auth --server "$lb0:1812" \
+    --secret testing123 --user load --password load --method mschapv2 2>&1 | grep -E "Access-" | head -2 || true)
+  log "  radclient auth: $(tr '\n' ' ' <<<"$out")"
+  grep -q "Access-Accept" <<<"$out" || fail "loadbalancer: no Access-Accept from outside"
+  summary=$(docker exec "$cluster-nas" radiusward radclient load \
+    --server "$lb0:1813,$lb1:1813" --retry-other-server --secret testing123 --nas 5 --sessions 300 --rate 100 \
+    --duration 60s --interim 10s --timeout 3s --retries 3 --access-rate 20 --first-session 3000000 2>&1 |
+    grep -E '^(load|access):' || true)
+  log "  $(grep '^load:' <<<"$summary")"
+  log "  $(grep '^access:' <<<"$summary")"
+  grep -q 'failed 0,' <<<"$summary" || fail "loadbalancer: accounting requests lost"
+  grep -q 'timeouts 0, unexpected 0' <<<"$summary" || fail "loadbalancer: Access-Requests lost or answered wrongly"
+  after=$(unknown_nas)
+  if [[ "$after" != "$before" ]]; then
+    fail "loadbalancer: $((after - before)) packets from an unknown NAS: the source address was rewritten"
+  fi
+  [[ -n "$current_failure" ]] || log "PASS loadbalancer: the source address arrived unchanged"
+}
+
+# packets of both gateways dropped as from an unknown NAS (accounting and authentication)
+unknown_nas() {
+  local g total=0 n
+  for g in 0 1; do
+    n=$(k exec "$release-radiusward-gateway-$g" -- radiusward probe http://127.0.0.1:9090/metrics 2>/dev/null |
+      awk '/result="unknown_nas"/ {sum += $NF} END {print sum + 0}')
+    total=$((total + n))
+  done
+  echo "$total"
+}
+
 # scale (4.9, opt-in: scripts/k8s-tests.sh scale): 500k sessions through both gateways from two load pods, with the
 # Access-Request mix, while the leader is killed, a follower is cut off by a NetworkPolicy and a worker node is
 # drained. Nothing may be lost; every session must be in the replicated state; no container may run out of memory.
@@ -359,16 +450,33 @@ scenario_scale() {
   k delete networkpolicy cut-off >/dev/null
   log "  +230 s: member $f reconnected"
 
-  at 280
-  local victim node
+  # the drain waits until every member is ready again: the members' PodDisruptionBudget refuses to evict while one
+  # is still catching up from the cut-off (never two down), which held the first runs' drain back
+  local m
+  for m in 0 1 2; do
+    until member_ready "$m" | grep -q '"UP"'; do sleep 2; done
+  done
+  at 260
+  local victim node t0
   victim=$(follower)
   node=$(k get pod "$release-radiusward-node-$victim" -o jsonpath='{.spec.nodeName}')
-  log "  +280 s: draining $node (member $victim and what else runs there)"
-  kubectl --context "kind-$cluster" drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=120s \
-    >/dev/null 2>&1 || log "  drain did not finish within 120 s"
-  at 340
+  log "  +$((SECONDS - start)) s: draining $node (member $victim and what else runs there)"
+  t0=$SECONDS
+  if kubectl --context "kind-$cluster" drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=300s \
+    >/dev/null 2>&1; then
+    log "  drained in $((SECONDS - t0)) s"
+  else
+    fail "scale: the drain of $node did not complete within 300 s"
+  fi
+  sleep 20 # the member waits for its node (node-local volume); the gateway's NAS use the other one meanwhile
   kubectl --context "kind-$cluster" uncordon "$node" >/dev/null
-  log "  +340 s: $node uncordoned"
+  log "  +$((SECONDS - start)) s: $node uncordoned"
+  local deadline=$((SECONDS + 180))
+  until member_ready "$victim" | grep -q '"UP"'; do
+    ((SECONDS < deadline)) || { fail "scale: member $victim not back after the drain"; break; }
+    sleep 3
+  done
+  log "  +$((SECONDS - start)) s: member $victim back"
 
   local p phase summary access failed=0
   for p in a b; do

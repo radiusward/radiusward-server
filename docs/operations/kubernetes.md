@@ -134,11 +134,14 @@ state version is refused.
 `scripts/k8s-tests.sh` builds the image, creates a kind cluster with three workers, installs the chart and runs
 accounting and Access-Request load from a pod through both gateways while it kills the leader, rolls the members,
 rolls the gateways, replaces a member's volume after a purge and restores the whole cluster from the backup after
-deleting every member's volume; a lost request fails the run. It runs nightly in CI (`k8s-tests.yml`, pod logs as an
-artifact) and takes about 25 minutes; `KEEP=1` keeps the cluster, and scenario names (`baseline leader-kill
-member-roll gateway-roll replace-volume restore-quorum`) run a subset. `scripts/k8s-tests.sh scale` (opt-in, ~10 min)
+deleting every member's volume; a lost request fails the run. The gateways get LoadBalancer addresses from MetalLB
+(L2, `externalTrafficPolicy: Local`), and a NAS outside the cluster — a container on kind's network, known to
+radiusward only by its own /32 address — sends accounting and Access-Requests through them, so a load balancer
+that rewrote the source address would fail the run. It runs nightly in CI (`k8s-tests.yml`, pod logs as an
+artifact) and takes about 25 minutes; `KEEP=1` keeps the cluster, and scenario names (`baseline loadbalancer
+leader-kill member-roll gateway-roll replace-volume restore-quorum`) run a subset. `scripts/k8s-tests.sh scale` (opt-in, ~10 min)
 puts 500k sessions and Access-Requests through both gateways while it kills the leader, cuts a member off with a
-NetworkPolicy and drains a node ([Phase 4 report](../plans/phase-4.md#phase-4-report)).
+NetworkPolicy and drains a node to completion once every member is ready ([Phase 4 report](../plans/phase-4.md#phase-4-report)).
 
 ## Not yet in the chart
 

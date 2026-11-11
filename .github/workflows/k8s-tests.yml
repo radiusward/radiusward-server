@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '47 3 * * *'
   workflow_dispatch:
+    inputs:
+      scenarios:
+        description: 'Scenarios to run (empty: the nightly set; e.g. "scale" or "loadbalancer restore-quorum")'
+        required: false
+        default: ''
   push:
     tags: ['v*']
 
@@ -35,7 +40,9 @@ jobs:
           chmod +x kind && sudo mv kind /usr/local/bin/
           kind version && kubectl version --client && helm version --short
       - name: Run the scenarios
-        run: scripts/k8s-tests.sh
+        env:
+          SCENARIOS: ${{ inputs.scenarios }}
+        run: scripts/k8s-tests.sh $SCENARIOS   # unquoted: one argument per scenario name
       - name: Upload test results (published by reports.yml)
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
