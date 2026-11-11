@@ -45,9 +45,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build and push the images whose hash is not published
+        # each image up to three times: the runners sometimes cannot resolve the package mirrors for minutes; the
+        # other images go on, and the step fails at the end if one never built
         run: |
+          failed=""
           for image in $(scripts/test-images.sh list); do
             echo "::group::$image ($(scripts/test-images.sh tag "$image"))"
-            scripts/test-images.sh build "$image" --push
+            for attempt in 1 2 3; do
+              scripts/test-images.sh build "$image" --push && break
+              if [ "$attempt" = 3 ]; then failed="$failed $image"; break; fi
+              echo "$image failed (attempt $attempt), retrying in 2 min"; sleep 120
+            done
             echo "::endgroup::"
           done
+          if [ -n "$failed" ]; then echo "::error::not published:$failed"; exit 1; fi
