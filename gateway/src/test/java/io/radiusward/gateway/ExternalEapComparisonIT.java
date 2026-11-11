@@ -183,6 +183,8 @@ class ExternalEapComparisonIT {
                         teap {
                             tls = tls-%1$s
                             authority_identity = "external"
+                            # required by 3.2.5 (Ubuntu, CI), optional in 3.2.10; a test-only key
+                            pac_opaque_key = "0123456789abcdef0123456789ABCDEF"
                             default_eap_type = mschapv2
                             virtual_server = inner-tunnel
                         }
