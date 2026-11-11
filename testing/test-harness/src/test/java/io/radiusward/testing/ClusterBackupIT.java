@@ -82,7 +82,15 @@ class ClusterBackupIT {
                                 && backup.liveLogPosition() >= position
                                 && backup.latestSnapshot() != null
                                 && backup.latestSnapshot().logPosition > 0);
+                assertThat(backup.health().up()).isTrue();
+                assertThat(backup.ready().detail()).startsWith("backing up, snapshot at ");
+                assertThat(backup.stateJson())
+                        .contains("\"component\":\"cluster-backup\"")
+                        .contains("\"state\":\"BACKING_UP\"");
+                assertThat(backup.dataDir()).isEqualTo(settings.dataDir());
+                io.radiusward.common.management.PrometheusWriter.validate(backup.metrics());
                 assertThat(backup.metrics())
+                        .contains("radiusward_backup_snapshot_timestamp_seconds ")
                         .contains("radiusward_backup_state{state=\"backing_up\"} 1")
                         .contains("radiusward_backup_live_log_position_bytes ");
                 long applied = leader.stats().applied();
