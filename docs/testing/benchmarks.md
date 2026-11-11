@@ -123,11 +123,16 @@ on demand with OpenID Connect: deploy `deploy/aws/bench/github-oidc.yaml` once (
 
 ## Published results
 
-After every `bench` run on `main`, `reports.yml` publishes the
-[Benchmarks pages](https://radiusward.github.io/radiusward-server/benchmarks/) next to the test reports: per
-environment the ceilings and the failover of its latest run, each ladder as two charts (target against achieved rate,
-p99 against the 500 ms limit), CPU and memory per container at the top step, the JMH scores, and the trend of the
-ceilings and of JMH over all runs. The runs are kept inside the site's state (`benchmarks/runs/`), like the reports'
+After every `bench` and `bench-aws` run on `main`, `reports.yml` publishes the
+[Benchmarks pages](https://radiusward.github.io/radiusward-server/benchmarks/) next to the test reports, written for
+readers who do not know the harness: what radiusward is and how a result is measured, then per environment
+(dedicated machines first) the result cards — the three ceilings with their p99 and p50, and the leader killed under
+load — what ran on the machine, the peak memory, each ladder as two charts with a caption (target against answered
+rate, p99 against the 500 ms limit), CPU and memory per process at the ceiling, every step sorted by rate with its run
+order, the gateway's packet path from JMH in nanoseconds per packet and packets per second on one core, the trend over
+all runs, and links to the other reports and to reproducing the numbers. The summary, the landing card and the badge
+show the newest run on dedicated machines once there is one. Claims stay with what was measured: no extrapolation to
+other machines, no comparisons with other products. The runs are kept inside the site's state (`benchmarks/runs/`), like the reports'
 history; the landing page has a card and the README a badge (`badges/bench.json`). A result made elsewhere is
 published by attaching it to a run as `results-bench` and running `reports.yml` by hand with that run's id; without
 one it publishes the latest successful `bench` run. Locally:
