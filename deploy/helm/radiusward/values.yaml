@@ -55,6 +55,7 @@ gateway:
   replicas: 2
   terminationGracePeriodSeconds: 30
   minReadySeconds: 10              # a restarted gateway serves this long before the next one restarts
+  shutdownDrain: 5s                # after SIGTERM: not ready, still answering, so the Service stops sending first
   resources: {}
   shmSize: ""
   antiAffinity: hard

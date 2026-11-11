@@ -65,6 +65,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `gateway.idle.strategy` | profile: `backoff-100us` (small, standard), `busy-spin` (large) | how the gateway threads wait when idle: `sleep-1ms` \| `backoff-1ms` \| `backoff-100us` \| `busy-spin`; trades CPU for latency (measurements in [testing/strategy.md](testing/strategy.md#latency-in-containers-phase-2)) |
 | `gateway.pending.capacity` | profile (small: 16,384) | requests in flight; beyond it packets are dropped |
 | `gateway.pending.timeout` | `5s` | forget a request with no commit (the next retransmit is submitted again) |
+| `gateway.shutdown.drain` | `0s` | after SIGTERM, report not ready (`/ready`) and keep answering this long before closing, so a load balancer stops sending first; the Helm chart sets `5s` ([ADR 0062](adr/0062-members-and-gateways-on-kubernetes.md)) |
 | `gateway.retransmit.resubmit.after` | `1s` | a retransmit of a request pending longer than this is resubmitted ([ADR 0011](adr/0011-gateway-pipeline.md)) |
 | `gateway.response.cache.ttl` | `30s` | how long committed requests are answered from the cache |
 | `gateway.auth.enabled` | `false` | answer Access-Requests (Phase 5); needs `auth.stores` ([below](#identity-stores)). Status-Server (RFC 5997) is answered on both ports with a valid Message-Authenticator; on the accounting port only while the gateway is connected to the cluster |

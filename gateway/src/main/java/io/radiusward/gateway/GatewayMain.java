@@ -105,8 +105,23 @@ public final class GatewayMain {
                 management.handle("/coa/", gateway.coaApi()); // ADR 0036, with coa.api.token only
             }
             barrier.await();
+            drain(gateway, config.duration("gateway.shutdown.drain", java.time.Duration.ZERO));
         } finally {
             LogManager.shutdown();
+        }
+    }
+
+    /** Not ready, still answering, for {@code drain} before the gateway closes (ADR 0062); nothing when zero. */
+    static void drain(Gateway gateway, java.time.Duration drain) {
+        if (drain.isZero() || drain.isNegative()) {
+            return;
+        }
+        gateway.drain();
+        LogManager.getLogger(GatewayMain.class).info("draining for {} before shutdown", drain);
+        try {
+            Thread.sleep(drain.toMillis());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 }

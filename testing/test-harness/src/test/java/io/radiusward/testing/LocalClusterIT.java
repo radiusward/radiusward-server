@@ -173,6 +173,11 @@ class LocalClusterIT {
         }
         assertThat(cluster.gateway(0).stats().get(io.radiusward.gateway.GatewayStats.Counter.CACHE_HITS))
                 .isEqualTo(1);
+
+        assertThat(cluster.gateway(1).ready().up()).isTrue();
+        cluster.gateway(1).drain(); // SIGTERM with gateway.shutdown.drain: not ready, still answering
+        assertThat(cluster.gateway(1).ready().detail()).isEqualTo("draining before shutdown");
+        exchange(cluster.gateway(1).radiusPort(), request(1, 2, "s-2", 0));
     }
 
     @Test

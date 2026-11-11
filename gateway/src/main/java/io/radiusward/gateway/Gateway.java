@@ -47,6 +47,16 @@ public final class Gateway implements AutoCloseable {
     private final AccessHandler handler;
     private final AgentRunner[] runners;
     private ClusterReservations reservations; // set once after construction; null without authentication
+    private volatile boolean draining;
+
+    /**
+     * Reports not ready from now on while still answering, so a load balancer stops sending new requests before the
+     * gateway closes (ADR 0062); requests in flight finish instead of costing the NAS a retransmission.
+     */
+    public void drain() {
+        draining = true;
+    }
+
     private RadsecAgent radsecAgent;
     private DynamicAuthorization dynamicAuthorization;
     private CoaService coaService;
@@ -605,6 +615,9 @@ public final class Gateway implements AutoCloseable {
 
     /** Ready when the UDP socket is bound and the cluster session is up. */
     public Health ready() {
+        if (draining) {
+            return Health.down("draining before shutdown");
+        }
         if (!stats.bound()) {
             return Health.down("RADIUS socket not bound");
         }

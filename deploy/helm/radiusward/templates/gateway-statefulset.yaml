@@ -50,6 +50,8 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args: ["gateway", "--config", "/etc/radiusward/gateway.properties"]
           env:
+            - name: RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN
+              value: {{ $g.shutdownDrain | quote }}
             - name: RADIUSWARD_GATEWAY_ID
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
             - name: RADIUSWARD_GATEWAY_EGRESS_HOST

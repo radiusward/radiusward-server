@@ -102,8 +102,12 @@ Disconnect and proxied requests leave with the node's address; NAS devices and h
 `helm upgrade` rolls the members one at a time: a restarted member counts as ready only once its election is
 closed, so the next one waits until it has caught up, and the cluster keeps its quorum. Each member restart may
 cost one leader election (~2 s with the default timeouts, within a NAS's retransmission time). On kind, rolling all
-members under accounting and authentication load lost nothing and caused no retransmission; rolling the gateways
-cost one retry through the other gateway for requests in flight.
+members under accounting and authentication load lost nothing and caused no retransmission. Rolling the gateways
+lost nothing either, but each gateway's own Service has no other pod behind it: requests a NAS sends to a gateway
+while it restarts (a few seconds) are answered only after the NAS's timeout, through its secondary gateway (on kind
+about 200 of 5500 requests, max 3 s). `gateway.shutdownDrain` (5 s) keeps a stopping gateway answering after it
+reports not ready, which helps the shared Service and load balancers with health checks; restart gateways in quiet
+hours if NAS timeouts matter.
 
 State-machine changes activate on their own once every member runs the new version
 ([ADR 0005](../adr/0005-log-determinism-versioning.md)); after that, going back to an image older than the active
