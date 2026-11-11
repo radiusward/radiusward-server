@@ -8,7 +8,7 @@ FROM eclipse-temurin:25-jre-noble
 ARG VERSION=dev
 ARG REVISION=unknown
 LABEL org.opencontainers.image.title="radiusward" \
-      org.opencontainers.image.description="Replicated RADIUS accounting server built on Aeron Cluster" \
+      org.opencontainers.image.description="Replicated RADIUS server (accounting and authentication) built on Aeron Cluster" \
       org.opencontainers.image.source="https://github.com/radiusward/radiusward-server" \
       org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.version="${VERSION}" \

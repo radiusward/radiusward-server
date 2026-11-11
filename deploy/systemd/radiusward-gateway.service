@@ -1,0 +1,43 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# A gateway (docs/operations/bare-metal.md). Settings: /etc/radiusward/gateway.properties, NAS entries in
+# /etc/radiusward/nas-clients.properties and /etc/radiusward/radiusward.env (RADIUSWARD_GATEWAY_ID, secrets).
+[Unit]
+Description=radiusward gateway
+Documentation=https://github.com/radiusward/radiusward-server/blob/main/docs/operations/bare-metal.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=radiusward
+Group=radiusward
+EnvironmentFile=/etc/radiusward/radiusward.env
+Environment=RADIUSWARD_MANAGEMENT_HTTP_HOST=0.0.0.0
+# not ready, still answering, for 5 s after SIGTERM: a load balancer or keepalived health check moves away first
+Environment=RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN=5s
+ExecStart=/usr/local/bin/radiusward gateway --config /etc/radiusward/gateway.properties --config /etc/radiusward/nas-clients.properties
+WorkingDirectory=/var/lib/radiusward
+ExecReload=/bin/kill -HUP $MAINPID
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=65536
+ReadWritePaths=/var/lib/radiusward /dev/shm
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

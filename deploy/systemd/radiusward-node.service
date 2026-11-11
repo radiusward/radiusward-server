@@ -1,0 +1,43 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# One cluster member per host (docs/operations/bare-metal.md). Settings: /etc/radiusward/cluster.properties and
+# /etc/radiusward/radiusward.env (RADIUSWARD_CLUSTER_NODE_ID, RADIUSWARD_PROFILE, secrets).
+[Unit]
+Description=radiusward cluster member
+Documentation=https://github.com/radiusward/radiusward-server/blob/main/docs/operations/bare-metal.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=radiusward
+Group=radiusward
+EnvironmentFile=/etc/radiusward/radiusward.env
+Environment=RADIUSWARD_MANAGEMENT_HTTP_HOST=0.0.0.0
+ExecStart=/usr/local/bin/radiusward cluster-node --config /etc/radiusward/cluster.properties
+WorkingDirectory=/var/lib/radiusward
+# SIGTERM closes the consensus module and archive in order; a member that is still flushing gets the time it needs
+KillSignal=SIGTERM
+TimeoutStopSec=60
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=65536
+# the media driver's buffers live in /dev/shm/radiusward-node (size it like the container's shm: small 512 MiB)
+ReadWritePaths=/var/lib/radiusward /dev/shm
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=no
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

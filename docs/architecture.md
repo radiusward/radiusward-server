@@ -158,7 +158,8 @@ member.
   headless Service and one PVC (~100 GB) each, `/dev/shm` as `emptyDir: Memory`, anti-affinity,
   `PodDisruptionBudget maxUnavailable: 1`; gateways as a StatefulSet with one UDP LoadBalancer Service each
   (`externalTrafficPolicy: Local`, so the NAS source IP is kept), NAS devices configured with two of them.
-  systemd units for bare metal follow.
+  A member with a replaced volume seeds itself from the others ([ADR 0063](adr/0063-seeding-a-replaced-member.md)).
+  systemd units for bare metal: [bare-metal.md](operations/bare-metal.md).
 - Inter-node traffic is always `aeron:udp`; shared memory is only used inside a pod.
 - Images built by GitHub Actions on Java 25 (amd64 + arm64, SBOM, provenance), published to GHCR
   ([release.md](operations/release.md)).

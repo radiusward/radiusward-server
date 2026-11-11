@@ -2,7 +2,7 @@
 
 One image for every component ([ADR 0015](../adr/0015-container-image.md)):
 `ghcr.io/radiusward/radiusward-server:<version>` (or `radiusward:dev` built locally). On Kubernetes use the Helm
-chart: [kubernetes.md](kubernetes.md).
+chart: [kubernetes.md](kubernetes.md); on machines without containers the systemd units: [bare-metal.md](bare-metal.md).
 
 ## Build the image locally
 
