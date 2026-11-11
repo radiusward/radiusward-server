@@ -47,8 +47,6 @@ jobs:
           }
           if ! from_image; then
             echo "$image is not published or does not fit; installing from the package mirror"
-            # the runners' Azure mirror sometimes cannot be reached; apt falls back to the main archive, then kernel.org's
-            printf "http://archive.ubuntu.com/ubuntu/\tpriority:2\nhttp://mirrors.edge.kernel.org/ubuntu/\tpriority:3\n" | sudo tee -a /etc/apt/apt-mirrors.txt >/dev/null
             for attempt in 1 2 3 4; do
               if sudo apt-get -o Acquire::Retries=5 update -qq && \
                  sudo DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -qq -y freeradius freeradius-utils >/dev/null; then
@@ -184,7 +182,7 @@ jobs:
           tofu_wrapper: false
       - name: CloudFormation (cfn-lint)
         run: |
-          pip install --quiet cfn-lint==1.60.0
+          pip install --quiet --only-binary :all: cfn-lint==1.60.0
           cfn-lint deploy/aws/cloudformation/radiusward-ecs.yaml
       - name: Terraform (tofu fmt and validate)
         working-directory: deploy/aws/terraform
