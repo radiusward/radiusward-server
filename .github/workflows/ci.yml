@@ -54,6 +54,32 @@ jobs:
           name: e2e-reports
           path: '**/target/failsafe-reports/'
 
+  chart:
+    name: helm chart
+    runs-on: ubuntu-24.04
+    env:
+      KUBECONFORM: v0.8.0
+      KUBECONFORM_SHA256: 9bc2bffbf71f261128533edaf912153948b7ff238f9a531ae6d34466ec287883
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install kubeconform
+        run: |
+          curl -sSLo kubeconform.tar.gz \
+            "https://github.com/yannh/kubeconform/releases/download/$KUBECONFORM/kubeconform-linux-amd64.tar.gz"
+          echo "$KUBECONFORM_SHA256  kubeconform.tar.gz" | sha256sum -c -
+          tar xzf kubeconform.tar.gz kubeconform && sudo mv kubeconform /usr/local/bin/
+      - name: Lint and validate (defaults, everything on; Kubernetes 1.31 and 1.35)
+        run: |
+          chart=deploy/helm/radiusward
+          for values in "" "-f $chart/ci/all-on-values.yaml"; do
+            helm lint $chart $values
+            for k8s in 1.31.0 1.35.0; do
+              helm template radiusward $chart $values | kubeconform -strict -summary -kubernetes-version $k8s \
+                -schema-location default \
+                -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'
+            done
+          done
+
   coverage:
     name: coverage (Java 25)
     runs-on: ubuntu-24.04

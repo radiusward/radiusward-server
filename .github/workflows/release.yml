@@ -2,6 +2,7 @@ name: release
 
 # main  -> ghcr.io/radiusward/radiusward-server:edge
 # vX.Y.Z[-rc.N] -> :X.Y.Z[-rc.N] (+ :X.Y and :latest for final releases), SBOM and provenance attached,
+#                  Helm chart oci://ghcr.io/radiusward/charts/radiusward:X.Y.Z[-rc.N],
 #                  GitHub Release with radiusward.jar and radclient.jar (see docs/operations/release.md)
 on:
   push:
@@ -62,6 +63,15 @@ jobs:
             REVISION=${{ github.sha }}
           sbom: true
           provenance: mode=max
+      - name: Helm chart (oci://ghcr.io/radiusward/charts/radiusward, same version as the image)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          helm package deploy/helm/radiusward --version "$version" --app-version "$version"
+          echo "$GH_TOKEN" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm push "radiusward-$version.tgz" oci://ghcr.io/radiusward/charts
       - name: GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:

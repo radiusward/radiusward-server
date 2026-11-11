@@ -1,0 +1,62 @@
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Every optional part of the chart switched on, so CI renders and validates all templates (docs/operations/kubernetes.md).
+profile: standard
+node:
+  antiAffinity: soft
+  zoneSpread: true
+  export:
+    postgres:
+      enabled: true
+      url: jdbc:postgresql://postgres:5432/radius
+      password: ci-only
+      mode: sessions+events
+      radacctView: true
+  config:
+    snapshot.interval: 30m
+gateway:
+  sharedService:
+    enabled: true
+  nas:
+    - name: branch-routers
+      address: 10.20.0.0/16
+      secret: ci-only
+      vendor: cisco
+      id: 1001
+  auth:
+    enabled: true
+    stores:
+      - name: local
+        type: file
+        users: |
+          alice Cleartext-Password := "ci-only"
+        chap: true
+        mschap: true
+      - name: db
+        type: sql
+        url: jdbc:postgresql://postgres:5432/radius
+        user: radius
+        existingSecret: radius-db
+        existingSecretKey: password
+    eap:
+      methods: [peap, ttls, tls]
+      tls:
+        existingSecret: eap-tls
+  coa:
+    enabled: true
+  radsec:
+    enabled: true
+    existingSecret: radsec-tls
+  config:
+    gateway.auth.workers: 8
+networkPolicy:
+  enabled: true
+  radiusClientCIDRs: [10.20.0.0/16]
+metrics:
+  serviceMonitor:
+    enabled: true
+  prometheusRule:
+    enabled: true
+  dashboards:
+    enabled: true
