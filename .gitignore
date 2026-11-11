@@ -10,3 +10,5 @@ dependency-reduced-pom.xml
 
 # local cluster runtime (run-local.sh)
 .local/
+__pycache__/
+*.pyc
