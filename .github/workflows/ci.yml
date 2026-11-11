@@ -25,9 +25,16 @@ jobs:
           cache: maven
       - name: External RADIUS server for the interop tests
         # Ubuntu's server and client tools; the package starts a service on 1812/1813, which the tests do not need
+        # retried: the runners' package mirror or DNS sometimes fails for a moment
         run: |
-          sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -qq -y freeradius freeradius-utils >/dev/null
+          for attempt in 1 2 3 4; do
+            if sudo apt-get update -qq && \
+               sudo DEBIAN_FRONTEND=noninteractive apt-get install -qq -y freeradius freeradius-utils >/dev/null; then
+              break
+            fi
+            [ "$attempt" = 4 ] && exit 1
+            echo "package install failed (attempt $attempt), retrying in 20 s"; sleep 20
+          done
           sudo systemctl disable --now freeradius
           /usr/sbin/freeradius -v | head -1
       - name: Build and test
