@@ -123,7 +123,9 @@ def bench_card():
 <p class="status">no results yet</p></article>"""
     b = json.load(open(latest_file))
     names = {"accounting": "accounting", "access": "authentication", "mix": "mix"}
-    ceilings = " · ".join(f"{names.get(k, k)} {v:,.0f}/s" for k, v in b.get("ceilings", {}).items() if v)
+    limited = b.get("load_limited", {})
+    ceilings = " · ".join(f"{names.get(k, k)} {'≥ ' if limited.get(k) else ''}{v:,.0f}/s"
+                          for k, v in b.get("ceilings", {}).items() if v)
     failover = "a leader killed under load: nothing lost" if b.get("failover_lost") is False else ""
     commit = b.get("commit", "")
     commit_html = (f'<a href="https://github.com/radiusward/radiusward-server/commit/{html.escape(commit)}">'

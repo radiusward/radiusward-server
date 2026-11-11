@@ -19,7 +19,7 @@ permissions:
 jobs:
   bench:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 180   # up to 19 probes per workload, failover and JMH
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6

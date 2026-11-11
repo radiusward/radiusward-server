@@ -50,6 +50,18 @@ def fmt(n):
     return f"{n:,.0f}" if isinstance(n, (int, float)) else "–"
 
 
+def per_rate(steps):
+    """One step per target rate, ascending; a rate probed again (more generators, a bisection) shows its last probe."""
+    final = {}
+    for step in steps:
+        final[step["target_rps"]] = step
+    return [final[rate] for rate in sorted(final)]
+
+
+def ceiling_text(w):
+    return f"{'≥ ' if w.get('load_limited') else ''}{fmt(w['ceiling_rps'])}/s"
+
+
 def chart(series, x_label, y_label, width=560, height=260, log_x=False, y_max=None, x_dates=False):
     """series: [(name, [(x, y), ...])]. Returns an inline SVG line chart."""
     import math
@@ -134,14 +146,22 @@ def run_section(run):
         w = run.get("workloads", {}).get(key)
         if not w:
             continue
-        last_ok = [s for s in w["steps"] if not s.get("problems")]
-        p99 = last_ok[-1]["p99_ms"] if last_ok else None
-        stop = next((s for s in w["steps"] if s.get("problems")), None)
-        why = "; ".join(stop["problems"]) if stop else "every step passed (raise --steps)"
-        rows.append(f"<tr><td>{esc(title)}</td><td class='num'><b>{fmt(w['ceiling_rps'])}/s</b></td>"
+        at = next((s for s in w["steps"] if s.get("rps") == w["ceiling_rps"]), None)
+        p99 = at["p99_ms"] if at else None
+        if "stopped_by" in w:
+            why = w["stopped_by"] or "every step passed (raise --steps)"
+        else:  # schema 1
+            stop = next((s for s in w["steps"] if s.get("problems")), None)
+            why = "; ".join(stop["problems"]) if stop else "every step passed (raise --steps)"
+        if w.get("load_limited"):
+            why += " — load-limited: the generators or the host ran out, radiusward still answered in time"
+        rows.append(f"<tr><td>{esc(title)}</td><td class='num'><b>{esc(ceiling_text(w))}</b></td>"
                     f"<td class='num'>{fmt(p99)} ms</td><td>{esc(why)}</td></tr>")
-    parts.append("<table><tr><th>Workload</th><th>Ceiling</th><th>p99 there</th><th>Next step</th></tr>"
+    parts.append("<table><tr><th>Workload</th><th>Ceiling</th><th>p99 there</th><th>Stopped by</th></tr>"
                  + "".join(rows) + "</table>")
+    if any(w.get("load_limited") for w in run.get("workloads", {}).values()):
+        parts.append('<p class="note">≥: the load could not be raised further on this machine while radiusward kept '
+                     'up — a lower bound, not radiusward\'s limit.</p>')
     f = run.get("failover")
     if f and "accounting" in f:
         a = f["accounting"]
@@ -152,7 +172,7 @@ def run_section(run):
         w = run.get("workloads", {}).get(key)
         if not w:
             continue
-        steps = w["steps"]
+        steps = per_rate(w["steps"])
         parts.append(f'<h3>{esc(title)}</h3><p class="muted">{esc(what)}</p><div class="pair">')
         parts.append(chart([("target", [(s["target_rps"], s["target_rps"]) for s in steps]),
                             ("achieved", [(s["target_rps"], s.get("rps")) for s in steps])],
@@ -161,16 +181,24 @@ def run_section(run):
                             ("limit", [(s["target_rps"], run["settings"].get("p99_limit_ms", 500)) for s in steps])],
                            "target requests/s", "p99 latency, ms", log_x=True))
         parts.append("</div>")
-        top = steps[-1]
+        top = next((s for s in w["steps"] if s.get("rps") == w["ceiling_rps"]), steps[-1])
         containers = top.get("containers", {})
         if containers:
             cells = "".join(f"<tr><td>{esc(n)}</td><td class='num'>{c['cpu_avg_pct']:.0f} %</td>"
                             f"<td class='num'>{c['cpu_max_pct']:.0f} %</td>"
                             f"<td class='num'>{c['mem_max_bytes'] / 2**20:,.0f} MiB</td></tr>"
                             for n, c in containers.items())
-            parts.append(f'<details><summary>CPU and memory per container at {fmt(top["target_rps"])}/s</summary>'
+            parts.append(f'<details><summary>CPU and memory per container at {fmt(top["target_rps"])}/s, the '
+                         f'ceiling (100 % = one core)</summary>'
                          f"<table><tr><th>Container</th><th>CPU avg</th><th>CPU max</th><th>Memory</th></tr>"
                          f"{cells}</table></details>")
+        probes = "".join(
+            f"<tr><td class='num'>{fmt(s['target_rps'])}/s</td><td class='num'>{s.get('generators', '')}</td>"
+            f"<td class='num'>{fmt(s.get('rps'))}/s</td><td class='num'>{fmt(s.get('p99_ms'))} ms</td>"
+            f"<td>{esc('; '.join(s['problems']) + (' (load-limited)' if s.get('load_limited') else '') if s.get('problems') else '✓')}</td></tr>"
+            for s in w["steps"])
+        parts.append(f"<details><summary>Every step in the order it ran</summary><table><tr><th>Target</th>"
+                     f"<th>Generators</th><th>Answered</th><th>p99</th><th>Verdict</th></tr>{probes}</table></details>")
     jmh = run.get("jmh")
     if isinstance(jmh, list) and jmh:
         cells = "".join(f"<tr><td>{esc(b['benchmark'].split('.')[-1])}</td><td class='num'>{b['score']:,.3f} "
@@ -259,13 +287,16 @@ def main():
     summary = {"where": newest["environment"].get("where"), "date": newest["environment"].get("date"),
                "commit": newest["environment"].get("commit"), "environment": env_label(newest["environment"]),
                "ceilings": {k: newest.get("workloads", {}).get(k, {}).get("ceiling_rps") for k, _, _ in WORKLOADS},
+               "load_limited": {k: bool(newest.get("workloads", {}).get(k, {}).get("load_limited"))
+                                for k, _, _ in WORKLOADS},
                "failover_lost": bool(newest["failover"].get("problems")) if newest.get("failover") else None,
                "runs": len(runs)}
     json.dump(summary, open(os.path.join(bench_dir, "latest.json"), "w"))
     os.makedirs(os.path.join(site, "badges"), exist_ok=True)
     acct = summary["ceilings"].get("accounting")
     json.dump({"schemaVersion": 1, "label": "benchmark",
-               "message": f"accounting {acct:,.0f}/s ({summary['where']})" if acct else "no result",
+               "message": (f"accounting {'≥ ' if summary['load_limited'].get('accounting') else ''}{acct:,.0f}/s "
+                           f"({summary['where']})") if acct else "no result",
                "color": "blue"}, open(os.path.join(site, "badges", "bench.json"), "w"))
     print(f"benchmarks: {len(runs)} run(s), latest {summary['where']} {summary['date']}: {summary['ceilings']}")
 

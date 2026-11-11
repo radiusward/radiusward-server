@@ -56,6 +56,14 @@ final class AccessLoad {
             long p99Micros) {}
 
     private static final int IDS_PER_CHANNEL = 256;
+    /**
+     * How far sending may fall behind the rate and still catch up. A stall of the process (GC, a busy host) of up to
+     * this long is made good by sending faster for a moment, so the delivered rate is the requested one; only a longer
+     * stall drops its share instead of bursting it all at once.
+     */
+    private static final long CATCH_UP_NANOS = 100_000_000L;
+
+    private static final long TIMEOUT_SCAN_NANOS = 10_000_000L;
 
     private final Settings settings;
     private final PrintStream out;
@@ -115,6 +123,7 @@ final class AccessLoad {
         long wrong = 0;
         long unexpected = 0;
         int inFlight = 0;
+        long nextTimeoutScan = 0;
         int nextServer = 0;
         List<Long> latencies = new ArrayList<>();
         try (Selector selector = Selector.open()) {
@@ -150,8 +159,8 @@ final class AccessLoad {
                     wrong += r.wrongPassword ? 1 : 0;
                     inFlight++;
                     nextSendAt += gapNanos;
-                    if (nextSendAt < now - gapNanos * 10) {
-                        nextSendAt = now; // do not burst after a stall
+                    if (nextSendAt < now - CATCH_UP_NANOS) {
+                        nextSendAt = now; // a longer stall is lost rather than sent as one burst
                     }
                 }
 
@@ -194,6 +203,10 @@ final class AccessLoad {
                 selector.selectedKeys().clear();
 
                 now = System.nanoTime();
+                if (now < nextTimeoutScan) {
+                    continue; // timeouts are seconds long: scanning every in-flight slot each loop only burns CPU
+                }
+                nextTimeoutScan = now + TIMEOUT_SCAN_NANOS;
                 for (Port port : ports) {
                     for (int id = 0; id < IDS_PER_CHANNEL; id++) {
                         Request r = port.inFlight[id];

@@ -9,8 +9,10 @@ micro-benchmarks exist (`-Pbench`) but run only by hand.
 
 ## Decision
 - **One harness**, `scripts/bench.py`, measures a ladder of rising request rates for accounting, authentication and a
-  mix until p99 latency passes 500 ms, a request is lost, or the target rate no longer arrives; the last good step is
-  the ceiling. It records latency, losses, retransmissions and every container's CPU and memory per step, adds a
+  mix until p99 latency passes 500 ms, a request is lost, or the target rate is no longer answered, then bisects to
+  within 10 %; the highest rate that passed is the ceiling. A step that only misses its rate while latency stays
+  fine is retried with more generators and otherwise reported as a lower bound ("≥", `load_limited`), so a limit of
+  the load generators is never read as one of radiusward. It records latency, losses, retransmissions and every container's CPU and memory per step, adds a
   leader kill at 70 % of the ceiling and the JMH suite, and writes one JSON file with the environment it ran in.
 - It runs **weekly on a GitHub runner** for the trend, **by hand anywhere**, and **on AWS** for the real ceiling per
   profile. Results on one machine are marked as a lower bound (`shared_host`).

@@ -18,6 +18,8 @@ The image is `radiusward:dev` (`--image` or `RADIUSWARD_IMAGE` for another). Res
 | `--steps` | `500,1000,2000,4000,8000,16000` | target request rates per second |
 | `--duration` | `60` | seconds per step |
 | `--generators` | `4` | radclient containers per step |
+| `--max-generators` | `8` | a step short of its rate with latency fine is repeated with up to this many |
+| `--resolution` | `0.1` | bisect between the last good and the failed step down to this share of the rate |
 | `--workloads` | `accounting,access,mix` | which ladders |
 | `--p99-limit` | `500` | ms; above it a step fails |
 | `--interim` | `10` | interim interval of the accounting sessions, seconds |
@@ -36,8 +38,15 @@ The image is `radiusward:dev` (`--image` or `RADIUSWARD_IMAGE` for another). Res
   would set the p99) and `mix` (70 % accounting, 30 % authentication). Each step runs `--generators` radclient
   containers on the stack's network for `--duration` seconds at a share of the target rate.
 - A step **fails** when an accounting request is lost, an Access-Request times out or is answered wrongly, the p99
-  latency passes `--p99-limit` (500 ms), or less than 90 % of the target rate arrives. The ladder stops there; the
-  last good step is the **ceiling**.
+  latency passes `--p99-limit` (500 ms), or less than 90 % of the target rate is answered (the achieved rate counts
+  answers over the step's length, not requests sent).
+- After the first failed step the harness **bisects** between the last good and the failed rate until they are
+  `--resolution` (10 %) apart; the highest rate that passed is the **ceiling**.
+- A step that only misses its rate while nothing was lost and p99 stayed within the limit was held back by the load
+  generators or the host, not by radiusward: it runs again with twice the generators (up to `--max-generators`).
+  If it still misses, the ladder stops and the ceiling is a **lower bound**, shown as "≥" and marked `load_limited`.
+- `radclient load` catches up after a stall of up to 100 ms (a GC pause, a busy host) by sending faster for a moment,
+  so short stalls do not lower the delivered rate.
 - Per step: throughput, p50/p99/max latency, retransmissions, every container's average and peak CPU and peak memory
   (`docker stats`, generators included, so a saturated generator shows), and the members' heap, direct memory, GC
   time, sessions and log position (`/metrics`).

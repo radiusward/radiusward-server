@@ -34,6 +34,7 @@ NETWORK = "radiusward_radius"
 GATEWAYS = ["172.28.0.20", "172.28.0.21"]
 MEMBER_PORTS = [9090, 9091, 9092]          # published management ports of node-0..2
 GATEWAY_PORTS = [9190, 9191]
+MAX_PROBES = 19                            # per workload: 20M session ids each within the workload's 400M
 LOAD = re.compile(r"^load: sent (\d+), acked (\d+), failed (\d+), retransmissions (\d+) in ([\d.]+)s \(([\d.]+) req/s\);"
                   r" latency p50 ([\d.]+) ms, p99 ([\d.]+) ms, max ([\d.]+) ms")
 ACCESS = re.compile(r"^access: sent (\d+) \((\d+) with a wrong password\), accepted (\d+), rejected (\d+), challenged (\d+),"
@@ -151,7 +152,7 @@ def generators(workload, rate, seconds, count, image, first_session, interim):
     for g in range(count):
         args = ["radclient", "load", "--server", ",".join(f"{gw}:1813" for gw in GATEWAYS), "--retry-other-server",
                 "--secret", "testing123", "--nas", "20", "--duration", f"{seconds}s", "--timeout", "3s",
-                "--retries", "3", "--first-session", str(first_session + g * 4_000_000)]
+                "--retries", "3", "--first-session", str(first_session + g * 2_000_000)]
         if workload == "accounting":
             args += ["--sessions", str(per * interim), "--rate", str(per), "--interim", f"{interim}s", "--no-stop"]
         elif workload == "access":
@@ -169,7 +170,8 @@ def generators(workload, rate, seconds, count, image, first_session, interim):
     return [p.communicate()[0] for p in procs]
 
 
-def combine(outputs, target, workload):
+def combine(outputs, target, workload, seconds):
+    """The generators' summaries as one step; the achieved rate counts answered requests over the step's length."""
     loads, accesses = [], []
     for out in outputs:
         for line in out.splitlines():
@@ -184,23 +186,22 @@ def combine(outputs, target, workload):
         step["accounting"] = {
             "sent": int(sum(l[0] for l in loads)), "acked": int(sum(l[1] for l in loads)),
             "failed": int(sum(l[2] for l in loads)), "retransmissions": int(sum(l[3] for l in loads)),
-            "rps": round(sum(l[5] for l in loads), 1),
+            "rps": round(sum(l[1] for l in loads) / seconds, 1),
             "p50_ms": round(statistics.median(l[6] for l in loads), 1), "p99_ms": round(max(l[7] for l in loads), 1),
             "max_ms": round(max(l[8] for l in loads), 1)}
         rps += step["accounting"]["rps"]
         p99s.append(step["accounting"]["p99_ms"])
         p50s.append(step["accounting"]["p50_ms"])
     if accesses:
-        seconds = max((l[4] for l in loads), default=0) or None
         sent = int(sum(a[0] for a in accesses))
+        answered = int(sum(a[2] + a[3] + a[4] for a in accesses))
         step["access"] = {
             "sent": sent, "accepted": int(sum(a[2] for a in accesses)), "rejected": int(sum(a[3] for a in accesses)),
             "timeouts": int(sum(a[5] for a in accesses)), "unexpected": int(sum(a[6] for a in accesses)),
             "p50_ms": round(statistics.median(a[7] for a in accesses), 1),
             "p99_ms": round(max(a[8] for a in accesses), 1)}
-        if seconds:
-            step["access"]["rps"] = round(sent / seconds, 1)
-            rps += step["access"]["rps"]
+        step["access"]["rps"] = round(answered / seconds, 1)
+        rps += step["access"]["rps"]
         p99s.append(step["access"]["p99_ms"])
     step["rps"] = round(rps, 1)
     step["p99_ms"] = max(p99s) if p99s else None
@@ -210,41 +211,96 @@ def combine(outputs, target, workload):
 
 
 def verdict(step, limit_ms):
-    reasons = []
+    """Why a step failed: (reasons, load_limited). A step that is short of its target rate while nothing was lost and
+    p99 stayed within the limit was limited by the load generators or the host, not by radiusward."""
+    reasons, server = [], False
     if "error" in step:
         reasons.append(step["error"])
+        server = True
     a, x = step.get("accounting", {}), step.get("access", {})
     if a.get("failed"):
         reasons.append(f"{a['failed']} accounting requests lost")
+        server = True
     if x.get("timeouts") or x.get("unexpected"):
         reasons.append(f"{x.get('timeouts', 0)} Access-Request timeouts, {x.get('unexpected', 0)} wrong answers")
+        server = True
     if step.get("p99_ms") is not None and step["p99_ms"] > limit_ms:
         reasons.append(f"p99 {step['p99_ms']} ms > {limit_ms} ms")
-    if step.get("rps") and step["rps"] < 0.9 * step["target_rps"]:
+        server = True
+    short = step.get("rps") is not None and step["rps"] < 0.9 * step["target_rps"]
+    if short:
         reasons.append(f"only {step['rps']} of {step['target_rps']} requests/s arrived")
-    return reasons
+    return reasons, short and not server
 
 
 def ladder(workload, steps, args, image, first):
+    """Climbs `steps` until one fails, then bisects between the last good and the failed rate down to --resolution.
+    A step that only misses its rate while latency is fine is run again with twice the generators (up to
+    --max-generators); if it still misses, the ladder stops there and the ceiling is a lower bound (load_limited)."""
     log(f"{workload}: ladder {steps}")
-    results, ceiling = [], 0
-    for i, rate in enumerate(steps):
+    results = []
+    probes = 0
+
+    def probe(rate, count):
+        nonlocal probes
+        # session ids are 32-bit: workloads 400M apart, probes 20M, generators 2M
         with Sampler() as sampler:
-            outputs = generators(workload, rate, args.duration, args.generators, image, first + i * 40_000_000,
+            outputs = generators(workload, rate, args.duration, count, image, first + probes * 20_000_000,
                                  args.interim)
-        step = combine(outputs, rate, workload)
+        probes += 1
+        step = combine(outputs, rate, workload, args.duration)
+        step["generators"] = count
         step["containers"] = sampler.summary()
         step["members"] = {f"node-{n}": scrape(p) for n, p in enumerate(MEMBER_PORTS)}
         step["gateways"] = {f"gateway-{n}": scrape(p) for n, p in enumerate(GATEWAY_PORTS)}
-        step["problems"] = verdict(step, args.p99_limit)
+        step["problems"], step["load_limited"] = verdict(step, args.p99_limit)
         results.append(step)
-        log(f"  {rate:>6}/s → {step['rps']:>8}/s, p99 {step['p99_ms']} ms"
-            + (f"  ✗ {'; '.join(step['problems'])}" if step["problems"] else "  ✓"))
-        if step["problems"]:
-            break
-        ceiling = step["rps"]
+        log(f"  {rate:>6}/s ×{count} → {step['rps']:>8}/s, p99 {step['p99_ms']} ms"
+            + ((f"  ✗ {'; '.join(step['problems'])}" + (" (load-limited)" if step["load_limited"] else ""))
+               if step["problems"] else "  ✓"))
         time.sleep(args.pause)
-    return {"steps": results, "ceiling_rps": ceiling}
+        return step
+
+    count = args.generators
+
+    def step_at(rate):
+        nonlocal count  # once more generators were needed, the higher rates keep them
+        step = probe(rate, count)
+        while step["load_limited"] and count * 2 <= args.max_generators and probes < MAX_PROBES:
+            count *= 2
+            log(f"  short of the rate with latency fine: again with {count} generators")
+            step = probe(rate, count)
+        return step
+
+    good, failed = None, None
+    for rate in steps:
+        if probes >= MAX_PROBES:
+            break
+        step = step_at(rate)
+        if step["problems"]:
+            failed = step
+            break
+        good = step
+    if failed is not None and not failed["load_limited"]:
+        low = good["target_rps"] if good else 0
+        high = failed["target_rps"]
+        while low and high - low > max(args.resolution * low, 100) and probes < MAX_PROBES:
+            mid = int(round((low + high) / 2 / 50) * 50)
+            step = step_at(mid)
+            if step["problems"]:
+                failed = step
+                high = mid
+                if step["load_limited"]:
+                    break
+            else:
+                good = step
+                low = mid
+    passed = [r["rps"] for r in results if not r["problems"]]
+    load_limited = failed is not None and failed["load_limited"]
+    if load_limited:
+        passed.append(failed["rps"])  # nothing lost, latency fine: radiusward carried what arrived
+    return {"steps": results, "ceiling_rps": max(passed, default=0), "load_limited": load_limited,
+            "stopped_by": "; ".join(failed["problems"]) if failed else None}
 
 
 def leader():
@@ -280,9 +336,9 @@ def failover(ceiling, args, image):
         outputs = generators("accounting", rate, max(90, args.duration), args.generators, image, 2_000_000_000,
                              args.interim)
     killer.join()
-    step = combine(outputs, rate, "accounting")
+    step = combine(outputs, rate, "accounting", max(90, args.duration))
     step["killed_member"] = victim.get("member")
-    step["problems"] = verdict(step, 10_000)  # a failover is allowed its gap; losses are not
+    step["problems"] = verdict(step, 10_000)[0]  # a failover is allowed its gap; losses are not
     log(f"  {step['rps']}/s, max {step.get('accounting', {}).get('max_ms')} ms, "
         f"{step.get('accounting', {}).get('retransmissions')} retransmissions"
         + (f"  ✗ {'; '.join(step['problems'])}" if step["problems"] else "  ✓ nothing lost"))
@@ -315,6 +371,10 @@ def main():
     p.add_argument("--duration", type=int, default=60, help="seconds per step")
     p.add_argument("--interim", type=int, default=10, help="interim interval of the accounting sessions")
     p.add_argument("--generators", type=int, default=4, help="load containers per step")
+    p.add_argument("--max-generators", type=int, default=8,
+                   help="a step short of its rate with latency fine is repeated with up to this many")
+    p.add_argument("--resolution", type=float, default=0.1,
+                   help="bisect between the last good and the failed step down to this share of the rate")
     p.add_argument("--workloads", default="accounting,access,mix")
     p.add_argument("--p99-limit", type=float, default=500.0, help="ms; above it a step fails")
     p.add_argument("--pause", type=int, default=10, help="seconds between steps")
@@ -340,8 +400,9 @@ def main():
         r = compose("up", "-d", "--wait", profiles=["monitoring"] if args.monitoring else ())
         if r.returncode != 0:
             sys.exit("compose up failed:\n" + r.stdout + r.stderr)
-    result = {"schema": 1, "environment": environment(args, args.image),
+    result = {"schema": 2, "environment": environment(args, args.image),
               "settings": {"steps": steps, "duration_s": args.duration, "generators": args.generators,
+                           "max_generators": args.max_generators, "resolution": args.resolution,
                            "p99_limit_ms": args.p99_limit, "interim_s": args.interim}, "workloads": {}}
     try:
         for i, w in enumerate(args.workloads.split(",")):
@@ -357,7 +418,8 @@ def main():
         json.dump(result, open(name, "w"), indent=2)
         log(f"result: {name}")
         for w, r in result["workloads"].items():
-            log(f"  {w:<10} ceiling {r['ceiling_rps']}/s")
+            log(f"  {w:<10} ceiling {'≥ ' if r.get('load_limited') else ''}{r['ceiling_rps']}/s"
+                + (" (load-limited: the generators or the host, not radiusward)" if r.get("load_limited") else ""))
         if not args.external:
             compose("down", "-v", profiles=["monitoring", "backup"])
 
