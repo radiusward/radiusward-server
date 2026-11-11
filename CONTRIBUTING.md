@@ -65,7 +65,7 @@ scripts/update-dictionaries.sh <freeradius-commit-sha>   # refresh bundled dicti
 | `radius-dictionary-freeradius` | Bundled FreeRADIUS dictionaries (CC BY 4.0, unmodified, pinned commit) — resources only |
 | `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder, Access-Request credentials (PAP, CHAP) and Access replies; generated `io.radiusward.radius.codec.attributes` |
-| `tools/radclient` | CLI test client (`acct`, `replay`, `decode [--fixture]`, `load`), executable jar |
+| `tools/radclient` | CLI test client (`acct`, `auth`, `replay`, `decode [--fixture]`, `load` with an optional Access-Request mix), executable jar |
 | `tools/admin-cli` | `AdminClient`; `admin state`, `admin verify-acks` (acknowledged events vs replicated state) |
 | `testing/benchmarks` | JMH, only with `-Pbench` |
 | `testing/coverage` | Aggregate coverage report and module floors, only with `-Pcoverage` |

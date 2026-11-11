@@ -385,4 +385,159 @@ class RadClientTest {
         assertThatThrownBy(() -> new PacketBuilder(dictionary, 1).add("USR.Last-Number-Dialed-Out=1"))
                 .isInstanceOf(UsageException.class);
     }
+
+    @Test
+    void authAcceptsTheRightPasswordWithEveryMethod() throws IOException {
+        try (LoopbackResponder server = new LoopbackResponder(SECRET, 0, "s3cret")) {
+            for (String method : List.of("pap", "chap", "mschapv2")) {
+                assertThat(run(
+                                "auth",
+                                "--server",
+                                server.address(),
+                                "--secret",
+                                "testing123",
+                                "--user",
+                                "CORP\\alice",
+                                "--password",
+                                "s3cret",
+                                "--method",
+                                method,
+                                "--calling-station-id",
+                                "02-00-00-00-00-01",
+                                "--timeout",
+                                "1s"))
+                        .as(method)
+                        .isEqualTo(RadClient.EXIT_OK);
+                assertThat(run(
+                                "auth",
+                                "--server",
+                                server.address(),
+                                "--secret",
+                                "testing123",
+                                "--user",
+                                "alice",
+                                "--password",
+                                "wrong",
+                                "--method",
+                                method,
+                                "--timeout",
+                                "1s"))
+                        .as(method + ", wrong password")
+                        .isEqualTo(RadClient.EXIT_NOT_ACCEPTED);
+            }
+        }
+        assertThat(out())
+                .contains("Access-Request")
+                .contains("Access-Accept")
+                .contains("Access-Reject")
+                .contains("Response authenticator OK");
+        assertThat(run(
+                        "auth",
+                        "--server",
+                        "127.0.0.1:1",
+                        "--secret",
+                        "s",
+                        "--user",
+                        "a",
+                        "--password",
+                        "p",
+                        "--method",
+                        "eap"))
+                .isEqualTo(RadClient.EXIT_USAGE);
+        assertThat(run("auth", "--server", "127.0.0.1:1", "--secret", "s", "--user", "a"))
+                .isEqualTo(RadClient.EXIT_USAGE);
+        assertThat(err()).contains("--password is required");
+        assertThat(RadClient.Options.parse(new String[] {"auth", "--server", "example.org"})
+                        .server()
+                        .getPort())
+                .as("the authentication port by default")
+                .isEqualTo(1812);
+    }
+
+    @Test
+    void msChapV2NtResponseMatchesRfc2759() {
+        // RFC 2759 §9.2
+        HexFormat hex = HexFormat.of();
+        assertThat(AccessCredentials.md4("clientPass".getBytes(StandardCharsets.UTF_16LE)))
+                .isEqualTo(hex.parseHex("44ebba8d5312b8d611474411f56989ae"));
+        assertThat(AccessCredentials.ntResponse(
+                        hex.parseHex("5b5d7c7d7b3f2f3e3c2c602132262628"),
+                        hex.parseHex("21402324255e262a28295f2b3a337c7e"),
+                        "User",
+                        "clientPass"))
+                .isEqualTo(hex.parseHex("82309ecd8d708b5ea08faa3981cd83544233114a3d85d6df"));
+        assertThat(AccessCredentials.chapPassword(1, "p".getBytes(StandardCharsets.US_ASCII), new byte[16]))
+                .hasSize(17)
+                .startsWith((byte) 1);
+        assertThat(AccessCredentials.Method.parse("MS-CHAPv2")).isEqualTo(AccessCredentials.Method.MSCHAPV2);
+    }
+
+    @Test
+    void loadWithAnAccessRequestMix() throws IOException {
+        try (LoopbackResponder accounting = new LoopbackResponder(SECRET, 0);
+                LoopbackResponder access = new LoopbackResponder(SECRET, 0, "load")) {
+            int code = run(
+                    "load",
+                    "--server",
+                    accounting.address(),
+                    "--secret",
+                    "testing123",
+                    "--sessions",
+                    "5",
+                    "--rate",
+                    "50",
+                    "--duration",
+                    "1s",
+                    "--interim",
+                    "1s",
+                    "--access-rate",
+                    "60",
+                    "--auth-server",
+                    access.address(),
+                    "--reject-ratio",
+                    "0.2");
+            assertThat(code).as(out() + err()).isEqualTo(RadClient.EXIT_OK);
+        }
+        assertThat(out())
+                .containsPattern("access: sent [1-9][0-9]* \\([1-9][0-9]* with a wrong password\\)")
+                .contains("timeouts 0, unexpected 0");
+    }
+
+    @Test
+    void accessLoadOptions() {
+        List<java.net.InetSocketAddress> accounting = List.of(new java.net.InetSocketAddress("127.0.0.1", 1813));
+        assertThat(RadClient.accessLoad(RadClient.Options.parse(new String[] {"load", "--secret", "s"}), accounting))
+                .as("no --access-rate: accounting only")
+                .isNull();
+        AccessLoad.Settings defaults = RadClient.accessLoad(
+                RadClient.Options.parse(new String[] {"load", "--secret", "s", "--access-rate", "100"}), accounting);
+        assertThat(defaults.servers()).containsExactly(new java.net.InetSocketAddress("127.0.0.1", 1812));
+        assertThat(defaults.users()).containsExactly("load");
+        assertThat(defaults.password()).isEqualTo("load");
+        assertThat(defaults.methods())
+                .containsExactly(
+                        AccessCredentials.Method.PAP, AccessCredentials.Method.CHAP, AccessCredentials.Method.MSCHAPV2);
+        assertThat(defaults.rejectRatio()).isEqualTo(0.05);
+        AccessLoad.Settings given = RadClient.accessLoad(
+                RadClient.Options.parse(new String[] {
+                    "load", "--secret", "s", "--access-rate", "10", "--auth-server", "gw-a:11812,gw-b",
+                    "--auth-users", "alice, bob", "--auth-password", "pw", "--auth-methods", "chap", "--reject-ratio",
+                    "0"
+                }),
+                accounting);
+        assertThat(given.servers())
+                .extracting(java.net.InetSocketAddress::getPort)
+                .containsExactly(11812, 1812);
+        assertThat(given.users()).containsExactly("alice", "bob");
+        assertThat(given.methods()).containsExactly(AccessCredentials.Method.CHAP);
+        for (String[] bad : List.of(
+                new String[] {"load", "--secret", "s", "--access-rate", "x"},
+                new String[] {"load", "--secret", "s", "--access-rate", "1", "--reject-ratio", "2"},
+                new String[] {"load", "--secret", "s", "--access-rate", "1", "--reject-ratio", "many"},
+                new String[] {"load", "--secret", "s", "--access-rate", "1", "--auth-users", " , "},
+                new String[] {"load", "--secret", "s", "--access-rate", "1", "--auth-methods", "eap"})) {
+            assertThatThrownBy(() -> RadClient.accessLoad(RadClient.Options.parse(bad), accounting))
+                    .isInstanceOf(UsageException.class);
+        }
+    }
 }

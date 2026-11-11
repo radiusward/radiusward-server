@@ -27,24 +27,27 @@ import java.util.concurrent.ThreadLocalRandom;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
- * Command-line RADIUS accounting client for testing radiusward (and any RADIUS server).
+ * Command-line RADIUS client for testing radiusward (and any RADIUS server): accounting and authentication.
  *
  * <pre>
  * radclient acct   --server 127.0.0.1:1813 --secret testing123 --status start --session-id abc123
  *                  [--vendor cisco] [--user alice] [--nas-ip 192.0.2.1] [--attr Name=Value]...
  *                  [--id N] [--retries 3] [--timeout 3s] [--message-authenticator]
+ * radclient auth   --server 127.0.0.1:1812 --secret testing123 --user alice --password secret
+ *                  [--method pap|chap|mschapv2] [--nas-ip 192.0.2.1] [--calling-station-id id] [--attr Name=Value]...
  * radclient replay &lt;file.fixture|file.hex&gt; --server host:port --secret s [--id N] [--retries N] [--timeout 3s]
  * radclient decode &lt;file.fixture|file.hex|hex&gt;
  * </pre>
  *
- * <p>Exit codes: 0 verified Accounting-Response, 1 no response, 2 invalid or unauthentic response,
- * 64 usage error.
+ * <p>Exit codes: 0 verified Accounting-Response or Access-Accept, 1 no response, 2 invalid or unauthentic response,
+ * 3 Access-Reject or Access-Challenge, 64 usage error.
  */
 public final class RadClient {
 
     static final int EXIT_OK = 0;
     static final int EXIT_TIMEOUT = 1;
     static final int EXIT_BAD_RESPONSE = 2;
+    static final int EXIT_NOT_ACCEPTED = 3;
     static final int EXIT_USAGE = 64;
 
     /** Typical attributes per vendor, mirroring the synthetic fixtures in radius-codec. */
@@ -122,6 +125,7 @@ public final class RadClient {
             Options options = Options.parse(args);
             return switch (options.command) {
                 case "acct" -> acct(options);
+                case "auth" -> auth(options);
                 case "replay" -> replay(options);
                 case "decode" -> decode(options);
                 case "load" -> load(options);
@@ -163,6 +167,28 @@ public final class RadClient {
             builder.messageAuthenticator();
         }
         byte[] secret = o.secret();
+        return exchange(o, dictionary, builder.build(secret), secret);
+    }
+
+    private int auth(Options o) throws IOException {
+        Dictionary dictionary = o.dictionary();
+        String user = o.required("user");
+        String password = o.required("password");
+        AccessCredentials.Method method = AccessCredentials.Method.parse(o.value("method", "pap"));
+        java.security.SecureRandom random = new java.security.SecureRandom();
+        byte[] requestAuthenticator = new byte[16];
+        random.nextBytes(requestAuthenticator);
+        byte[] secret = o.secret();
+        PacketBuilder builder = new PacketBuilder(dictionary, RadiusCode.ACCESS_REQUEST, o.identifier());
+        builder.authenticator(requestAuthenticator);
+        builder.add("User-Name", user);
+        new AccessCredentials(random).write(builder.encoder(), requestAuthenticator, user, password, method, secret);
+        builder.add("NAS-IP-Address", o.value("nas-ip", "127.0.0.1"));
+        if (o.has("calling-station-id")) {
+            builder.add("Calling-Station-Id", o.value("calling-station-id"));
+        }
+        o.values("attr").forEach(builder::add);
+        builder.messageAuthenticator(); // gateways require it by default
         return exchange(o, dictionary, builder.build(secret), secret);
     }
 
@@ -209,6 +235,22 @@ public final class RadClient {
             servers.add(Options.parse(new String[] {"load", "--server", server.trim()})
                     .server());
         }
+        AccessLoad.Settings access = accessLoad(o, servers);
+        java.util.concurrent.atomic.AtomicReference<Object> accessOutcome =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread accessThread = null;
+        if (access != null) {
+            accessThread = new Thread(
+                    () -> {
+                        try {
+                            accessOutcome.set(new AccessLoad(access, out).run());
+                        } catch (IOException | RuntimeException e) {
+                            accessOutcome.set(e);
+                        }
+                    },
+                    "access-load");
+            accessThread.start();
+        }
         LoadGenerator.Settings settings = new LoadGenerator.Settings(
                 servers,
                 o.secret(),
@@ -225,7 +267,82 @@ public final class RadClient {
                 o.has("first-session") ? Integer.parseInt(o.value("first-session")) : 0,
                 o.flag("shared-session-ids"));
         LoadGenerator.Result result = new LoadGenerator(settings, out).run();
-        return result.failed() == 0 ? EXIT_OK : EXIT_TIMEOUT;
+        boolean accessOk = true;
+        if (accessThread != null) {
+            try {
+                accessThread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return EXIT_TIMEOUT;
+            }
+            if (accessOutcome.get() instanceof AccessLoad.Result r) {
+                accessOk = r.timeouts() == 0 && r.unexpected() == 0;
+            } else {
+                err.println("radclient: access load failed: " + accessOutcome.get());
+                accessOk = false;
+            }
+        }
+        return result.failed() == 0 && accessOk ? EXIT_OK : EXIT_TIMEOUT;
+    }
+
+    /**
+     * The Access-Request mix of {@code load}, {@code null} without {@code --access-rate}: to {@code --auth-server}, by
+     * default the accounting servers' hosts on port 1812.
+     */
+    static AccessLoad.Settings accessLoad(Options o, List<InetSocketAddress> accountingServers) {
+        if (!o.has("access-rate")) {
+            return null;
+        }
+        List<InetSocketAddress> servers = new ArrayList<>();
+        if (o.has("auth-server")) {
+            for (String server : o.value("auth-server").split(",")) {
+                servers.add(Options.parse(new String[] {"load", "--server", server.trim()})
+                        .server(1812));
+            }
+        } else {
+            for (InetSocketAddress a : accountingServers) {
+                servers.add(new InetSocketAddress(a.getHostString(), 1812));
+            }
+        }
+        List<AccessCredentials.Method> methods = new ArrayList<>();
+        for (String m : o.value("auth-methods", "pap,chap,mschapv2").split(",")) {
+            methods.add(AccessCredentials.Method.parse(m));
+        }
+        List<String> users = new ArrayList<>();
+        for (String u : o.value("auth-users", "load").split(",")) {
+            if (!u.isBlank()) {
+                users.add(u.trim());
+            }
+        }
+        if (users.isEmpty()) {
+            throw new UsageException("--auth-users needs at least one user");
+        }
+        double rejectRatio;
+        try {
+            rejectRatio = Double.parseDouble(o.value("reject-ratio", "0.05"));
+        } catch (NumberFormatException e) {
+            throw new UsageException("--reject-ratio must be a number between 0 and 1");
+        }
+        if (rejectRatio < 0 || rejectRatio > 1) {
+            throw new UsageException("--reject-ratio must be a number between 0 and 1");
+        }
+        int rate;
+        try {
+            rate = Integer.parseInt(o.value("access-rate"));
+        } catch (NumberFormatException e) {
+            throw new UsageException("--access-rate must be a number");
+        }
+        return new AccessLoad.Settings(
+                servers,
+                o.secret(),
+                List.copyOf(users),
+                o.value("auth-password", "load"),
+                List.copyOf(methods),
+                rate,
+                rejectRatio,
+                o.duration("duration", Duration.ofSeconds(60)),
+                o.timeout(),
+                o.retries());
     }
 
     private int exchange(Options o, Dictionary dictionary, byte[] request, byte[] secret) throws IOException {
@@ -257,7 +374,17 @@ public final class RadClient {
                 authentic ? "OK" : "INVALID",
                 result.attempts(),
                 result.elapsed().toMillis());
-        if (!authentic || response.code() != RadiusCode.ACCOUNTING_RESPONSE) {
+        if (!authentic) {
+            return EXIT_BAD_RESPONSE;
+        }
+        if (requestView.code() == RadiusCode.ACCESS_REQUEST) {
+            return switch (response.code()) {
+                case RadiusCode.ACCESS_ACCEPT -> EXIT_OK;
+                case RadiusCode.ACCESS_REJECT, RadiusCode.ACCESS_CHALLENGE -> EXIT_NOT_ACCEPTED;
+                default -> EXIT_BAD_RESPONSE;
+            };
+        }
+        if (response.code() != RadiusCode.ACCOUNTING_RESPONSE) {
             return EXIT_BAD_RESPONSE;
         }
         return EXIT_OK;
@@ -297,6 +424,9 @@ public final class RadClient {
                                    [--vendor aruba|cisco|huawei|juniper|juniper-erx|meraki|mikrotik|mikrotik-hotspot|open-mesh|ruckus|ubiquiti] [--user name] [--nas-ip addr]
                                    [--attr Name=Value]... [--message-authenticator]
                                    [--id n] [--retries 3] [--timeout 3s] [--dictionary-dir dir]
+                  radclient auth   --server host[:1812] --secret s --user name --password p [--method pap|chap|mschapv2]
+                                   [--nas-ip addr] [--calling-station-id id] [--attr Name=Value]...
+                                   [--id n] [--retries 3] [--timeout 3s] [--dictionary-dir dir]
                   radclient replay <file.fixture|file.hex> --server host:port --secret s [--id n] [--retries n] [--timeout 3s]
                   radclient decode <file.fixture|file.hex|hex> [--dictionary-dir dir]
                                    [--fixture [--anonymise] [--comment text]]  (print as a vendor fixture)
@@ -305,7 +435,10 @@ public final class RadClient {
                                    [--retry-other-server] [--no-stop] [--ack-log acks.csv]
                                    [--first-session 0]  (number sessions from here; parallel generators)
                                    [--shared-session-ids]  (same Acct-Session-Ids on every simulated NAS)
-                exit codes: 0 verified Accounting-Response, 1 no response, 2 bad response, 64 usage error""";
+                                   [--access-rate n [--auth-server host:port,...] [--auth-users a,b] [--auth-password p]
+                                    [--auth-methods pap,chap,mschapv2] [--reject-ratio 0.05]]  (Access-Requests too)
+                exit codes: 0 verified Accounting-Response or Access-Accept, 1 no response, 2 bad response,
+                            3 Access-Reject or Access-Challenge, 64 usage error""";
     }
 
     /** Minimal {@code --key value} / {@code --flag} parser. */
@@ -382,10 +515,14 @@ public final class RadClient {
         }
 
         InetSocketAddress server() {
+            return server(command.equals("auth") ? 1812 : 1813);
+        }
+
+        InetSocketAddress server(int defaultPort) {
             String server = required("server");
             int colon = server.lastIndexOf(':');
             if (colon <= 0) {
-                return new InetSocketAddress(server, 1813);
+                return new InetSocketAddress(server, defaultPort);
             }
             try {
                 return new InetSocketAddress(server.substring(0, colon), Integer.parseInt(server.substring(colon + 1)));

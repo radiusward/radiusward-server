@@ -143,7 +143,7 @@ Stores, methods, RadSec, proxying and policies: [docs/configuration.md](docs/con
 | [`radius-dictionary-freeradius`](radius-dictionary-freeradius/README.md) | Bundled FreeRADIUS dictionaries (CC BY 4.0) |
 | [`radius-codegen`](radius-codegen/README.md) | Generates constants and the hot-attribute extractor |
 | [`radius-codec`](radius-codec/README.md) | Zero-allocation RADIUS packet codec |
-| [`tools/radclient`](tools/radclient/README.md) | Command-line accounting test client (requests, replays, decoding, load) |
+| [`tools/radclient`](tools/radclient/README.md) | Command-line test client: accounting and Access-Requests (PAP, CHAP, MS-CHAPv2), replays, decoding, load |
 | [`tools/admin-cli`](tools/admin-cli/README.md) | queries the replicated state; verifies acknowledgement logs |
 | [`testing/test-harness`](testing/test-harness/README.md) | in-JVM local cluster, dev mode |
 | [`testing/e2e-tests`](testing/e2e-tests/README.md) | end-to-end tests against real processes (`-Pe2e`) |
