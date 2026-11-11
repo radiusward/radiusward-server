@@ -15,8 +15,9 @@
 #
 # amd64 only (the runners); the image holds files, it runs nothing.
 FROM ubuntu:24.04 AS download
+COPY apt-update.sh /usr/local/bin/apt-update.sh
 RUN mkdir -p /debs/partial \
-    && apt-get -o Acquire::Retries=5 update \
+    && apt-update.sh \
     && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 -o Dir::Cache::archives=/debs \
         install --download-only -y freeradius freeradius-utils \
     && rm -rf /debs/partial /debs/lock \
@@ -24,7 +25,8 @@ RUN mkdir -p /debs/partial \
 
 # the index in a separate stage, so apt-utils does not shrink the closure above
 FROM ubuntu:24.04 AS index
-RUN apt-get -o Acquire::Retries=5 update \
+COPY apt-update.sh /usr/local/bin/apt-update.sh
+RUN apt-update.sh \
     && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends apt-utils
 COPY --from=download /debs/ /debs/
 RUN cd /debs && apt-ftparchive packages . > Packages

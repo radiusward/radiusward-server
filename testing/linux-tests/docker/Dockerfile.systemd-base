@@ -7,7 +7,8 @@
 #
 #   scripts/test-images.sh build systemd-base
 FROM eclipse-temurin:25-jre-noble
-RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends systemd systemd-sysv dbus \
+COPY apt-update.sh /usr/local/bin/apt-update.sh
+RUN apt-update.sh && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends systemd systemd-sysv dbus \
     && rm -rf /var/lib/apt/lists/* \
     # the units run /usr/local/bin/radiusward, which execs java from systemd's PATH, not the image's
     && ln -s /opt/java/openjdk/bin/java /usr/bin/java \

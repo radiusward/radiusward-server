@@ -95,7 +95,10 @@ or GitHub downloads: all of them in the public package `ghcr.io/radiusward/radiu
   `radiusward:dev`, with no package installs.
 - **Publishing:** [test-images.yml](../../.github/workflows/test-images.yml) runs on pushes to `main` that change an
   input, weekly and on demand; it builds only the tags that are not published yet and moves `-latest`. Until it has
-  run for a change, CI builds the changed image itself.
+  run for a change, CI builds the changed image itself. Each image gets three attempts, and the Ubuntu-based ones
+  (`linux-test-base`, `systemd-base`, `interop-debs`) update apt through `apt-update.sh`, which switches to other
+  mirrors of Ubuntu's archive (mirrors.edge.kernel.org for amd64, mirrors.ocf.berkeley.edu for arm64) when the runner
+  cannot reach Ubuntu's own servers.
 
 ```bash
 scripts/test-images.sh list                 # the images

@@ -16,6 +16,7 @@ on:
       - testing/interop-debs/**
       - testing/linux-tests/docker/Dockerfile.*-base
       - testing/linux-tests/docker/lazyfs-statfs.patch
+      - testing/linux-tests/docker/apt-update.sh
       - testing/test-images/images.txt
       - scripts/test-images.sh
       - .github/workflows/test-images.yml

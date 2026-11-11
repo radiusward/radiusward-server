@@ -15,7 +15,8 @@ ARG LAZYFS_REF=d93e54a
 
 FROM ubuntu:24.04 AS build
 ARG LAZYFS_REF
-RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
+COPY apt-update.sh /usr/local/bin/apt-update.sh
+RUN apt-update.sh && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends \
         g++ cmake make git ca-certificates libfuse3-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 COPY lazyfs-statfs.patch /src/lazyfs-statfs.patch
@@ -34,7 +35,8 @@ RUN git clone -q https://github.com/dsrhaslab/lazyfs.git /src/lazyfs \
 
 # the release image's base, so the jar runs on the same runtime
 FROM eclipse-temurin:25-jre-noble
-RUN apt-get -o Acquire::Retries=5 update && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends fuse3 iptables \
+COPY apt-update.sh /usr/local/bin/apt-update.sh
+RUN apt-update.sh && DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=5 install -y --no-install-recommends fuse3 iptables \
     && rm -rf /var/lib/apt/lists/* \
     && echo user_allow_other >> /etc/fuse.conf \
     && groupadd --system --gid 10001 radiusward \

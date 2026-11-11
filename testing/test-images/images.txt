@@ -9,6 +9,6 @@
 eapol-test       testing/eapol-test          testing/eapol-test/Dockerfile                      testing/eapol-test
 radsec-client    testing/radsec-client       testing/radsec-client/Dockerfile                   testing/radsec-client
 samba-ad         testing/samba-ad            testing/samba-ad/Dockerfile                        testing/samba-ad
-linux-test-base  testing/linux-tests/docker  testing/linux-tests/docker/Dockerfile.test-base    testing/linux-tests/docker/Dockerfile.test-base testing/linux-tests/docker/lazyfs-statfs.patch
-systemd-base     testing/linux-tests/docker  testing/linux-tests/docker/Dockerfile.systemd-base testing/linux-tests/docker/Dockerfile.systemd-base
+linux-test-base  testing/linux-tests/docker  testing/linux-tests/docker/Dockerfile.test-base    testing/linux-tests/docker/Dockerfile.test-base testing/linux-tests/docker/lazyfs-statfs.patch testing/linux-tests/docker/apt-update.sh
+systemd-base     testing/linux-tests/docker  testing/linux-tests/docker/Dockerfile.systemd-base testing/linux-tests/docker/Dockerfile.systemd-base testing/linux-tests/docker/apt-update.sh
 interop-debs     testing/interop-debs        testing/interop-debs/Dockerfile                    testing/interop-debs platforms=linux/amd64
