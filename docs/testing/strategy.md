@@ -77,7 +77,8 @@ reports. With `-Preports` (CI does this) the Failsafe tests also write Allure re
 `@Feature` and its ADR as `@Link`, the shared harnesses (`LocalCluster`, `ProcessCluster`, `ContainerCluster`) record
 their actions as steps through `Reports.step`, load summaries and, on failure, process and container logs are
 attached. New `*IT` classes get an epic and feature too. `scripts/test-reports.sh <results> <site>` builds the same
-site locally.
+site locally. On pull requests the `pr-report` job builds the integration and end-to-end reports as the
+`test-reports` artifact (not published) and posts an Allure summary with new and flaky tests.
 
 ## Coverage
 
