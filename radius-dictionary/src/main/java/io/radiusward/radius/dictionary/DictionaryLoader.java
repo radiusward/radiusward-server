@@ -764,19 +764,24 @@ public final class DictionaryLoader {
                 return;
             }
             String parentPath = null;
+            int extended = -1;
             for (int i = 2; i < t.length; i++) {
                 if (t[i].startsWith("parent=")) {
                     parentPath = t[i].substring("parent=".length());
                 } else if (t[i].startsWith("format=Extended-Vendor-Specific-")) {
-                    int n = parseNumber(file, t[i].substring("format=Extended-Vendor-Specific-".length()));
-                    parentPath = (240 + n) + "." + Dictionary.VENDOR_SPECIFIC;
+                    extended = parseNumber(file, t[i].substring("format=Extended-Vendor-Specific-".length()));
+                    if (extended < 0) {
+                        frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
+                        return;
+                    }
                 } else {
                     problem(file, "unknown BEGIN-VENDOR option " + t[i]);
                     frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
                     return;
                 }
             }
-            AttributeDef container = vsaContainer(file, parentPath);
+            AttributeDef container =
+                    extended >= 0 ? extendedVsaContainer(file, extended) : vsaContainer(file, parentPath);
             AttributeDef node = container == null ? null : vendorNode(file, vendor, container);
             if (node == null) {
                 frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
@@ -815,6 +820,28 @@ public final class DictionaryLoader {
                     problem(file, "vendor parent " + parentPath + " not defined");
                     return null;
                 }
+            }
+            if (container.type() != DataType.VSA && container.type() != DataType.EVS) {
+                problem(file, "vendor parent " + container + " is not a vsa");
+                return null;
+            }
+            return container;
+        }
+
+        /**
+         * The Vendor-Specific attribute (26) inside Extended-Attribute-{@code n} (240 + n, RFC 6929), for v3's
+         * {@code BEGIN-VENDOR <name> format=Extended-Vendor-Specific-<n>}: found by number, as the v3 files name the
+         * attributes differently.
+         */
+        private AttributeDef extendedVsaContainer(FileState file, int n) {
+            AttributeDef extended = n < 1 || n > 6 ? null : root.child(240 + n);
+            AttributeDef container = extended == null ? null : extended.child(Dictionary.VENDOR_SPECIFIC);
+            if (container == null) {
+                problem(
+                        file,
+                        "vendor parent Extended-Vendor-Specific-" + n + " (" + (240 + n) + "."
+                                + Dictionary.VENDOR_SPECIFIC + ") not defined");
+                return null;
             }
             if (container.type() != DataType.VSA && container.type() != DataType.EVS) {
                 problem(file, "vendor parent " + container + " is not a vsa");

@@ -448,4 +448,125 @@ class DictionaryLoaderTest {
                     .hasMessageContaining("relative number");
         }
     }
+
+    @Nested
+    class EdgeCases {
+
+        @Test
+        void ipv4AddressValues() throws IOException {
+            Dictionary d = strict(write(
+                    "dictionary",
+                    "ATTRIBUTE Framed-IP-Address 8 ipaddr",
+                    "VALUE Framed-IP-Address Assigned-By-NAS 255.255.255.254"));
+            assertThat(d.attribute(8).value("Assigned-By-NAS")).isEqualTo(0xFFFFFFFEL);
+            for (String bad : new String[] {"1.2.3.400", "1.2.3", "1.2.x.4", "-1.2.3.4"}) {
+                Path file =
+                        write("bad-" + bad, "ATTRIBUTE Framed-IP-Address 8 ipaddr", "VALUE Framed-IP-Address X " + bad);
+                assertThatThrownBy(() -> strict(file))
+                        .isInstanceOf(DictionaryException.class)
+                        .hasMessageContaining("VALUE X=" + bad + " is not valid for");
+                Dictionary lenient = lenient(file);
+                assertThat(lenient.attribute(8).value("X")).isNull();
+                assertThat(lenient.warnings()).singleElement().asString().endsWith("(skipped)");
+            }
+        }
+
+        @Test
+        void vendorBlockInsideAnExtendedVendorSpecificAttribute() throws IOException {
+            Dictionary d = strict(write(
+                    "dictionary",
+                    "ATTRIBUTE Extended-Attribute-1 241 tlv extended",
+                    "ATTRIBUTE Vendor-Specific 241.26 vsa",
+                    "VENDOR Acme 99999",
+                    "BEGIN-VENDOR Acme format=Extended-Vendor-Specific-1",
+                    "ATTRIBUTE Acme-Thing 1 string",
+                    "END-VENDOR Acme"));
+            assertThat(d.find("Acme-Thing").oid()).isEqualTo("241.26.99999.1");
+            assertThat(d.vendorAttribute(99999, 1)).isNull(); // not inside RFC 2865 attribute 26
+
+            String[] missing = {
+                "VENDOR Acme 99999",
+                "BEGIN-VENDOR Acme format=Extended-Vendor-Specific-3",
+                "ATTRIBUTE Acme-Thing 1 string",
+                "END-VENDOR Acme"
+            };
+            assertThatThrownBy(() -> strict(write("missing", missing)))
+                    .hasMessageContaining("vendor parent Extended-Vendor-Specific-3 (243.26) not defined");
+            String[] invalid = {
+                "VENDOR Acme 99999",
+                "BEGIN-VENDOR Acme format=Extended-Vendor-Specific-x",
+                "ATTRIBUTE Acme-Thing 1 string",
+                "END-VENDOR Acme"
+            };
+            Dictionary skipped = lenient(write("invalid", invalid));
+            assertThat(skipped.find("Acme-Thing"))
+                    .as("skipped, not put into attribute 26")
+                    .isNull();
+            assertThat(skipped.warnings()).singleElement().asString().contains("invalid number x");
+        }
+
+        @Test
+        void unknownBeginVendorOptionSkipsTheBlock() throws IOException {
+            String[] lines = {
+                "VENDOR Acme 99999", "BEGIN-VENDOR Acme colour=blue", "ATTRIBUTE Acme-Thing 1 string", "END-VENDOR Acme"
+            };
+            assertThatThrownBy(() -> strict(write("strict", lines)))
+                    .hasMessageContaining("unknown BEGIN-VENDOR option colour=blue");
+            Dictionary d = lenient(write("lenient", lines));
+            assertThat(d.find("Acme-Thing")).as("the block is skipped").isNull();
+            assertThat(d.warnings()).singleElement().asString().contains("unknown BEGIN-VENDOR option");
+        }
+
+        @Test
+        void beginVendorForAnUndeclaredVendorSkipsTheBlock() throws IOException {
+            String[] lines = {"BEGIN-VENDOR Ghost", "ATTRIBUTE Ghost-Thing 1 string", "END-VENDOR Ghost"};
+            assertThatThrownBy(() -> strict(write("strict", lines)))
+                    .hasMessageContaining("BEGIN-VENDOR for undeclared vendor Ghost");
+            Dictionary d = lenient(write("lenient", lines));
+            assertThat(d.find("Ghost-Thing")).isNull();
+            assertThat(d.warnings()).singleElement().asString().contains("undeclared vendor Ghost");
+        }
+
+        @Test
+        void aVendorRedefinedWithAnotherFormat() throws IOException {
+            String[] lines = {"VENDOR Acme 99999", "VENDOR Acme 99999 format=2,2"};
+            assertThatThrownBy(() -> strict(write("strict", lines)))
+                    .hasMessageContaining("vendor Acme (99999) redefined with a different format");
+            Dictionary d = lenient(write("lenient", lines));
+            assertThat(d.vendor(99999).typeLength()).as("the later format wins").isEqualTo(2);
+            assertThat(d.vendor("acme").lengthLength()).isEqualTo(2);
+            assertThat(d.warnings()).singleElement().asString().contains("format overridden");
+            assertThat(strict(write("same", "VENDOR Acme 99999", "VENDOR Acme 99999 format=1,1"))
+                            .vendor(99999)
+                            .isStandardFormat())
+                    .as("the same format again is no redefinition")
+                    .isTrue();
+        }
+
+        @Test
+        void anAttributeRenumbered() throws IOException {
+            String[] lines = {"ATTRIBUTE Foo 200 string", "ATTRIBUTE Foo 201 string"};
+            assertThatThrownBy(() -> strict(write("strict", lines)))
+                    .hasMessageContaining("attribute Foo already defined");
+            Dictionary d = lenient(write("lenient", lines));
+            assertThat(d.find("Foo").number()).isEqualTo(201);
+            assertThat(d.attribute(201)).isSameAs(d.find("Foo"));
+            assertThat(d.warnings()).singleElement().asString().contains("Foo renumbered from 200 to 201");
+        }
+
+        @Test
+        void aDefineRepeatedIsTheSameAttribute() throws IOException {
+            Dictionary d = strict(write("dictionary", "DEFINE Group tlv", "DEFINE Group tlv"));
+            assertThat(d.find("Group").number()).isEqualTo(AttributeDef.NO_NUMBER);
+            assertThat(d.warnings()).isEmpty();
+        }
+
+        @Test
+        void unknownMemberFlagAndMissingArguments() throws IOException {
+            assertThatThrownBy(() ->
+                            strict(write("member", "ATTRIBUTE Location 127 struct", "MEMBER Index uint16 sparkly")))
+                    .hasMessageContaining("unknown flag sparkly");
+            assertThatThrownBy(() -> strict(write("short", "ATTRIBUTE Foo"))).hasMessageContaining("needs at least");
+        }
+    }
 }
