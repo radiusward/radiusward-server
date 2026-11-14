@@ -225,6 +225,75 @@ class StoreAccessHandlerTest {
                 .isEqualTo(AccessHandler.REJECT);
     }
 
+    @Test
+    void numericNegatedAndFailingComparisons() {
+        main.user("lowPort", List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Port", "<", "100")), List.of())
+                .user(
+                        "highPort",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Port", ">", "100")),
+                        List.of())
+                .user("upTo", List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Port", "<=", "100")), List.of())
+                .user("from", List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Port", ">=", "100")), List.of())
+                .user(
+                        "notWired",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Port-Type", "!~", "^Ethernet")),
+                        List.of())
+                .user(
+                        "notThatNas",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("NAS-IP-Address", "!=", "10.0.0.1")),
+                        List.of())
+                .user(
+                        "badPattern",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Identifier", "=~", "([unclosed")),
+                        List.of())
+                .user(
+                        "notANumber",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("NAS-Port", "<", "many")),
+                        List.of())
+                .user(
+                        "vendor",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("Cisco-AVPair", "==", "x")),
+                        List.of())
+                .user(
+                        "unknown",
+                        List.of(item("Cleartext-Password", ":=", "a"), item("No-Such-Attribute", "==", "x")),
+                        List.of());
+        StoreAccessHandler h = handler();
+        byte[] port7 = AccessRequestBuilder.uint32(5, 7);
+        byte[] port100 = AccessRequestBuilder.uint32(5, 100);
+        byte[] port900 = AccessRequestBuilder.uint32(5, 900);
+        assertThat(pap(h, "lowPort", "a", port7)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "lowPort", "a", port100)).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "highPort", "a", port900)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "highPort", "a", port100)).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "upTo", "a", port100)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "upTo", "a", port900)).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "from", "a", port100)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "from", "a", port7)).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "lowPort", "a")).as("attribute absent: not a number").isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "notANumber", "a", port7)).as("fail closed").isEqualTo(AccessHandler.REJECT);
+
+        assertThat(pap(h, "notWired", "a", AccessRequestBuilder.uint32(61, 19))).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "notWired", "a", AccessRequestBuilder.uint32(61, 15))).isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "notWired", "a")).as("attribute absent").isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "notThatNas", "a", AccessRequestBuilder.ipv4(4, 10, 0, 0, 2)))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(pap(h, "notThatNas", "a", AccessRequestBuilder.ipv4(4, 10, 0, 0, 1)))
+                .isEqualTo(AccessHandler.REJECT);
+
+        assertThat(pap(
+                        h,
+                        "badPattern",
+                        "a",
+                        AccessRequestBuilder.attribute(32, "ap-1".getBytes(StandardCharsets.UTF_8))))
+                .as("an invalid pattern fails the condition")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "vendor", "a"))
+                .as("vendor attributes cannot be compared")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "unknown", "a")).isEqualTo(AccessHandler.REJECT);
+    }
+
     private long sessionTimeout() {
         RadiusPacket reply = reply();
         int at = reply.findAttribute(27);

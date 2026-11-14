@@ -10,7 +10,10 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.function.UnaryOperator;
 
-/** The inner side of an EAP-TTLS peer for tests: PAP or MS-CHAPv2 AVPs, the server's MS-CHAP2-Success checked. */
+/**
+ * The inner side of an EAP-TTLS peer for tests: PAP, CHAP or MS-CHAPv2 AVPs, the server's MS-CHAP2-Success checked;
+ * optionally one more AVP after the credentials.
+ */
 final class TtlsPeer implements UnaryOperator<byte[]> {
 
     private final String user;
@@ -21,6 +24,10 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
     byte[] challengeHash;
     byte[] ntResponse;
     boolean serverProved;
+    /** CHAP with the tunnel's implicit challenge (RFC 5281 §11.2.2) instead of PAP. */
+    boolean chap;
+    /** An AVP sent after the credentials, {@code null} for none. */
+    byte[] extraAvp;
 
     TtlsPeer(String user, String password, boolean msChapV2, boolean wrongChallenge) {
         this.user = user;
@@ -39,7 +46,25 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
     }
 
     private byte[] credentials() throws Exception {
+        byte[] avps = avps();
+        return extraAvp == null ? avps : concat(avps, extraAvp);
+    }
+
+    private byte[] avps() throws Exception {
         byte[] name = user.getBytes(StandardCharsets.UTF_8);
+        if (chap) {
+            byte[] implicit = client.export("ttls challenge", 17);
+            byte[] challenge = Arrays.copyOf(implicit, 16);
+            java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
+            md5.update(implicit[16]);
+            md5.update(password.getBytes(StandardCharsets.UTF_8));
+            md5.update(challenge);
+            byte[] chapPassword = concat(new byte[] {implicit[16]}, md5.digest());
+            return concat(
+                    Ttls.avp(Ttls.USER_NAME, 0, name),
+                    Ttls.avp(Ttls.CHAP_CHALLENGE, 0, challenge),
+                    Ttls.avp(Ttls.CHAP_PASSWORD, 0, chapPassword));
+        }
         if (!msChapV2) {
             byte[] padded = Arrays.copyOf(
                     password.getBytes(StandardCharsets.UTF_8),

@@ -48,6 +48,9 @@ public final class LocalCluster implements AutoCloseable {
     private final Duration snapshotInterval;
     private java.util.function.IntFunction<ExportConfig> export = id -> ExportConfig.NONE;
     private LogPurgeConfig purge = LogPurgeConfig.DEFAULTS;
+    private AccountingStateMachine.Settings settings =
+            AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions());
+    private Duration sweepInterval = Duration.ofSeconds(60);
 
     /** Purge settings for members started from now on (tests use small segments and short intervals). */
     public LocalCluster purge(LogPurgeConfig purge) {
@@ -109,6 +112,27 @@ public final class LocalCluster implements AutoCloseable {
         LocalCluster cluster = new LocalCluster(baseDir, basePort, members, snapshotInterval);
         cluster.export = export;
         cluster.purge = purge;
+        return launch(cluster, members, gatewayCount, radiusPorts);
+    }
+
+    /**
+     * Starts {@code members} cluster nodes with these state machine settings and housekeeping interval
+     * ({@code service.sweep.interval}), and {@code gatewayCount} gateways: tests of tombstones, idle timeouts and
+     * reservation expiry use seconds instead of hours.
+     */
+    public static LocalCluster start(
+            File baseDir,
+            int members,
+            int gatewayCount,
+            AccountingStateMachine.Settings settings,
+            Duration sweepInterval) {
+        LocalCluster cluster = new LocalCluster(baseDir, freePortBase(members), members, Duration.ZERO);
+        cluster.settings = settings;
+        cluster.sweepInterval = sweepInterval;
+        return launch(cluster, members, gatewayCount, new int[gatewayCount]);
+    }
+
+    private static LocalCluster launch(LocalCluster cluster, int members, int gatewayCount, int[] radiusPorts) {
         try {
             Reports.step("start " + members + " members and " + gatewayCount + " gateways", () -> {
                 for (int i = 0; i < members; i++) {
@@ -152,8 +176,8 @@ public final class LocalCluster implements AutoCloseable {
                 2,
                 0,
                 256,
-                AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions()),
-                Duration.ofSeconds(60),
+                settings,
+                sweepInterval,
                 export.apply(id),
                 purge);
     }

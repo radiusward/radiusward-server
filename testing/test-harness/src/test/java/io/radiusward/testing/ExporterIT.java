@@ -143,6 +143,79 @@ class ExporterIT {
                 .isEmpty();
     }
 
+    @Test
+    void aFencedWriteGivesUpTheLeaseAndAFailedOneReopensTheSink() throws Exception {
+        FaultySink.reset();
+        try (LocalCluster cluster = LocalCluster.start(
+                dir.toFile(),
+                1,
+                1,
+                LocalCluster.freePortBase(1),
+                new int[1],
+                Duration.ZERO,
+                id -> new ExportConfig(
+                        List.of(new SinkConfig(
+                                "faulty",
+                                "faulty",
+                                true,
+                                0,
+                                Duration.ofHours(4).toMillis(),
+                                false,
+                                10,
+                                20,
+                                2000,
+                                Map.of("mode", "sessions+events"))),
+                        null,
+                        null))) {
+            ClusterNode node = cluster.awaitLeader();
+            cluster.awaitGatewaysConnected();
+            LocalClusterIT nas = new LocalClusterIT();
+            try {
+                int port = cluster.gateway(0).radiusPort();
+                nas.exchange(port, LocalClusterIT.request(1, 1, "s-1", 0));
+                LocalCluster.await(Duration.ofSeconds(30), "first batch written", () -> FaultySink.written.get() > 0);
+
+                // another member wrote with a newer epoch: this one steps back, asks for the lease again, resumes
+                FaultySink.fenceNext.set(1);
+                nas.exchange(port, LocalClusterIT.request(2, 3, "s-1", 60));
+                LocalCluster.await(Duration.ofSeconds(30), "the write was fenced", () -> FaultySink.fenced.get() == 1);
+                LocalCluster.await(
+                        Duration.ofSeconds(30),
+                        "exporting again, caught up",
+                        () -> caughtUp(node) && node.stateJson().contains("\"exporting\":true"));
+
+                // a failed write closes the sink and opens it again after a back-off
+                int opened = FaultySink.opened.get();
+                FaultySink.failNext.set(1);
+                nas.exchange(port, LocalClusterIT.request(3, 2, "s-1", 120));
+                LocalCluster.await(Duration.ofSeconds(30), "the write failed", () -> FaultySink.failed.get() == 1);
+                LocalCluster.await(
+                        Duration.ofSeconds(30),
+                        "reopened and caught up",
+                        () -> caughtUp(node) && FaultySink.opened.get() > opened);
+                assertThat(node.stateJson())
+                        .as("the error is cleared by the next good write")
+                        .contains("\"lastError\":\"\"");
+
+                // what the member reports about the sink
+                String metrics = node.metrics();
+                io.radiusward.common.management.PrometheusWriter.validate(metrics);
+                assertThat(metrics)
+                        .contains("radiusward_export_exporting{member=\"0\",sink=\"faulty\"} 1")
+                        .contains("radiusward_export_lag_bytes{member=\"0\",sink=\"faulty\"} 0")
+                        .contains("radiusward_export_lag_seconds{member=\"0\",sink=\"faulty\"} 0")
+                        .contains("radiusward_export_detached{member=\"0\",sink=\"faulty\"} 0")
+                        .containsPattern("radiusward_export_epoch\\{member=\"0\",sink=\"faulty\"\\} \\d+")
+                        .containsPattern("radiusward_export_rows_total\\{member=\"0\",sink=\"faulty\"\\} [1-9]")
+                        .containsPattern("radiusward_export_batches_total\\{member=\"0\",sink=\"faulty\"\\} [1-9]")
+                        .contains("radiusward_export_last_batch_seconds{member=\"0\",sink=\"faulty\"}")
+                        .contains("radiusward_export_errors_total{member=\"0\",sink=\"faulty\"} 1");
+            } finally {
+                nas.close();
+            }
+        }
+    }
+
     private static boolean caughtUp(ClusterNode node) {
         String state = node.stateJson();
         Matcher checkpoint = Pattern.compile("\"clusterCheckpoint\":(\\d+)").matcher(state);

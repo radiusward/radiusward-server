@@ -126,7 +126,7 @@ class Sampler:
 
 
 def parse_size(text):
-    m = re.match(r"([\d.]+)\s*([KMGT]?i?B)", text)
+    m = re.match(r"([\d.]+)\s*([kKMGT]?i?B)", text)
     if not m:
         return 0
     unit = {"B": 1, "KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "TiB": 1 << 40,

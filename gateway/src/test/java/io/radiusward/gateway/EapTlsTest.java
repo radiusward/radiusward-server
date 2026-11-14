@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.IdentityStore;
 import io.radiusward.radius.codec.RadiusPacket;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -85,7 +86,7 @@ class EapTlsTest {
                 stores,
                 List.of("main"),
                 Map.of(),
-                Map.of(),
+                chap,
                 cacheTtl,
                 1000,
                 12,
@@ -117,6 +118,8 @@ class EapTlsTest {
     private Peap.Binding binding = Peap.Binding.OPTIONAL;
     private EapTlsConfig tlsConfig;
     private Duration cacheTtl = Duration.ofSeconds(5);
+    /** Stores whose cleartext passwords may answer CHAP (auth.store.<name>.chap). */
+    private Map<String, Boolean> chap = Map.of();
 
     private RadiusPacket reply() {
         int length = context.replyAttributesLength();
@@ -849,6 +852,85 @@ class EapTlsTest {
         ad.down = false;
         assertThat(handle(h, lastResponse, lastState))
                 .as("the retransmission repeats the check")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void ttlsChapWithTheImplicitChallengeAndAStoreOutage() throws Exception {
+        chap = Map.of("main", true);
+        store.user("gina", List.of(new AttributeItem("Cleartext-Password", ":=", "Gina-Pw")), List.of());
+        TtlsPeer peer = new TtlsPeer("gina", "Gina-Pw", false, false);
+        peer.chap = true;
+        EapTlsClient client = ttlsClient("TLSv1.3", peer);
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", client, Ttls.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertKeys(client, Ttls.TYPE);
+        TtlsPeer wrong = new TtlsPeer("gina", "nope", false, false);
+        wrong.chap = true;
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.2", wrong), Ttls.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+
+        // the outer identity is cached by now; the inner user is not
+        store.user("hank", List.of(new AttributeItem("Cleartext-Password", ":=", "Hank-Pw")), List.of());
+        store.down = true;
+        StoreAccessHandler h = ttls(Map.of(), Map.of(), Map.of());
+        TtlsPeer during = new TtlsPeer("hank", "Hank-Pw", false, false);
+        during.chap = true;
+        assertThat(converse(h, "anonymous", ttlsClient("TLSv1.2", during), Ttls.TYPE))
+                .as("the store cannot answer: no answer")
+                .isEqualTo(AccessHandler.DROP);
+        store.down = false;
+        assertThat(handle(h, lastResponse, lastState))
+                .as("the retransmission repeats the CHAP check")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void ttlsMsChapV2DuringAStoreOutage() throws Exception {
+        store.user(
+                "erin",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Erin-Pw")))),
+                List.of());
+        store.user("carol", List.of(new AttributeItem("Cleartext-Password", ":=", "Carol-Pw")), List.of());
+        StoreAccessHandler h = ttls(Map.of(), Map.of(), Map.of());
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        ttlsClient("TLSv1.2", new TtlsPeer("carol", "Carol-Pw", false, false)),
+                        Ttls.TYPE))
+                .as("caches the outer identity")
+                .isEqualTo(AccessHandler.ACCEPT);
+        store.down = true;
+        TtlsPeer peer = new TtlsPeer("erin", "Erin-Pw", true, false);
+        assertThat(converse(h, "anonymous", ttlsClient("TLSv1.3", peer), Ttls.TYPE))
+                .isEqualTo(AccessHandler.DROP);
+        store.down = false;
+        assertThat(handle(h, lastResponse, lastState))
+                .as("the retransmission repeats the check; MS-CHAP2-Success follows")
+                .isEqualTo(AccessHandler.CHALLENGE);
+    }
+
+    @Test
+    void ttlsFailsOnAMandatoryAvpItDoesNotKnow() throws Exception {
+        store.user("carol", List.of(new AttributeItem("Cleartext-Password", ":=", "Carol-Pw")), List.of());
+        TtlsPeer peer = new TtlsPeer("carol", "Carol-Pw", false, false);
+        ByteBuffer avp = ByteBuffer.allocate(12);
+        avp.putInt(4242)
+                .put((byte) Ttls.FLAG_MANDATORY)
+                .put(new byte[] {0, 0, 12})
+                .putInt(7);
+        peer.extraAvp = avp.array();
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.3", peer), Ttls.TYPE))
+                .as("RFC 5281 §10.1")
+                .isEqualTo(AccessHandler.REJECT);
+
+        TtlsPeer optional = new TtlsPeer("carol", "Carol-Pw", false, false);
+        ByteBuffer ignored = ByteBuffer.allocate(12);
+        ignored.putInt(4242).put((byte) 0).put(new byte[] {0, 0, 12}).putInt(7);
+        optional.extraAvp = ignored.array();
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.2", optional), Ttls.TYPE))
+                .as("an AVP that is not mandatory is skipped")
                 .isEqualTo(AccessHandler.ACCEPT);
     }
 

@@ -151,4 +151,122 @@ class DynamicAuthorizationTest {
         assertThat(await(a).outcome()).isEqualTo(DynamicAuthorization.Outcome.NAK);
         assertThat(await(b).outcome()).isEqualTo(DynamicAuthorization.Outcome.ACK);
     }
+
+    @Test
+    void aRequestTooLargeForOnePacketIsUnreachable() throws Exception {
+        CompletableFuture<DynamicAuthorization.Result> f =
+                sender.send(DynamicAuthorization.COA_REQUEST, new byte[4096 - 20 - 17], nasAddress, SECRET);
+        assertThat(await(f).outcome()).isEqualTo(DynamicAuthorization.Outcome.UNREACHABLE);
+        assertThat(sender.get(DynamicAuthorization.Counter.UNREACHABLE)).isEqualTo(1);
+        assertThat(receive()).isNull();
+    }
+
+    @Test
+    void the257thRequestInFlightToOneNasIsUnreachable() throws Exception {
+        java.util.List<CompletableFuture<DynamicAuthorization.Result>> all = new java.util.ArrayList<>();
+        for (int i = 0; i < 257; i++) {
+            all.add(sender.send(DynamicAuthorization.DISCONNECT_REQUEST, IDENTITY, nasAddress, SECRET));
+        }
+        sender.doWork();
+        assertThat(all.get(256).getNow(null))
+                .isEqualTo(new DynamicAuthorization.Result(DynamicAuthorization.Outcome.UNREACHABLE, 0));
+        assertThat(all.subList(0, 256)).noneMatch(CompletableFuture::isDone);
+    }
+
+    @Test
+    void malformedLateAndWrongCodeAnswersAreCountedAsInvalid() throws Exception {
+        CompletableFuture<DynamicAuthorization.Result> f =
+                sender.send(DynamicAuthorization.DISCONNECT_REQUEST, IDENTITY, nasAddress, SECRET);
+        Received r = receive();
+        nas.send(ByteBuffer.wrap(new byte[] {41, 0, 0}), r.from()); // shorter than a header
+        answer(r, 2, 0, SECRET); // Access-Accept: not an answer to a Disconnect-Request
+        byte[] stray = r.bytes().clone();
+        stray[1]++; // an identifier nothing waits for
+        answer(new Received(stray, r.from()), DynamicAuthorization.DISCONNECT_ACK, 0, SECRET);
+        for (int i = 0; i < 20; i++) {
+            sender.doWork();
+            Thread.sleep(2);
+        }
+        assertThat(sender.get(DynamicAuthorization.Counter.INVALID_RESPONSES)).isEqualTo(3);
+        answer(r, DynamicAuthorization.DISCONNECT_ACK, 0, SECRET);
+        assertThat(await(f).outcome()).isEqualTo(DynamicAuthorization.Outcome.ACK);
+    }
+
+    @Test
+    void anErrorCauseOfTheWrongLengthIsIgnored() throws Exception {
+        CompletableFuture<DynamicAuthorization.Result> f =
+                sender.send(DynamicAuthorization.COA_REQUEST, IDENTITY, nasAddress, SECRET);
+        Received r = receive();
+        UnsafeBuffer out = new UnsafeBuffer(new byte[64]);
+        out.putByte(0, (byte) DynamicAuthorization.COA_NAK);
+        out.putByte(1, r.bytes()[1]);
+        out.putByte(20, (byte) DynamicAuthorization.ERROR_CAUSE);
+        out.putByte(21, (byte) 4);
+        out.putShort(22, (short) 503, java.nio.ByteOrder.BIG_ENDIAN);
+        out.putShort(2, (short) 24, java.nio.ByteOrder.BIG_ENDIAN);
+        authenticator.signResponse(out, 0, 24, -1, new UnsafeBuffer(r.bytes()), 4, SECRET);
+        nas.send(ByteBuffer.wrap(out.byteArray(), 0, 24), r.from());
+        assertThat(await(f)).isEqualTo(new DynamicAuthorization.Result(DynamicAuthorization.Outcome.NAK, 0));
+    }
+
+    @Test
+    void overRadsecTheRequestGoesToTheNasConnectionAndItsAnswerComesBack() throws Exception {
+        sender.onClose();
+        RadsecLink link = new RadsecLink(new NasClient[] {
+            new NasClient("ap", 1, 0x7F000001, 32, SECRET, "default", NasClient.MessageAuthenticatorPolicy.OFF)
+        });
+        sender = new DynamicAuthorization(
+                new CoaConfig(true, Duration.ofMillis(50), 2, null, Map.of()), "127.0.0.1", link);
+        sender.onStart();
+        CompletableFuture<DynamicAuthorization.Result> f =
+                sender.sendRadsec(DynamicAuthorization.DISCONNECT_REQUEST, IDENTITY, 0, SECRET);
+        sender.doWork();
+        byte[][] request = new byte[1][];
+        int[] nasIndex = {-1};
+        link.toNas.read((type, buffer, index, length) -> {
+            nasIndex[0] = buffer.getInt(index);
+            request[0] = new byte[length - 4];
+            buffer.getBytes(index + 4, request[0]);
+        });
+        assertThat(nasIndex[0]).isZero();
+        assertThat(request[0][0]).isEqualTo((byte) DynamicAuthorization.DISCONNECT_REQUEST);
+
+        UnsafeBuffer reply = new UnsafeBuffer(new byte[4 + 20]);
+        reply.putInt(0, 0);
+        reply.putByte(4, (byte) DynamicAuthorization.DISCONNECT_ACK);
+        reply.putByte(5, request[0][1]);
+        reply.putShort(6, (short) 20, java.nio.ByteOrder.BIG_ENDIAN);
+        UnsafeBuffer packet = new UnsafeBuffer(reply.byteArray(), 4, 20);
+        authenticator.signResponse(packet, 0, 20, -1, new UnsafeBuffer(request[0]), 4, SECRET);
+        assertThat(link.fromNas.write(RadsecLink.PACKET_MSG, reply, 0, 24)).isTrue();
+        assertThat(await(f).outcome()).isEqualTo(DynamicAuthorization.Outcome.ACK);
+    }
+
+    @Test
+    void closingTimesOutRequestsInFlightAndRefusesQueuedOnes() throws Exception {
+        CompletableFuture<DynamicAuthorization.Result> inFlight =
+                sender.send(DynamicAuthorization.DISCONNECT_REQUEST, IDENTITY, nasAddress, SECRET);
+        sender.doWork();
+        CompletableFuture<DynamicAuthorization.Result> queued =
+                sender.send(DynamicAuthorization.DISCONNECT_REQUEST, IDENTITY, nasAddress, SECRET);
+        sender.onClose();
+        assertThat(inFlight.getNow(null).outcome()).isEqualTo(DynamicAuthorization.Outcome.TIMEOUT);
+        assertThat(queued.getNow(null).outcome()).isEqualTo(DynamicAuthorization.Outcome.UNREACHABLE);
+    }
+
+    @Test
+    void metricsCountEveryOutcome() throws Exception {
+        CompletableFuture<DynamicAuthorization.Result> f =
+                sender.send(DynamicAuthorization.DISCONNECT_REQUEST, IDENTITY, nasAddress, SECRET);
+        answer(receive(), DynamicAuthorization.DISCONNECT_ACK, 0, SECRET);
+        await(f);
+        io.radiusward.common.management.PrometheusWriter w = new io.radiusward.common.management.PrometheusWriter();
+        sender.writeMetrics(w, "g1");
+        String text = w.finish();
+        io.radiusward.common.management.PrometheusWriter.validate(text);
+        assertThat(text)
+                .contains("radiusward_gateway_coa_requests_total{gateway=\"g1\",result=\"sent\"} 1")
+                .contains("radiusward_gateway_coa_requests_total{gateway=\"g1\",result=\"ack\"} 1")
+                .contains("radiusward_gateway_coa_requests_total{gateway=\"g1\",result=\"timeout\"} 0");
+    }
 }

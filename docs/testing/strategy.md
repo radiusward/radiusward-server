@@ -60,12 +60,13 @@
 | SIM sequence numbers | `SqnTest`, `SqnIT` | `./mvnw verify` | SEQ steps, floors and resynchronisation, 48 bits, capacity, the version gate, the log applier, snapshots across chunks with an equal digest; two gateways sharing one sequence on a three-member cluster and a new leader continuing it |
 | SIM algorithms | `MilenageTest`, `SimKeysTest` | `./mvnw verify` | MILENAGE test sets 1 and 2 (TS 35.207/35.208), OPc, AUTN, resynchronisation from AUTS, GSM-MILENAGE SRES and Kc, the FIPS 186-2 PRF example, key layouts of SIM, AKA and AKA′ |
 | Password formats | `YescryptTest`, `PasswordCheckTest` | `./mvnw verify` | yescrypt and scrypt against the reference's known answers and Debian's `mkpasswd`; MD5-crypt from openssl and mkpasswd; MD5, SMD5, SHA-1, SHA-2, LM |
-| Cluster (in-JVM) | `ThreeNodeClusterIT`, `LocalClusterIT` | `./mvnw verify` | real Aeron Cluster members and gateways in one JVM: commit, failover, snapshot, restart, load; sessions without a Start, late Starts, Interims in reverse order and an Interim older than the tombstone window acknowledged over UDP without moving the session back |
+| Cluster (in-JVM) | `ThreeNodeClusterIT`, `LocalClusterIT`, `ServiceHousekeepingIT` | `./mvnw verify` | real Aeron Cluster members and gateways in one JVM: commit, failover, snapshot, restart, load; sessions without a Start, late Starts, Interims in reverse order and an Interim older than the tombstone window acknowledged over UDP without moving the session back |
 | End-to-end | `testing/e2e-tests` | `./mvnw -Pe2e verify` | separate JVMs from `radiusward.jar`, real `kill -9`: the 8 scenarios in [failure-matrix.md](failure-matrix.md) |
 | Fault injection (Linux) | `testing/linux-tests` | `./mvnw -Plinux verify` / `scripts/linux-tests.sh`, nightly CI | shipped image + compose config in containers: power loss of all members (LazyFS, with a no-fsync negative control), partition, full disk, overload at the memory limits, failover timing, compose smoke ([ADR 0016](../adr/0016-fault-injection-tests.md)) |
 | Export | `ExporterIT`, `PostgresExportIT`, `LogPurgeIT`, `LogReplicaSpikeIT` (in-JVM cluster), `PostgresSinkTest` (Testcontainers; skipped without Docker, required in CI) | `./mvnw verify` | lease handover without gap or duplicate, exactly-once rows, admin tools, purge |
 | Logging | `NonBlockingLoggingIT` | `./mvnw verify` | async, garbage-free, never blocks on a full ring |
 | Benchmarks | `testing/benchmarks`, `-Pbench` | manual | throughput baselines |
+| Benchmark scripts | `scripts/tests` (Python standard library) | `python3 -m unittest discover -s scripts/tests` (CI build job) | `bench.py` parses the generators' summaries, judges a step (lost requests, p99, load-limited) and climbs, bisects and retries the ladder as documented, against fake generators; `bench-pages.py` builds the pages, `latest.json` and the badge from a published run |
 
 ## Test images
 
@@ -123,7 +124,7 @@ site locally. On pull requests the `pr-report` job builds the integration and en
 ## Coverage
 
 `./mvnw verify` measures unit tests only and enforces the module floors of `radius-codec` (90 % lines,
-generated code excluded) and `radius-dictionary` (80 %). Most of the cluster, exporter and sink code is only
+generated code excluded) and `radius-dictionary` (84 %). Most of the cluster, exporter and sink code is only
 reached by the integration tests, so a second, honest measurement covers both:
 
 ```bash
@@ -149,14 +150,24 @@ reached by the integration tests, so a second, honest measurement covers both:
   measured value; `check-floors.sh` fails the build below any of them. Raise a floor when a module gains
   tests; never lower one to let a change pass.
 
-Measured 2026-11-08 (lines / branches): total 89.7 %; radius-codec 98.7 / 94.0, common 97.5 / 91.2,
-cluster-service 95.5 / 84.6, radius-codegen 95.2 / 82.1, sink-file 94.4 / 76.4, sink-postgres 93.6 / 80.0,
-admin-cli 93.1 / 80.6, exporter 91.1 / 81.0, gateway 90.1 / 81.0, export-api 87.4 / 73.7, radclient 86.0 / 72.0,
-cluster-node 82.5 / 65.6, radius-dictionary 81.7 / 67.7. The first measurement (total 87 %) found untested
-configuration validation (`GatewayConfig`, `ClusterNodeConfig`), admin command paths and exporter decisions,
-now tested (`GatewayConfigTest`, `ClusterNodeConfigTest`, `ExportDecisionsTest`, `ExportVerifierTest`), and two
-bugs: a PostgreSQL partition cached by a rolled-back transaction sent later good rows to quarantine, and the
-admin client did not reconnect after the cluster closed its idle session.
+Measured 2026-11-14 (lines / branches): total 91.6 / 80.2 %; store-file 98.8 / 96.9, common 97.8 / 91.8,
+radius-codec 96.4 / 92.6, cluster-service 96.0 / 84.2, radius-codegen 95.3 / 82.8, sink-radius 95.0 / 74.5,
+auth-api 94.8 / 83.3, sink-file 94.5 / 76.4, sink-postgres 93.8 / 80.6, exporter 92.8 / 81.3, store-sql 92.5 / 78.3,
+admin-cli 92.2 / 77.8, gateway 91.8 / 80.4, radclient 90.1 / 77.0, export-api 88.9 / 75.2, verifier-netlogon
+87.4 / 70.4, radius-dictionary 87.0 / 75.4, store-ldap 86.9 / 81.2, cluster-node 85.4 / 70.9.
+
+The first measurement (2026-11-08, total 87 %) found untested configuration validation (`GatewayConfig`,
+`ClusterNodeConfig`), admin command paths and exporter decisions, now tested (`GatewayConfigTest`,
+`ClusterNodeConfigTest`, `ExportDecisionsTest`, `ExportVerifierTest`), and two bugs: a PostgreSQL partition cached by
+a rolled-back transaction sent later good rows to quarantine, and the admin client did not reconnect after the
+cluster closed its idle session. The review of 2026-11-14 added tests for what no test ran: CoA with vendor attributes,
+to devices behind network entries and over IPv6, and its failure outcomes (`CoaServiceTest`,
+`DynamicAuthorizationTest`); the housekeeping timer and gateways that disagree on a device identity
+(`ServiceHousekeepingIT`); a fenced and a failed sink write and the export metrics (`ExporterIT` with a test sink);
+numeric and negated check items; TTLS with inner CHAP and store outages. It found two bugs: vendor blocks with
+`format=Extended-Vendor-Specific-N` could not be loaded, and the benchmark harness read sizes in kB as zero. Still
+untested: TEAP's Basic-Password-Auth retry after a store outage (needs a TEAP peer in Java; `EapolTestIT` covers the
+exchange itself) and the exporter stepping back after missed lease renewals.
 
 ## Vendor fixtures
 
