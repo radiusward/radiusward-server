@@ -119,6 +119,10 @@ public final class AdminClient implements AutoCloseable, EgressListener {
     private final SessionReportDecoder sessionDecoder = new SessionReportDecoder();
     private long correlation;
     private Object reply;
+
+    /** The reply to a user-sessions query, as one object for {@link #request}. */
+    private record ListedSessions(List<ListedSession> sessions) {}
+
     private long replyCorrelation;
 
     public AdminClient(List<String> members, int basePort) {
@@ -169,7 +173,7 @@ public final class AdminClient implements AutoCloseable, EgressListener {
     public State state() {
         long id = ++correlation;
         new StateQueryEncoder().wrapAndApplyHeader(buffer, 0, headerEncoder).correlationId(id);
-        return (State) request(id, MessageHeaderEncoder.ENCODED_LENGTH + StateQueryEncoder.BLOCK_LENGTH);
+        return request(id, MessageHeaderEncoder.ENCODED_LENGTH + StateQueryEncoder.BLOCK_LENGTH, State.class);
     }
 
     public Session session(long keyHi, long keyLo) {
@@ -179,19 +183,22 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 .correlationId(id)
                 .sessionKeyHi(keyHi)
                 .sessionKeyLo(keyLo);
-        return (Session) request(id, MessageHeaderEncoder.ENCODED_LENGTH + SessionQueryEncoder.BLOCK_LENGTH);
+        return request(id, MessageHeaderEncoder.ENCODED_LENGTH + SessionQueryEncoder.BLOCK_LENGTH, Session.class);
     }
 
     /** The active sessions of a user (its {@code UserKeys} key), at most 64 (ADR 0036). */
-    @SuppressWarnings("unchecked")
     public List<ListedSession> userSessions(long userKey) {
         long id = ++correlation;
         new io.radiusward.protocol.UserSessionsQueryEncoder()
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
                 .correlationId(id)
                 .userKey(userKey);
-        return (List<ListedSession>) request(
-                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.UserSessionsQueryEncoder.BLOCK_LENGTH);
+        return request(
+                        id,
+                        MessageHeaderEncoder.ENCODED_LENGTH
+                                + io.radiusward.protocol.UserSessionsQueryEncoder.BLOCK_LENGTH,
+                        ListedSessions.class)
+                .sessions();
     }
 
     /** Active sessions with a user from store slot {@code fromSlot} on, at most {@code max} (up to 64). */
@@ -202,8 +209,10 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 .correlationId(id)
                 .fromSlot(fromSlot)
                 .maxSessions(max);
-        return (SessionPage) request(
-                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SessionPageQueryEncoder.BLOCK_LENGTH);
+        return request(
+                id,
+                MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SessionPageQueryEncoder.BLOCK_LENGTH,
+                SessionPage.class);
     }
 
     /** One sink as the replicated state holds it. */
@@ -225,8 +234,10 @@ public final class AdminClient implements AutoCloseable, EgressListener {
         new io.radiusward.protocol.SinkQueryEncoder()
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
                 .correlationId(id);
-        return (Sinks)
-                request(id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkQueryEncoder.BLOCK_LENGTH);
+        return request(
+                id,
+                MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkQueryEncoder.BLOCK_LENGTH,
+                Sinks.class);
     }
 
     /**
@@ -239,8 +250,10 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
                 .correlationId(id)
                 .version(version);
-        return (Activation) request(
-                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.ActivateVersionEncoder.BLOCK_LENGTH);
+        return request(
+                id,
+                MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.ActivateVersionEncoder.BLOCK_LENGTH,
+                Activation.class);
     }
 
     /** Moves a sink's checkpoint to {@code position}, fences its exporter and re-attaches it; returns the sinks. */
@@ -254,15 +267,17 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 .correlationId(id)
                 .putSinkName(name, 0)
                 .position(position);
-        return (Sinks) request(
-                id, MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkResyncEncoder.BLOCK_LENGTH);
+        return request(
+                id,
+                MessageHeaderEncoder.ENCODED_LENGTH + io.radiusward.protocol.SinkResyncEncoder.BLOCK_LENGTH,
+                Sinks.class);
     }
 
     /**
      * Sends a request and waits for its reply. Requests are read-only or idempotent, so one without a reply after
      * 5 s is sent again (the cluster gives up an egress reply under back pressure, or the leader changed).
      */
-    private Object request(long id, int length) {
+    private <T> T request(long id, int length, Class<T> type) {
         reply = null;
         long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
         while (true) {
@@ -288,7 +303,7 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 }
             }
             if (reply != null && replyCorrelation == id) {
-                return reply;
+                return type.cast(reply);
             }
         }
     }
@@ -375,7 +390,7 @@ public final class AdminClient implements AutoCloseable, EgressListener {
                 sessions.add(new ListedSession(hi, lo, nas, 0, first, last, identity));
             }
             replyCorrelation = correlationId;
-            reply = List.copyOf(sessions);
+            reply = new ListedSessions(List.copyOf(sessions));
         } else if (headerDecoder.templateId() == io.radiusward.protocol.SessionPageReportDecoder.TEMPLATE_ID) {
             io.radiusward.protocol.SessionPageReportDecoder r = new io.radiusward.protocol.SessionPageReportDecoder();
             r.wrapAndApplyHeader(buf, offset, headerDecoder);
