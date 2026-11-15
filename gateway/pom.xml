@@ -15,7 +15,17 @@
     <name>radiusward :: gateway</name>
     <description>RADIUS UDP gateway in front of the cluster</description>
 
+    <properties>
+        <!-- test classes start their own clusters, ports and directories: two JVMs at a time -->
+        <radiusward.it.forks>2</radiusward.it.forks>
+    </properties>
+
     <dependencies>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>test-images</artifactId>

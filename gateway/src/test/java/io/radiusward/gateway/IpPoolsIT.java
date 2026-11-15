@@ -10,9 +10,11 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
+import io.radiusward.testing.Await;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -98,8 +100,8 @@ class IpPoolsIT {
                 Statement s = conn.createStatement()) {
             s.execute("INSERT INTO accounting_session VALUES ('aa-aa', '" + a + "', NULL)");
         }
-        Thread.sleep(2500); // the leases ran out
-        String d = pools.allocate(small, "dave", "dd-dd");
+        String d = Await.value(
+                Duration.ofSeconds(10), "the leases ran out", () -> allocated(pools, small, "dave", "dd-dd"));
         assertThat(d).as("not alice's: her session is open").isIn(b, c);
         assertThat(pools.allocate(small, "alice", "aa-aa"))
                 .as("alice, from her open session")
@@ -115,7 +117,7 @@ class IpPoolsIT {
             List<Callable<String>> tasks = new java.util.ArrayList<>();
             for (int i = 0; i < 100; i++) {
                 String device = "dev-" + i;
-                tasks.add(() -> pools.allocate(many, "u", device));
+                tasks.add(() -> allocated(pools, many, "u", device));
             }
             Set<String> given = new HashSet<>();
             for (Future<String> f : executor.invokeAll(tasks)) {
@@ -144,17 +146,26 @@ class IpPoolsIT {
                 Statement s = conn.createStatement()) {
             s.execute("INSERT INTO accounting_session VALUES ('a6', NULL, NULL)"); // ann's router online
         }
-        Thread.sleep(1500);
-        assertThat(prefixes.allocate(pd, "cat", "c6"))
+        assertThat(Await.value(
+                        Duration.ofSeconds(10), "ben's lease ran out", () -> allocated(prefixes, pd, "cat", "c6")))
                 .as("ben's lease ran out, ann is online")
                 .isEqualTo(second);
         assertThat(prefixes.allocate(pd, "ann", "a6")).as("ann keeps hers").isEqualTo(first);
 
         IpPools leaseOnly = new IpPools(Map.of("small", small), IpPools.sql(postgres.getJdbcUrl(), props(), false));
-        Thread.sleep(2500);
-        assertThat(leaseOnly.allocate(small, "erin", "ee-ee"))
+        assertThat(Await.value(
+                        Duration.ofSeconds(10), "a lease ran out", () -> allocated(leaseOnly, small, "erin", "ee-ee")))
                 .as("without accounting_session")
                 .isNotNull();
+    }
+
+    /** An allocation, or {@code null}; for polling until a lease runs out. */
+    private static String allocated(IpPools pools, IpPools.Pool pool, String user, String device) {
+        try {
+            return pools.allocate(pool, user, device);
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private java.util.Properties props() {

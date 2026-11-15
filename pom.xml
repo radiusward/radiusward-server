@@ -107,6 +107,8 @@
         <!-- per-module overrides -->
         <jacoco.minimum.coverage>0.00</jacoco.minimum.coverage>
         <skipITs>false</skipITs>
+        <!-- JVMs running integration test classes side by side; modules whose tests start clusters raise it -->
+        <radiusward.it.forks>1</radiusward.it.forks>
         <radiusward.interop>false</radiusward.interop>
 
         <!-- SonarQube Cloud (CI only, with SONAR_TOKEN): coverage comes from the aggregate report of -Pcoverage -->
@@ -427,11 +429,15 @@
                         <!-- ITs measure allocation; no JaCoCo agent here -->
                         <argLine>${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
                         <skipITs>${skipITs}</skipITs>
+                        <forkCount>${radiusward.it.forks}</forkCount>
+                        <reuseForks>true</reuseForks>
                         <systemPropertyVariables>
                             <radiusward.interop>${radiusward.interop}</radiusward.interop>
                             <radiusward.require.docker>${radiusward.require.docker}</radiusward.require.docker>
                             <radiusward.reports>${radiusward.reports}</radiusward.reports>
                             <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
+                            <!-- each JVM's own share of the test ports (Ports) when classes run side by side -->
+                            <radiusward.fork>${surefire.forkNumber}</radiusward.fork>
                         </systemPropertyVariables>
                     </configuration>
                     <executions>

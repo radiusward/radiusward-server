@@ -7,10 +7,28 @@ package io.radiusward.testing;
 import java.net.DatagramSocket;
 import java.net.ServerSocket;
 
-/** Free ports for test clusters and servers, chosen below the operating systems' ephemeral port ranges. */
+/**
+ * Free ports for test clusters and servers, chosen below the operating systems' ephemeral port ranges. When test
+ * classes run in several JVMs at once ({@code radiusward.fork}, set from Failsafe's fork number), each JVM draws from
+ * its own quarter of the ranges: a port checked free is bound a moment later, and two JVMs must not pick it both.
+ */
 public final class Ports {
 
+    /** At most this many JVMs share the ranges without overlapping. */
+    static final int FORK_SLOTS = 4;
+
     private Ports() {}
+
+    /** This JVM's share, 0 to {@link #FORK_SLOTS} - 1. */
+    static int share() {
+        return Math.floorMod(Integer.getInteger("radiusward.fork", 1) - 1, FORK_SLOTS);
+    }
+
+    /** A random number below {@code bound} in this JVM's share (numbers with the same remainder). */
+    private static int draw(int bound) {
+        int perShare = bound / FORK_SLOTS;
+        return (int) (Math.random() * perShare) * FORK_SLOTS + share();
+    }
 
     /**
      * A base port where every member's 6 UDP ports ({@code base + 100 * member + 0..5}) are free, below the ephemeral
@@ -19,7 +37,7 @@ public final class Ports {
      */
     public static int freePortBase(int members) {
         for (int attempt = 0; attempt < 100; attempt++) {
-            int base = 20_000 + (int) (Math.random() * 120) * 100; // highest port 32_205
+            int base = 20_000 + draw(120) * 100; // highest port 32_205
             if (allFree(base, members)) {
                 return base;
             }
@@ -30,7 +48,7 @@ public final class Ports {
     /** A single port free for TCP and UDP, 10000–19999: below the ephemeral ranges and the cluster ports. */
     public static int freePort() {
         for (int attempt = 0; attempt < 200; attempt++) {
-            int port = 10_000 + (int) (Math.random() * 10_000);
+            int port = 10_000 + draw(10_000);
             try (ServerSocket tcp = new ServerSocket(port);
                     DatagramSocket udp = new DatagramSocket(port)) {
                 if (tcp.getLocalPort() == port && udp.getLocalPort() == port) {

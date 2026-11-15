@@ -15,6 +15,11 @@
     <name>radiusward :: test harness</name>
     <description>In-JVM local cluster for integration tests and dev mode</description>
 
+    <properties>
+        <!-- test classes start their own clusters, ports and directories: two JVMs at a time -->
+        <radiusward.it.forks>2</radiusward.it.forks>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
