@@ -16,6 +16,8 @@ see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Pli
 - No Docker needed for `./mvnw verify` and `-Pe2e`. Docker (Linux, or Colima on macOS) only for the image,
   compose and `-Plinux`. Details: [docs/operations/local-dev.md](docs/operations/local-dev.md),
   [docs/operations/docker.md](docs/operations/docker.md).
+- Optional: `git config core.hooksPath .githooks` formats the staged Java files before each commit
+  (`.githooks/pre-commit`), so a format check never fails in CI.
 - Every JVM that loads Agrona/Aeron needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`
   (already set for tests via `${radiusward.jvm.args}` and in the `Add-Exports` manifest of runnable jars;
   add it to IDE run configurations).
@@ -24,6 +26,8 @@ see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Pli
 
 ```bash
 ./mvnw verify                                   # build, unit + integration tests, coverage, format check
+./mvnw -Pquick -T1C verify                      # the fast loop: compile + unit tests, no ITs, coverage, format check (~1 min)
+./mvnw -Pquick -pl gateway -am verify           # the same for one module and what it depends on
 ./mvnw -Pcoverage verify -Dradiusward.require.docker=true   # unit + integration coverage, module floors
 ./mvnw spotless:apply                           # format (palantir-java-format) + license headers
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dsurefire.failIfNoSpecifiedTests=false

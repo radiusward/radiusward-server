@@ -133,7 +133,7 @@ templates for Graviton in [deploy/aws](deploy/aws). On plain hosts with systemd:
 Requirements: JDK 25+.
 
 ```bash
-./mvnw verify                          # build + unit/integration tests (~1 min)
+./mvnw -Pquick -T1C verify             # build + unit tests (~1 min; ./mvnw verify adds the integration tests, ~10 min)
 scripts/run-local.sh start             # 3 cluster members + 2 gateways as separate JVMs
 scripts/run-local.sh wait-ready && scripts/run-local.sh status
 

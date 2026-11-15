@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Copyright 2026 The radiusward Authors
+# SPDX-License-Identifier: Apache-2.0
+#
+# Formats the staged Java files with palantir-java-format (spotless) and stages the result again.
+# Enable once per clone: git config core.hooksPath .githooks   (skip a commit with git commit --no-verify)
+set -euo pipefail
+
+files=$(git diff --cached --name-only --diff-filter=ACMR -- '*.java')
+[ -z "$files" ] && exit 0
+
+if [ -z "${JAVA_HOME:-}" ] && [ -x /usr/libexec/java_home ]; then
+    JAVA_HOME=$(/usr/libexec/java_home -v 25 2>/dev/null || true)
+    export JAVA_HOME
+fi
+# spotless takes a comma-separated list of regular expressions matched against absolute paths
+root=$(git rev-parse --show-toplevel)
+patterns=$(printf '%s\n' "$files" | sed "s|^|$root/|; s|[.]|\\\\.|g" | paste -sd, -)
+"$root/mvnw" -q -o spotless:apply -DspotlessFiles="$patterns" >/dev/null 2>&1 || {
+    echo "pre-commit: spotless:apply failed; run ./mvnw spotless:apply and commit again" >&2
+    exit 1
+}
+printf '%s\n' "$files" | xargs git add --

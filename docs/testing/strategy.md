@@ -132,14 +132,15 @@ reached by the integration tests, so a second, honest measurement covers both:
 ```
 
 - The `coverage` profile instruments Failsafe (`jacoco-it.exec`) as well as Surefire and builds one aggregate
-  report over all modules in `testing/coverage`. CI runs it as the `coverage` job and uploads the report.
+  report over all modules in `testing/coverage`. CI's `verify` job runs the whole suite this way, once, with the
+  interop tests, and uploads the report.
 - The allocation ITs (`*AllocationIT`) are excluded from it: the JaCoCo agent allocates and would fail them.
-  They still run in the normal build.
+  They still run in the normal build, and CI's `verify` job runs them afterwards without the agent.
 - Generated code (SBE codecs in `io.radiusward.protocol`, hot-attribute accessors) is excluded; the generators
   have their own tests.
 - `-Pe2e` processes are not instrumented, so `distribution` (the `main` entry points) shows 0 % here and has no
   floor; `test-harness` is test support and has none either.
-- With the repository secret `SONAR_TOKEN`, the CI `coverage` job also sends the analysis and this aggregate
+- With the repository secret `SONAR_TOKEN`, the CI `verify` job also sends the analysis and this aggregate
   report to SonarQube Cloud ([dashboard](https://sonarcloud.io/project/overview?id=radiusward_radiusward-server)):
   quality gate, coverage of new code, duplication and maintainability, on `main` and on pull requests from the
   repository. Pull requests from forks have no token and are not analysed; the floors below still apply to them.

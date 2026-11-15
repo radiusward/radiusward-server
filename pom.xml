@@ -599,6 +599,17 @@
 
     <profiles>
         <profile>
+            <!-- the fast local loop: compile and unit tests only, no integration tests, coverage, format check or
+                 enforcer; ./mvnw -Pquick -T1C verify, or -pl <module> -am for one module -->
+            <id>quick</id>
+            <properties>
+                <skipITs>true</skipITs>
+                <jacoco.skip>true</jacoco.skip>
+                <spotless.check.skip>true</spotless.check.skip>
+                <enforcer.skip>true</enforcer.skip>
+            </properties>
+        </profile>
+        <profile>
             <id>bench</id>
             <modules>
                 <module>testing/benchmarks</module>
