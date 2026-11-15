@@ -89,13 +89,21 @@ class SessionIdentityIT {
                     .containsExactlyInAnyOrder("id-1", "id-2");
             assertThat(sessions).allSatisfy(s -> assertThat(s.firstSeen()).isPositive());
 
-            AdminClient.SessionPage first = admin.sessionPage(0, 2);
-            assertThat(first.sessions()).hasSize(2);
-            AdminClient.SessionPage rest = admin.sessionPage(first.nextSlot(), 2);
-            assertThat(rest.nextSlot()).isEqualTo(-1);
-            assertThat(rest.sessions())
-                    .as("the warm-up session has no user: applied before 6")
-                    .hasSize(1);
+            // pages of two: the three sessions with a user, each once; the warm-up session has a user too when the
+            // cluster activated version 6 before applying it (timing), so a third page may follow
+            List<String> paged = new java.util.ArrayList<>();
+            AdminClient.SessionPage page = admin.sessionPage(0, 2);
+            assertThat(page.sessions()).hasSize(2);
+            for (int pages = 1; ; pages++) {
+                page.sessions().forEach(s -> paged.add(s.attribute(44)));
+                if (page.nextSlot() < 0 || pages == 3) {
+                    break;
+                }
+                page = admin.sessionPage(page.nextSlot(), 2);
+            }
+            assertThat(page.nextSlot()).as("the last page ends the list").isEqualTo(-1);
+            assertThat(paged).doesNotHaveDuplicates().contains("id-1", "id-2", "id-3");
+            assertThat(paged).isSubsetOf("id-1", "id-2", "id-3", "warm-up");
 
             io.radiusward.cluster.node.ClusterNode leader = cluster.awaitLeader();
             assertThat(leader.requestSnapshot()).isTrue(); // the restarted member loads it, then replays the rest
