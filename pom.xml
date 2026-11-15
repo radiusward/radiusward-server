@@ -426,8 +426,9 @@
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${surefire.version}</version>
                     <configuration>
-                        <!-- ITs measure allocation; no JaCoCo agent here -->
-                        <argLine>${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
+                        <!-- ITs measure allocation; no JaCoCo agent here. radiusward.fork: each JVM's own share of the
+                             test ports (Ports) when classes run side by side; Failsafe fills in the fork number here -->
+                        <argLine>${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading -Dradiusward.fork=${surefire.forkNumber}</argLine>
                         <skipITs>${skipITs}</skipITs>
                         <forkCount>${radiusward.it.forks}</forkCount>
                         <reuseForks>true</reuseForks>
@@ -436,8 +437,6 @@
                             <radiusward.require.docker>${radiusward.require.docker}</radiusward.require.docker>
                             <radiusward.reports>${radiusward.reports}</radiusward.reports>
                             <allure.results.directory>${project.build.directory}/allure-results</allure.results.directory>
-                            <!-- each JVM's own share of the test ports (Ports) when classes run side by side -->
-                            <radiusward.fork>${surefire.forkNumber}</radiusward.fork>
                         </systemPropertyVariables>
                     </configuration>
                     <executions>
@@ -680,7 +679,7 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-failsafe-plugin</artifactId>
                         <configuration>
-                            <argLine>@{jacocoItArgLine} ${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading</argLine>
+                            <argLine>@{jacocoItArgLine} ${radiusward.jvm.args} -XX:+EnableDynamicAgentLoading -Dradiusward.fork=${surefire.forkNumber}</argLine>
                             <excludes>
                                 <!-- these measure allocation; the agent would distort them (they run in the normal build) -->
                                 <exclude>**/*AllocationIT.java</exclude>
