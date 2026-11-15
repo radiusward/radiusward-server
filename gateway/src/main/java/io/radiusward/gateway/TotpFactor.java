@@ -55,7 +55,7 @@ final class TotpFactor {
     }
 
     /** The user's TOTP secret among the authorization's restrictions, {@code null} without one. */
-    static String secret(List<AttributeItem> restrictions) {
+    static String secretOf(List<AttributeItem> restrictions) {
         for (AttributeItem item : restrictions) {
             if (item.attribute().equalsIgnoreCase(SECRET)) {
                 return item.value();

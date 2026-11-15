@@ -58,7 +58,7 @@ final class RadsecLink {
             java.net.InetSocketAddress to,
             long route) {
         if (route != UDP) {
-            return reply(toRadsec, route, view, 0, length);
+            return toRadsec != null && reply(toRadsec, route, view, 0, length); // no ring: no RadSec
         }
         buffer.clear().limit(length);
         try {

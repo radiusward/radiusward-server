@@ -234,7 +234,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         } else {
             boolean firstFactor = !authType.equalsIgnoreCase("Accept");
             boolean challenge = false;
-            String secret = TotpFactor.secret(a.restrictions());
+            String secret = TotpFactor.secretOf(a.restrictions());
             if (secret != null) {
                 int second = totp.check(
                         context,
