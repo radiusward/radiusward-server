@@ -67,7 +67,7 @@ scripts/test-images.sh list|tag|hash|inputs|platforms|ref|build [--push] <image>
 | `test-images.yml` | when a test image's inputs change on `main`, weekly, on demand | publishes the prebuilt test images |
 | `release.yml` | pushes to `main` (`edge`) and tags | the container image, the Helm chart and the GitHub release |
 
-Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Actions.
+Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Actions and, weekly, of the Maven dependencies and plugins (minor and patch versions together, each major version on its own).
 
 ## Modules
 
