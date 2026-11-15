@@ -21,7 +21,6 @@ import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLongArray;
 import org.agrona.collections.Int2ObjectHashMap;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -66,7 +65,7 @@ public final class DynamicClients implements AutoCloseable {
     private final int max;
     private final ArrayBlockingQueue<Integer> queue = new ArrayBlockingQueue<>(1024);
     private final Set<Integer> pending = ConcurrentHashMap.newKeySet();
-    private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
+    private final EnumCounters<Counter> counts = new EnumCounters<>(Counter.class);
     private volatile Int2ObjectHashMap<Entry> found = new Int2ObjectHashMap<>();
     private volatile Int2ObjectHashMap<Long> missing = new Int2ObjectHashMap<>();
     private final Thread thread;
@@ -167,7 +166,7 @@ public final class DynamicClients implements AutoCloseable {
         if (pending.add(address)) {
             if (!queue.offer(address)) {
                 pending.remove(address);
-                counts.incrementAndGet(Counter.QUEUE_FULL.ordinal());
+                counts.increment(Counter.QUEUE_FULL);
             }
         }
         return null;
@@ -205,19 +204,19 @@ public final class DynamicClients implements AutoCloseable {
     }
 
     private void lookup(int address) {
-        counts.incrementAndGet(Counter.LOOKUPS.ordinal());
+        counts.increment(Counter.LOOKUPS);
         long now = System.currentTimeMillis();
         InetAddress ip = NasRegistry.inet(address);
         Row row;
         try {
             row = source.lookup(ip);
         } catch (Exception e) {
-            counts.incrementAndGet(Counter.FAILED.ordinal());
+            counts.increment(Counter.FAILED);
             LOG.warn("dynamic NAS lookup of {} failed: {}", ip.getHostAddress(), e.toString());
             return; // asked again with the next packet
         }
         if (row == null || row.secret() == null || row.secret().length == 0) {
-            counts.incrementAndGet(Counter.NOT_FOUND.ordinal());
+            counts.increment(Counter.NOT_FOUND);
             Int2ObjectHashMap<Long> next = new Int2ObjectHashMap<>(missing);
             next.put(address, Long.valueOf(now + negativeMillis));
             missing = next;
@@ -253,7 +252,7 @@ public final class DynamicClients implements AutoCloseable {
             m.remove(address);
             missing = m;
         }
-        counts.incrementAndGet(Counter.FOUND.ordinal());
+        counts.increment(Counter.FOUND);
         LOG.info("dynamic NAS {} ({}) loaded", name, ip.getHostAddress());
     }
 
@@ -267,7 +266,7 @@ public final class DynamicClients implements AutoCloseable {
             Int2ObjectHashMap<Entry> next = new Int2ObjectHashMap<>(found);
             int before = next.size();
             next.values().removeIf(e -> now >= e.expiresAt());
-            counts.addAndGet(Counter.EXPIRED.ordinal(), before - next.size());
+            counts.add(Counter.EXPIRED, before - next.size());
             found = next;
         }
         boolean old = false;
@@ -282,7 +281,7 @@ public final class DynamicClients implements AutoCloseable {
     }
 
     long get(Counter counter) {
-        return counts.get(counter.ordinal());
+        return counts.get(counter);
     }
 
     int size() {
@@ -291,9 +290,7 @@ public final class DynamicClients implements AutoCloseable {
 
     void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String gateway) {
         w.counter("radiusward_gateway_nas_dynamic_total", "NAS entries looked up on demand (nas.dynamic.*)");
-        for (Counter c : Counter.values()) {
-            w.sample(get(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
-        }
+        counts.write(w, gateway);
         w.gauge("radiusward_gateway_nas_dynamic_entries", "Dynamic NAS entries loaded")
                 .sample(size(), "gateway", gateway);
     }

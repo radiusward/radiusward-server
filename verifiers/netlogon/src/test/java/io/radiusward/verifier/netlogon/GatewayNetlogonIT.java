@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.auth.Md4;
 import io.radiusward.common.Profile;
 import io.radiusward.common.config.Config;
 import io.radiusward.gateway.AuthConfig;

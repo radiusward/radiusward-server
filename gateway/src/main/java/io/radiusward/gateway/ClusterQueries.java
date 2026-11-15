@@ -49,17 +49,8 @@ public final class ClusterQueries {
 
         /** An attribute of the identity as text, or {@code null}. */
         public String attribute(int type) {
-            for (int at = 0; at + 2 <= identity.length; ) {
-                int length = identity[at + 1] & 0xFF;
-                if (length < 2 || at + length > identity.length) {
-                    return null;
-                }
-                if ((identity[at] & 0xFF) == type) {
-                    return new String(identity, at + 2, length - 2, java.nio.charset.StandardCharsets.UTF_8);
-                }
-                at += length;
-            }
-            return null;
+            byte[] value = CoaService.raw(identity, type);
+            return value == null ? null : new String(value, java.nio.charset.StandardCharsets.UTF_8);
         }
     }
 

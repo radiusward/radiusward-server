@@ -6,6 +6,7 @@ package io.radiusward.gateway;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.auth.Md4;
 import java.util.Arrays;
 import java.util.HexFormat;
 import javax.crypto.Mac;

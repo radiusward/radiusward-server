@@ -138,8 +138,7 @@ final class TlsCredentials {
 
     /** @param sessionTimeout how long a TLS session may be resumed; {@code null}: the JDK's default */
     static TlsCredentials from(Config config, String prefix, Path chain, Path key, String ca, Duration sessionTimeout) {
-        Revocation revocation = EapTlsConfig.choice(
-                Revocation.class, prefix + "revocation", config.string(prefix + "revocation", "none"));
+        Revocation revocation = config.enumValue(prefix + "revocation", Revocation.class, Revocation.NONE);
         String ocspUrl = config.string(prefix + "ocsp.url", "");
         if (revocation == Revocation.OCSP) {
             ocspTimeouts(config.duration(prefix + "ocsp.timeout", Duration.ofSeconds(2)));

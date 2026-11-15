@@ -9,6 +9,7 @@ import io.radiusward.export.Attributes;
 import io.radiusward.export.Batch;
 import io.radiusward.export.ExportEvent;
 import io.radiusward.export.FencedException;
+import io.radiusward.export.Json;
 import io.radiusward.export.SessionSnapshot;
 import io.radiusward.export.SinkContext;
 import io.radiusward.export.StorageMode;
@@ -209,23 +210,7 @@ public final class FileSink implements AccountingSink {
         } else if (value instanceof Number) {
             out.append(value);
         } else {
-            out.append('"');
-            String s = value.toString();
-            for (int i = 0; i < s.length(); i++) {
-                char ch = s.charAt(i);
-                switch (ch) {
-                    case '"' -> out.append("\\\"");
-                    case '\\' -> out.append("\\\\");
-                    default -> {
-                        if (ch < 0x20) {
-                            out.append(String.format("\\u%04x", (int) ch));
-                        } else {
-                            out.append(ch);
-                        }
-                    }
-                }
-            }
-            out.append('"');
+            Json.quote(out, value.toString());
         }
     }
 

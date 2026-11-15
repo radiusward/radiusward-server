@@ -2,17 +2,17 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.gateway;
+package io.radiusward.auth;
 
 /**
  * MD4 (RFC 1320), which the JDK does not offer to applications. Used only where a protocol fixes it: the NT password
  * hash of MS-CHAP and its hash. Never for anything new.
  */
-final class Md4 {
+public final class Md4 {
 
     private Md4() {}
 
-    static byte[] digest(byte[] message) {
+    public static byte[] digest(byte[] message) {
         long bitLength = (long) message.length * 8;
         int padded = ((message.length + 8) / 64 + 1) * 64;
         byte[] m = new byte[padded];

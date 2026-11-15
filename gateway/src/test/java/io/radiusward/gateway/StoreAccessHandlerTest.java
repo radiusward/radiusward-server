@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.IdentityStore;
+import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
 import io.radiusward.radius.codec.RadiusCode;

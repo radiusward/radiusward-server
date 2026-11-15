@@ -233,7 +233,7 @@ public final class Config {
         }
         String value = string(key);
         try {
-            return Enum.valueOf(type, value.toUpperCase(Locale.ROOT).replace('-', '_'));
+            return Enum.valueOf(type, value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));
         } catch (IllegalArgumentException e) {
             throw invalid(
                     key,

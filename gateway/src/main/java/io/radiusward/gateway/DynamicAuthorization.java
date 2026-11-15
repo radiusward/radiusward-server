@@ -16,9 +16,7 @@ import java.nio.channels.DatagramChannel;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicLongArray;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.Agent;
 import org.agrona.concurrent.ManyToOneConcurrentArrayQueue;
@@ -104,7 +102,7 @@ public final class DynamicAuthorization implements Agent {
     private final RadiusPacket response = new RadiusPacket();
     private final ByteBuffer receive = ByteBuffer.allocateDirect(RadiusPacket.MAX_LENGTH);
     private final UnsafeBuffer received = new UnsafeBuffer(receive);
-    private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
+    private final EnumCounters<Counter> counts = new EnumCounters<>(Counter.class);
     private final MessageHandler radsecHandler = this::onRadsec;
     private DatagramChannel channel;
     private int nextIdentifier;
@@ -313,20 +311,18 @@ public final class DynamicAuthorization implements Agent {
     }
 
     private void increment(Counter c) {
-        counts.incrementAndGet(c.ordinal());
+        counts.increment(c);
     }
 
     long get(Counter c) {
-        return counts.get(c.ordinal());
+        return counts.get(c);
     }
 
     void writeMetrics(PrometheusWriter w, String gateway) {
         w.counter(
                 "radiusward_gateway_coa_requests_total",
                 "CoA and Disconnect-Requests to NAS (RFC 5176): sent, resent and what came of them");
-        for (Counter c : Counter.values()) {
-            w.sample(get(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
-        }
+        counts.write(w, gateway);
     }
 
     @Override

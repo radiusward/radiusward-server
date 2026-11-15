@@ -20,8 +20,6 @@ import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
-import java.util.concurrent.atomic.AtomicLongArray;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
@@ -59,7 +57,7 @@ final class InnerProxy {
     record Result(EapMethod.Inner inner, byte[] reply) {}
 
     private final ProxyConfig config;
-    private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
+    private final EnumCounters<Counter> counts = new EnumCounters<>(Counter.class);
 
     InnerProxy(ProxyConfig config) {
         this.config = config;
@@ -385,19 +383,17 @@ final class InnerProxy {
     }
 
     private void increment(Counter counter) {
-        counts.incrementAndGet(counter.ordinal());
+        counts.increment(counter);
     }
 
     long get(Counter counter) {
-        return counts.get(counter.ordinal());
+        return counts.get(counter);
     }
 
     void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String gateway) {
         w.counter(
                 "radiusward_gateway_inner_proxy_total",
                 "Inner tunnel credentials checked by the home servers of their realms");
-        for (Counter c : Counter.values()) {
-            w.sample(get(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
-        }
+        counts.write(w, gateway);
     }
 }

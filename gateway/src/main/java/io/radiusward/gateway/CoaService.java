@@ -189,7 +189,10 @@ public final class CoaService {
         }
     }
 
-    /** The value of the first attribute of this type, {@code null} if there is none. */
+    /**
+     * The value of the first attribute of this type in a list of RADIUS attributes, {@code null} if there is none or the
+     * list is malformed before it.
+     */
     static byte[] raw(byte[] attributes, int type) {
         for (int at = 0; at + 2 <= attributes.length; ) {
             int length = attributes[at + 1] & 0xFF;
@@ -285,35 +288,22 @@ public final class CoaService {
                 return null;
             }
         }
-        return ipv4(nas.network());
+        return NasRegistry.inet(nas.network());
     }
 
+    /** The session's NAS-IP-Address, else its NAS-IPv6-Address; {@code null} if it has neither. */
     private static InetAddress nasIp(ClusterQueries.Session s) {
-        byte[] id = s.identity();
-        for (int at = 0; at + 2 <= id.length; at += id[at + 1] & 0xFF) {
-            int length = id[at + 1] & 0xFF;
-            if (length < 2) {
-                return null;
-            }
-            if (((id[at] & 0xFF) == NAS_IP_ADDRESS && length == 6)
-                    || ((id[at] & 0xFF) == NAS_IPV6_ADDRESS && length == 18)) {
-                try {
-                    return InetAddress.getByAddress(java.util.Arrays.copyOfRange(id, at + 2, at + length));
-                } catch (UnknownHostException e) {
-                    return null;
-                }
-            }
+        byte[] ip = raw(s.identity(), NAS_IP_ADDRESS);
+        if (ip == null || ip.length != 4) {
+            ip = raw(s.identity(), NAS_IPV6_ADDRESS);
         }
-        return null;
-    }
-
-    private static InetAddress ipv4(int address) {
-        try {
-            return InetAddress.getByAddress(
-                    new byte[] {(byte) (address >>> 24), (byte) (address >>> 16), (byte) (address >>> 8), (byte) address
-                    });
-        } catch (UnknownHostException e) {
+        if (ip == null || (ip.length != 4 && ip.length != 16)) {
             return null;
+        }
+        try {
+            return InetAddress.getByAddress(ip);
+        } catch (UnknownHostException e) {
+            return null; // not reached: 4 or 16 bytes
         }
     }
 

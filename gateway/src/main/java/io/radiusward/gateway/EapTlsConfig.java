@@ -15,10 +15,8 @@ import java.security.KeyFactory;
 import java.security.PrivateKey;
 import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.List;
-import java.util.Locale;
 
 /**
  * The TLS side of EAP-TLS, PEAP and TTLS ({@code auth.eap.tls.*}, ADR 0028, 0033): the server's certificate chain and
@@ -77,28 +75,14 @@ record EapTlsConfig(
                 fragment,
                 config.integer("auth.eap.tls.max.message", 65_536),
                 config.bool("auth.eap.tls.require.user", false),
-                choice(
-                        CertificateIdentity.Check.class,
-                        "auth.eap.tls.identity",
-                        config.string("auth.eap.tls.identity", "match")));
+                config.enumValue(
+                        "auth.eap.tls.identity", CertificateIdentity.Check.class, CertificateIdentity.Check.MATCH));
     }
 
     /** A context from these files, without revocation checks or reloading (tests, tools). */
     static TlsCredentials context(Path chainFile, Path keyFile, Path caFile) {
         return new TlsCredentials(
                 chainFile, keyFile, caFile, List.of(), TlsCredentials.Revocation.NONE, null, false, Duration.ZERO);
-    }
-
-    static <E extends Enum<E>> E choice(Class<E> type, String key, String value) {
-        try {
-            return Enum.valueOf(type, value.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw new ConfigException(key + ": one of "
-                    + Arrays.stream(type.getEnumConstants())
-                            .map(c -> c.name().toLowerCase(Locale.ROOT))
-                            .toList()
-                    + ", got " + value);
-        }
     }
 
     /** An unencrypted PKCS#8 key ({@code BEGIN PRIVATE KEY}): RSA, EC or EdDSA. */

@@ -5,6 +5,7 @@
 package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.auth.Md4;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;

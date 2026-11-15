@@ -7,6 +7,7 @@ package io.radiusward.gateway;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.auth.Md4;
 import io.radiusward.gateway.EapMethod.Credentials;
 import io.radiusward.gateway.EapMethod.Step;
 import java.math.BigInteger;

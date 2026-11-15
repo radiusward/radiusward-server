@@ -19,7 +19,6 @@ import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Properties;
 
 /**
@@ -117,8 +116,8 @@ final class UsageCounters {
         for (String raw : names) {
             String name = raw.trim();
             String prefix = "auth.counter." + name + ".";
-            Kind kind = choice(Kind.class, prefix + "kind", config.string(prefix + "kind", "time"));
-            Reset reset = choice(Reset.class, prefix + "reset", config.string(prefix + "reset", "daily"));
+            Kind kind = config.enumValue(prefix + "kind", Kind.class, Kind.TIME);
+            Reset reset = config.enumValue(prefix + "reset", Reset.class, Reset.DAILY);
             String query = config.string(prefix + "query", kind == Kind.TIME ? TIME_QUERY : OCTETS_QUERY);
             String reply = config.string(prefix + "reply", "").trim();
             counters.add(new Counter(
@@ -156,14 +155,6 @@ final class UsageCounters {
             return zone.isEmpty() ? ZoneId.systemDefault() : ZoneId.of(zone);
         } catch (java.time.DateTimeException e) {
             throw new ConfigException("auth.time.zone: unknown zone " + zone, e);
-        }
-    }
-
-    private static <E extends Enum<E>> E choice(Class<E> type, String key, String value) {
-        try {
-            return Enum.valueOf(type, value.trim().toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw new ConfigException(key + ": unknown value " + value, e);
         }
     }
 

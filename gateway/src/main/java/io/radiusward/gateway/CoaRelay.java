@@ -16,12 +16,10 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.DatagramChannel;
 import java.util.Arrays;
-import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLongArray;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -61,7 +59,7 @@ final class CoaRelay implements AutoCloseable {
     private final ProxyConfig config;
     private final CoaService coa;
     private final String host;
-    private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
+    private final EnumCounters<Counter> counts = new EnumCounters<>(Counter.class);
     /** Answers sent and requests under way, by home server address, identifier and authenticator. */
     private final Map<String, Answer> recent = new ConcurrentHashMap<>();
 
@@ -217,18 +215,16 @@ final class CoaRelay implements AutoCloseable {
     }
 
     private void increment(Counter counter) {
-        counts.incrementAndGet(counter.ordinal());
+        counts.increment(counter);
     }
 
     long get(Counter counter) {
-        return counts.get(counter.ordinal());
+        return counts.get(counter);
     }
 
     void writeMetrics(PrometheusWriter w, String gateway) {
         w.counter("radiusward_gateway_coa_relay_total", "CoA and Disconnect-Requests from home servers, relayed");
-        for (Counter c : Counter.values()) {
-            w.sample(get(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
-        }
+        counts.write(w, gateway);
     }
 
     @Override

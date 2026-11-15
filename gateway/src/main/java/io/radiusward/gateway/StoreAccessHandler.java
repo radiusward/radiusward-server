@@ -7,6 +7,7 @@ package io.radiusward.gateway;
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.CredentialVerifier;
 import io.radiusward.auth.IdentityStore;
+import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
 import io.radiusward.common.management.PrometheusWriter;

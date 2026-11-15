@@ -167,14 +167,8 @@ record EapConfig(
         if (inner.contains(EapTls.TYPE) && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException("auth.eap.peap.inner: tls needs auth.eap.tls.ca, the CAs of client certificates");
         }
-        String binding =
-                config.string("auth.eap.peap.crypto.binding", "optional").trim();
-        Peap.Binding peapBinding;
-        try {
-            peapBinding = Peap.Binding.valueOf(binding.toUpperCase(Locale.ROOT));
-        } catch (IllegalArgumentException e) {
-            throw new ConfigException("auth.eap.peap.crypto.binding: off, optional or required, got " + binding, e);
-        }
+        Peap.Binding peapBinding =
+                config.enumValue("auth.eap.peap.crypto.binding", Peap.Binding.class, Peap.Binding.OPTIONAL);
         boolean peapCertificate = config.bool("auth.eap.peap.client.certificate", false);
         if (peapCertificate && config.string("auth.eap.tls.ca", "").isBlank()) {
             throw new ConfigException(

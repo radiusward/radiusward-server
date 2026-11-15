@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicLongArray;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -40,7 +39,7 @@ final class StoreSweep implements Runnable {
     private final CoaConfig.Sweep config;
     private final CoaService coa;
     private final StoreAccessHandler stores;
-    private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
+    private final EnumCounters<Counter> counts = new EnumCounters<>(Counter.class);
     /** Reply items of every user at the previous sweep: a change since is sent as CoA. */
     private Map<String, List<AttributeItem>> previous = new HashMap<>();
 
@@ -146,19 +145,17 @@ final class StoreSweep implements Runnable {
     }
 
     private void increment(Counter c) {
-        counts.incrementAndGet(c.ordinal());
+        counts.increment(c);
     }
 
     long get(Counter c) {
-        return counts.get(c.ordinal());
+        return counts.get(c);
     }
 
     void writeMetrics(PrometheusWriter w, String gateway) {
         w.counter(
                 "radiusward_gateway_store_sweep_total",
                 "Store sweeps, users looked up again and what was done (ADR 0036)");
-        for (Counter c : Counter.values()) {
-            w.sample(get(c), "gateway", gateway, "result", c.name().toLowerCase(java.util.Locale.ROOT));
-        }
+        counts.write(w, gateway);
     }
 }
