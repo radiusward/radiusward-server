@@ -21,10 +21,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -32,16 +28,12 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 import org.agrona.collections.IntHashSet;
 import org.agrona.collections.Object2LongHashMap;
 import org.agrona.collections.Object2ObjectHashMap;
-import org.agrona.collections.ObjectHashSet;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -58,16 +50,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private static final Logger LOG = LogManager.getLogger(StoreAccessHandler.class);
     private static final int USER_NAME = 1;
     private static final int CALLING_STATION_ID = 31;
-    private static final Set<String> COMPARISONS = Set.of("==", "!=", "=~", "!~", "<", ">", "<=", ">=");
-    private static final DateTimeFormatter[] DATES = {
-        DateTimeFormatter.ofPattern("MMM d yyyy HH:mm:ss", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("MMM d yyyy HH:mm", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("d MMM yyyy HH:mm:ss", Locale.ENGLISH)
-    };
-    private static final DateTimeFormatter[] DAYS = {
-        DateTimeFormatter.ofPattern("MMM d yyyy", Locale.ENGLISH),
-        DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
-    };
 
     private volatile AuthStores stores; // replaced by a reload (ADR 0054)
     private final java.util.concurrent.ConcurrentHashMap<String, StoreLookups> lookups =
@@ -80,7 +62,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
     private volatile long ttlMillis;
-    private final ObjectHashSet<String> warned = new ObjectHashSet<>();
+    private final OnceLogger once = new OnceLogger(LOG);
+    private final CheckItems checkItems;
     /** Per NAS entry with a vendor filter; replaced as a whole by a reload, otherwise only read. */
     private volatile Map<String, AtomicLong> filtered = Map.of();
     /** Raised by a reload: workers then drop their caches. */
@@ -153,6 +136,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.stores = stores;
         this.dictionary = dictionary;
         this.clockMillis = clockMillis;
+        this.checkItems = new CheckItems(dictionary, clockMillis, () -> zone, once);
         this.ttlMillis = stores.cacheTtl().toMillis();
         new java.security.SecureRandom().nextBytes(verifierSalt);
         this.filtered = counters(stores, Map.of());
@@ -395,7 +379,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 context,
                 "user found in store ",
                 found.store().isEmpty() ? "(none, certificate or tunnel)" : found.store());
-        String authType = checks(found.user().check(), request, passwords);
+        String authType = checkItems.checks(found.user().check(), request, passwords);
         if (authType == null) {
             because(context, "a check item of the user does not hold (Expiration or a comparison)", "");
             return Authorization.of(REJECT);
@@ -403,7 +387,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         String limit = simultaneousUse(found.user().check());
         for (UserRecord.Group group : found.user().groups()) {
             List<AttributeItem> groupPasswords = new ArrayList<>();
-            String groupAuthType = checks(group.check(), request, groupPasswords);
+            String groupAuthType = checkItems.checks(group.check(), request, groupPasswords);
             if (groupAuthType == null) {
                 note(context, "group does not apply: ", group.name());
                 continue; // the group's conditions do not hold: it does not apply
@@ -432,7 +416,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         List<AttributeItem> restrictions = new ArrayList<>();
         collectRestrictions(found.user().check(), restrictions);
         for (UserRecord.Group group : found.user().groups()) {
-            if (checks(group.check(), request, new ArrayList<>()) != null) {
+            if (checkItems.checks(group.check(), request, new ArrayList<>()) != null) {
                 collectRestrictions(group.check(), restrictions);
             }
         }
@@ -482,111 +466,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     // ---- check items -------------------------------------------------------------------------
-
-    /**
-     * Evaluates check items; collects passwords.
-     *
-     * @return the {@code Auth-Type} ("" if none), or {@code null} if a condition fails
-     */
-    private String checks(List<AttributeItem> items, RadiusPacket request, List<AttributeItem> passwords) {
-        String authType = "";
-        for (AttributeItem item : items) {
-            String name = item.attribute();
-            if (PasswordCheck.isPassword(name)
-                    || name.equalsIgnoreCase("NT-Password")
-                    || name.equalsIgnoreCase("LM-Password")) {
-                passwords.add(item);
-            } else if (name.equalsIgnoreCase("Auth-Type")) {
-                authType = item.value();
-            } else if (name.equalsIgnoreCase("Expiration")) {
-                Instant expires = date(item.value());
-                if (expires == null
-                        || !Instant.ofEpochMilli(clockMillis.getAsLong()).isBefore(expires)) {
-                    return null;
-                }
-            } else if (name.equalsIgnoreCase(SIMULTANEOUS_USE)) {
-                continue; // applied after authentication, through the cluster (#limit)
-            } else if (COMPARISONS.contains(item.op()) && !compare(item, request)) {
-                return null;
-            }
-            // other ':=', '=', '+=' items are configuration items without meaning here
-        }
-        return authType;
-    }
-
-    private boolean compare(AttributeItem item, RadiusPacket request) {
-        AttributeDef def = dictionary.find(item.attribute());
-        if (def == null || def.vendorId() != 0) {
-            warnOnce(
-                    "compare:" + item.attribute(),
-                    "check item {} cannot be compared (unknown or vendor-specific):" + " the condition fails",
-                    item.attribute());
-            return false;
-        }
-        int at = request.findAttribute(def.number());
-        String actual = at < 0
-                ? null
-                : AttributeText.decode(
-                        def, request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
-        String expected = item.value();
-        try {
-            return switch (item.op()) {
-                case "==" -> expected.equals(actual);
-                case "!=" -> !expected.equals(actual);
-                case "=~" ->
-                    actual != null && Pattern.compile(expected).matcher(actual).find();
-                case "!~" ->
-                    actual == null || !Pattern.compile(expected).matcher(actual).find();
-                default -> numeric(item.op(), actual, expected);
-            };
-        } catch (PatternSyntaxException e) {
-            warnOnce("regex:" + expected, "check item {}: invalid pattern, the condition fails", item.attribute());
-            return false;
-        }
-    }
-
-    private static boolean numeric(String op, String actual, String expected) {
-        try {
-            long a = Long.parseLong(actual);
-            long e = Long.parseLong(expected);
-            return switch (op) {
-                case "<" -> a < e;
-                case ">" -> a > e;
-                case "<=" -> a <= e;
-                default -> a >= e;
-            };
-        } catch (NumberFormatException | NullPointerException ex) {
-            return false;
-        }
-    }
-
-    private Instant date(String text) {
-        String t = text.trim().replaceAll("\\s+", " ");
-        try {
-            return Instant.parse(t);
-        } catch (DateTimeParseException ignored) {
-            // not ISO-8601
-        }
-        for (DateTimeFormatter f : DATES) {
-            try {
-                return LocalDateTime.parse(t, f).atZone(zone).toInstant();
-            } catch (DateTimeParseException ignored) {
-                // next format
-            }
-        }
-        for (DateTimeFormatter f : DAYS) {
-            try {
-                return LocalDate.parse(t, f).atStartOfDay(zone).toInstant();
-            } catch (DateTimeParseException ignored) {
-                // next format
-            }
-        }
-        try {
-            return LocalDate.parse(t).atStartOfDay(zone).toInstant();
-        } catch (DateTimeParseException e) {
-            return null; // fail closed
-        }
-    }
 
     // ---- EAP (RFC 3748, RFC 3579; ADR 0026) -----------------------------------------------------
 
@@ -885,7 +764,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         for (AttributeItem item : a.restrictions()) {
             String name = item.attribute();
             if (name.equalsIgnoreCase("Expiration")) {
-                Instant expires = date(item.value());
+                Instant expires = checkItems.date(item.value());
                 if (expires == null || !now.isBefore(expires)) {
                     because(context, "expired: ", item.value());
                     return REJECT;
@@ -1222,7 +1101,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             @Override
             public boolean inGroup(String group) {
                 for (UserRecord.Group g : user.groups()) {
-                    if (g.name().equalsIgnoreCase(group) && checks(g.check(), request, new ArrayList<>()) != null) {
+                    if (g.name().equalsIgnoreCase(group)
+                            && checkItems.checks(g.check(), request, new ArrayList<>()) != null) {
                         return true;
                     }
                 }
@@ -1700,7 +1580,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     // ---- simultaneous use ----------------------------------------------------------------------
 
-    private static final String SIMULTANEOUS_USE = "Simultaneous-Use";
+    static final String SIMULTANEOUS_USE = "Simultaneous-Use";
 
     private static String simultaneousUse(List<AttributeItem> check) {
         for (AttributeItem item : check) {
@@ -2023,22 +1903,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 .getStringWithoutLengthUtf8(at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
     }
 
-    private boolean firstWarning(String key) {
-        synchronized (warned) { // rare: only for problems that are logged once
-            return warned.add(key);
-        }
-    }
-
     private void warnOnce(String key, String message, Object detail) {
-        if (firstWarning(key)) {
-            LOG.warn(message, detail);
-        }
+        once.warn(key, message, detail);
     }
 
     private void warnOnce(String key, String message, Object a, Object b) {
-        if (firstWarning(key)) {
-            LOG.warn(message, a, b);
-        }
+        once.warn(key, message, a, b);
     }
 
     @Override
