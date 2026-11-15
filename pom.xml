@@ -57,8 +57,8 @@
         <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
 
         <!-- runtime -->
-        <agrona.version>2.7.0</agrona.version><!-- keep aligned with the Agrona version Aeron uses -->
-        <aeron.version>1.54.0</aeron.version>
+        <agrona.version>2.7.1</agrona.version><!-- keep aligned with the Agrona version Aeron uses -->
+        <aeron.version>1.54.2</aeron.version>
         <log4j.version>2.26.1</log4j.version>
         <disruptor.version>4.0.0</disruptor.version><!-- 4.x uses VarHandles: no sun.misc.Unsafe warnings on Java 25 -->
         <sbe.version>1.42.0</sbe.version><!-- build time only -->
@@ -73,7 +73,7 @@
         <pgjdbc.version>42.7.14</pgjdbc.version>
         <testcontainers.version>2.0.5</testcontainers.version>
         <!-- test-only reference for password hash checks; never a runtime dependency -->
-        <bouncycastle.version>1.84</bouncycastle.version>
+        <bouncycastle.version>1.87</bouncycastle.version>
         <!-- CI sets true: tests that need Docker fail instead of being skipped -->
         <radiusward.require.docker>false</radiusward.require.docker>
         <jqwik.version>1.10.2</jqwik.version>
@@ -81,7 +81,7 @@
         <jmh.version>1.37</jmh.version>
 
         <!-- plugins -->
-        <compiler-plugin.version>3.15.0</compiler-plugin.version>
+        <compiler-plugin.version>3.16.0</compiler-plugin.version>
         <surefire.version>3.6.1</surefire.version>
         <jar-plugin.version>3.5.1</jar-plugin.version>
         <resources-plugin.version>3.5.0</resources-plugin.version>
@@ -91,8 +91,8 @@
         <site-plugin.version>3.22.0</site-plugin.version>
         <enforcer.version>3.7.0</enforcer.version>
         <jacoco.version>0.8.16</jacoco.version>
-        <exec-plugin.version>3.6.4</exec-plugin.version>
-        <build-helper.version>3.7.0</build-helper.version>
+        <exec-plugin.version>3.7.0</exec-plugin.version>
+        <build-helper.version>3.8.0</build-helper.version>
         <shade-plugin.version>3.6.2</shade-plugin.version>
         <spotless.version>3.11.0</spotless.version>
         <palantir-java-format.version>2.103.0</palantir-java-format.version>
