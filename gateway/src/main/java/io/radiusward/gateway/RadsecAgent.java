@@ -102,7 +102,7 @@ final class RadsecAgent implements Agent {
     private final RadsecPeers peers;
     private final DtlsServer dtls; // null without DTLS
     private Selector selector;
-    private volatile int open;
+    private final java.util.concurrent.atomic.AtomicInteger open = new java.util.concurrent.atomic.AtomicInteger();
     private volatile boolean bound;
     private long now;
     private long nextHousekeeping;
@@ -331,7 +331,7 @@ final class RadsecAgent implements Agent {
             engine.beginHandshake();
             c.key = channel.register(selector, SelectionKey.OP_READ, c);
             connections[index] = c;
-            open++;
+            open.incrementAndGet();
             increment(Counter.CONNECTIONS_ACCEPTED);
         }
     }
@@ -357,7 +357,7 @@ final class RadsecAgent implements Agent {
             c.nas = nasIndex;
             c.key = channel.register(selector, SelectionKey.OP_READ, c);
             connections[index] = c;
-            open++;
+            open.incrementAndGet();
             tcpCounts.incrementAndGet(Counter.CONNECTIONS_ACCEPTED.ordinal());
         }
     }
@@ -612,7 +612,7 @@ final class RadsecAgent implements Agent {
             connectedNas.decrementAndGet(c.nas);
         }
         generations[c.index] = (c.generation + 1) & 0x7FFF_FFFF;
-        open--;
+        open.decrementAndGet();
         c.counters(this).incrementAndGet(Counter.CONNECTIONS_CLOSED.ordinal());
         try {
             if (c.engine == null) {
@@ -659,7 +659,7 @@ final class RadsecAgent implements Agent {
     }
 
     int openConnections() {
-        return open;
+        return open.get();
     }
 
     /** The server certificate of RadSec and DTLS; {@code null} without one. */
@@ -673,7 +673,7 @@ final class RadsecAgent implements Agent {
             w.sample(get(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
         }
         w.gauge("radiusward_gateway_radsec_connections", "Open RadSec connections")
-                .sample(open, "gateway", gateway);
+                .sample(open.get(), "gateway", gateway);
         if (tcpAuth != null) {
             w.counter("radiusward_gateway_tcp_total", "Plain TCP connections and packets by what happened to them");
             for (Counter c : Counter.values()) {

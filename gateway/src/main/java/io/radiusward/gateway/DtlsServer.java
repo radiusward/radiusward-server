@@ -56,7 +56,7 @@ final class DtlsServer {
     private DatagramChannel channel;
     private ByteBuffer datagramIn;
     private ByteBuffer datagramOut;
-    private volatile int open;
+    private final java.util.concurrent.atomic.AtomicInteger openCount = new java.util.concurrent.atomic.AtomicInteger();
     private long now;
 
     /**
@@ -217,7 +217,7 @@ final class DtlsServer {
         engine.beginHandshake();
         associations[index] = a;
         byAddress.put(from, a);
-        open++;
+        openCount.incrementAndGet();
         counts.incrementAndGet(Counter.CONNECTIONS_ACCEPTED.ordinal());
         return a;
     }
@@ -409,7 +409,7 @@ final class DtlsServer {
             connectedNas.decrementAndGet(a.nas);
         }
         generations[a.index] = (a.generation + 1) & 0x7FFF_FFFF;
-        open--;
+        openCount.decrementAndGet();
         counts.incrementAndGet(Counter.CONNECTIONS_CLOSED.ordinal());
         try {
             a.engine.closeOutbound();
@@ -429,7 +429,7 @@ final class DtlsServer {
     }
 
     int openAssociations() {
-        return open;
+        return openCount.get();
     }
 
     /** Closes every association (with a close_notify) and the socket. */
