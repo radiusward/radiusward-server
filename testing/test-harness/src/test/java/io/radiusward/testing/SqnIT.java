@@ -19,9 +19,6 @@ import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.tools.admin.AdminClient;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -47,7 +44,7 @@ class SqnIT {
     Path dir;
 
     private LocalCluster cluster;
-    private DatagramChannel nas;
+    private final FakeNas nas = new FakeNas();
     private int identifier;
 
     @AfterEach
@@ -83,22 +80,18 @@ class SqnIT {
 
     @Test
     void oneSequencePerSubscriberAcrossGatewaysAndALeaderChange() throws Exception {
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
         Gateway g0 = cluster.startGateway(1, 0, LocalCluster.registry(), auth, d -> sqnHandler());
         Gateway g1 = cluster.startGateway(2, 0, LocalCluster.registry(), auth, d -> sqnHandler());
         cluster.awaitLeader();
         cluster.awaitGatewaysConnected();
-        exchange(g0.radiusPort(), warmUp()); // the log needs a recording before members report their versions
+        nas.reply(g0.radiusPort(), warmUp()); // the log needs a recording before members report their versions
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(30),
@@ -140,7 +133,7 @@ class SqnIT {
         int ma = enc.messageAuthenticator();
         int length = enc.finish();
         new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, SECRET);
-        byte[] reply = exchange(gateway.authPort(), Arrays.copyOf(buffer.byteArray(), length));
+        byte[] reply = nas.reply(gateway.authPort(), Arrays.copyOf(buffer.byteArray(), length));
         assertThat(reply[0] & 0xFF).isEqualTo(RadiusCode.ACCESS_ACCEPT);
         RadiusPacket p = new RadiusPacket();
         p.wrap(new UnsafeBuffer(reply), 0, reply.length);
@@ -160,27 +153,5 @@ class SqnIT {
         int length = enc.finish();
         new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
         return Arrays.copyOf(buffer.byteArray(), length);
-    }
-
-    /** Sends like a NAS (retransmitting from one source port) and returns the reply to this identifier. */
-    private byte[] exchange(int port, byte[] request) throws Exception {
-        if (nas == null) {
-            nas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
-            nas.configureBlocking(false);
-        }
-        InetSocketAddress target = new InetSocketAddress("127.0.0.1", port);
-        ByteBuffer in = ByteBuffer.allocate(4096);
-        for (int attempt = 0; attempt < 8; attempt++) {
-            nas.send(ByteBuffer.wrap(request), target);
-            long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
-            while (System.nanoTime() < deadline) {
-                in.clear();
-                if (nas.receive(in) != null && in.get(1) == request[1]) {
-                    return Arrays.copyOf(in.array(), in.position());
-                }
-                Thread.sleep(2);
-            }
-        }
-        throw new AssertionError("no reply");
     }
 }

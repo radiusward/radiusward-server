@@ -53,7 +53,7 @@ class StoreSweepIT {
     private LocalCluster cluster;
     private DatagramChannel fakeNas;
     private final List<byte[]> requests = new CopyOnWriteArrayList<>();
-    private final LocalClusterIT nas = new LocalClusterIT();
+    private final FakeNas nas = new FakeNas();
 
     @AfterEach
     void close() throws Exception {
@@ -77,15 +77,11 @@ class StoreSweepIT {
                 """);
         fakeNas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
         CompletableFuture.runAsync(this::answer);
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         Config settings = Config.of(Map.ofEntries(
                 Map.entry("auth.stores", "local"),
                 Map.entry("auth.store.local.type", "file"),
@@ -113,16 +109,16 @@ class StoreSweepIT {
         cluster.awaitLeader();
         cluster.awaitGatewaysConnected();
         int port = gateway.radiusPort();
-        nas.exchange(port, SessionIdentityIT.start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
+        nas.ack(port, SessionIdentityIT.start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(30),
                     "state version 7",
                     () -> admin.state().activeVersion() >= 7);
         }
-        nas.exchange(port, SessionIdentityIT.start(1, "s-alice", "alice", "aa-bb-cc-00-00-01"));
-        nas.exchange(port, SessionIdentityIT.start(2, "s-bob", "bob", "aa-bb-cc-00-00-02"));
-        nas.exchange(port, SessionIdentityIT.start(3, "s-carol", "carol", "aa-bb-cc-00-00-03"));
+        nas.ack(port, SessionIdentityIT.start(1, "s-alice", "alice", "aa-bb-cc-00-00-01"));
+        nas.ack(port, SessionIdentityIT.start(2, "s-bob", "bob", "aa-bb-cc-00-00-02"));
+        nas.ack(port, SessionIdentityIT.start(3, "s-carol", "carol", "aa-bb-cc-00-00-03"));
         long before = sweeps(gateway); // sweeps run from the start: one now may have begun before the sessions
         LocalCluster.await(Duration.ofSeconds(10), "a whole sweep that saw them", () -> sweeps(gateway) >= before + 2);
         assertThat(requests).as("nothing changed yet").isEmpty();

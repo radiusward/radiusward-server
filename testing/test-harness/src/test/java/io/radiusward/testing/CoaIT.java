@@ -72,7 +72,7 @@ class CoaIT {
     private DatagramChannel fakeNas;
     private final AtomicBoolean answering = new AtomicBoolean(true);
     private final List<byte[]> requests = new CopyOnWriteArrayList<>();
-    private final LocalClusterIT nas = new LocalClusterIT();
+    private final FakeNas nas = new FakeNas();
 
     @AfterEach
     void close() throws Exception {
@@ -98,15 +98,11 @@ class CoaIT {
         fakeNas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
         int nasPort = ((InetSocketAddress) fakeNas.getLocalAddress()).getPort();
         CompletableFuture.runAsync(this::answer);
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         CoaConfig coa = CoaConfig.from(Config.of(Map.of(
                 "coa.enabled",
                 "true",
@@ -144,7 +140,7 @@ class CoaIT {
         }
         cluster.awaitLeader();
         cluster.awaitGatewaysConnected();
-        nas.exchange(gateway.radiusPort(), SessionIdentityIT.start(99, "warm-up", "nobody", "aa-bb-cc-00-00-99"));
+        nas.ack(gateway.radiusPort(), SessionIdentityIT.start(99, "warm-up", "nobody", "aa-bb-cc-00-00-99"));
         try (io.radiusward.tools.admin.AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(20),
@@ -212,9 +208,9 @@ class CoaIT {
     void disconnectAndChangeThroughTheApiAndAdmin() throws Exception {
         Gateway gateway = start(RadsecConfig.DISABLED);
         int port = gateway.radiusPort();
-        nas.exchange(port, SessionIdentityIT.start(1, "s-alice-1", "alice", "aa-bb-cc-00-00-01"));
-        nas.exchange(port, SessionIdentityIT.start(2, "s-alice-2", "alice", "aa-bb-cc-00-00-02"));
-        nas.exchange(port, SessionIdentityIT.start(3, "s-bob", "bob", "aa-bb-cc-00-00-03"));
+        nas.ack(port, SessionIdentityIT.start(1, "s-alice-1", "alice", "aa-bb-cc-00-00-01"));
+        nas.ack(port, SessionIdentityIT.start(2, "s-alice-2", "alice", "aa-bb-cc-00-00-02"));
+        nas.ack(port, SessionIdentityIT.start(3, "s-bob", "bob", "aa-bb-cc-00-00-03"));
 
         assertThat(post("/coa/disconnect?user=alice", "", "wrong-token").statusCode())
                 .isEqualTo(401);
@@ -385,7 +381,7 @@ class CoaIT {
                         "realm.partner.name", "partner.example",
                         "realm.partner.pool", "partner"));
         assertThat(gateway.coaRelayPort()).isPositive();
-        nas.exchange(gateway.radiusPort(), accounting(7, "s-erin", "erin@partner.example", UDP_SECRET));
+        nas.ack(gateway.radiusPort(), accounting(7, "s-erin", "erin@partner.example", UDP_SECRET));
 
         try (DatagramChannel home = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0))) {
             home.socket().setSoTimeout(5_000);

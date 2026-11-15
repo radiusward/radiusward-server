@@ -84,15 +84,11 @@ class AkaEapolIT {
                 262011000000006  SIM-Ki := 0x%1$s, SIM-OPc := 0x%2$s
                 262011000000007  %4$s
                 """.formatted(KI, OPC, OP, StoredTriplets.items()));
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         Config settings = Config.of(Map.of(
                 "auth.stores", "sims",
                 "auth.store.sims.type", "file",

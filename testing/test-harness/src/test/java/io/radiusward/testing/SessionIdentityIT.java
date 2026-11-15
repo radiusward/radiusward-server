@@ -42,7 +42,7 @@ class SessionIdentityIT {
     Path dir;
 
     private LocalCluster cluster;
-    private final LocalClusterIT nas = new LocalClusterIT();
+    private final FakeNas nas = new FakeNas();
 
     @AfterEach
     void close() throws Exception {
@@ -55,30 +55,26 @@ class SessionIdentityIT {
     @Test
     void sessionsAreNamedInTheAdminReports() throws Exception {
         // members report their supported version with the log purger's position reports (ADR 0005)
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         cluster.startGateway(1, LocalCluster.freePort());
         cluster.awaitLeader();
         cluster.awaitGatewaysConnected();
-        nas.exchange(cluster.gateway(0).radiusPort(), start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
+        nas.ack(cluster.gateway(0).radiusPort(), start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(20),
                     "state version 7 active",
                     () -> admin.state().activeVersion() >= 7);
             int port = cluster.gateway(0).radiusPort();
-            nas.exchange(port, start(1, "id-1", "Alice", "aa-bb-cc-00-00-01")); // the warm-up came before 7
-            nas.exchange(port, start(2, "id-2", "alice", "aa-bb-cc-00-00-02"));
-            nas.exchange(port, start(3, "id-3", "bob", "aa-bb-cc-00-00-03"));
+            nas.ack(port, start(1, "id-1", "Alice", "aa-bb-cc-00-00-01")); // the warm-up came before 7
+            nas.ack(port, start(2, "id-2", "alice", "aa-bb-cc-00-00-02"));
+            nas.ack(port, start(3, "id-3", "bob", "aa-bb-cc-00-00-03"));
 
-            long[] key = LocalClusterIT.sessionKey("id-1");
+            long[] key = AccountingRequest.sessionKey("id-1");
             AdminClient.Session one = admin.session(key[0], key[1]);
             assertThat(one.attribute(44)).isEqualTo("id-1");
             assertThat(one.attribute(1)).isEqualTo("Alice");

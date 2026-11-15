@@ -229,7 +229,7 @@ class LogReplicaSpikeIT {
                                             new InetSocketAddress(
                                                     "127.0.0.1",
                                                     cluster.gateway(1).radiusPort())),
-                                    LocalClusterIT.SECRET,
+                                    FakeNas.SECRET,
                                     10,
                                     rate,
                                     rate,

@@ -38,15 +38,11 @@ class ClusterSeedIT {
 
     @Test
     void aMemberWithALostVolumeIsSeededAndCatchesUp() throws Exception {
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                2,
-                LocalCluster.freePortBase(3),
-                new int[2],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))) {
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(2)
+                .purge(new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
             LogPurgeIT.load(cluster, 0);
@@ -101,15 +97,11 @@ class ClusterSeedIT {
 
     @Test
     void withoutASnapshotTheMemberCatchesUpFromTheLog() throws Exception {
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                2,
-                LocalCluster.freePortBase(3),
-                new int[2],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                LogPurgeConfig.DEFAULTS)) {
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(2)
+                .purge(LogPurgeConfig.DEFAULTS)
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
             LogPurgeIT.load(cluster, 0);
@@ -130,15 +122,11 @@ class ClusterSeedIT {
 
     @Test
     void withoutAClusterTheMemberStartsEmpty() throws Exception {
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                LogPurgeConfig.DEFAULTS)) {
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(0)
+                .purge(LogPurgeConfig.DEFAULTS)
+                .start()) {
             ClusterNodeConfig config = cluster.nodeConfig(0);
             for (int i = 0; i < 3; i++) {
                 cluster.stopNode(i);

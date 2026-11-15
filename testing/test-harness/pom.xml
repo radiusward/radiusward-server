@@ -60,10 +60,9 @@
             <scope>test</scope>
         </dependency>
         <dependency>
-            <!-- Reports: steps for the published test reports (ADR 0064); test infrastructure, never shipped -->
-            <groupId>io.qameta.allure</groupId>
-            <artifactId>allure-java-commons</artifactId>
-            <scope>compile</scope>
+            <!-- Reports, Await, Ports -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>test-support</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>

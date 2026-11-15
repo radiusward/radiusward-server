@@ -29,7 +29,6 @@ import io.radiusward.protocol.OnMaxLag;
 import io.radiusward.protocol.Outcome;
 import io.radiusward.protocol.RejectReason;
 import java.io.File;
-import java.net.DatagramSocket;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -333,37 +332,12 @@ class ThreeNodeClusterIT {
         return found[0];
     }
 
-    private static void await(BooleanSupplier condition, String what) throws InterruptedException {
-        long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for: " + what);
-            }
-            Thread.sleep(50);
-        }
+    private static void await(BooleanSupplier condition, String what) {
+        io.radiusward.testing.Await.until(Duration.ofSeconds(30), what, condition);
     }
 
     /** A base port where all 3 × 6 UDP ports are currently free. */
     static int freePortBase() {
-        for (int attempt = 0; attempt < 50; attempt++) {
-            int base = 20_000 + (int) (Math.random() * 120) * 100; // below the ephemeral port ranges
-            if (allFree(base)) {
-                return base;
-            }
-        }
-        throw new IllegalStateException("no free port range");
-    }
-
-    private static boolean allFree(int base) {
-        for (int i = 0; i < 3; i++) {
-            for (int o = 0; o < 6; o++) {
-                try (DatagramSocket s = new DatagramSocket(base + 100 * i + o)) {
-                    s.setReuseAddress(false);
-                } catch (Exception e) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return io.radiusward.testing.Ports.freePortBase(3);
     }
 }

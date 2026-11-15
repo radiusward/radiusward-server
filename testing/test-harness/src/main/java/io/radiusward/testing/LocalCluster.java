@@ -21,7 +21,6 @@ import io.radiusward.gateway.ProxyConfig;
 import io.radiusward.gateway.RadsecConfig;
 import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
-import java.net.DatagramSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -68,68 +67,96 @@ public final class LocalCluster implements AutoCloseable {
 
     /** Starts {@code members} cluster nodes and {@code gatewayCount} gateways (RADIUS ports chosen freely). */
     public static LocalCluster start(File baseDir, int members, int gatewayCount) {
-        return start(baseDir, members, gatewayCount, freePortBase(members), new int[gatewayCount], Duration.ZERO);
+        return builder(baseDir).members(members).gateways(gatewayCount).start();
     }
 
-    public static LocalCluster start(
-            File baseDir, int members, int gatewayCount, int basePort, int[] radiusPorts, Duration snapshotInterval) {
-        return start(baseDir, members, gatewayCount, basePort, radiusPorts, snapshotInterval, id -> ExportConfig.NONE);
+    /** A cluster with other settings: {@code LocalCluster.builder(dir).members(3).gateways(2).export(..).start()}. */
+    public static Builder builder(File baseDir) {
+        return new Builder(baseDir);
     }
 
-    /** As above, with an exporter on every member ({@code export} gives each member's settings). */
-    public static LocalCluster start(
-            File baseDir,
-            int members,
-            int gatewayCount,
-            int basePort,
-            int[] radiusPorts,
-            Duration snapshotInterval,
-            java.util.function.IntFunction<ExportConfig> export) {
-        return start(
-                baseDir,
-                members,
-                gatewayCount,
-                basePort,
-                radiusPorts,
-                snapshotInterval,
-                export,
-                LogPurgeConfig.DEFAULTS);
-    }
+    /** What to start; every setting has the default {@link #start(File, int, int)} uses. */
+    public static final class Builder {
+        private final File baseDir;
+        private int members = 3;
+        private int gateways;
+        private int basePort = -1;
+        private int[] radiusPorts;
+        private Duration snapshotInterval = Duration.ZERO;
+        private java.util.function.IntFunction<ExportConfig> export = id -> ExportConfig.NONE;
+        private LogPurgeConfig purge = LogPurgeConfig.DEFAULTS;
+        private AccountingStateMachine.Settings settings =
+                AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions());
+        private Duration sweepInterval = Duration.ofSeconds(60);
 
-    /**
-     * As above, with purge settings from the first start: an archive recording keeps the segment length it was
-     * created with, so changing {@code archive.segment.length} later does not affect the existing log.
-     */
-    public static LocalCluster start(
-            File baseDir,
-            int members,
-            int gatewayCount,
-            int basePort,
-            int[] radiusPorts,
-            Duration snapshotInterval,
-            java.util.function.IntFunction<ExportConfig> export,
-            LogPurgeConfig purge) {
-        LocalCluster cluster = new LocalCluster(baseDir, basePort, members, snapshotInterval);
-        cluster.export = export;
-        cluster.purge = purge;
-        return launch(cluster, members, gatewayCount, radiusPorts);
-    }
+        private Builder(File baseDir) {
+            this.baseDir = baseDir;
+        }
 
-    /**
-     * Starts {@code members} cluster nodes with these state machine settings and housekeeping interval
-     * ({@code service.sweep.interval}), and {@code gatewayCount} gateways: tests of tombstones, idle timeouts and
-     * reservation expiry use seconds instead of hours.
-     */
-    public static LocalCluster start(
-            File baseDir,
-            int members,
-            int gatewayCount,
-            AccountingStateMachine.Settings settings,
-            Duration sweepInterval) {
-        LocalCluster cluster = new LocalCluster(baseDir, freePortBase(members), members, Duration.ZERO);
-        cluster.settings = settings;
-        cluster.sweepInterval = sweepInterval;
-        return launch(cluster, members, gatewayCount, new int[gatewayCount]);
+        public Builder members(int members) {
+            this.members = members;
+            return this;
+        }
+
+        public Builder gateways(int gateways) {
+            this.gateways = gateways;
+            return this;
+        }
+
+        /** The first member's ports (default: free ones). */
+        public Builder basePort(int basePort) {
+            this.basePort = basePort;
+            return this;
+        }
+
+        /** The gateways' RADIUS ports, 0 for a free one (default: all free). */
+        public Builder radiusPorts(int... radiusPorts) {
+            this.radiusPorts = radiusPorts.clone();
+            return this;
+        }
+
+        /** Snapshots this often; zero (the default) for none. */
+        public Builder snapshotInterval(Duration snapshotInterval) {
+            this.snapshotInterval = snapshotInterval;
+            return this;
+        }
+
+        /** An exporter on every member, with each member's settings. */
+        public Builder export(java.util.function.IntFunction<ExportConfig> export) {
+            this.export = export;
+            return this;
+        }
+
+        /**
+         * Log purge settings from the first start: an archive recording keeps the segment length it was created with,
+         * so changing {@code archive.segment.length} later does not affect the existing log.
+         */
+        public Builder purge(LogPurgeConfig purge) {
+            this.purge = purge;
+            return this;
+        }
+
+        /** State machine settings: tombstones, idle timeouts and capacities in seconds instead of hours. */
+        public Builder settings(AccountingStateMachine.Settings settings) {
+            this.settings = settings;
+            return this;
+        }
+
+        /** The housekeeping timer ({@code service.sweep.interval}). */
+        public Builder sweepInterval(Duration sweepInterval) {
+            this.sweepInterval = sweepInterval;
+            return this;
+        }
+
+        public LocalCluster start() {
+            LocalCluster cluster = new LocalCluster(
+                    baseDir, basePort < 0 ? freePortBase(members) : basePort, members, snapshotInterval);
+            cluster.export = export;
+            cluster.purge = purge;
+            cluster.settings = settings;
+            cluster.sweepInterval = sweepInterval;
+            return launch(cluster, members, gateways, radiusPorts == null ? new int[gateways] : radiusPorts);
+        }
     }
 
     private static LocalCluster launch(LocalCluster cluster, int members, int gatewayCount, int[] radiusPorts) {
@@ -372,63 +399,19 @@ public final class LocalCluster implements AutoCloseable {
         return new AdminClient(members(), basePort);
     }
 
+    /** {@link Await#until}. */
     public static void await(Duration timeout, String what, BooleanSupplier condition) {
-        long deadline = System.nanoTime() + timeout.toNanos();
-        while (!condition.getAsBoolean()) {
-            if (System.nanoTime() > deadline) {
-                throw new AssertionError("timed out waiting for: " + what);
-            }
-            try {
-                Thread.sleep(50);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new AssertionError("interrupted waiting for: " + what);
-            }
-        }
+        Await.until(timeout, what, condition);
     }
 
-    /**
-     * A base port where every member's 6 UDP ports are free, below the ephemeral port ranges (Linux from 32768,
-     * macOS from 49152): a port checked free there can still be taken by a client's ephemeral socket (an Aeron
-     * egress or archive response channel) before the member binds it.
-     */
+    /** {@link Ports#freePortBase}. */
     public static int freePortBase(int members) {
-        for (int attempt = 0; attempt < 100; attempt++) {
-            int base = 20_000 + (int) (Math.random() * 120) * 100; // highest port 32_205
-            if (allFree(base, members)) {
-                return base;
-            }
-        }
-        throw new IllegalStateException("no free port range");
+        return Ports.freePortBase(members);
     }
 
-    /** A single port free for TCP and UDP, 10000–19999: below the ephemeral ranges and the cluster ports. */
+    /** {@link Ports#freePort}. */
     public static int freePort() {
-        for (int attempt = 0; attempt < 200; attempt++) {
-            int port = 10_000 + (int) (Math.random() * 10_000);
-            try (java.net.ServerSocket tcp = new java.net.ServerSocket(port);
-                    DatagramSocket udp = new DatagramSocket(port)) {
-                if (tcp.getLocalPort() == port && udp.getLocalPort() == port) {
-                    return port;
-                }
-            } catch (Exception e) {
-                // taken, try another
-            }
-        }
-        throw new IllegalStateException("no free port");
-    }
-
-    private static boolean allFree(int base, int members) {
-        for (int i = 0; i < members; i++) {
-            for (int o = 0; o < 6; o++) {
-                try (DatagramSocket s = new DatagramSocket(base + 100 * i + o)) {
-                    s.setReuseAddress(false);
-                } catch (Exception e) {
-                    return false;
-                }
-            }
-        }
-        return true;
+        return Ports.freePort();
     }
 
     @Override

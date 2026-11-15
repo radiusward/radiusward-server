@@ -87,14 +87,10 @@ class PostgresExportIT {
 
     @Test
     void everyAppliedEventOnceAcrossALeaseHandover() throws Exception {
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                2,
-                LocalCluster.freePortBase(3),
-                new int[2],
-                Duration.ZERO,
-                id -> new ExportConfig(
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(2)
+                .export(id -> new ExportConfig(
                         List.of(new SinkConfig(
                                 "pg",
                                 "postgres",
@@ -112,7 +108,8 @@ class PostgresExportIT {
                                         "mode", "sessions+events",
                                         "radacct.view", "true"))),
                         null,
-                        null))) {
+                        null))
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
             Path ackLog = dir.resolve("acks.csv");
@@ -172,7 +169,7 @@ class PostgresExportIT {
                 long sessions = 0;
                 while (rs.next()) {
                     sessions++;
-                    long[] key = LocalClusterIT.sessionKey(rs.getString(1));
+                    long[] key = AccountingRequest.sessionKey(rs.getString(1));
                     AdminClient.Session replicated = admin.session(key[0], key[1]);
                     assertThat(rs.getInt(2) == 2)
                             .as(rs.getString(1))
@@ -295,7 +292,7 @@ class PostgresExportIT {
                                             new InetSocketAddress(
                                                     "127.0.0.1",
                                                     cluster.gateway(1).radiusPort())),
-                                    LocalClusterIT.SECRET,
+                                    FakeNas.SECRET,
                                     10,
                                     3000,
                                     3000,

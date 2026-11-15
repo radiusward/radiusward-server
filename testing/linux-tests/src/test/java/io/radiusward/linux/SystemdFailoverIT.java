@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
+import io.radiusward.testing.Reports;
 import java.time.Duration;
 import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;

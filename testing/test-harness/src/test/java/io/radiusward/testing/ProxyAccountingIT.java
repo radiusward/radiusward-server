@@ -45,7 +45,7 @@ class ProxyAccountingIT {
 
     private DatagramSocket home;
     private final List<byte[]> forwarded = new CopyOnWriteArrayList<>();
-    private final LocalClusterIT nas = new LocalClusterIT();
+    private final FakeNas nas = new FakeNas();
 
     @AfterEach
     void close() throws Exception {
@@ -61,14 +61,10 @@ class ProxyAccountingIT {
         Thread server = new Thread(this::serve, "home-accounting");
         server.setDaemon(true);
         server.start();
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                1,
-                LocalCluster.freePortBase(3),
-                new int[1],
-                Duration.ZERO,
-                id -> new ExportConfig(
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(1)
+                .export(id -> new ExportConfig(
                         List.of(new SinkConfig(
                                 "partner",
                                 "radius",
@@ -86,12 +82,13 @@ class ProxyAccountingIT {
                                         "secret", "home-acct",
                                         "timeout", "500ms"))),
                         null,
-                        null))) {
+                        null))
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
             int port = cluster.gateway(0).radiusPort();
-            nas.exchange(port, SessionIdentityIT.start(1, "s-proxied", "alice@partner.example", "aa-bb-cc-00-02-01"));
-            nas.exchange(port, SessionIdentityIT.start(2, "s-local", "bob", "aa-bb-cc-00-02-02"));
+            nas.ack(port, SessionIdentityIT.start(1, "s-proxied", "alice@partner.example", "aa-bb-cc-00-02-01"));
+            nas.ack(port, SessionIdentityIT.start(2, "s-local", "bob", "aa-bb-cc-00-02-02"));
             LocalCluster.await(Duration.ofSeconds(30), "forwarded to the home server", () -> !forwarded.isEmpty());
             Thread.sleep(500);
             assertThat(forwarded).hasSize(1);

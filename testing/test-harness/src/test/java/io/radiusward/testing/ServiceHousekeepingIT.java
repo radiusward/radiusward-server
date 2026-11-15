@@ -36,7 +36,7 @@ class ServiceHousekeepingIT {
     @TempDir
     Path dir;
 
-    private final LocalClusterIT nas = new LocalClusterIT(); // its NAS socket and packet helpers
+    private final FakeNas nas = new FakeNas();
     private LocalCluster cluster;
 
     @AfterEach
@@ -52,14 +52,19 @@ class ServiceHousekeepingIT {
         // tombstones kept 1 s, sessions idle after 2 s, swept every 300 ms (in production: 1 h, 2 h, 60 s)
         AccountingStateMachine.Settings settings =
                 new AccountingStateMachine.Settings(Profile.SMALL.maxSessions(), 1_000L, 2_000L, 1_000L);
-        cluster = LocalCluster.start(dir.toFile(), 3, 1, settings, Duration.ofMillis(300));
+        cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(1)
+                .settings(settings)
+                .sweepInterval(Duration.ofMillis(300))
+                .start();
         cluster.awaitLeader();
         cluster.awaitGatewaysConnected();
         int port = cluster.gateway(0).radiusPort();
         long now = System.currentTimeMillis() / 1000;
-        nas.exchange(port, LocalClusterIT.request(1, 1, "idle", 0, now)); // started, then never heard of again
-        nas.exchange(port, LocalClusterIT.request(2, 1, "done", 0, now));
-        nas.exchange(port, LocalClusterIT.request(3, 2, "done", 30, now)); // stopped: a tombstone
+        nas.ack(port, AccountingRequest.request(1, 1, "idle", 0, now)); // started, then never heard of again
+        nas.ack(port, AccountingRequest.request(2, 1, "done", 0, now));
+        nas.ack(port, AccountingRequest.request(3, 2, "done", 30, now)); // stopped: a tombstone
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(30),
@@ -78,7 +83,7 @@ class ServiceHousekeepingIT {
         }
 
         // the timer keeps running: a session that goes idle later is swept too
-        nas.exchange(port, LocalClusterIT.request(4, 1, "later", 0, System.currentTimeMillis() / 1000));
+        nas.ack(port, AccountingRequest.request(4, 1, "later", 0, System.currentTimeMillis() / 1000));
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(30),
@@ -94,11 +99,11 @@ class ServiceHousekeepingIT {
         cluster.startGateway(2, 0, LocalCluster.registry(NasClient.Identity.NAS_IP_ADDRESS));
         cluster.awaitLeader();
         cluster.awaitGatewaysConnected();
-        nas.exchange(cluster.gateway(0).radiusPort(), start(1, "s-1"));
+        nas.ack(cluster.gateway(0).radiusPort(), start(1, "s-1"));
         assertThat(cluster.awaitLeader().stats().identityMismatches()).isZero();
 
-        nas.exchange(cluster.gateway(1).radiusPort(), start(2, "s-2"));
-        nas.exchange(cluster.gateway(1).radiusPort(), start(3, "s-3"));
+        nas.ack(cluster.gateway(1).radiusPort(), start(2, "s-2"));
+        nas.ack(cluster.gateway(1).radiusPort(), start(3, "s-3"));
         ClusterNode leader = cluster.awaitLeader();
         LocalCluster.await(
                 Duration.ofSeconds(10),
@@ -119,7 +124,7 @@ class ServiceHousekeepingIT {
                 .uint32(4, 0x7F000001)
                 .uint32(55, System.currentTimeMillis() / 1000);
         int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, LocalClusterIT.SECRET);
+        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, FakeNas.SECRET);
         return Arrays.copyOf(buffer.byteArray(), length);
     }
 }

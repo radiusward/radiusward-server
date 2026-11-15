@@ -49,15 +49,11 @@ class ClusterBackupIT {
     @ParameterizedTest(name = "automatic restore: {0}")
     @ValueSource(booleans = {false, true})
     void aClusterThatLostEveryMemberIsRestoredFromTheBackup(boolean automatic) throws Exception {
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                2,
-                LocalCluster.freePortBase(3),
-                new int[2],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))) {
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(2)
+                .purge(new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
             ClusterNodeConfig member = cluster.nodeConfig(0);

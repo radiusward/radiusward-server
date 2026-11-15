@@ -51,7 +51,7 @@ class SimultaneousUseIT {
     Path dir;
 
     private LocalCluster cluster;
-    private DatagramChannel nas;
+    private final FakeNas nas = new FakeNas();
     private int identifier;
 
     @AfterEach
@@ -69,15 +69,11 @@ class SimultaneousUseIT {
         Path users = Files.writeString(
                 dir.resolve("users"),
                 "alice Cleartext-Password := \"pw\", Simultaneous-Use := 1\nbob Cleartext-Password := \"pw\"\n");
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         Config stores = Config.of(Map.of(
                 "auth.stores",
                 "local",
@@ -132,15 +128,11 @@ class SimultaneousUseIT {
                 Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"pw\", Simultaneous-Use := 1\n");
         DatagramChannel coaNas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
         java.util.List<String> disconnected = new java.util.concurrent.CopyOnWriteArrayList<>();
-        cluster = LocalCluster.start(
-                dir.resolve("cluster").toFile(),
-                3,
-                0,
-                LocalCluster.freePortBase(3),
-                new int[0],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)));
+        cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
+                .members(3)
+                .gateways(0)
+                .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
+                .start();
         Config settings = Config.of(Map.of(
                 "auth.stores",
                 "local",
@@ -231,7 +223,7 @@ class SimultaneousUseIT {
         int ma = enc.messageAuthenticator();
         int length = enc.finish();
         new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, SECRET);
-        return exchange(gateway.authPort(), Arrays.copyOf(buffer.byteArray(), length))[0] & 0xFF;
+        return nas.reply(gateway.authPort(), Arrays.copyOf(buffer.byteArray(), length))[0] & 0xFF;
     }
 
     private byte[] accounting(int status, String sessionId, String user, String station) {
@@ -254,28 +246,6 @@ class SimultaneousUseIT {
     }
 
     private void exchangeAccounting(Gateway gateway, byte[] request) throws Exception {
-        assertThat(exchange(gateway.radiusPort(), request)[0] & 0xFF).isEqualTo(RadiusCode.ACCOUNTING_RESPONSE);
-    }
-
-    /** Sends like a NAS (retransmitting from one source port) and returns the reply to this identifier. */
-    private byte[] exchange(int port, byte[] request) throws Exception {
-        if (nas == null) {
-            nas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
-            nas.configureBlocking(false);
-        }
-        InetSocketAddress target = new InetSocketAddress("127.0.0.1", port);
-        ByteBuffer in = ByteBuffer.allocate(4096);
-        for (int attempt = 0; attempt < 8; attempt++) {
-            nas.send(ByteBuffer.wrap(request), target);
-            long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
-            while (System.nanoTime() < deadline) {
-                in.clear();
-                if (nas.receive(in) != null && in.get(1) == request[1]) {
-                    return Arrays.copyOf(in.array(), in.position());
-                }
-                Thread.sleep(2);
-            }
-        }
-        throw new AssertionError("no reply");
+        assertThat(nas.reply(gateway.radiusPort(), request)[0] & 0xFF).isEqualTo(RadiusCode.ACCOUNTING_RESPONSE);
     }
 }

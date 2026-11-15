@@ -4,65 +4,36 @@
  */
 package io.radiusward.e2e;
 
-import static org.assertj.core.api.Assertions.assertThat;
-
-import io.radiusward.gateway.EventKeys;
-import io.radiusward.radius.codec.RadiusAuthenticator;
-import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
-import io.radiusward.testing.LocalCluster;
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
-import java.nio.charset.StandardCharsets;
+import io.radiusward.testing.AccountingRequest;
+import io.radiusward.testing.FakeNas;
 import java.time.Duration;
-import java.util.Arrays;
-import org.agrona.concurrent.UnsafeBuffer;
 
-/** A simulated NAS with a fixed source port, retransmitting like a real one. */
+/**
+ * A simulated NAS with a fixed source port, retransmitting like a real one: {@link FakeNas} with the requests these
+ * tests send, whose Event-Timestamp advances with the session time.
+ */
 final class Nas implements AutoCloseable {
 
-    static final byte[] SECRET = ProcessCluster.SECRET.getBytes(StandardCharsets.US_ASCII);
+    static final byte[] SECRET = FakeNas.SECRET;
 
-    private final DatagramChannel channel;
-
-    Nas() throws IOException {
-        channel = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
-        channel.configureBlocking(false);
-    }
+    private final FakeNas nas = new FakeNas();
 
     /** Sends and waits for a verified Accounting-Response; {@code null} if none arrives within the attempts. */
-    byte[] exchange(int port, byte[] request, int attempts, Duration timeout) throws IOException, InterruptedException {
-        InetSocketAddress target = new InetSocketAddress("127.0.0.1", port);
-        ByteBuffer in = ByteBuffer.allocate(4096);
-        for (int attempt = 0; attempt < attempts; attempt++) {
-            channel.send(ByteBuffer.wrap(request), target);
-            long deadline = System.nanoTime() + timeout.toNanos();
-            while (System.nanoTime() < deadline) {
-                in.clear();
-                if (channel.receive(in) != null) {
-                    byte[] response = Arrays.copyOf(in.array(), in.position());
-                    RadiusPacket view = new RadiusPacket();
-                    view.wrap(new UnsafeBuffer(response), 0, response.length);
-                    if (view.identifier() == (request[1] & 0xFF)
-                            && new RadiusAuthenticator().verifyResponse(view, new UnsafeBuffer(request), 4, SECRET)) {
-                        assertThat(view.code()).isEqualTo(RadiusCode.ACCOUNTING_RESPONSE);
-                        return response;
-                    }
-                }
-                Thread.sleep(2);
-            }
-        }
-        return null;
+    byte[] exchange(int port, byte[] request, int attempts, Duration timeout) {
+        return nas.exchange(port, request, attempts, timeout);
     }
 
-    /** Like {@link #exchange} with NAS-like defaults (3 s, many attempts), failing if there is no answer. */
-    byte[] ack(int port, byte[] request) throws IOException, InterruptedException {
+    /** Like {@link #exchange} with NAS-like defaults (3 s, 10 attempts), failing if there is no answer. */
+    byte[] ack(int port, byte[] request) {
         byte[] response = exchange(port, request, 10, Duration.ofSeconds(3));
-        assertThat(response).as("Accounting-Response").isNotNull();
+        if (response == null) {
+            throw new AssertionError("no Accounting-Response to request " + (request[1] & 0xFF));
+        }
         return response;
+    }
+
+    static byte[] request(int id, int status, String sessionId, long sessionTime) {
+        return request(id, status, sessionId, sessionTime, 0);
     }
 
     static byte[] request(int id, int status, String sessionId, long sessionTime, int delay) {
@@ -71,46 +42,26 @@ final class Nas implements AutoCloseable {
 
     /** A request from a device behind NAT, identified by {@code nasIdentifier} ({@code null}: none). */
     static byte[] request(int id, int status, String sessionId, long sessionTime, int delay, String nasIdentifier) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id).uint32(40, status);
-        if (nasIdentifier != null) {
-            enc.attribute(32, nasIdentifier);
-        }
-        if (sessionId != null) {
-            enc.attribute(44, sessionId);
-        }
-        enc.uint32(55, 1_780_000_000L + sessionTime);
-        if (status == 2 || status == 3) {
-            enc.uint32(46, sessionTime).uint32(42, sessionTime * 1000);
-        }
-        if (delay > 0) {
-            enc.uint32(41, delay);
-        }
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
-    }
-
-    static byte[] request(int id, int status, String sessionId, long sessionTime) {
-        return request(id, status, sessionId, sessionTime, 0);
+        return AccountingRequest.of(id, status)
+                .nasIdentifier(nasIdentifier)
+                .session(sessionId)
+                .sessionTime(sessionTime)
+                .eventTimestamp(AccountingRequest.EVENT_TIMESTAMP + sessionTime)
+                .delay(delay)
+                .build();
     }
 
     static long[] sessionKey(String sessionId) {
-        return sessionKey(sessionId, "");
+        return AccountingRequest.sessionKey(sessionId);
     }
 
     /** The session key of a device's session when the NAS entry identifies devices by NAS-Identifier. */
     static long[] sessionKey(String sessionId, String nasIdentifier) {
-        EventKeys keys = new EventKeys();
-        UnsafeBuffer id = new UnsafeBuffer(sessionId.getBytes(StandardCharsets.US_ASCII));
-        UnsafeBuffer device = new UnsafeBuffer(nasIdentifier.getBytes(StandardCharsets.US_ASCII));
-        keys.compute(LocalCluster.NAS_ID, device, device.capacity(), 0, 0, 0, 0, 0, 0, id, 0, id.capacity());
-        return new long[] {keys.sessionHi(), keys.sessionLo()};
+        return AccountingRequest.sessionKey(sessionId, nasIdentifier);
     }
 
     @Override
-    public void close() throws IOException {
-        channel.close();
+    public void close() throws java.io.IOException {
+        nas.close();
     }
 }

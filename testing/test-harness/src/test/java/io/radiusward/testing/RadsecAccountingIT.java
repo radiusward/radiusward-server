@@ -99,10 +99,10 @@ class RadsecAccountingIT {
             assertResponse(nas.receive(), status, RADSEC);
         }
 
-        LocalClusterIT udp = new LocalClusterIT();
+        FakeNas udp = new FakeNas();
         try {
             byte[] sameStart = request(7, 1, "rs-1", 0, UDP_SECRET);
-            udp.exchange(gateway.radiusPort(), sameStart); // verified with the UDP secret
+            udp.ack(gateway.radiusPort(), sameStart); // verified with the UDP secret
         } finally {
             udp.close();
         }
@@ -123,18 +123,11 @@ class RadsecAccountingIT {
     }
 
     static byte[] request(int id, int status, String sessionId, long sessionTime, byte[] secret) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id)
-                .uint32(40, status)
-                .attribute(44, sessionId)
-                .uint32(55, 1_780_000_000L);
-        if (status != 1) {
-            enc.uint32(46, sessionTime).uint32(42, sessionTime * 1000);
-        }
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, secret);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return AccountingRequest.of(id, status)
+                .session(sessionId)
+                .sessionTime(sessionTime)
+                .secret(secret)
+                .build();
     }
 
     @Test
@@ -185,9 +178,9 @@ class RadsecAccountingIT {
             new java.io.DataInputStream(tcp.getInputStream()).readFully(answer);
             assertResponse(answer, interim, UDP_SECRET);
         }
-        LocalClusterIT udp = new LocalClusterIT();
+        FakeNas udp = new FakeNas();
         try {
-            udp.exchange(gateway.radiusPort(), request(7, 1, "dt-1", 0, UDP_SECRET));
+            udp.ack(gateway.radiusPort(), request(7, 1, "dt-1", 0, UDP_SECRET));
         } finally {
             udp.close();
         }

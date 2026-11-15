@@ -52,14 +52,10 @@ class ExporterIT {
     @Test
     void exportSurvivesALeaseHandover() throws Exception {
         Path exportDir = dir.resolve("export");
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                2,
-                LocalCluster.freePortBase(3),
-                new int[2],
-                Duration.ZERO,
-                id -> new ExportConfig(
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(2)
+                .export(id -> new ExportConfig(
                         List.of(
                                 new SinkConfig(
                                         "archive",
@@ -91,7 +87,8 @@ class ExporterIT {
                                                 "dir",
                                                 dir.resolve("mirror/node-" + id).toString()))),
                         null,
-                        null))) {
+                        null))
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
             CompletableFuture<LoadGenerator.Result> load =
@@ -124,7 +121,7 @@ class ExporterIT {
                 assertThat((long) export.sessions.size()).isEqualTo(state.active() + state.stopped());
                 for (Map<String, String> s : export.sessions.values()) {
                     String id = unquote(s.get("acct_session_id"));
-                    long[] key = LocalClusterIT.sessionKey(id);
+                    long[] key = AccountingRequest.sessionKey(id);
                     AdminClient.Session replicated = admin.session(key[0], key[1]);
                     assertThat(unquote(s.get("state")))
                             .as(id)
@@ -146,14 +143,10 @@ class ExporterIT {
     @Test
     void aFencedWriteGivesUpTheLeaseAndAFailedOneReopensTheSink() throws Exception {
         FaultySink.reset();
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                1,
-                1,
-                LocalCluster.freePortBase(1),
-                new int[1],
-                Duration.ZERO,
-                id -> new ExportConfig(
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(1)
+                .gateways(1)
+                .export(id -> new ExportConfig(
                         List.of(new SinkConfig(
                                 "faulty",
                                 "faulty",
@@ -166,18 +159,19 @@ class ExporterIT {
                                 2000,
                                 Map.of("mode", "sessions+events"))),
                         null,
-                        null))) {
+                        null))
+                .start()) {
             ClusterNode node = cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
-            LocalClusterIT nas = new LocalClusterIT();
+            FakeNas nas = new FakeNas();
             try {
                 int port = cluster.gateway(0).radiusPort();
-                nas.exchange(port, LocalClusterIT.request(1, 1, "s-1", 0));
+                nas.ack(port, AccountingRequest.request(1, 1, "s-1", 0));
                 LocalCluster.await(Duration.ofSeconds(30), "first batch written", () -> FaultySink.written.get() > 0);
 
                 // another member wrote with a newer epoch: this one steps back, asks for the lease again, resumes
                 FaultySink.fenceNext.set(1);
-                nas.exchange(port, LocalClusterIT.request(2, 3, "s-1", 60));
+                nas.ack(port, AccountingRequest.request(2, 3, "s-1", 60));
                 LocalCluster.await(Duration.ofSeconds(30), "the write was fenced", () -> FaultySink.fenced.get() == 1);
                 LocalCluster.await(
                         Duration.ofSeconds(30),
@@ -187,7 +181,7 @@ class ExporterIT {
                 // a failed write closes the sink and opens it again after a back-off
                 int opened = FaultySink.opened.get();
                 FaultySink.failNext.set(1);
-                nas.exchange(port, LocalClusterIT.request(3, 2, "s-1", 120));
+                nas.ack(port, AccountingRequest.request(3, 2, "s-1", 120));
                 LocalCluster.await(Duration.ofSeconds(30), "the write failed", () -> FaultySink.failed.get() == 1);
                 LocalCluster.await(
                         Duration.ofSeconds(30),
@@ -293,7 +287,7 @@ class ExporterIT {
                                             new InetSocketAddress(
                                                     "127.0.0.1",
                                                     cluster.gateway(1).radiusPort())),
-                                    LocalClusterIT.SECRET,
+                                    FakeNas.SECRET,
                                     10,
                                     2000,
                                     2000,

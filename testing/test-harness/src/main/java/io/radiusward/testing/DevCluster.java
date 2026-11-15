@@ -29,8 +29,13 @@ public final class DevCluster {
         long start = System.nanoTime();
         List<ManagementServer> servers = new ArrayList<>();
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
-                LocalCluster cluster =
-                        LocalCluster.start(dir, 3, 2, 9000, new int[] {1813, 1814}, Duration.ofHours(1))) {
+                LocalCluster cluster = LocalCluster.builder(dir)
+                        .members(3)
+                        .gateways(2)
+                        .basePort(9000)
+                        .radiusPorts(1813, 1814)
+                        .snapshotInterval(Duration.ofHours(1))
+                        .start()) {
             for (int i = 0; i < 3; i++) {
                 var node = cluster.node(i);
                 servers.add(ManagementServer.start(

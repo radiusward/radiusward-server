@@ -41,16 +41,12 @@ class LogPurgeIT {
 
     @Test
     void logIsPurgedAndAStoppedMemberStillCatchesUp() throws Exception {
-        try (LocalCluster cluster = LocalCluster.start(
-                dir.toFile(),
-                3,
-                2,
-                LocalCluster.freePortBase(3),
-                new int[2],
-                Duration.ZERO,
-                id -> io.radiusward.exporter.ExportConfig.NONE,
-                // from the first start: the log recording keeps the segment length it was created with
-                new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))) {
+        try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
+                .members(3)
+                .gateways(2)
+                .purge( // from the first start: the log recording keeps the segment length it was created with
+                        new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))
+                .start()) {
             cluster.awaitLeader();
             cluster.awaitGatewaysConnected();
 
@@ -124,7 +120,7 @@ class LogPurgeIT {
                                             new InetSocketAddress(
                                                     "127.0.0.1",
                                                     cluster.gateway(1).radiusPort())),
-                                    LocalClusterIT.SECRET,
+                                    FakeNas.SECRET,
                                     10,
                                     3000,
                                     3000,
