@@ -212,11 +212,9 @@ final class Ttls extends TlsTunnel {
     }
 
     private Step afterInnerEap(Step inner) {
-        if (inner.unavailable()) {
-            return Step.STORE_UNAVAILABLE;
-        }
-        if (!inner.done()) {
-            return sendApplication(avp(EAP_MESSAGE, 0, inner.request()));
+        Step unfinished = unfinishedInner(inner, request -> avp(EAP_MESSAGE, 0, request));
+        if (unfinished != null) {
+            return unfinished;
         }
         if (!inner.success()) {
             return Step.FAILED;

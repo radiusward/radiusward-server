@@ -176,10 +176,7 @@ final class HomeDtlsClient implements HomeConnection {
     }
 
     private void runTasks() {
-        Runnable task;
-        while ((task = engine.getDelegatedTask()) != null) {
-            task.run();
-        }
+        SslEngines.runTasks(engine);
     }
 
     /** Encrypts {@code plain} or the next handshake record, and sends each datagram the engine makes. */

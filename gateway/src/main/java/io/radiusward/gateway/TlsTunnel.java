@@ -299,6 +299,21 @@ abstract class TlsTunnel implements EapMethod {
     }
 
     /** Encrypts {@code plain} as application data and sends it. */
+    /**
+     * The tunnel's answer to an inner EAP step that is not finished, or {@code null} when it is (the method decides
+     * success itself): a wait for the NAS's retransmission when the inner method could not check now, else the inner
+     * request wrapped as this method carries it (an AVP for TTLS, a TLV for TEAP).
+     */
+    final Step unfinishedInner(Step inner, java.util.function.UnaryOperator<byte[]> wrap) {
+        if (inner.unavailable()) {
+            return Step.STORE_UNAVAILABLE;
+        }
+        if (!inner.done()) {
+            return sendApplication(wrap.apply(inner.request()));
+        }
+        return null;
+    }
+
     final Step sendApplication(byte[] plain) {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         try {
@@ -349,10 +364,7 @@ abstract class TlsTunnel implements EapMethod {
             SSLEngineResult result;
             switch (engine.getHandshakeStatus()) {
                 case NEED_TASK -> {
-                    Runnable task;
-                    while ((task = engine.getDelegatedTask()) != null) {
-                        task.run();
-                    }
+                    SslEngines.runTasks(engine);
                     continue;
                 }
                 case NEED_WRAP -> {

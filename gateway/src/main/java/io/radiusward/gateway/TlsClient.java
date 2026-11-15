@@ -209,10 +209,7 @@ final class TlsClient implements HomeConnection {
         while (open()) {
             SSLEngineResult.HandshakeStatus hs = engine.getHandshakeStatus();
             if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                Runnable task;
-                while ((task = engine.getDelegatedTask()) != null) {
-                    task.run();
-                }
+                SslEngines.runTasks(engine);
                 continue;
             }
             if (hs == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
@@ -260,10 +257,7 @@ final class TlsClient implements HomeConnection {
                 if (netOut.capacity() + need > MAX_PENDING) {
                     throw new IOException("home server does not read");
                 }
-                ByteBuffer larger = ByteBuffer.allocate(netOut.capacity() + need);
-                netOut.flip();
-                larger.put(netOut);
-                netOut = larger;
+                netOut = SslEngines.grow(netOut, need);
             }
             SSLEngineResult r = engine.wrap(plain, netOut);
             if (r.getStatus() == SSLEngineResult.Status.CLOSED) {

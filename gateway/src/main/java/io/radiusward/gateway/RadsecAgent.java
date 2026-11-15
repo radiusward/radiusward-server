@@ -452,7 +452,7 @@ final class RadsecAgent implements Agent {
             return;
         }
         if (!c.netIn.hasRemaining()) {
-            c.netIn = grow(c.netIn, c.engine.getSession().getPacketBufferSize());
+            c.netIn = SslEngines.grow(c.netIn, c.engine.getSession().getPacketBufferSize());
         }
         int n = c.channel.read(c.netIn);
         if (n < 0) {
@@ -476,10 +476,7 @@ final class RadsecAgent implements Agent {
         while (c.channel.isOpen()) {
             SSLEngineResult.HandshakeStatus hs = c.engine.getHandshakeStatus();
             if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                Runnable task;
-                while ((task = c.engine.getDelegatedTask()) != null) {
-                    task.run(); // certificate checks; OCSP may wait for its timeout (ADR 0033)
-                }
+                SslEngines.runTasks(c.engine); // certificate checks; OCSP may wait for its timeout (ADR 0033)
                 continue;
             }
             if (hs == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
@@ -520,7 +517,7 @@ final class RadsecAgent implements Agent {
                 if (c.netOut.capacity() + plain.remaining() > MAX_PENDING_OUTPUT) {
                     throw new IOException("peer does not read its replies");
                 }
-                c.netOut = grow(c.netOut, plain.remaining());
+                c.netOut = SslEngines.grow(c.netOut, plain.remaining());
             }
             c.netOut.put(plain);
             return;
@@ -531,7 +528,7 @@ final class RadsecAgent implements Agent {
                 if (c.netOut.capacity() + need > MAX_PENDING_OUTPUT) {
                     throw new IOException("peer does not read its replies");
                 }
-                c.netOut = grow(c.netOut, need);
+                c.netOut = SslEngines.grow(c.netOut, need);
             }
             SSLEngineResult r = c.engine.wrap(plain, c.netOut);
             if (r.getStatus() == SSLEngineResult.Status.CLOSED) {
@@ -541,13 +538,6 @@ final class RadsecAgent implements Agent {
                 established(c);
             }
         } while (plain.hasRemaining());
-    }
-
-    private static ByteBuffer grow(ByteBuffer buffer, int more) {
-        ByteBuffer larger = ByteBuffer.allocate(buffer.capacity() + more);
-        buffer.flip();
-        larger.put(buffer);
-        return larger;
     }
 
     /** The handshake is done: the connection belongs to the NAS entry of its address, if that allows RadSec. */
@@ -879,10 +869,7 @@ final class RadsecAgent implements Agent {
         while (true) {
             SSLEngineResult.HandshakeStatus hs = a.engine.getHandshakeStatus();
             if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                Runnable task;
-                while ((task = a.engine.getDelegatedTask()) != null) {
-                    task.run();
-                }
+                SslEngines.runTasks(a.engine);
                 continue;
             }
             if (hs == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
@@ -975,10 +962,7 @@ final class RadsecAgent implements Agent {
                 wrap(a, empty); // the JDK sends its last flight again when wrapping while it waits for the peer
                 SSLEngineResult.HandshakeStatus hs = a.engine.getHandshakeStatus();
                 if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                    Runnable task;
-                    while ((task = a.engine.getDelegatedTask()) != null) {
-                        task.run();
-                    }
+                    SslEngines.runTasks(a.engine);
                 }
             } while (a.engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_WRAP);
         } catch (IOException | RuntimeException e) {

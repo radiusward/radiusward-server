@@ -274,11 +274,9 @@ final class Teap extends TlsTunnel {
     }
 
     private Step afterInner(Step step) {
-        if (step.unavailable()) {
-            return Step.STORE_UNAVAILABLE;
-        }
-        if (!step.done()) {
-            return sendApplication(tlv(MANDATORY | TLV_EAP_PAYLOAD, step.request()));
+        Step unfinished = unfinishedInner(step, request -> tlv(MANDATORY | TLV_EAP_PAYLOAD, request));
+        if (unfinished != null) {
+            return unfinished;
         }
         if (!step.success()) {
             return failure();
