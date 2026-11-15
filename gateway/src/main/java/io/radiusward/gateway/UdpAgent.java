@@ -241,12 +241,7 @@ final class UdpAgent implements Agent {
                 || (policy == NasClient.MessageAuthenticatorPolicy.OPTIONAL && hasMa);
 
         int auth = packet.authenticatorOffset();
-        long cacheKey = ResponseCache.key(
-                route == RadsecLink.UDP ? from.getAddress().hashCode() : RadsecLink.generation(route),
-                route == RadsecLink.UDP ? from.getPort() : RadsecLink.connection(route),
-                packet.identifier(),
-                received.getLong(auth),
-                received.getLong(auth + 8));
+        long cacheKey = ResponseCache.requestKey(from, route, packet, received);
         long cached = cache.get(cacheKey);
         if (ResponseCache.state(cached) == ResponseCache.COMMITTED) {
             stats.increment(Counter.CACHE_HITS);
@@ -524,23 +519,17 @@ final class UdpAgent implements Agent {
 
     /** From this socket, or back to the RadSec connection the request came from. */
     private void send(InetSocketAddress to, long route, int length) {
-        if (route != RadsecLink.UDP) {
-            stats.increment(
-                    RadsecLink.reply(radsec.fromAccounting, route, sending, 0, length)
-                            ? Counter.RESPONSES_SENT
-                            : Counter.SEND_FAILED);
-            return;
-        }
-        sendBuffer.clear().limit(length);
-        try {
-            if (channel.send(sendBuffer, to) == length) {
-                stats.increment(Counter.RESPONSES_SENT);
-            } else {
-                stats.increment(Counter.SEND_FAILED);
-            }
-        } catch (IOException e) {
-            stats.increment(Counter.SEND_FAILED);
-        }
+        stats.increment(
+                RadsecLink.sendReply(
+                                radsec == null ? null : radsec.fromAccounting,
+                                channel,
+                                sendBuffer,
+                                sending,
+                                length,
+                                to,
+                                route)
+                        ? Counter.RESPONSES_SENT
+                        : Counter.SEND_FAILED);
     }
 
     // ---- housekeeping ------------------------------------------------------------------------------

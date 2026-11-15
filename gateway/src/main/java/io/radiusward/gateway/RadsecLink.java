@@ -44,6 +44,30 @@ final class RadsecLink {
         this.clients = clients;
     }
 
+    /**
+     * A reply to where its request came from: over UDP from {@code channel} ({@code buffer} holds it), or to the
+     * RadSec agent for the request's connection ({@code view} holds it). {@code false} if it could not be sent; the NAS
+     * retransmits.
+     */
+    static boolean sendReply(
+            RingBuffer toRadsec,
+            java.nio.channels.DatagramChannel channel,
+            java.nio.ByteBuffer buffer,
+            DirectBuffer view,
+            int length,
+            java.net.InetSocketAddress to,
+            long route) {
+        if (route != UDP) {
+            return reply(toRadsec, route, view, 0, length);
+        }
+        buffer.clear().limit(length);
+        try {
+            return channel.send(buffer, to) == length;
+        } catch (java.io.IOException e) {
+            return false;
+        }
+    }
+
     static long route(int connection, int generation) {
         return ((long) generation << 32) | connection;
     }

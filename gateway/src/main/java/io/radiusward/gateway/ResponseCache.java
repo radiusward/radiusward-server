@@ -4,6 +4,7 @@
  */
 package io.radiusward.gateway;
 
+import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 
 /**
@@ -74,6 +75,24 @@ final class ResponseCache {
 
     int size() {
         return states.size();
+    }
+
+    /**
+     * The key of a request as a NAS retransmits it: its source (address and port over UDP, the connection and its
+     * generation over RadSec or DTLS), identifier and Request Authenticator. Allocation-free.
+     */
+    static long requestKey(
+            java.net.InetSocketAddress from,
+            long route,
+            io.radiusward.radius.codec.RadiusPacket packet,
+            DirectBuffer received) {
+        int auth = packet.authenticatorOffset();
+        return key(
+                route == RadsecLink.UDP ? from.getAddress().hashCode() : RadsecLink.generation(route),
+                route == RadsecLink.UDP ? from.getPort() : RadsecLink.connection(route),
+                packet.identifier(),
+                received.getLong(auth),
+                received.getLong(auth + 8));
     }
 
     static long key(int address, int port, int identifier, long authenticatorHi, long authenticatorLo) {

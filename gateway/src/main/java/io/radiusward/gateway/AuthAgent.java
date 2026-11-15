@@ -254,13 +254,7 @@ final class AuthAgent implements Agent, Proxy.Replies {
             return;
         }
 
-        int auth = packet.authenticatorOffset();
-        long key = ResponseCache.key(
-                route == RadsecLink.UDP ? from.getAddress().hashCode() : RadsecLink.generation(route),
-                route == RadsecLink.UDP ? from.getPort() : RadsecLink.connection(route),
-                packet.identifier(),
-                received.getLong(auth),
-                received.getLong(auth + 8));
+        long key = ResponseCache.requestKey(from, route, packet, received);
         int cached = cache.lookup(key, now);
         if (cached == ReplyCache.IN_FLIGHT) {
             stats.increment(AuthStats.Counter.RETRANSMIT_IN_FLIGHT);
@@ -343,23 +337,10 @@ final class AuthAgent implements Agent, Proxy.Replies {
 
     /** From this socket, or back to the RadSec connection the request came from. */
     private void send(ByteBuffer buffer, UnsafeBuffer view, int length, InetSocketAddress to, long route) {
-        if (route != RadsecLink.UDP) {
-            stats.increment(
-                    RadsecLink.reply(radsec.fromAuth, route, view, 0, length)
-                            ? AuthStats.Counter.RESPONSES_SENT
-                            : AuthStats.Counter.SEND_FAILED);
-            return;
-        }
-        buffer.clear().limit(length);
-        try {
-            if (channel.send(buffer, to) == length) {
-                stats.increment(AuthStats.Counter.RESPONSES_SENT);
-            } else {
-                stats.increment(AuthStats.Counter.SEND_FAILED);
-            }
-        } catch (IOException e) {
-            stats.increment(AuthStats.Counter.SEND_FAILED);
-        }
+        stats.increment(
+                RadsecLink.sendReply(radsec == null ? null : radsec.fromAuth, channel, buffer, view, length, to, route)
+                        ? AuthStats.Counter.RESPONSES_SENT
+                        : AuthStats.Counter.SEND_FAILED);
     }
 
     /** A home server's answer, signed for the NAS (ADR 0037): sent and cached like a worker's reply. */
