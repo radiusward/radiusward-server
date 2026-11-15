@@ -4,8 +4,6 @@
  */
 package io.radiusward.gateway;
 
-import static javax.net.ssl.SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING;
-
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -13,14 +11,10 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.security.cert.Certificate;
-import java.security.cert.X509Certificate;
-import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
@@ -29,7 +23,6 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
-import javax.net.ssl.SSLPeerUnverifiedException;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.Agent;
 import org.agrona.concurrent.MessageHandler;
@@ -46,12 +39,9 @@ import org.apache.logging.log4j.Logger;
  * replies come back here to be written to the connection they came from. Never blocks: a full ring drops the packet,
  * a peer that does not read its replies is disconnected, a malformed packet closes the connection (RFC 6613 §2.6.4).
  *
- * <p>RADIUS over DTLS 1.2 (RFC 7360, ADR 0038) on a UDP socket of the same selector: one association per NAS address
- * and port, each with its {@link SSLEngine}, its NAS entry bound after the handshake as for TCP, one RADIUS packet per
- * record. Associations take the route slots after the TCP connections, so replies and CoA requests find them the same
- * way. Handshake flights are retransmitted on a doubling timer (RFC 6347 §4.2.4); a new ClientHello from the address
- * of an established association replaces it (the NAS restarted, §4.2.8); datagrams that are not DTLS, or not from an
- * association or a ClientHello, are silently discarded.
+ * <p>RADIUS over DTLS 1.2 (RFC 7360, ADR 0038) on a UDP socket of the same selector: {@link DtlsServer}, whose
+ * associations take the route slots after the TCP connections. What both transports do alike once a peer is connected
+ * (its NAS entry, forwarding its packets) is {@link RadsecPeers}.
  *
  * <p>RADIUS over plain TCP (RFC 6613, ADR 0045) on two more listeners of the same selector, authentication and
  * accounting: connections without TLS, bound to the NAS entry of their address when accepted (it must allow TCP),
@@ -92,19 +82,13 @@ final class RadsecAgent implements Agent {
     private final NasRegistry registry;
     private final RadsecLink link;
     private final Map<String, Integer> clientIndex;
-    private final Map<String, Integer> dtlsIndex;
     private final Map<String, Integer> tcpIndex;
     private final boolean auth;
     private final UdpAgent.NanoClock clock;
     private final List<NasClient> certificateOnly;
-    private final List<NasClient> dtlsCertificateOnly;
     private final Connection[] connections;
     private final int[] generations;
-    private final Association[] associations;
-    private final int[] dtlsGenerations;
-    private final Map<InetSocketAddress, Association> byAddress = new HashMap<>();
     private final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
-    private final AtomicLongArray dtlsCounts = new AtomicLongArray(Counter.values().length);
     private final AtomicLongArray tcpCounts = new AtomicLongArray(Counter.values().length);
     private final MessageHandler replyHandler = this::onReply;
     private final MessageHandler coaHandler = this::onCoa;
@@ -115,12 +99,10 @@ final class RadsecAgent implements Agent {
     private ServerSocketChannel server;
     private ServerSocketChannel tcpAuth;
     private ServerSocketChannel tcpAccounting;
-    private DatagramChannel dtls;
-    private ByteBuffer datagramIn;
-    private ByteBuffer datagramOut;
+    private final RadsecPeers peers;
+    private final DtlsServer dtls; // null without DTLS
     private Selector selector;
     private volatile int open;
-    private volatile int openAssociations;
     private volatile boolean bound;
     private long now;
     private long nextHousekeeping;
@@ -143,7 +125,6 @@ final class RadsecAgent implements Agent {
         this.registry = registry;
         this.link = link;
         this.clientIndex = Map.copyOf(clientIndex);
-        this.dtlsIndex = Map.copyOf(dtlsIndex);
         this.tcpIndex = Map.copyOf(tcpIndex);
         this.auth = auth;
         this.clock = clock;
@@ -152,17 +133,13 @@ final class RadsecAgent implements Agent {
                 .filter(n -> config.clients().containsKey(n.name()))
                 .sorted(java.util.Comparator.comparing(NasClient::name))
                 .toList();
-        this.dtlsCertificateOnly = registry.clients().stream()
-                .filter(NasClient::certificateOnly)
-                .filter(n -> config.dtls().clients().containsKey(n.name()))
-                .sorted(java.util.Comparator.comparing(NasClient::name))
-                .toList();
         this.connectedNas = new java.util.concurrent.atomic.AtomicIntegerArray(Math.max(1, link.clients.length));
         this.connections = new Connection[config.connections()];
         this.generations = new int[config.connections()];
-        this.associations =
-                new Association[config.dtls().enabled() ? config.dtls().associations() : 0];
-        this.dtlsGenerations = new int[associations.length];
+        this.peers = new RadsecPeers(registry, link, auth);
+        this.dtls = config.dtls().enabled()
+                ? new DtlsServer(config, registry, peers, dtlsIndex, connectedNas, config.connections())
+                : null;
     }
 
     /** One TLS connection; its buffers are the engine's sizes, the plaintext one holds a packet more. */
@@ -219,42 +196,8 @@ final class RadsecAgent implements Agent {
         }
     }
 
-    /** One DTLS association: a NAS address and port, its engine, and the plaintext of the record being read. */
-    private static final class Association {
-        final int index;
-        final int generation;
-        final SSLEngine engine;
-        final InetSocketAddress remote;
-        final long openedAt;
-        final long startedAt = System.currentTimeMillis(); // to compare with the TLS session's creation time
-        final ByteBuffer appIn;
-        final UnsafeBuffer appView;
-        long lastActivity;
-        long nextRetransmit;
-        long retransmitInterval;
-        int nas = -1;
-
-        Association(int index, int generation, SSLEngine engine, InetSocketAddress remote, long now, long retransmit) {
-            this.index = index;
-            this.generation = generation;
-            this.engine = engine;
-            this.remote = remote;
-            this.openedAt = now;
-            this.lastActivity = now;
-            this.retransmitInterval = retransmit;
-            this.nextRetransmit = now + retransmit;
-            appIn = ByteBuffer.allocate(engine.getSession().getApplicationBufferSize() + RadiusPacket.MAX_LENGTH);
-            appView = new UnsafeBuffer(appIn);
-        }
-    }
-
     static final int AUTH_PORT = 1;
     static final int ACCOUNTING_PORT = 2;
-
-    /** The route of an association: its slot after the TCP connections. */
-    private long route(Association a) {
-        return RadsecLink.route(connections.length + a.index, a.generation);
-    }
 
     @Override
     public void onStart() {
@@ -285,15 +228,9 @@ final class RadsecAgent implements Agent {
                         tcpAuth.getLocalAddress(),
                         tcpAccounting.getLocalAddress());
             }
-            if (config.dtls().enabled()) {
+            if (dtls != null) {
                 where = config.host() + ":" + config.dtls().port() + "/udp";
-                dtls = DatagramChannel.open();
-                dtls.bind(new InetSocketAddress(config.host(), config.dtls().port()));
-                dtls.configureBlocking(false);
-                dtls.register(selector, SelectionKey.OP_READ);
-                datagramIn = ByteBuffer.allocate(1 << 16);
-                datagramOut = ByteBuffer.allocate(1 << 16);
-                LOG.info("listening for RADIUS over DTLS on {}", dtls.getLocalAddress());
+                dtls.open(selector);
             }
             bound = true;
         } catch (IOException e) {
@@ -322,11 +259,7 @@ final class RadsecAgent implements Agent {
 
     /** DTLS port actually bound; -1 without DTLS. */
     int localDtlsPort() {
-        try {
-            return dtls == null ? -1 : ((InetSocketAddress) dtls.getLocalAddress()).getPort();
-        } catch (IOException e) {
-            return -1;
-        }
+        return dtls == null ? -1 : dtls.localPort();
     }
 
     @Override
@@ -346,8 +279,8 @@ final class RadsecAgent implements Agent {
                     acceptPlain((ServerSocketChannel) key.channel(), port);
                 } else if (key.isAcceptable()) {
                     accept();
-                } else if (key.channel() == dtls) {
-                    receive();
+                } else if (key.attachment() instanceof DtlsServer d) {
+                    d.receive(now);
                 } else if (key.attachment() instanceof Connection c) {
                     try {
                         if (key.isReadable()) {
@@ -357,7 +290,7 @@ final class RadsecAgent implements Agent {
                             flush(c);
                         }
                     } catch (IOException e) {
-                        if (c.nas < 0 && !(e instanceof Refused)) {
+                        if (c.nas < 0 && !(e instanceof RadsecPeers.Refused)) {
                             increment(Counter.HANDSHAKES_FAILED);
                             LOG.debug("RadSec handshake with {} failed: {}", c.remote, e.getMessage());
                         }
@@ -545,74 +478,10 @@ final class RadsecAgent implements Agent {
         if (c.nas >= 0) {
             return;
         }
-        c.nas = nasOf(c.engine, c.remote, config.clients(), clientIndex, certificateOnly, "RadSec", counts);
+        c.nas = peers.nasOf(c.engine, c.remote, config.clients(), clientIndex, certificateOnly, "RadSec", counts);
         connectedNas.incrementAndGet(c.nas);
         if (c.engine.getSession().getCreationTime() < c.acceptedAt) {
             increment(Counter.HANDSHAKES_RESUMED); // a session from an earlier connection
-        }
-    }
-
-    /**
-     * The link index of the NAS entry a peer belongs to: the entry of its address if that allows the transport (and its
-     * certificate carries the entry's identity, if one is set), else a certificate-only entry its certificate names.
-     */
-    private int nasOf(
-            SSLEngine engine,
-            InetSocketAddress remote,
-            Map<String, RadsecConfig.Client> clients,
-            Map<String, Integer> indexes,
-            List<NasClient> byCertificate,
-            String transport,
-            AtomicLongArray counters)
-            throws Refused {
-        X509Certificate certificate = peerCertificate(engine);
-        NasClient nas = registry.lookup(remote.getAddress());
-        Integer index = nas == null ? null : indexes.get(nas.name());
-        RadsecConfig.Client client = index == null ? null : clients.get(nas.name());
-        if (client == null && certificate != null) { // no entry for the address allows it: by certificate alone
-            for (NasClient candidate : byCertificate) {
-                if (CertificateIdentity.matches(
-                        certificate, clients.get(candidate.name()).identity())) {
-                    nas = candidate;
-                    index = indexes.get(candidate.name());
-                    client = clients.get(candidate.name());
-                    break;
-                }
-            }
-        }
-        if (certificate == null
-                || client == null
-                || (client.identity() != null && !CertificateIdentity.matches(certificate, client.identity()))) {
-            counters.incrementAndGet(Counter.NAS_REFUSED.ordinal());
-            LOG.info(
-                    "{} connection from {} refused: {}",
-                    transport,
-                    remote,
-                    nas == null
-                            ? "no NAS entry for the address"
-                            : client == null
-                                    ? "NAS entry " + nas.name() + " does not allow " + transport
-                                    : "certificate " + certificate.getSubjectX500Principal() + " does not name "
-                                            + client.identity());
-            throw new Refused();
-        }
-        LOG.info("{} connection from {} for NAS {}", transport, remote, nas.name());
-        return index;
-    }
-
-    /** The handshake succeeded but the NAS may not use RadSec: counted as such, not as a failed handshake. */
-    private static final class Refused extends IOException {
-        Refused() {
-            super("NAS refused");
-        }
-    }
-
-    private static X509Certificate peerCertificate(SSLEngine engine) {
-        try {
-            Certificate[] chain = engine.getSession().getPeerCertificates();
-            return chain.length > 0 && chain[0] instanceof X509Certificate x ? x : null;
-        } catch (SSLPeerUnverifiedException e) {
-            return null;
         }
     }
 
@@ -636,56 +505,13 @@ final class RadsecAgent implements Agent {
                         || (c.port == ACCOUNTING_PORT && code == RadiusCode.ACCESS_REQUEST)) {
                     c.counters(this).incrementAndGet(Counter.NOT_HANDLED.ordinal()); // the other port's kind
                 } else {
-                    forward(c.route(), c.nas, c.appView, code, at, length, c.counters(this), c.port == ACCOUNTING_PORT);
+                    peers.forward(
+                            c.route(), c.nas, c.appView, code, at, length, c.counters(this), c.port == ACCOUNTING_PORT);
                 }
                 in.position(at + length);
             }
         } finally {
             in.compact();
-        }
-    }
-
-    private void forward(
-            long route, int nas, UnsafeBuffer packet, int code, int offset, int length, AtomicLongArray counters) {
-        forward(route, nas, packet, code, offset, length, counters, false);
-    }
-
-    /** @param accountingPort a plain TCP accounting connection: Status-Server goes to accounting */
-    private void forward(
-            long route,
-            int nas,
-            UnsafeBuffer packet,
-            int code,
-            int offset,
-            int length,
-            AtomicLongArray counters,
-            boolean accountingPort) {
-        if (code == DynamicAuthorization.DISCONNECT_ACK
-                || code == DynamicAuthorization.DISCONNECT_NAK
-                || code == DynamicAuthorization.COA_ACK
-                || code == DynamicAuthorization.COA_NAK) {
-            int index = link.fromNas.tryClaim(RadsecLink.PACKET_MSG, 4 + length);
-            if (index > 0) {
-                link.fromNas.buffer().putInt(index, nas);
-                link.fromNas.buffer().putBytes(index + 4, packet, offset, length);
-                link.fromNas.commit(index);
-                counters.incrementAndGet(Counter.COA_ANSWERS.ordinal());
-            } else {
-                counters.incrementAndGet(Counter.DROPPED.ordinal());
-            }
-            return;
-        }
-        counters.incrementAndGet(Counter.REQUESTS.ordinal());
-        org.agrona.concurrent.ringbuffer.RingBuffer ring = switch (code) {
-            case RadiusCode.ACCESS_REQUEST -> auth ? link.toAuth : null;
-            case RadiusCode.ACCOUNTING_REQUEST -> link.toAccounting;
-            case RadiusCode.STATUS_SERVER -> auth && !accountingPort ? link.toAuth : link.toAccounting;
-            default -> null;
-        };
-        if (ring == null) {
-            counters.incrementAndGet(Counter.NOT_HANDLED.ordinal());
-        } else if (!RadsecLink.request(ring, route, nas, packet, offset, length)) {
-            counters.incrementAndGet(Counter.DROPPED.ordinal());
         }
     }
 
@@ -712,19 +538,8 @@ final class RadsecAgent implements Agent {
                 return;
             }
         }
-        for (Association a : associations) {
-            if (a != null && a.nas == nas) {
-                reply.clear();
-                buffer.getBytes(index + 4, reply, length - 4);
-                reply.flip();
-                try {
-                    send(a, reply);
-                    dtlsCounts.incrementAndGet(Counter.COA_SENT.ordinal());
-                } catch (IOException e) {
-                    close(a);
-                }
-                return;
-            }
+        if (dtls != null && dtls.coa(nas, buffer, index + 4, length - 4)) {
+            return;
         }
         increment(Counter.COA_NO_CONNECTION); // the request times out at the sender
     }
@@ -734,7 +549,11 @@ final class RadsecAgent implements Agent {
         long route = buffer.getLong(index);
         int slot = RadsecLink.connection(route);
         if (slot >= connections.length) {
-            onDtlsReply(slot - connections.length, RadsecLink.generation(route), buffer, index, length);
+            if (dtls != null) {
+                dtls.reply(slot - connections.length, RadsecLink.generation(route), buffer, index + 8, length - 8);
+            } else {
+                increment(Counter.REPLIES_STALE);
+            }
             return;
         }
         Connection c = slot >= 0 && slot < connections.length ? connections[slot] : null;
@@ -767,251 +586,6 @@ final class RadsecAgent implements Agent {
         }
     }
 
-    // ---- DTLS (RFC 7360) ----
-
-    /** The datagrams waiting on the DTLS socket, a bounded number per call. */
-    private void receive() throws IOException {
-        for (int n = 0; n < 64; n++) {
-            datagramIn.clear();
-            InetSocketAddress from = (InetSocketAddress) dtls.receive(datagramIn);
-            if (from == null) {
-                return;
-            }
-            datagramIn.flip();
-            Association a = byAddress.get(from);
-            try {
-                if (a != null && a.nas >= 0 && clientHello(datagramIn)) {
-                    dtlsCounts.incrementAndGet(Counter.RESTARTED.ordinal()); // RFC 6347 §4.2.8
-                    close(a);
-                    a = null;
-                }
-                if (a == null) {
-                    a = associate(from);
-                    if (a == null) {
-                        continue;
-                    }
-                }
-                a.lastActivity = now;
-                progress(a, datagramIn);
-            } catch (IOException | RuntimeException e) {
-                if (a == null) {
-                    LOG.debug("DTLS ClientHello from {} not taken: {}", from, e.toString());
-                    continue;
-                }
-                if (a.nas < 0 && !(e instanceof Refused)) {
-                    dtlsCounts.incrementAndGet(Counter.HANDSHAKES_FAILED.ordinal());
-                    LOG.debug("DTLS handshake with {} failed: {}", from, e.getMessage());
-                }
-                close(a);
-            }
-        }
-    }
-
-    /**
-     * A new association for a ClientHello from an address that a NAS entry allows over DTLS (or any, while entries
-     * are identified by certificate alone); {@code null} when the datagram is dropped.
-     */
-    private Association associate(InetSocketAddress from) throws IOException {
-        if (!clientHello(datagramIn)) {
-            dtlsCounts.incrementAndGet(Counter.NOT_ASSOCIATED.ordinal());
-            return null;
-        }
-        NasClient nas = registry.lookup(from.getAddress());
-        if ((nas == null || !dtlsIndex.containsKey(nas.name())) && dtlsCertificateOnly.isEmpty()) {
-            dtlsCounts.incrementAndGet(Counter.NAS_REFUSED.ordinal()); // no state for strangers
-            return null;
-        }
-        int index = -1;
-        for (int i = 0; i < associations.length && index < 0; i++) {
-            if (associations[i] == null) {
-                index = i;
-            }
-        }
-        if (index < 0) {
-            dtlsCounts.incrementAndGet(Counter.CONNECTIONS_REFUSED.ordinal());
-            return null;
-        }
-        SSLEngine engine = config.credentials().currentDtls().createSSLEngine(from.getHostString(), from.getPort());
-        engine.setUseClientMode(false);
-        engine.setNeedClientAuth(true);
-        engine.setEnabledProtocols(new String[] {"DTLSv1.2"});
-        Association a = new Association(
-                index,
-                dtlsGenerations[index],
-                engine,
-                from,
-                now,
-                config.dtls().retransmit().toNanos());
-        engine.beginHandshake();
-        associations[index] = a;
-        byAddress.put(from, a);
-        openAssociations++;
-        dtlsCounts.incrementAndGet(Counter.CONNECTIONS_ACCEPTED.ordinal());
-        return a;
-    }
-
-    /**
-     * A DTLS handshake record carrying a ClientHello in epoch 0: content type 22, version 254.x, epoch 0, and handshake
-     * type 1 after the 13-byte record header.
-     */
-    static boolean clientHello(ByteBuffer d) {
-        int at = d.position();
-        return d.remaining() >= 14
-                && d.get(at) == 22
-                && (d.get(at + 1) & 0xFF) == 0xFE
-                && d.get(at + 3) == 0
-                && d.get(at + 4) == 0
-                && d.get(at + 13) == 1;
-    }
-
-    /** Drives an association's engine over one datagram: handshake steps, then each record's RADIUS packet. */
-    private void progress(Association a, ByteBuffer in) throws IOException {
-        while (true) {
-            SSLEngineResult.HandshakeStatus hs = a.engine.getHandshakeStatus();
-            if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                SslEngines.runTasks(a.engine);
-                continue;
-            }
-            if (hs == SSLEngineResult.HandshakeStatus.NEED_WRAP) {
-                wrap(a, empty);
-                continue;
-            }
-            if (!in.hasRemaining() && hs != SSLEngineResult.HandshakeStatus.NEED_UNWRAP_AGAIN) {
-                return;
-            }
-            a.appIn.clear();
-            SSLEngineResult r = a.engine.unwrap(in, a.appIn);
-            if (r.getStatus() == SSLEngineResult.Status.CLOSED) {
-                close(a);
-                return;
-            }
-            if (r.getStatus() != SSLEngineResult.Status.OK) {
-                return; // a record that does not fit: dropped, as a datagram may be
-            }
-            if (r.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED) {
-                established(a);
-            }
-            if (r.bytesProduced() > 0) {
-                record(a, r.bytesProduced());
-            } else if (r.bytesConsumed() == 0
-                    && r.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_UNWRAP) {
-                return; // nothing more to make of this datagram
-            }
-        }
-    }
-
-    /** One decrypted record: a whole RADIUS packet, else silently discarded (RFC 7360 §3: as over UDP). */
-    private void record(Association a, int length) {
-        if (a.nas < 0) {
-            return;
-        }
-        int declared = length >= 4 ? a.appView.getShort(2, java.nio.ByteOrder.BIG_ENDIAN) & 0xFFFF : -1;
-        if (declared < RadiusPacket.HEADER_LENGTH || declared > length) {
-            dtlsCounts.incrementAndGet(Counter.MALFORMED.ordinal());
-            return;
-        }
-        a.lastActivity = now;
-        forward(route(a), a.nas, a.appView, a.appView.getByte(0) & 0xFF, 0, declared, dtlsCounts);
-    }
-
-    private void established(Association a) throws IOException {
-        if (a.nas >= 0) {
-            return;
-        }
-        a.nas = nasOf(a.engine, a.remote, config.dtls().clients(), dtlsIndex, dtlsCertificateOnly, "DTLS", dtlsCounts);
-        connectedNas.incrementAndGet(a.nas);
-        if (a.engine.getSession().getCreationTime() < a.startedAt) {
-            dtlsCounts.incrementAndGet(Counter.HANDSHAKES_RESUMED.ordinal());
-        }
-    }
-
-    /** Encrypts {@code plain} or the next handshake record, and sends each datagram the engine makes. */
-    private void wrap(Association a, ByteBuffer plain) throws IOException {
-        do {
-            datagramOut.clear();
-            SSLEngineResult r = a.engine.wrap(plain, datagramOut);
-            datagramOut.flip();
-            if (datagramOut.hasRemaining()) {
-                dtls.send(datagramOut, a.remote); // a full socket buffer drops it: the peer retransmits
-            }
-            if (r.getStatus() == SSLEngineResult.Status.CLOSED) {
-                throw new SSLException("DTLS closed"); // after sending the close_notify the engine made
-            }
-            if (r.getStatus() != SSLEngineResult.Status.OK) {
-                throw new SSLException("DTLS record does not fit: " + r.getStatus());
-            }
-            if (r.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.FINISHED) {
-                established(a);
-            }
-        } while (plain.hasRemaining());
-    }
-
-    /** A RADIUS packet to the NAS of an association, in one record. */
-    private void send(Association a, ByteBuffer packet) throws IOException {
-        wrap(a, packet);
-    }
-
-    /** The handshake flight again, the timer doubled up to 8 times its first value (RFC 6347 §4.2.4.1). */
-    private void retransmit(Association a) {
-        long first = config.dtls().retransmit().toNanos();
-        a.retransmitInterval = Math.min(a.retransmitInterval * 2, first * 8);
-        a.nextRetransmit = now + a.retransmitInterval;
-        dtlsCounts.incrementAndGet(Counter.RETRANSMISSIONS.ordinal());
-        try {
-            do {
-                wrap(a, empty); // the JDK sends its last flight again when wrapping while it waits for the peer
-                SSLEngineResult.HandshakeStatus hs = a.engine.getHandshakeStatus();
-                if (hs == SSLEngineResult.HandshakeStatus.NEED_TASK) {
-                    SslEngines.runTasks(a.engine);
-                }
-            } while (a.engine.getHandshakeStatus() == SSLEngineResult.HandshakeStatus.NEED_WRAP);
-        } catch (IOException | RuntimeException e) {
-            close(a);
-        }
-    }
-
-    private void onDtlsReply(int slot, int generation, DirectBuffer buffer, int index, int length) {
-        Association a = slot < associations.length ? associations[slot] : null;
-        if (a == null || a.generation != generation || a.nas < 0) {
-            dtlsCounts.incrementAndGet(Counter.REPLIES_STALE.ordinal());
-            return;
-        }
-        reply.clear();
-        buffer.getBytes(index + 8, reply, length - 8);
-        reply.flip();
-        dtlsCounts.incrementAndGet(Counter.REPLIES.ordinal()); // before sending: the NAS may read it first
-        try {
-            send(a, reply);
-        } catch (IOException e) {
-            close(a);
-        }
-    }
-
-    private void close(Association a) {
-        if (associations[a.index] != a) {
-            return;
-        }
-        associations[a.index] = null;
-        byAddress.remove(a.remote, a);
-        if (a.nas >= 0) {
-            connectedNas.decrementAndGet(a.nas);
-        }
-        dtlsGenerations[a.index] = (a.generation + 1) & 0x7FFF_FFFF;
-        openAssociations--;
-        dtlsCounts.incrementAndGet(Counter.CONNECTIONS_CLOSED.ordinal());
-        try {
-            a.engine.closeOutbound();
-            datagramOut.clear();
-            a.engine.wrap(empty, datagramOut); // close_notify, best effort
-            datagramOut.flip();
-            if (datagramOut.hasRemaining()) {
-                dtls.send(datagramOut, a.remote);
-            }
-        } catch (IOException | RuntimeException e) {
-            // closing anyway
-        }
-    }
-
     private void housekeeping() {
         long handshake = config.handshakeTimeout().toNanos();
         long idle = config.idleTimeout().toNanos();
@@ -1024,17 +598,8 @@ final class RadsecAgent implements Agent {
                 close(c);
             }
         }
-        long dtlsIdle = config.dtls().idleTimeout().toNanos();
-        for (Association a : associations) {
-            if (a == null) {
-                continue;
-            }
-            if ((a.nas < 0 && now - a.openedAt > handshake) || (dtlsIdle > 0 && now - a.lastActivity > dtlsIdle)) {
-                dtlsCounts.incrementAndGet(Counter.TIMED_OUT.ordinal());
-                close(a);
-            } else if (now - a.nextRetransmit >= 0 && a.engine.getHandshakeStatus() != NOT_HANDSHAKING) {
-                retransmit(a);
-            }
+        if (dtls != null) {
+            dtls.housekeeping(now, handshake);
         }
     }
 
@@ -1082,11 +647,11 @@ final class RadsecAgent implements Agent {
     }
 
     long getDtls(Counter counter) {
-        return dtlsCounts.get(counter.ordinal());
+        return dtls == null ? 0 : dtls.get(counter);
     }
 
     int openAssociations() {
-        return openAssociations;
+        return dtls == null ? 0 : dtls.openAssociations();
     }
 
     boolean bound() {
@@ -1121,7 +686,7 @@ final class RadsecAgent implements Agent {
                 w.sample(getDtls(c), "gateway", gateway, "result", c.name().toLowerCase(Locale.ROOT));
             }
             w.gauge("radiusward_gateway_dtls_associations", "Open DTLS associations")
-                    .sample(openAssociations, "gateway", gateway);
+                    .sample(dtls.openAssociations(), "gateway", gateway);
         }
         if (config.credentials() != null) {
             w.counter(
@@ -1137,11 +702,6 @@ final class RadsecAgent implements Agent {
         for (Connection c : connections) {
             if (c != null) {
                 close(c);
-            }
-        }
-        for (Association a : associations) {
-            if (a != null) {
-                close(a);
             }
         }
         try {
