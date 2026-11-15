@@ -114,7 +114,8 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
   `AccountingStateMachine.STATE_VERSION` and keeps the old rule behind `machine.atLeast(n)`; the cluster activates
   it once every member runs it ([ADR 0005](docs/adr/0005-log-determinism-versioning.md)).
 - **Determinism in the cluster service (Phase 1+):** cluster time only, no I/O, no randomness, no wall
-  clock, no iteration over hash-ordered collections that affects output.
+  clock, no iteration over hash-ordered collections that affects output. `DeterminismRulesTest` fails the build on the usual
+  ways to break it (wall clock, randomness, environment, file and network I/O, `java.util` hash collections).
 - **ACK boundary:** an Accounting-Response is sent only after the cluster reports the command committed.
   There is no Accounting-Reject; on failure stay silent.
 - **Sinks** implement insert-if-absent events and update-only-if-newer sessions and contain no RADIUS logic
