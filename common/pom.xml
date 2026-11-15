@@ -17,6 +17,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>units</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.agrona</groupId>
             <artifactId>agrona</artifactId>
         </dependency>

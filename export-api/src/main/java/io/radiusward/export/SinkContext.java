@@ -4,6 +4,9 @@
  */
 package io.radiusward.export;
 
+import io.radiusward.units.Units;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
 /**
@@ -26,6 +29,30 @@ public record SinkContext(String name, int memberId, Map<String, String> setting
             throw new IllegalArgumentException("sink." + name + "." + key + " is required");
         }
         return value;
+    }
+
+    /**
+     * A duration such as {@code 500ms}, {@code 3s}, {@code 5m}, {@code 12h}, {@code 90d}.
+     *
+     * @param bare the unit of a number without one, {@code null} if a unit is required (except for {@code 0})
+     */
+    public Duration duration(String key, String fallback, ChronoUnit bare) {
+        String text = setting(key, fallback);
+        try {
+            return Units.duration(text, bare);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("sink." + name + "." + key + ": " + e.getMessage());
+        }
+    }
+
+    /** A size such as {@code 512}, {@code 64k}, {@code 256m}, {@code 1g}. */
+    public long bytes(String key, String fallback) {
+        String text = setting(key, fallback);
+        try {
+            return Units.bytes(text);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("sink." + name + "." + key + ": " + e.getMessage());
+        }
     }
 
     public StorageMode mode() {

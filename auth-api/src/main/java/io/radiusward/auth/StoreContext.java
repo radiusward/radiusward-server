@@ -33,21 +33,12 @@ public record StoreContext(
         return settings.getOrDefault(key, fallback);
     }
 
-    /** A duration such as {@code 1500ms}, {@code 5s}, {@code 2m}, {@code 1h}. */
+    /** A duration such as {@code 1500ms}, {@code 5s}, {@code 2m}, {@code 1h}, {@code 1d}; a unit is required. */
     public java.time.Duration duration(String key, String fallback) {
-        String text = setting(key, fallback).trim().toLowerCase(java.util.Locale.ROOT);
+        String text = setting(key, fallback);
         try {
-            if (text.endsWith("ms")) {
-                return java.time.Duration.ofMillis(Long.parseLong(text.substring(0, text.length() - 2)));
-            }
-            long n = Long.parseLong(text.substring(0, text.length() - 1));
-            return switch (text.charAt(text.length() - 1)) {
-                case 's' -> java.time.Duration.ofSeconds(n);
-                case 'm' -> java.time.Duration.ofMinutes(n);
-                case 'h' -> java.time.Duration.ofHours(n);
-                default -> throw new NumberFormatException();
-            };
-        } catch (RuntimeException e) {
+            return io.radiusward.units.Units.duration(text, null);
+        } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(
                     "auth.store." + name + "." + key + ": expected a duration like 1500ms, 5s or 2m, got " + text);
         }

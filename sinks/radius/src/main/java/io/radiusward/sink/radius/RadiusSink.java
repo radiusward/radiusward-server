@@ -118,7 +118,7 @@ public final class RadiusSink implements AccountingSink {
             throw new IllegalArgumentException("sink." + context.name() + ".secret is required over UDP");
         }
         secret = secretText.getBytes(StandardCharsets.UTF_8);
-        timeout = duration(context.setting("timeout", "3s"));
+        timeout = context.duration("timeout", "3s", java.time.temporal.ChronoUnit.SECONDS); // a bare number: seconds
         retries = Integer.parseInt(context.setting("retries", "2"));
         strip = Boolean.parseBoolean(context.setting("strip", "false"));
         if (tls) {
@@ -381,21 +381,6 @@ public final class RadiusSink implements AccountingSink {
             at += l;
         }
         return null;
-    }
-
-    /** {@code 500ms}, {@code 3s}, {@code 1m}. */
-    static Duration duration(String text) {
-        String t = text.trim().toLowerCase(Locale.ROOT);
-        if (t.endsWith("ms")) {
-            return Duration.ofMillis(Long.parseLong(t.substring(0, t.length() - 2)));
-        }
-        if (t.endsWith("s")) {
-            return Duration.ofSeconds(Long.parseLong(t.substring(0, t.length() - 1)));
-        }
-        if (t.endsWith("m")) {
-            return Duration.ofMinutes(Long.parseLong(t.substring(0, t.length() - 1)));
-        }
-        return Duration.ofSeconds(Long.parseLong(t));
     }
 
     private static Path path(String value) {

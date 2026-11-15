@@ -4,12 +4,14 @@
  */
 package io.radiusward.common.config;
 
+import io.radiusward.units.Units;
 import java.io.IOException;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -188,19 +190,11 @@ public final class Config {
     /** Durations: {@code 250ms}, {@code 10s}, {@code 5m}, {@code 2h}, {@code 1d}; a bare number means milliseconds. */
     public Duration duration(String key) {
         String value = string(key);
-        Matcher m = Pattern.compile("(\\d+)\\s*(ms|s|m|h|d)?").matcher(value.toLowerCase(Locale.ROOT));
-        if (!m.matches()) {
+        try {
+            return Units.duration(value, ChronoUnit.MILLIS);
+        } catch (IllegalArgumentException e) {
             throw invalid(key, value, "a duration such as 500ms, 10s, 5m, 2h");
         }
-        long n = Long.parseLong(m.group(1));
-        String unit = m.group(2) == null ? "ms" : m.group(2);
-        return switch (unit) {
-            case "ms" -> Duration.ofMillis(n);
-            case "s" -> Duration.ofSeconds(n);
-            case "m" -> Duration.ofMinutes(n);
-            case "h" -> Duration.ofHours(n);
-            default -> Duration.ofDays(n);
-        };
     }
 
     public Duration duration(String key, Duration fallback) {
@@ -210,20 +204,11 @@ public final class Config {
     /** Sizes in bytes: {@code 512}, {@code 64k}, {@code 4m}, {@code 1g}. */
     public long bytes(String key) {
         String value = string(key);
-        Matcher m = Pattern.compile("(\\d+)\\s*([kmg])?b?").matcher(value.toLowerCase(Locale.ROOT));
-        if (!m.matches()) {
+        try {
+            return Units.bytes(value);
+        } catch (IllegalArgumentException e) {
             throw invalid(key, value, "a size such as 512, 64k, 4m, 1g");
         }
-        long n = Long.parseLong(m.group(1));
-        String unit = m.group(2);
-        if (unit == null) {
-            return n;
-        }
-        return switch (unit) {
-            case "k" -> n << 10;
-            case "m" -> n << 20;
-            default -> n << 30;
-        };
     }
 
     public long bytes(String key, long fallback) {

@@ -22,6 +22,7 @@
     </licenses>
 
     <modules>
+        <module>units</module>
         <module>radius-dictionary</module>
         <module>radius-dictionary-freeradius</module>
         <module>radius-codegen</module>
@@ -163,6 +164,11 @@
             <dependency>
                 <groupId>io.radiusward</groupId>
                 <artifactId>auth-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>units</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -540,9 +540,11 @@ class PostgresSinkTest {
     @Test
     void invalidSettingsAreRejected() {
         assertThatThrownBy(() -> open(Map.of("attributes", "xml"))).hasMessageContaining("expected json, raw or none");
-        assertThat(PostgresSink.duration("12h")).isEqualTo(java.time.Duration.ofHours(12));
-        assertThat(PostgresSink.duration("30m")).isEqualTo(java.time.Duration.ofMinutes(30));
-        assertThatThrownBy(() -> PostgresSink.duration("5w")).hasMessageContaining("expected a duration");
+        assertThatThrownBy(() -> open(Map.of("events.retention", "5w")))
+                .hasMessageContaining("events.retention: expected a duration");
+        assertThatThrownBy(() -> open(Map.of("sessions.retention", "30")))
+                .as("a retention needs its unit")
+                .hasMessageContaining("sessions.retention: expected a duration with a unit");
     }
 
     @Test

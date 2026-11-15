@@ -79,6 +79,11 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>units</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>store-file</artifactId>
             <version>${project.version}</version>
         </dependency>

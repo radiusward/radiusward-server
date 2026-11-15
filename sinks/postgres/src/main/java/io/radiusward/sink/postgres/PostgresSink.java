@@ -82,8 +82,8 @@ public final class PostgresSink implements AccountingSink {
         if (!List.of("json", "jsonb", "raw", "none").contains(attributeMode)) {
             throw new IllegalArgumentException("sink." + context.name() + ".attributes: expected json, raw or none");
         }
-        this.eventsRetention = duration(context.setting("events.retention", "90d"));
-        this.sessionsRetention = duration(context.setting("sessions.retention", "0"));
+        this.eventsRetention = context.duration("events.retention", "90d", null);
+        this.sessionsRetention = context.duration("sessions.retention", "0", null);
         Properties props = new Properties();
         if (context.settings().containsKey("user")) {
             props.setProperty("user", context.settings().get("user"));
@@ -448,20 +448,6 @@ public final class PostgresSink implements AccountingSink {
 
     private static LocalDate day(long epochMillis) {
         return Instant.ofEpochMilli(epochMillis).atZone(ZoneOffset.UTC).toLocalDate();
-    }
-
-    static Duration duration(String value) {
-        String v = value.trim().toLowerCase(Locale.ROOT);
-        if (v.equals("0")) {
-            return Duration.ZERO;
-        }
-        long n = Long.parseLong(v.substring(0, v.length() - 1));
-        return switch (v.charAt(v.length() - 1)) {
-            case 'd' -> Duration.ofDays(n);
-            case 'h' -> Duration.ofHours(n);
-            case 'm' -> Duration.ofMinutes(n);
-            default -> throw new IllegalArgumentException("expected a duration like 90d, 12h or 0, got " + value);
-        };
     }
 
     @Override

@@ -3,7 +3,9 @@
 Properties files, one or more per process (`--config a.properties --config b.properties`, later files win).
 Every key can be overridden by an environment variable — `cluster.node.id` → `RADIUSWARD_CLUSTER_NODE_ID` —
 and values may reference the environment: `${env:NAS_SECRET}`, `${env:X:-default}` ([ADR 0010](adr/0010-configuration.md)).
-Durations: `500ms`, `10s`, `5m`, `2h`. Sizes: `512`, `64k`, `4m`, `1g`. Examples: [config/local](../config/local).
+Durations: `500ms`, `10s`, `5m`, `2h`, `1d`; sizes: `512`, `64k`, `4m`, `1g`, the same in every key, including the
+sinks' and identity stores' settings. A number without a unit means milliseconds in the server's own keys and
+seconds in `sink.<name>.timeout`; the other sink and store durations need their unit (`0` aside). Examples: [config/local](../config/local).
 
 Gateways reload NAS entries, identity stores, counters, pools, TOTP, CUI, the reject delay, rules and trace conditions on SIGHUP or
 `POST /reload` ([ADR 0054](adr/0054-config-reload.md)); everything else needs a restart.

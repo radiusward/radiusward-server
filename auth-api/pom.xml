@@ -15,4 +15,11 @@
     <name>radiusward :: auth api</name>
     <description>Identity store plug-in API: look up a user's credentials, check items and reply attributes</description>
 
+    <dependencies>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>units</artifactId>
+        </dependency>
+    </dependencies>
+
 </project>

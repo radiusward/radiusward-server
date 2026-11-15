@@ -54,7 +54,7 @@ public final class FileSink implements AccountingSink {
         this.context = context;
         this.attributes = context.attributes();
         this.dir = Path.of(context.required("dir"));
-        this.maxFileSize = parseSize(context.setting("max.file.size", "256m"));
+        this.maxFileSize = context.bytes("max.file.size", "256m");
         this.events = context.mode() == StorageMode.SESSIONS_AND_EVENTS;
         Files.createDirectories(dir);
         positionFile = dir.resolve(context.name() + ".position");
@@ -227,12 +227,6 @@ public final class FileSink implements AccountingSink {
             }
             out.append('"');
         }
-    }
-
-    private static long parseSize(String value) {
-        String v = value.trim().toLowerCase(java.util.Locale.ROOT);
-        long unit = v.endsWith("g") ? 1L << 30 : v.endsWith("m") ? 1L << 20 : v.endsWith("k") ? 1L << 10 : 1;
-        return Long.parseLong(unit == 1 ? v : v.substring(0, v.length() - 1)) * unit;
     }
 
     @Override

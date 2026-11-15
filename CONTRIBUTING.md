@@ -74,6 +74,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | Module | Purpose |
 |---|---|
 | `protocol` | SBE schema and generated codecs (gateway ↔ cluster, snapshots) |
+| `units` | Durations and sizes in settings, parsed alike by the server, the sinks and the identity stores; no dependencies |
 | `common` | Config (properties + env), profiles, management HTTP server, non-blocking Log4j2 |
 | `cluster-service` | `AccountingService` + deterministic `AccountingStateMachine`, `SessionStore`, snapshots |
 | `cluster-node` | Launches a member (media driver, archive, consensus module, service, exporter, log purge) |

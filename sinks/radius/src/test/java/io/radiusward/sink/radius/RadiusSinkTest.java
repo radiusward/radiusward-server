@@ -203,6 +203,5 @@ class RadiusSinkTest {
                 .hasMessageContaining("no home server acknowledged");
         assertThatThrownBy(() -> sink(Map.of("servers", silent.server(), "mode", "sessions")))
                 .hasMessageContaining("sessions+events");
-        assertThat(RadiusSink.duration("500ms").toMillis()).isEqualTo(500);
     }
 }

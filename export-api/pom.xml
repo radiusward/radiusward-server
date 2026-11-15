@@ -18,6 +18,10 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>units</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>radius-codec</artifactId>
         </dependency>
         <dependency>

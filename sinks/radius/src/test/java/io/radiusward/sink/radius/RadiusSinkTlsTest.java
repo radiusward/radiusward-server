@@ -24,7 +24,6 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.cert.X509Certificate;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -286,9 +285,11 @@ class RadiusSinkTlsTest {
         Path plain = Files.writeString(
                 dir.resolve("rsa.key"), "-----BEGIN RSA PRIVATE KEY-----\n-----END RSA PRIVATE KEY-----\n");
         assertThatThrownBy(() -> RadiusSink.privateKey(plain)).hasMessageContaining("BEGIN PRIVATE KEY");
-        assertThat(RadiusSink.duration("2s")).isEqualTo(Duration.ofSeconds(2));
-        assertThat(RadiusSink.duration("1m")).isEqualTo(Duration.ofMinutes(1));
-        assertThat(RadiusSink.duration("3")).isEqualTo(Duration.ofSeconds(3));
+        assertThat(sink(Map.of("servers", "127.0.0.1", "secret", "s", "timeout", "3")))
+                .as("a bare timeout means seconds")
+                .isNotNull();
+        assertThatThrownBy(() -> sink(Map.of("servers", "127.0.0.1", "secret", "s", "timeout", "soon")))
+                .hasMessageContaining(".timeout: expected a duration");
         RadiusSink sink = sink(Map.of("servers", " 127.0.0.1 , ,", "secret", "s"));
         assertThat(sink.storedPosition())
                 .as("resumes from the cluster's checkpoint")
