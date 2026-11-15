@@ -252,6 +252,16 @@ public final class CodeGenerator {
                 .open("public final class AccountingFields");
 
         List<HotAttributeSpec.Field> fields = spec.fields();
+        presenceAndStorage(java, fields);
+        reset(java, fields);
+        commonAccessors(java);
+        fieldAccessors(java, fields);
+        java.close();
+        return java.toString();
+    }
+
+    /** Presence-bit constants, then the fields that hold each attribute's value or offsets. */
+    private static void presenceAndStorage(JavaBuilder java, List<HotAttributeSpec.Field> fields) {
         for (int i = 0; i < fields.size(); i++) {
             HotAttributeSpec.Field field = fields.get(i);
             java.line("/** Presence bit of {@code " + field.attribute().path() + "}. */")
@@ -277,7 +287,10 @@ public final class CodeGenerator {
                 java.line("long " + n + ";");
             }
         }
+    }
 
+    /** {@code reset}: forgets the previous packet. */
+    private static void reset(JavaBuilder java, List<HotAttributeSpec.Field> fields) {
         java.blank()
                 .open("void reset(DirectBuffer packetBuffer)")
                 .line("buffer = packetBuffer;")
@@ -290,7 +303,10 @@ public final class CodeGenerator {
             }
         }
         java.close();
+    }
 
+    /** Accessors every generated class has: buffer, presence and counts of malformed and dropped attributes. */
+    private static void commonAccessors(JavaBuilder java) {
         java.blank()
                 .line("/** Buffer the offsets refer to. */")
                 .open("public DirectBuffer buffer()")
@@ -316,7 +332,10 @@ public final class CodeGenerator {
                 .open("public int droppedCount()")
                 .line("return dropped;")
                 .close();
+    }
 
+    /** One accessor (or count, offset and length) per hot attribute. */
+    private static void fieldAccessors(JavaBuilder java, List<HotAttributeSpec.Field> fields) {
         for (HotAttributeSpec.Field field : fields) {
             Kind kind = kind(field.attribute());
             String n = field.name();
@@ -352,8 +371,6 @@ public final class CodeGenerator {
                         .close();
             }
         }
-        java.close();
-        return java.toString();
     }
 
     // ---- extractor -------------------------------------------------------------------------------
