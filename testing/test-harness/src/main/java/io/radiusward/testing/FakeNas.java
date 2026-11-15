@@ -26,8 +26,8 @@ public final class FakeNas implements AutoCloseable {
     /** The shared secret of {@link LocalCluster}'s NAS entry. */
     public static final byte[] SECRET = LocalCluster.SECRET.getBytes(StandardCharsets.US_ASCII);
 
-    private final byte[] secret;
-    private DatagramChannel channel;
+    private final byte[] sharedSecret;
+    private final DatagramChannel channel;
 
     public FakeNas() {
         this(SECRET);
@@ -35,15 +35,19 @@ public final class FakeNas implements AutoCloseable {
 
     /** With another shared secret, to verify the responses with. */
     public FakeNas(byte[] secret) {
-        this.secret = secret.clone();
-    }
-
-    private DatagramChannel channel() throws IOException {
-        if (channel == null) {
-            channel = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
-            channel.configureBlocking(false);
+        this.sharedSecret = secret.clone();
+        try {
+            channel = DatagramChannel.open();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
-        return channel;
+        try {
+            channel.bind(new InetSocketAddress("127.0.0.1", 0));
+            channel.configureBlocking(false);
+        } catch (IOException e) {
+            close();
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
@@ -58,7 +62,7 @@ public final class FakeNas implements AutoCloseable {
         }
         RadiusPacket view = new RadiusPacket();
         view.wrap(new UnsafeBuffer(response), 0, response.length);
-        if (!new RadiusAuthenticator().verifyResponse(view, new UnsafeBuffer(request), 4, secret)) {
+        if (!new RadiusAuthenticator().verifyResponse(view, new UnsafeBuffer(request), 4, sharedSecret)) {
             throw new AssertionError("Response Authenticator of the answer to request " + (request[1] & 0xFF));
         }
         if (view.code() != RadiusCode.ACCOUNTING_RESPONSE) {
@@ -87,7 +91,7 @@ public final class FakeNas implements AutoCloseable {
 
     private byte[] reply(int port, byte[] request, int attempts, Duration timeout) {
         try {
-            DatagramChannel c = channel();
+            DatagramChannel c = channel;
             InetSocketAddress target = new InetSocketAddress("127.0.0.1", port);
             ByteBuffer in = ByteBuffer.allocate(4096);
             for (int attempt = 0; attempt < attempts; attempt++) {
@@ -111,9 +115,11 @@ public final class FakeNas implements AutoCloseable {
     }
 
     @Override
-    public void close() throws IOException {
-        if (channel != null) {
+    public void close() {
+        try {
             channel.close();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 }

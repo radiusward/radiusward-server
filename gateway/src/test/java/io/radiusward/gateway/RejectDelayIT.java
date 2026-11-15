@@ -103,6 +103,9 @@ class RejectDelayIT {
         InetAddress loopback = InetAddress.getByName("127.0.0.1");
         try (DatagramSocket nas = new DatagramSocket(new InetSocketAddress(loopback, 0))) {
             nas.setSoTimeout(3_000);
+            byte[] warmUp = AuthAgentTest.accessRequest(0, "arctangent", true, false);
+            AuthAgentTest.assertSignedReplyTo(
+                    exchange(nas, warmUp), warmUp, RadiusCode.ACCESS_ACCEPT); // loads the store
             byte[] good = AuthAgentTest.accessRequest(1, "arctangent", true, false);
             long start = System.nanoTime();
             AuthAgentTest.assertSignedReplyTo(exchange(nas, good), good, RadiusCode.ACCESS_ACCEPT);
@@ -123,7 +126,7 @@ class RejectDelayIT {
         long deadline = System.nanoTime() + 5_000_000_000L;
         Path day = dir.resolve("log");
         List<String> lines = List.of();
-        while (System.nanoTime() < deadline && lines.size() < 2) {
+        while (System.nanoTime() < deadline && lines.size() < 3) {
             try (var files = Files.list(day)) {
                 lines = files.flatMap(f -> {
                             try {
@@ -138,9 +141,10 @@ class RejectDelayIT {
             }
             Thread.sleep(20);
         }
-        assertThat(lines).hasSize(2);
+        assertThat(lines).hasSize(3);
         assertThat(lines.get(0)).contains("\"user\":\"nemo\"", "\"result\":\"accept\"");
-        assertThat(lines.get(1)).contains("\"result\":\"reject\"", "\"reason\":\"credentials or method rejected\"");
+        assertThat(lines.get(1)).contains("\"user\":\"nemo\"", "\"result\":\"accept\"");
+        assertThat(lines.get(2)).contains("\"result\":\"reject\"", "\"reason\":\"credentials or method rejected\"");
         assertThat(gateway.metrics()).contains("result=\"rejects_delayed\"} 1");
 
         assertThatThrownBy(() -> Gateway.rejectDelay(Config.of(Map.of("auth.reject.delay", "6s"))))
