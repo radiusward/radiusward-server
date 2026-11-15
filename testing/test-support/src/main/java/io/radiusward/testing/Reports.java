@@ -56,7 +56,7 @@ public final class Reports {
             return;
         }
         try {
-            Allure.addAttachment(name, "text/plain", text, ".txt");
+            Allure.attachment(name, text); // the same in Allure 2 and 3 (3 dropped addAttachment)
         } catch (RuntimeException e) {
             // a diagnostic must never hide the test's own result
         }
