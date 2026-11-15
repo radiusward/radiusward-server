@@ -5,6 +5,8 @@
 package io.radiusward.exporter;
 
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.common.management.JsonWriter;
+import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.export.Attributes;
 import io.radiusward.export.SinkContext;
 import io.radiusward.export.SinkProvider;
@@ -99,6 +101,68 @@ public final class Exporter implements AutoCloseable {
             providers.putIfAbsent(provider.type(), provider);
         }
         return providers;
+    }
+
+    /**
+     * The sinks in {@code /state}: lease, positions, lag behind the member's applied log position, rows and errors.
+     */
+    public void writeState(JsonWriter json, long lastPosition) {
+        json.object("export");
+        for (SinkStatus sink : status()) {
+            json.object(sink.name())
+                    .field("type", sink.type())
+                    .field("exporting", sink.exporting())
+                    .field("leaseOwner", sink.leaseOwner())
+                    .field("epoch", sink.epoch())
+                    .field("position", sink.position())
+                    .field("clusterCheckpoint", sink.clusterCheckpoint())
+                    .field("lagBytes", Math.max(0, lastPosition - sink.clusterCheckpoint()))
+                    .field("detached", sink.detached())
+                    .field("rows", sink.rows())
+                    .field("batches", sink.batches())
+                    .field("lastBatchMillis", sink.lastBatchNanos() / 1_000_000)
+                    .field("lastError", sink.lastError() == null ? "" : sink.lastError())
+                    .end();
+        }
+        json.end();
+    }
+
+    /**
+     * The sinks in {@code /metrics} (docs/operations/monitoring.md), labelled with the member and the sink.
+     *
+     * @param lastPosition the member's applied log position, for the lag
+     * @param nowMillis wall-clock time, for the age of the newest exported entry
+     */
+    public void writeMetrics(PrometheusWriter w, String member, long lastPosition, long nowMillis) {
+        List<SinkStatus> sinks = status();
+        w.gauge("radiusward_export_exporting", "1 on the member that holds the sink's lease");
+        sinks.forEach(k -> w.sample(k.exporting() ? 1 : 0, "member", member, "sink", k.name()));
+        w.gauge("radiusward_export_lag_bytes", "Accounting log not yet written by the sink");
+        sinks.forEach(
+                k -> w.sample(Math.max(0, lastPosition - k.clusterCheckpoint()), "member", member, "sink", k.name()));
+        w.gauge("radiusward_export_lag_seconds", "Age of the newest exported entry (exporting member only)");
+        sinks.stream()
+                .filter(SinkStatus::exporting)
+                .forEach(k -> w.sample(
+                        k.lastEventTime() == 0 || k.clusterCheckpoint() >= lastPosition
+                                ? 0
+                                : Math.max(0, nowMillis - k.lastEventTime()) / 1000.0,
+                        "member",
+                        member,
+                        "sink",
+                        k.name()));
+        w.gauge("radiusward_export_detached", "1 when an optional sink has been detached");
+        sinks.forEach(k -> w.sample(k.detached() ? 1 : 0, "member", member, "sink", k.name()));
+        w.gauge("radiusward_export_epoch", "Lease epoch of the sink");
+        sinks.forEach(k -> w.sample(k.epoch(), "member", member, "sink", k.name()));
+        w.counter("radiusward_export_rows_total", "Rows written by this member");
+        sinks.forEach(k -> w.sample(k.rows(), "member", member, "sink", k.name()));
+        w.counter("radiusward_export_batches_total", "Batches written by this member");
+        sinks.forEach(k -> w.sample(k.batches(), "member", member, "sink", k.name()));
+        w.gauge("radiusward_export_last_batch_seconds", "Duration of the last batch write");
+        sinks.forEach(k -> w.sample(k.lastBatchNanos() / 1e9, "member", member, "sink", k.name()));
+        w.counter("radiusward_export_errors_total", "Failed sink writes and other sink errors");
+        sinks.forEach(k -> w.sample(k.errors(), "member", member, "sink", k.name()));
     }
 
     public List<SinkStatus> status() {

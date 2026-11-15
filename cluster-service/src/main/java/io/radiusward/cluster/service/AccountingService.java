@@ -185,63 +185,12 @@ public final class AccountingService implements ClusteredService {
                 stats.purgeInputs(machine.export());
                 onVersions(applier.activatedVersion(), "every member supports it", header.position());
             }
-            case io.radiusward.protocol.ActivateVersionDecoder.TEMPLATE_ID -> {
-                applier.apply(buffer, offset, header.position(), timestamp);
-                onVersions(applier.activatedVersion(), "requested", header.position());
-                activationEncoder
-                        .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
-                        .correlationId(applier.activation().correlationId())
-                        .result(
-                                switch (applier.activationResult()) {
-                                    case StateVersions.ACTIVATED -> io.radiusward.protocol.ActivationResult.ACTIVATED;
-                                    case StateVersions.NOT_NEWER -> io.radiusward.protocol.ActivationResult.NOT_NEWER;
-                                    default -> io.radiusward.protocol.ActivationResult.MEMBERS_NOT_READY;
-                                })
-                        .activeVersion(machine.versions().active())
-                        .lowestSupportedVersion(machine.versions().lowestSupported());
-                if (session != null) {
-                    reply(session, MessageHeaderEncoder.ENCODED_LENGTH + activationEncoder.encodedLength());
-                }
-            }
-            case io.radiusward.protocol.AuthReservationDecoder.TEMPLATE_ID -> {
-                applier.apply(buffer, offset, header.position(), timestamp);
-                if (applier.claimSweepTimer()) {
-                    scheduleSweep(timestamp); // expired reservations are removed by the sweep
-                }
-                reservationEncoder
-                        .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
-                        .correlationId(applier.reservation().correlationId())
-                        .result(
-                                switch (applier.reservationResult()) {
-                                    case AccountingStateMachine.RESERVATION_GRANTED ->
-                                        io.radiusward.protocol.ReservationResult.GRANTED;
-                                    case AccountingStateMachine.RESERVATION_DENIED ->
-                                        io.radiusward.protocol.ReservationResult.DENIED;
-                                    case AccountingStateMachine.RESERVATION_UNSUPPORTED ->
-                                        io.radiusward.protocol.ReservationResult.UNSUPPORTED;
-                                    default -> io.radiusward.protocol.ReservationResult.CAPACITY;
-                                });
-                if (session != null) {
-                    reply(session, MessageHeaderEncoder.ENCODED_LENGTH + reservationEncoder.encodedLength());
-                }
-            }
-            case io.radiusward.protocol.SqnNextDecoder.TEMPLATE_ID -> {
-                applier.apply(buffer, offset, header.position(), timestamp);
-                long sqn = applier.sqnResult();
-                sqnEncoder
-                        .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
-                        .correlationId(applier.sqnRequest().correlationId())
-                        .outcome(
-                                sqn >= 0
-                                        ? io.radiusward.protocol.SqnOutcome.OK
-                                        : sqn == AccountingStateMachine.SQN_UNSUPPORTED
-                                                ? io.radiusward.protocol.SqnOutcome.UNSUPPORTED
-                                                : io.radiusward.protocol.SqnOutcome.CAPACITY)
-                        .sqn(Math.max(sqn, 0));
-                if (session != null) {
-                    reply(session, MessageHeaderEncoder.ENCODED_LENGTH + sqnEncoder.encodedLength());
-                }
-            }
+            case io.radiusward.protocol.ActivateVersionDecoder.TEMPLATE_ID ->
+                onActivateVersion(session, timestamp, buffer, offset, header);
+            case io.radiusward.protocol.AuthReservationDecoder.TEMPLATE_ID ->
+                onAuthReservation(session, timestamp, buffer, offset, header);
+            case io.radiusward.protocol.SqnNextDecoder.TEMPLATE_ID ->
+                onSqnNext(session, timestamp, buffer, offset, header);
             case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);
             case SessionQueryDecoder.TEMPLATE_ID -> onSessionQuery(session, buffer, offset);
             case io.radiusward.protocol.UserSessionsQueryDecoder.TEMPLATE_ID ->
@@ -249,6 +198,68 @@ public final class AccountingService implements ClusteredService {
             case io.radiusward.protocol.SessionPageQueryDecoder.TEMPLATE_ID ->
                 onSessionPageQuery(session, buffer, offset);
             default -> {}
+        }
+    }
+
+    private void onActivateVersion(
+            ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
+        applier.apply(buffer, offset, header.position(), timestamp);
+        onVersions(applier.activatedVersion(), "requested", header.position());
+        activationEncoder
+                .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                .correlationId(applier.activation().correlationId())
+                .result(
+                        switch (applier.activationResult()) {
+                            case StateVersions.ACTIVATED -> io.radiusward.protocol.ActivationResult.ACTIVATED;
+                            case StateVersions.NOT_NEWER -> io.radiusward.protocol.ActivationResult.NOT_NEWER;
+                            default -> io.radiusward.protocol.ActivationResult.MEMBERS_NOT_READY;
+                        })
+                .activeVersion(machine.versions().active())
+                .lowestSupportedVersion(machine.versions().lowestSupported());
+        if (session != null) {
+            reply(session, MessageHeaderEncoder.ENCODED_LENGTH + activationEncoder.encodedLength());
+        }
+    }
+
+    private void onAuthReservation(
+            ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
+        applier.apply(buffer, offset, header.position(), timestamp);
+        if (applier.claimSweepTimer()) {
+            scheduleSweep(timestamp); // expired reservations are removed by the sweep
+        }
+        reservationEncoder
+                .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                .correlationId(applier.reservation().correlationId())
+                .result(
+                        switch (applier.reservationResult()) {
+                            case AccountingStateMachine.RESERVATION_GRANTED ->
+                                io.radiusward.protocol.ReservationResult.GRANTED;
+                            case AccountingStateMachine.RESERVATION_DENIED ->
+                                io.radiusward.protocol.ReservationResult.DENIED;
+                            case AccountingStateMachine.RESERVATION_UNSUPPORTED ->
+                                io.radiusward.protocol.ReservationResult.UNSUPPORTED;
+                            default -> io.radiusward.protocol.ReservationResult.CAPACITY;
+                        });
+        if (session != null) {
+            reply(session, MessageHeaderEncoder.ENCODED_LENGTH + reservationEncoder.encodedLength());
+        }
+    }
+
+    private void onSqnNext(ClientSession session, long timestamp, DirectBuffer buffer, int offset, Header header) {
+        applier.apply(buffer, offset, header.position(), timestamp);
+        long sqn = applier.sqnResult();
+        sqnEncoder
+                .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
+                .correlationId(applier.sqnRequest().correlationId())
+                .outcome(
+                        sqn >= 0
+                                ? io.radiusward.protocol.SqnOutcome.OK
+                                : sqn == AccountingStateMachine.SQN_UNSUPPORTED
+                                        ? io.radiusward.protocol.SqnOutcome.UNSUPPORTED
+                                        : io.radiusward.protocol.SqnOutcome.CAPACITY)
+                .sqn(Math.max(sqn, 0));
+        if (session != null) {
+            reply(session, MessageHeaderEncoder.ENCODED_LENGTH + sqnEncoder.encodedLength());
         }
     }
 

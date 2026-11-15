@@ -24,9 +24,7 @@ import io.radiusward.common.management.JvmMetrics;
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.exporter.Exporter;
 import io.radiusward.exporter.ExporterContext;
-import io.radiusward.exporter.SinkStatus;
 import java.io.File;
-import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -475,24 +473,7 @@ public final class ClusterNode implements AutoCloseable {
         }
         Exporter e = exporter;
         if (e != null) {
-            json.object("export");
-            for (SinkStatus sink : e.status()) {
-                json.object(sink.name())
-                        .field("type", sink.type())
-                        .field("exporting", sink.exporting())
-                        .field("leaseOwner", sink.leaseOwner())
-                        .field("epoch", sink.epoch())
-                        .field("position", sink.position())
-                        .field("clusterCheckpoint", sink.clusterCheckpoint())
-                        .field("lagBytes", Math.max(0, s.lastPosition() - sink.clusterCheckpoint()))
-                        .field("detached", sink.detached())
-                        .field("rows", sink.rows())
-                        .field("batches", sink.batches())
-                        .field("lastBatchMillis", sink.lastBatchNanos() / 1_000_000)
-                        .field("lastError", sink.lastError() == null ? "" : sink.lastError())
-                        .end();
-            }
-            json.end();
+            e.writeState(json, s.lastPosition());
         }
         return json.finish();
     }
@@ -550,36 +531,7 @@ public final class ClusterNode implements AutoCloseable {
                 .sample(NonBlockingQueueFullPolicy.dropped());
         Exporter e = exporter;
         if (e != null) {
-            long now = System.currentTimeMillis();
-            List<SinkStatus> sinks = e.status();
-            w.gauge("radiusward_export_exporting", "1 on the member that holds the sink's lease");
-            sinks.forEach(k -> w.sample(k.exporting() ? 1 : 0, "member", member, "sink", k.name()));
-            w.gauge("radiusward_export_lag_bytes", "Accounting log not yet written by the sink");
-            sinks.forEach(k -> w.sample(
-                    Math.max(0, s.lastPosition() - k.clusterCheckpoint()), "member", member, "sink", k.name()));
-            w.gauge("radiusward_export_lag_seconds", "Age of the newest exported entry (exporting member only)");
-            sinks.stream()
-                    .filter(SinkStatus::exporting)
-                    .forEach(k -> w.sample(
-                            k.lastEventTime() == 0 || k.clusterCheckpoint() >= s.lastPosition()
-                                    ? 0
-                                    : Math.max(0, now - k.lastEventTime()) / 1000.0,
-                            "member",
-                            member,
-                            "sink",
-                            k.name()));
-            w.gauge("radiusward_export_detached", "1 when an optional sink has been detached");
-            sinks.forEach(k -> w.sample(k.detached() ? 1 : 0, "member", member, "sink", k.name()));
-            w.gauge("radiusward_export_epoch", "Lease epoch of the sink");
-            sinks.forEach(k -> w.sample(k.epoch(), "member", member, "sink", k.name()));
-            w.counter("radiusward_export_rows_total", "Rows written by this member");
-            sinks.forEach(k -> w.sample(k.rows(), "member", member, "sink", k.name()));
-            w.counter("radiusward_export_batches_total", "Batches written by this member");
-            sinks.forEach(k -> w.sample(k.batches(), "member", member, "sink", k.name()));
-            w.gauge("radiusward_export_last_batch_seconds", "Duration of the last batch write");
-            sinks.forEach(k -> w.sample(k.lastBatchNanos() / 1e9, "member", member, "sink", k.name()));
-            w.counter("radiusward_export_errors_total", "Failed sink writes and other sink errors");
-            sinks.forEach(k -> w.sample(k.errors(), "member", member, "sink", k.name()));
+            e.writeMetrics(w, member, s.lastPosition(), System.currentTimeMillis());
         }
         JvmMetrics.write(w);
         return w.finish();
