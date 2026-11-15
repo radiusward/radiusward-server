@@ -64,7 +64,7 @@
         <sbe.version>1.42.0</sbe.version><!-- build time only -->
 
         <!-- test -->
-        <junit.version>5.14.4</junit.version><!-- aligned with jqwik's JUnit Platform -->
+        <junit.version>6.1.3</junit.version><!-- aligned with jqwik's JUnit Platform -->
         <!-- Allure Java adapter for the published test reports (ADR 0064): the 2.x line is built for JUnit 5 (3.x needs
              JUnit 6); Allure Report 3 reads its results. Test scope only, never shipped. -->
         <allure.version>2.35.6</allure.version>
