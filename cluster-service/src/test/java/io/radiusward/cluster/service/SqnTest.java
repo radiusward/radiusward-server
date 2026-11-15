@@ -20,8 +20,10 @@ class SqnTest {
     static final long SIM_B = 0x2620_1000_0000_0002L;
 
     static AccountingStateMachine v8(int maxSubscribers) {
-        AccountingStateMachine sm = new AccountingStateMachine(
-                new AccountingStateMachine.Settings(100, 3_600_000, 7_200_000, 900_000, 8, 100, maxSubscribers));
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100)
+                .withSupportedVersion(8)
+                .withMaxReservations(100)
+                .withMaxSubscribers(maxSubscribers));
         for (int m = 0; m < 3; m++) {
             sm.reportMemberVersion(m, 8, 3, false);
         }
@@ -52,8 +54,10 @@ class SqnTest {
         assertThat(full.nextSqn(SIM_B, 0)).isEqualTo(AccountingStateMachine.SQN_CAPACITY);
         assertThat(full.nextSqn(SIM_A, 0)).as("known subscribers go on").isEqualTo(64);
 
-        AccountingStateMachine old = new AccountingStateMachine(
-                new AccountingStateMachine.Settings(100, 3_600_000, 7_200_000, 900_000, 7, 100, 10));
+        AccountingStateMachine old = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100)
+                .withSupportedVersion(7)
+                .withMaxReservations(100)
+                .withMaxSubscribers(10));
         assertThat(old.nextSqn(SIM_A, 0)).isEqualTo(AccountingStateMachine.SQN_UNSUPPORTED);
         assertThat(old.sqns()).isEmpty();
     }

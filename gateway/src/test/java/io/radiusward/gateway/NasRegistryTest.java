@@ -103,17 +103,12 @@ class NasRegistryTest {
                 .containsExactly(NasClient.Identity.NAS_IDENTIFIER, NasClient.Identity.CALLED_STATION_ID);
         assertThat(cloud.identityFingerprint())
                 .isNotEqualTo(core.identityFingerprint())
-                .isNotEqualTo(new NasClient(
-                                "x",
-                                1,
-                                0,
-                                0,
-                                new byte[0],
-                                "default",
-                                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                                new NasClient.Identity[] {
-                                    NasClient.Identity.CALLED_STATION_ID, NasClient.Identity.NAS_IDENTIFIER
-                                })
+                .isNotEqualTo(NasClient.builder("x", 1)
+                        .network(0, 0)
+                        .secret(new byte[0])
+                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .identity(NasClient.Identity.CALLED_STATION_ID, NasClient.Identity.NAS_IDENTIFIER)
+                        .build()
                         .identityFingerprint());
     }
 

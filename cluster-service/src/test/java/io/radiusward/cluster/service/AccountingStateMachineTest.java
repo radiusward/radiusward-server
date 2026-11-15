@@ -24,8 +24,7 @@ class AccountingStateMachineTest {
     static final int NAS = 5;
     static final int BOTH = FLAG_SESSION_TIME | FLAG_EVENT_TIMESTAMP;
 
-    private final AccountingStateMachine sm =
-            new AccountingStateMachine(new AccountingStateMachine.Settings(10, 3_600_000, 7_200_000, 900_000));
+    private final AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(10));
 
     /** A session event; the exact key is derived from session, status and time like the gateway does. */
     int event(long session, int status, long sessionTime, long octets, long now) {

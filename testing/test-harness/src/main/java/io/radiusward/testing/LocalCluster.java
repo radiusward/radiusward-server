@@ -316,7 +316,13 @@ public final class LocalCluster implements AutoCloseable {
                 Duration.ZERO);
         Gateway gateway = Reports.step(
                 "start gateway " + gatewayId,
-                () -> Gateway.launchWith(config, registry, auth, handler, radsec, coa, proxy));
+                () -> Gateway.builder(config, registry)
+                        .auth(auth)
+                        .handlerFactory(handler)
+                        .radsec(radsec)
+                        .coa(coa)
+                        .proxy(proxy)
+                        .start());
         gateways.add(gateway);
         return gateway;
     }
@@ -327,15 +333,12 @@ public final class LocalCluster implements AutoCloseable {
 
     /** The local NAS entry (127.0.0.1); with {@code identity}, the devices behind it are told apart (ADR 0019). */
     public static NasRegistry registry(NasClient.Identity... identity) {
-        return NasRegistry.of(List.of(new NasClient(
-                NAS_NAME,
-                NAS_ID,
-                0x7F000001,
-                32,
-                SECRET.getBytes(StandardCharsets.US_ASCII),
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                identity)));
+        return NasRegistry.of(List.of(NasClient.builder(NAS_NAME, NAS_ID)
+                .network(0x7F000001, 32)
+                .secret(SECRET.getBytes(StandardCharsets.US_ASCII))
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .identity(identity)
+                .build()));
     }
 
     public Gateway gateway(int index) {

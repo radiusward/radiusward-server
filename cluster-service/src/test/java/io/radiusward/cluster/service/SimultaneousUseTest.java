@@ -34,8 +34,9 @@ class SimultaneousUseTest {
     static final long TTL = 60_000;
 
     static AccountingStateMachine v6(int maxReservations) {
-        AccountingStateMachine sm = new AccountingStateMachine(
-                new AccountingStateMachine.Settings(100, 3_600_000, 7_200_000, 900_000, 6, maxReservations));
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100)
+                .withSupportedVersion(6)
+                .withMaxReservations(maxReservations));
         for (int m = 0; m < 3; m++) {
             sm.reportMemberVersion(m, 6, 3, false); // every member runs it: activated automatically
         }
@@ -187,8 +188,9 @@ class SimultaneousUseTest {
 
     @Test
     void anOlderSessionGetsItsUserWithItsNextEvent() {
-        AccountingStateMachine sm = new AccountingStateMachine(
-                new AccountingStateMachine.Settings(100, 3_600_000, 7_200_000, 900_000, 6, 100));
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100)
+                .withSupportedVersion(6)
+                .withMaxReservations(100));
         event(sm, 1, STATUS_START, USER, A, 1_000); // before activation
         for (int m = 0; m < 3; m++) {
             sm.reportMemberVersion(m, 6, 3, false);
@@ -214,8 +216,9 @@ class SimultaneousUseTest {
             buffer.getBytes(offset, copy);
             messages.add(copy);
         });
-        AccountingStateMachine restored = new AccountingStateMachine(
-                new AccountingStateMachine.Settings(100, 3_600_000, 7_200_000, 900_000, 6, 100));
+        AccountingStateMachine restored = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100)
+                .withSupportedVersion(6)
+                .withMaxReservations(100));
         SnapshotCodec codec = new SnapshotCodec();
         for (byte[] m : messages) {
             codec.onMessage(restored, new UnsafeBuffer(m), 0, m.length);

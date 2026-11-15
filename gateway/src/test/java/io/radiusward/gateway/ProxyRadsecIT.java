@@ -75,12 +75,11 @@ class ProxyRadsecIT {
                 Map.entry("nas.local.radsec", "true"),
                 Map.entry("nas.local.radsec.identity", "proxy.corp.test")));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        home = Gateway.launchWith(
-                config("home", 2),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(homeSettings, auth),
-                RadsecConfig.from(homeSettings, "127.0.0.1"));
+        home = Gateway.builder(config("home", 2), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(homeSettings, auth))
+                .radsec(RadsecConfig.from(homeSettings, "127.0.0.1"))
+                .start();
 
         Map<String, String> proxySettings = new HashMap<>(Map.ofEntries(
                 Map.entry("auth.stores", "local"),
@@ -102,14 +101,12 @@ class ProxyRadsecIT {
                 Map.entry("realm.partner.name", "partner.example"),
                 Map.entry("realm.partner.pool", "partner")));
         Config config = Config.of(proxySettings);
-        proxy = Gateway.launchWith(
-                config("proxy", 1),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.DISABLED,
-                CoaConfig.DISABLED,
-                ProxyConfig.from(config));
+        proxy = Gateway.builder(
+                        config("proxy", 1), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .proxy(ProxyConfig.from(config))
+                .start();
         return proxy.authPort();
     }
 

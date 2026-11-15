@@ -93,12 +93,11 @@ class RadsecIT {
         settings.putAll(extra);
         Config config = Config.of(settings);
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        gateway = Gateway.launchWith(
-                gatewayConfig(),
-                registry,
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.from(config, "127.0.0.1"));
+        gateway = Gateway.builder(gatewayConfig(), registry)
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .radsec(RadsecConfig.from(config, "127.0.0.1"))
+                .start();
         return gateway.radsecPort();
     }
 
@@ -188,8 +187,11 @@ class RadsecIT {
                 .clients()
                 .iterator()
                 .next();
-        NasClient other = new NasClient(
-                "other", 2002, 0x0A000000, 8, RADSEC, "default", NasClient.MessageAuthenticatorPolicy.OPTIONAL);
+        NasClient other = NasClient.builder("other", 2002)
+                .network(0x0A000000, 8)
+                .secret(RADSEC)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .build();
         int port = start(
                 Map.of("nas.local.radsec", "false", "nas.other.radsec", "true"),
                 NasRegistry.of(java.util.List.of(local, other)));
@@ -201,17 +203,11 @@ class RadsecIT {
 
     @Test
     void aNasIdentifiedByItsCertificateAlone() throws Exception {
-        NasClient roaming = new NasClient(
-                "roaming",
-                3003,
-                0,
-                -1,
-                new byte[0],
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                new NasClient.Identity[0],
-                0,
-                NasClient.MessageAuthenticatorPolicy.REQUIRED);
+        NasClient roaming = NasClient.builder("roaming", 3003)
+                .network(0, -1)
+                .secret(new byte[0])
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .build();
         NasRegistry registry = NasRegistry.of(java.util.List.of(roaming));
         assertThat(registry.lookup(java.net.InetAddress.getLoopbackAddress()))
                 .as("never found by address")

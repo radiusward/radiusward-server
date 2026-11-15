@@ -93,7 +93,11 @@ class UdpAgentTest {
     }
 
     static NasRegistry registry(NasClient.MessageAuthenticatorPolicy policy) {
-        return NasRegistry.of(List.of(new NasClient("local", 1001, 0x7F000001, 32, SECRET, "default", policy)));
+        return NasRegistry.of(List.of(NasClient.builder("local", 1001)
+                .network(0x7F000001, 32)
+                .secret(SECRET)
+                .messageAuthenticator(policy)
+                .build()));
     }
 
     void start(GatewayConfig config, NasRegistry registry) throws IOException {
@@ -336,8 +340,11 @@ class UdpAgentTest {
     void rejectedOrInvalidPacketsAreSilent() throws Exception {
         start(
                 config(Duration.ZERO, 16),
-                NasRegistry.of(List.of(new NasClient(
-                        "other", 1, 0x0A000001, 32, SECRET, "default", NasClient.MessageAuthenticatorPolicy.OFF))));
+                NasRegistry.of(List.of(NasClient.builder("other", 1)
+                        .network(0x0A000001, 32)
+                        .secret(SECRET)
+                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OFF)
+                        .build())));
         send(fixture("cisco", "start"));
         assertThat(stats.get(GatewayStats.Counter.UNKNOWN_NAS)).isEqualTo(1);
         agent.onClose();
@@ -489,15 +496,12 @@ class UdpAgentTest {
     // ---- devices behind one NAS entry (ADR 0019) ------------------------------------------------
 
     static NasRegistry natRegistry() {
-        return NasRegistry.of(List.of(new NasClient(
-                "cloud",
-                1001,
-                0x7F000000,
-                8,
-                SECRET,
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                new NasClient.Identity[] {NasClient.Identity.NAS_IDENTIFIER, NasClient.Identity.CALLED_STATION_ID})));
+        return NasRegistry.of(List.of(NasClient.builder("cloud", 1001)
+                .network(0x7F000000, 8)
+                .secret(SECRET)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .identity(NasClient.Identity.NAS_IDENTIFIER, NasClient.Identity.CALLED_STATION_ID)
+                .build()));
     }
 
     /** An Accounting-Request from a device: {@code null} leaves an attribute out. */
@@ -577,16 +581,12 @@ class UdpAgentTest {
     void theEntrysIdleTimeoutTravelsWithEveryCommand() throws Exception {
         start(
                 config(Duration.ZERO, 1024),
-                NasRegistry.of(List.of(new NasClient(
-                        "wifi",
-                        1001,
-                        0x7F000001,
-                        32,
-                        SECRET,
-                        "default",
-                        NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                        new NasClient.Identity[0],
-                        15))));
+                NasRegistry.of(List.of(NasClient.builder("wifi", 1001)
+                        .network(0x7F000001, 32)
+                        .secret(SECRET)
+                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .idleTimeoutMinutes(15)
+                        .build())));
         send(deviceRequest(1, 1, "s", null, null));
         assertThat(commands())
                 .singleElement()
@@ -648,15 +648,12 @@ class UdpAgentTest {
     }
 
     static NasRegistry natRegistry(NasClient.Identity... identity) {
-        return NasRegistry.of(List.of(new NasClient(
-                "cloud",
-                1001,
-                0x7F000000,
-                8,
-                SECRET,
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                identity)));
+        return NasRegistry.of(List.of(NasClient.builder("cloud", 1001)
+                .network(0x7F000000, 8)
+                .secret(SECRET)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .identity(identity)
+                .build()));
     }
 
     /**

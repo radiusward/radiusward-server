@@ -213,7 +213,11 @@ class DynamicAuthorizationTest {
     void overRadsecTheRequestGoesToTheNasConnectionAndItsAnswerComesBack() throws Exception {
         sender.onClose();
         RadsecLink link = new RadsecLink(new NasClient[] {
-            new NasClient("ap", 1, 0x7F000001, 32, SECRET, "default", NasClient.MessageAuthenticatorPolicy.OFF)
+            NasClient.builder("ap", 1)
+                    .network(0x7F000001, 32)
+                    .secret(SECRET)
+                    .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OFF)
+                    .build()
         });
         sender = new DynamicAuthorization(
                 new CoaConfig(true, Duration.ofMillis(50), 2, null, Map.of()), "127.0.0.1", link);

@@ -79,12 +79,11 @@ class ProxyDiscoveryIT {
                 Map.entry("radsec.ca", pki.caPem.toString()),
                 Map.entry("nas.local.radsec", "true")));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        home = Gateway.launchWith(
-                config("home", 2),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(homeSettings, auth),
-                RadsecConfig.from(homeSettings, "127.0.0.1"));
+        home = Gateway.builder(config("home", 2), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(homeSettings, auth))
+                .radsec(RadsecConfig.from(homeSettings, "127.0.0.1"))
+                .start();
 
         dns = new TestDns()
                 .naptr("roam.example", 100, 10, "s", RealmDiscovery.SERVICE, "_radsec._tcp.roam.example")
@@ -110,14 +109,12 @@ class ProxyDiscoveryIT {
                 Map.entry("proxy.discovery.tls.certificate", clientPem.toString()),
                 Map.entry("proxy.discovery.tls.key", clientKey.toString()),
                 Map.entry("proxy.discovery.tls.ca", pki.caPem.toString())));
-        proxy = Gateway.launchWith(
-                config("proxy", 1),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(settings, auth),
-                RadsecConfig.DISABLED,
-                CoaConfig.DISABLED,
-                ProxyConfig.from(settings));
+        proxy = Gateway.builder(
+                        config("proxy", 1), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(settings, auth))
+                .proxy(ProxyConfig.from(settings))
+                .start();
         int port = proxy.authPort();
 
         byte[] request = nas.pap("alice@roam.example", "roam-pw", "aa-bb-cc-00-03-01");

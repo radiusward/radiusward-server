@@ -56,11 +56,11 @@ class GatewayAuthIT {
             return n == 10 ? AccessHandler.ACCEPT : AccessHandler.REJECT;
         };
         GatewayConfig withDir = config();
-        try (Gateway gateway = Gateway.launch(
-                withDir,
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                new AuthConfig(true, 0, 4, 256, 4096, Duration.ofSeconds(10)),
-                handler)) {
+        try (Gateway gateway = Gateway.builder(
+                        withDir, AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(new AuthConfig(true, 0, 4, 256, 4096, Duration.ofSeconds(10)))
+                .handler(handler)
+                .start()) {
             int port = gateway.authPort();
             int clients = 8;
             int perClient = 250;
@@ -120,11 +120,11 @@ class GatewayAuthIT {
                 "auth.store.local.chap", "true",
                 "auth.plugins.dir", dir.resolve("no-plugins").toString()));
         AuthStores stores = AuthStores.from(settings, 2);
-        try (Gateway gateway = Gateway.launchWith(
-                config(),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OPTIONAL),
-                new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10)),
-                dictionary -> new StoreAccessHandler(stores, dictionary, System::currentTimeMillis))) {
+        try (Gateway gateway = Gateway.builder(
+                        config(), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OPTIONAL))
+                .auth(new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10)))
+                .handlerFactory(dictionary -> new StoreAccessHandler(stores, dictionary, System::currentTimeMillis))
+                .start()) {
             int port = gateway.authPort();
             byte[] good = AuthAgentTest.accessRequest(1, "arctangent", true, false);
             byte[] reply = send(port, good);
@@ -167,11 +167,11 @@ class GatewayAuthIT {
                 "auth.eap.tls.key", pki.serverKey.toString(),
                 "auth.eap.tls.ca", pki.caPem.toString()));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        try (Gateway gateway = Gateway.launchWith(
-                config(),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(settings, auth))) {
+        try (Gateway gateway = Gateway.builder(
+                        config(), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(settings, auth))
+                .start()) {
             int port = gateway.authPort();
             EapTlsClient client =
                     new EapTlsClient(TestPki.clientContext(pki.client("laptop-1"), pki.ca), "TLSv1.3", 1024);

@@ -18,8 +18,9 @@ class SessionIdentityStateTest {
     static final long USER = 0x5e55_1d00_0001L;
 
     static AccountingStateMachine machine(int supported) {
-        return new AccountingStateMachine(
-                new AccountingStateMachine.Settings(100, 3_600_000, 7_200_000, 900_000, supported, 100));
+        return new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100)
+                .withSupportedVersion(supported)
+                .withMaxReservations(100));
     }
 
     static void activate(AccountingStateMachine sm, int version) {

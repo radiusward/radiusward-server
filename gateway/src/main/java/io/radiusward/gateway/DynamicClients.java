@@ -231,19 +231,16 @@ public final class DynamicClients implements AutoCloseable {
         }
         String name = "dynamic:"
                 + (row.shortname() == null || row.shortname().isBlank() ? ip.getHostAddress() : row.shortname());
-        NasClient client = new NasClient(
-                name,
-                NasRegistry.fnv1a("dynamic:" + ip.getHostAddress()), // the same on every gateway
-                address,
-                32,
-                row.secret(),
-                row.type() == null || row.type().isBlank()
-                        ? "default"
-                        : row.type().trim().toLowerCase(Locale.ROOT),
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                new NasClient.Identity[0],
-                0,
-                NasClient.MessageAuthenticatorPolicy.REQUIRED);
+        NasClient client = NasClient.builder(name, NasRegistry.fnv1a("dynamic:" + ip.getHostAddress()))
+                .network( // the same on every gateway
+                        address, 32)
+                .secret(row.secret())
+                .vendor(
+                        row.type() == null || row.type().isBlank()
+                                ? "default"
+                                : row.type().trim().toLowerCase(Locale.ROOT))
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .build();
         Int2ObjectHashMap<Entry> next = new Int2ObjectHashMap<>(found);
         next.put(address, new Entry(client, now + lifetimeMillis));
         found = next;

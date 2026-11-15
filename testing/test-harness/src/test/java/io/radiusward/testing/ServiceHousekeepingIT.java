@@ -50,8 +50,10 @@ class ServiceHousekeepingIT {
     @Test
     void theSweepTimerRemovesIdleSessionsAndExpiredTombstonesOnEveryMember() throws Exception {
         // tombstones kept 1 s, sessions idle after 2 s, swept every 300 ms (in production: 1 h, 2 h, 60 s)
-        AccountingStateMachine.Settings settings =
-                new AccountingStateMachine.Settings(Profile.SMALL.maxSessions(), 1_000L, 2_000L, 1_000L);
+        AccountingStateMachine.Settings settings = AccountingStateMachine.Settings.defaults(Profile.SMALL.maxSessions())
+                .withTombstoneMs(1_000L)
+                .withIdleTimeoutMs(2_000L)
+                .withExactKeyWindowMs(1_000L);
         cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
                 .gateways(1)

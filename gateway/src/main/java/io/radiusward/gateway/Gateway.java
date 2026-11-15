@@ -88,53 +88,78 @@ public final class Gateway implements AutoCloseable {
         this.runners = runners;
     }
 
+    /** An accounting-only gateway. */
     public static Gateway launch(GatewayConfig config, NasRegistry registry) {
-        return launchWith(config, registry, AuthConfig.DISABLED, dictionary -> null);
+        return builder(config, registry).start();
     }
 
     /**
-     * A gateway that also answers Access-Requests when {@code auth} is enabled (Phase 5), deciding them with
-     * {@code handler} on {@link AuthConfig#workers()} threads.
+     * A gateway with more than accounting: {@code Gateway.builder(config, registry).auth(auth).handler(handler)
+     * .radsec(..).coa(..).proxy(..).start()}; every part is off unless given.
      */
-    public static Gateway launch(GatewayConfig config, NasRegistry registry, AuthConfig auth, AccessHandler handler) {
-        return launchWith(config, registry, auth, dictionary -> handler);
+    public static Builder builder(GatewayConfig config, NasRegistry registry) {
+        return new Builder(config, registry);
     }
 
-    /**
-     * As above, with the handler created from the gateway's dictionary (reply attributes are encoded with it); the
-     * handler is closed with the gateway when it is {@link AutoCloseable}.
-     */
-    public static Gateway launchWith(
-            GatewayConfig config,
-            NasRegistry registry,
-            AuthConfig auth,
-            java.util.function.Function<Dictionary, AccessHandler> handlerFactory) {
-        return launchWith(config, registry, auth, handlerFactory, RadsecConfig.DISABLED);
+    public static final class Builder {
+        private final GatewayConfig config;
+        private final NasRegistry registry;
+        private AuthConfig auth = AuthConfig.DISABLED;
+        private java.util.function.Function<Dictionary, AccessHandler> handlerFactory = dictionary -> null;
+        private RadsecConfig radsec = RadsecConfig.DISABLED;
+        private CoaConfig coa = CoaConfig.DISABLED;
+        private ProxyConfig proxy = ProxyConfig.DISABLED;
+
+        private Builder(GatewayConfig config, NasRegistry registry) {
+            this.config = config;
+            this.registry = registry;
+        }
+
+        /** Answers Access-Requests when {@code auth} is enabled (Phase 5), on {@link AuthConfig#workers()} threads. */
+        public Builder auth(AuthConfig auth) {
+            this.auth = auth;
+            return this;
+        }
+
+        /** Decides Access-Requests. */
+        public Builder handler(AccessHandler handler) {
+            this.handlerFactory = dictionary -> handler;
+            return this;
+        }
+
+        /**
+         * Decides Access-Requests with a handler made from the gateway's dictionary (reply attributes are encoded with
+         * it); closed with the gateway when it is {@link AutoCloseable}.
+         */
+        public Builder handlerFactory(java.util.function.Function<Dictionary, AccessHandler> handlerFactory) {
+            this.handlerFactory = handlerFactory;
+            return this;
+        }
+
+        /** Listens for RadSec connections and DTLS when enabled (ADR 0034, ADR 0038). */
+        public Builder radsec(RadsecConfig radsec) {
+            this.radsec = radsec;
+            return this;
+        }
+
+        /** Sends CoA and Disconnect-Requests when enabled (ADR 0036). */
+        public Builder coa(CoaConfig coa) {
+            this.coa = coa;
+            return this;
+        }
+
+        /** Proxies realms to home servers when enabled (ADR 0037). */
+        public Builder proxy(ProxyConfig proxy) {
+            this.proxy = proxy;
+            return this;
+        }
+
+        public Gateway start() {
+            return Gateway.start(config, registry, auth, handlerFactory, radsec, coa, proxy);
+        }
     }
 
-    /** As above, also listening for RadSec connections when {@code radsec} is enabled (ADR 0034). */
-    public static Gateway launchWith(
-            GatewayConfig config,
-            NasRegistry registry,
-            AuthConfig auth,
-            java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
-            RadsecConfig radsec) {
-        return launchWith(config, registry, auth, handlerFactory, radsec, CoaConfig.DISABLED);
-    }
-
-    /** As above, also sending CoA and Disconnect-Requests when {@code coa} is enabled (ADR 0036). */
-    public static Gateway launchWith(
-            GatewayConfig config,
-            NasRegistry registry,
-            AuthConfig auth,
-            java.util.function.Function<Dictionary, AccessHandler> handlerFactory,
-            RadsecConfig radsec,
-            CoaConfig coa) {
-        return launchWith(config, registry, auth, handlerFactory, radsec, coa, ProxyConfig.DISABLED);
-    }
-
-    /** As above, also proxying realms to home servers when {@code proxy} is enabled (ADR 0037). */
-    public static Gateway launchWith(
+    private static Gateway start(
             GatewayConfig config,
             NasRegistry registry,
             AuthConfig auth,
@@ -365,11 +390,16 @@ public final class Gateway implements AutoCloseable {
 
     /** UDP port actually bound; waits briefly for the agent thread to bind. */
     public int radiusPort() {
+        awaitBound(() -> stats.bound());
+        return udpAgent.localPort();
+    }
+
+    /** Waits up to 5 s for an agent to bind its socket (agents start on their own threads). */
+    private static void awaitBound(java.util.function.BooleanSupplier bound) {
         long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!stats.bound() && System.nanoTime() < deadline) {
+        while (!bound.getAsBoolean() && System.nanoTime() < deadline) {
             Thread.onSpinWait();
         }
-        return udpAgent.localPort();
     }
 
     public AuthStats authStats() {
@@ -381,10 +411,7 @@ public final class Gateway implements AutoCloseable {
         if (authAgent == null) {
             return -1;
         }
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!authStats.bound() && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
+        awaitBound(() -> authStats.bound());
         return authAgent.localPort();
     }
 
@@ -425,17 +452,7 @@ public final class Gateway implements AutoCloseable {
                     .orElseThrow(() -> new io.radiusward.common.config.ConfigException(
                             "nas." + name + "." + key + ": no such NAS entry"));
             index.put(name, clients.size());
-            clients.add(new NasClient(
-                    n.name(),
-                    n.id(),
-                    n.network(),
-                    n.prefixLength(),
-                    allowed.get(name).secret(),
-                    n.vendor(),
-                    n.messageAuthenticator(),
-                    n.identity(),
-                    n.idleTimeoutMinutes(),
-                    n.accessMessageAuthenticator()));
+            clients.add(n.withSecret(allowed.get(name).secret())); // an IPv6 entry keeps its network
         });
     }
 
@@ -444,10 +461,7 @@ public final class Gateway implements AutoCloseable {
         if (radsecAgent == null) {
             return -1;
         }
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!radsecAgent.bound() && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
+        awaitBound(() -> radsecAgent.bound());
         return radsecAgent.localPort();
     }
 
@@ -456,10 +470,7 @@ public final class Gateway implements AutoCloseable {
         if (radsecAgent == null) {
             return -1;
         }
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!radsecAgent.bound() && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
+        awaitBound(() -> radsecAgent.bound());
         return radsecAgent.localTcpPort(authentication);
     }
 
@@ -468,10 +479,7 @@ public final class Gateway implements AutoCloseable {
         if (radsecAgent == null) {
             return -1;
         }
-        long deadline = System.nanoTime() + 5_000_000_000L;
-        while (!radsecAgent.bound() && System.nanoTime() < deadline) {
-            Thread.onSpinWait();
-        }
+        awaitBound(() -> radsecAgent.bound());
         return radsecAgent.localDtlsPort();
     }
 

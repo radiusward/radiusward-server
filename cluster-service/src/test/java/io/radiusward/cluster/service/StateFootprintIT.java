@@ -91,8 +91,9 @@ class StateFootprintIT {
     }
 
     private static AccountingStateMachine machine() {
-        AccountingStateMachine sm = new AccountingStateMachine(
-                new AccountingStateMachine.Settings(SESSIONS, 3_600_000, 7_200_000, 900_000, 7, 100_000));
+        AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(SESSIONS)
+                .withSupportedVersion(7)
+                .withMaxReservations(100_000));
         for (int m = 0; m < 3; m++) {
             sm.reportMemberVersion(m, 7, 3, false);
         }

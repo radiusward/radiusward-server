@@ -87,19 +87,20 @@ class CoaServiceTest {
     }
 
     private static NasClient single(String name, int id) {
-        return new NasClient(name, id, LOOPBACK, 32, SECRET, "default", NasClient.MessageAuthenticatorPolicy.OFF);
+        return NasClient.builder(name, id)
+                .network(LOOPBACK, 32)
+                .secret(SECRET)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OFF)
+                .build();
     }
 
     private static NasClient network(String name, int id) {
-        return new NasClient(
-                name,
-                id,
-                0x7F000000,
-                8,
-                SECRET,
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OFF,
-                new NasClient.Identity[] {NasClient.Identity.NAS_IP_ADDRESS});
+        return NasClient.builder(name, id)
+                .network(0x7F000000, 8)
+                .secret(SECRET)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OFF)
+                .identity(NasClient.Identity.NAS_IP_ADDRESS)
+                .build();
     }
 
     private static NasClient ipv6(String name, int id, int prefixLength) {

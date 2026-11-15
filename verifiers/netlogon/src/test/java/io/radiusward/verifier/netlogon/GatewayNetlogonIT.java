@@ -107,18 +107,16 @@ class GatewayNetlogonIT {
                 new File(dir.toFile(), "aeron").getPath(),
                 null,
                 Duration.ZERO);
-        NasRegistry registry = NasRegistry.of(List.of(new NasClient(
-                "local",
-                1001,
-                0x7F000001,
-                32,
-                SECRET,
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                new NasClient.Identity[0],
-                0,
-                NasClient.MessageAuthenticatorPolicy.OFF)));
-        gateway = Gateway.launchWith(config, registry, auth, Gateway.storeHandler(Config.of(c), auth));
+        NasRegistry registry = NasRegistry.of(List.of(NasClient.builder("local", 1001)
+                .network(0x7F000001, 32)
+                .secret(SECRET)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .accessMessageAuthenticator(NasClient.MessageAuthenticatorPolicy.OFF)
+                .build()));
+        gateway = Gateway.builder(config, registry)
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(Config.of(c), auth))
+                .start();
     }
 
     @AfterAll

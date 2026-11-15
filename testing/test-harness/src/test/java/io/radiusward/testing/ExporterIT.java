@@ -279,25 +279,25 @@ class ExporterIT {
     private static LoadGenerator.Result load(LocalCluster cluster, Duration duration) {
         try {
             return new LoadGenerator(
-                            new LoadGenerator.Settings(
-                                    List.of(
-                                            new InetSocketAddress(
-                                                    "127.0.0.1",
-                                                    cluster.gateway(0).radiusPort()),
-                                            new InetSocketAddress(
-                                                    "127.0.0.1",
-                                                    cluster.gateway(1).radiusPort())),
-                                    FakeNas.SECRET,
-                                    10,
-                                    2000,
-                                    2000,
-                                    duration,
-                                    Duration.ofSeconds(1),
-                                    Duration.ofSeconds(3),
-                                    4,
-                                    true,
-                                    true,
-                                    null),
+                            LoadGenerator.Settings.builder(
+                                            List.of(
+                                                    new InetSocketAddress(
+                                                            "127.0.0.1",
+                                                            cluster.gateway(0).radiusPort()),
+                                                    new InetSocketAddress(
+                                                            "127.0.0.1",
+                                                            cluster.gateway(1).radiusPort())),
+                                            FakeNas.SECRET)
+                                    .nas(10)
+                                    .sessions(2000)
+                                    .rate(2000)
+                                    .duration(duration)
+                                    .interim(Duration.ofSeconds(1))
+                                    .timeout(Duration.ofSeconds(3))
+                                    .retries(4)
+                                    .retryOtherServer(true)
+                                    .stopAtEnd(true)
+                                    .build(),
                             new PrintStream(System.out))
                     .run();
         } catch (IOException e) {

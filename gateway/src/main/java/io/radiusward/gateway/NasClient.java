@@ -36,32 +36,6 @@ public record NasClient(
         MessageAuthenticatorPolicy accessMessageAuthenticator,
         byte[] network6) {
 
-    /** An IPv4 entry (or one identified by its certificate alone). */
-    public NasClient(
-            String name,
-            int id,
-            int network,
-            int prefixLength,
-            byte[] secret,
-            String vendor,
-            MessageAuthenticatorPolicy messageAuthenticator,
-            Identity[] identity,
-            int idleTimeoutMinutes,
-            MessageAuthenticatorPolicy accessMessageAuthenticator) {
-        this(
-                name,
-                id,
-                network,
-                prefixLength,
-                secret,
-                vendor,
-                messageAuthenticator,
-                identity,
-                idleTimeoutMinutes,
-                accessMessageAuthenticator,
-                null);
-    }
-
     /** Whether it is an IPv6 entry: {@link #network6()} and a prefix length up to 128 (ADR 0047). */
     public boolean ipv6() {
         return network6 != null;
@@ -91,53 +65,107 @@ public record NasClient(
         return (address[full] & mask) == (network6[full] & mask);
     }
 
-    /** With Message-Authenticator required on Access-Requests. */
-    public NasClient(
-            String name,
-            int id,
-            int network,
-            int prefixLength,
-            byte[] secret,
-            String vendor,
-            MessageAuthenticatorPolicy messageAuthenticator,
-            Identity[] identity,
-            int idleTimeoutMinutes) {
-        this(
+    /** The same entry with another shared secret (its RadSec or DTLS secret). */
+    public NasClient withSecret(byte[] otherSecret) {
+        return new NasClient(
                 name,
                 id,
                 network,
                 prefixLength,
-                secret,
+                otherSecret,
                 vendor,
                 messageAuthenticator,
                 identity,
                 idleTimeoutMinutes,
-                MessageAuthenticatorPolicy.REQUIRED);
+                accessMessageAuthenticator,
+                network6);
     }
 
-    /** Without an idle timeout of its own. */
-    public NasClient(
-            String name,
-            int id,
-            int network,
-            int prefixLength,
-            byte[] secret,
-            String vendor,
-            MessageAuthenticatorPolicy messageAuthenticator,
-            Identity[] identity) {
-        this(name, id, network, prefixLength, secret, vendor, messageAuthenticator, identity, 0);
+    /** An entry with every setting at its {@code nas.<name>.*} default but the address and the secret. */
+    public static Builder builder(String name, int id) {
+        return new Builder(name, id);
     }
 
-    /** A NAS identified by its source address alone. */
-    public NasClient(
-            String name,
-            int id,
-            int network,
-            int prefixLength,
-            byte[] secret,
-            String vendor,
-            MessageAuthenticatorPolicy messageAuthenticator) {
-        this(name, id, network, prefixLength, secret, vendor, messageAuthenticator, new Identity[0]);
+    public static final class Builder {
+        private final String name;
+        private final int id;
+        private int network;
+        private int prefixLength = 32;
+        private byte[] network6;
+        private byte[] secret = new byte[0];
+        private String vendor = "default";
+        private MessageAuthenticatorPolicy messageAuthenticator = MessageAuthenticatorPolicy.OPTIONAL;
+        private Identity[] identity = new Identity[0];
+        private int idleTimeoutMinutes;
+        private MessageAuthenticatorPolicy accessMessageAuthenticator = MessageAuthenticatorPolicy.REQUIRED;
+
+        private Builder(String name, int id) {
+            this.name = name;
+            this.id = id;
+        }
+
+        /** An IPv4 network: address as an int and prefix length (32 for one address, the default). */
+        public Builder network(int network, int prefixLength) {
+            this.network = network;
+            this.prefixLength = prefixLength;
+            this.network6 = null;
+            return this;
+        }
+
+        /** An IPv6 network (16 bytes) and prefix length. */
+        public Builder network6(byte[] network6, int prefixLength) {
+            this.network6 = network6.clone();
+            this.prefixLength = prefixLength;
+            return this;
+        }
+
+        public Builder secret(byte[] secret) {
+            this.secret = secret;
+            return this;
+        }
+
+        public Builder vendor(String vendor) {
+            this.vendor = vendor;
+            return this;
+        }
+
+        /** On accounting requests; default optional. */
+        public Builder messageAuthenticator(MessageAuthenticatorPolicy policy) {
+            this.messageAuthenticator = policy;
+            return this;
+        }
+
+        /** The attributes that tell devices behind the entry apart; default none. */
+        public Builder identity(Identity... identity) {
+            this.identity = identity;
+            return this;
+        }
+
+        public Builder idleTimeoutMinutes(int minutes) {
+            this.idleTimeoutMinutes = minutes;
+            return this;
+        }
+
+        /** On Access-Requests; default required (the BlastRADIUS mitigation). */
+        public Builder accessMessageAuthenticator(MessageAuthenticatorPolicy policy) {
+            this.accessMessageAuthenticator = policy;
+            return this;
+        }
+
+        public NasClient build() {
+            return new NasClient(
+                    name,
+                    id,
+                    network,
+                    prefixLength,
+                    secret,
+                    vendor,
+                    messageAuthenticator,
+                    identity,
+                    idleTimeoutMinutes,
+                    accessMessageAuthenticator,
+                    network6);
+        }
     }
 
     /** A request attribute that identifies a device behind a NAS entry ({@code nas.<name>.identity}). */

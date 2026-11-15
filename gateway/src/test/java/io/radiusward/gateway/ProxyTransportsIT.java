@@ -87,12 +87,11 @@ class ProxyTransportsIT {
                 Map.entry("nas.local.tcp", "true"),
                 Map.entry("nas.local.dtls", "true")));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        home = Gateway.launchWith(
-                config("home", 2),
-                NasRegistry.from(homeSettings),
-                auth,
-                Gateway.storeHandler(homeSettings, auth),
-                RadsecConfig.from(homeSettings, "127.0.0.1"));
+        home = Gateway.builder(config("home", 2), NasRegistry.from(homeSettings))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(homeSettings, auth))
+                .radsec(RadsecConfig.from(homeSettings, "127.0.0.1"))
+                .start();
 
         Map<String, String> proxySettings = new HashMap<>(Map.ofEntries(
                 Map.entry("auth.stores", "local"),
@@ -123,14 +122,12 @@ class ProxyTransportsIT {
                 Map.entry("realm.d.name", "dtls.example"),
                 Map.entry("realm.d.pool", "d")));
         Config config = Config.of(proxySettings);
-        proxy = Gateway.launchWith(
-                config("proxy", 1),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.DISABLED,
-                CoaConfig.DISABLED,
-                ProxyConfig.from(config));
+        proxy = Gateway.builder(
+                        config("proxy", 1), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .proxy(ProxyConfig.from(config))
+                .start();
         return proxy.authPort();
     }
 

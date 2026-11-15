@@ -74,28 +74,29 @@ class RejectDelayIT {
                 dir.resolve("log").toString()));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
         GatewayConfig c = UdpAgentTest.config(Duration.ZERO, 1024);
-        gateway = Gateway.launchWith(
-                new GatewayConfig(
-                        c.gatewayId(),
-                        "127.0.0.1",
-                        0,
-                        c.socketReceiveBuffer(),
-                        c.clusterMembers(),
-                        c.clusterBasePort(),
-                        c.egressHost(),
-                        c.profile(),
-                        c.pendingCapacity(),
-                        c.pendingTimeout(),
-                        c.resubmitAfter(),
-                        c.responseCacheTtl(),
-                        c.dedicatedThreads(),
-                        c.idleStrategy(),
-                        new File(dir.toFile(), "aeron").getPath(),
-                        c.dictionaryDir(),
-                        c.debugResponseDelay()),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF),
-                auth,
-                Gateway.storeHandler(config, auth));
+        gateway = Gateway.builder(
+                        new GatewayConfig(
+                                c.gatewayId(),
+                                "127.0.0.1",
+                                0,
+                                c.socketReceiveBuffer(),
+                                c.clusterMembers(),
+                                c.clusterBasePort(),
+                                c.egressHost(),
+                                c.profile(),
+                                c.pendingCapacity(),
+                                c.pendingTimeout(),
+                                c.resubmitAfter(),
+                                c.responseCacheTtl(),
+                                c.dedicatedThreads(),
+                                c.idleStrategy(),
+                                new File(dir.toFile(), "aeron").getPath(),
+                                c.dictionaryDir(),
+                                c.debugResponseDelay()),
+                        AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .start();
         gateway.rejectDelay(Gateway.rejectDelay(config));
         gateway.authLog(config);
 

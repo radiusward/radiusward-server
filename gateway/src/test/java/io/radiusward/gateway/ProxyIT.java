@@ -91,14 +91,12 @@ class ProxyIT {
         settings.putAll(extra);
         Config config = Config.of(settings);
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        gateway = Gateway.launchWith(
-                gatewayConfig(),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.DISABLED,
-                CoaConfig.DISABLED,
-                ProxyConfig.from(config));
+        gateway = Gateway.builder(
+                        gatewayConfig(), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .proxy(ProxyConfig.from(config))
+                .start();
         return gateway.authPort();
     }
 

@@ -115,7 +115,10 @@ class EapolTestIT {
                 Map.entry("auth.eap.tls.ca", pki.caPem.toString()),
                 Map.entry("auth.eap.tls.fragment.size", "400")));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        gateway = Gateway.launchWith(gatewayConfig(), anyPrivateNas(), auth, Gateway.storeHandler(settings, auth));
+        gateway = Gateway.builder(gatewayConfig(), anyPrivateNas())
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(settings, auth))
+                .start();
     }
 
     @AfterAll
@@ -320,14 +323,11 @@ class EapolTestIT {
                 c.aeronDir() + "-" + name,
                 c.dictionaryDir(),
                 c.debugResponseDelay());
-        return Gateway.launchWith(
-                second,
-                anyPrivateNas(),
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.DISABLED,
-                CoaConfig.DISABLED,
-                ProxyConfig.from(config));
+        return Gateway.builder(second, anyPrivateNas())
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .proxy(ProxyConfig.from(config))
+                .start();
     }
 
     /**
@@ -513,17 +513,12 @@ class EapolTestIT {
         byte[] secret = SECRET.getBytes(StandardCharsets.UTF_8);
         int[][] ranges = {{0x7F000000, 8}, {0x0A000000, 8}, {0xAC100000, 12}, {0xC0A80000, 16}};
         return NasRegistry.of(java.util.Arrays.stream(ranges)
-                .map(r -> new NasClient(
-                        "peer-" + Integer.toHexString(r[0]),
-                        r[0] >>> 8,
-                        r[0],
-                        r[1],
-                        secret,
-                        "default",
-                        NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                        new NasClient.Identity[0],
-                        0,
-                        NasClient.MessageAuthenticatorPolicy.OPTIONAL))
+                .map(r -> NasClient.builder("peer-" + Integer.toHexString(r[0]), r[0] >>> 8)
+                        .network(r[0], r[1])
+                        .secret(secret)
+                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .accessMessageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .build())
                 .toList());
     }
 

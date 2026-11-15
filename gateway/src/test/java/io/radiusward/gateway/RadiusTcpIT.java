@@ -119,44 +119,39 @@ class RadiusTcpIT {
         Config config = Config.of(settings);
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
         GatewayConfig c = UdpAgentTest.config(Duration.ZERO, 1024);
-        gateway = Gateway.launchWith(
-                new GatewayConfig(
-                        c.gatewayId(),
-                        c.listenHost(),
-                        0,
-                        c.socketReceiveBuffer(),
-                        c.clusterMembers(),
-                        c.clusterBasePort(),
-                        c.egressHost(),
-                        c.profile(),
-                        c.pendingCapacity(),
-                        c.pendingTimeout(),
-                        c.resubmitAfter(),
-                        c.responseCacheTtl(),
-                        c.dedicatedThreads(),
-                        c.idleStrategy(),
-                        new File(dir.toFile(), "aeron").getPath(),
-                        c.dictionaryDir(),
-                        c.debugResponseDelay()),
-                NasRegistry.of(java.util.List.of(
-                        AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED)
-                                .clients()
-                                .iterator()
-                                .next(),
-                        new NasClient(
-                                "other",
-                                2002,
-                                0x0A000001,
-                                32,
-                                "other".getBytes(),
-                                "default",
-                                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                                new NasClient.Identity[0],
+        gateway = Gateway.builder(
+                        new GatewayConfig(
+                                c.gatewayId(),
+                                c.listenHost(),
                                 0,
-                                NasClient.MessageAuthenticatorPolicy.REQUIRED))),
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.from(config, "127.0.0.1"));
+                                c.socketReceiveBuffer(),
+                                c.clusterMembers(),
+                                c.clusterBasePort(),
+                                c.egressHost(),
+                                c.profile(),
+                                c.pendingCapacity(),
+                                c.pendingTimeout(),
+                                c.resubmitAfter(),
+                                c.responseCacheTtl(),
+                                c.dedicatedThreads(),
+                                c.idleStrategy(),
+                                new File(dir.toFile(), "aeron").getPath(),
+                                c.dictionaryDir(),
+                                c.debugResponseDelay()),
+                        NasRegistry.of(java.util.List.of(
+                                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED)
+                                        .clients()
+                                        .iterator()
+                                        .next(),
+                                NasClient.builder("other", 2002)
+                                        .network(0x0A000001, 32)
+                                        .secret("other".getBytes())
+                                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                                        .build())))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .radsec(RadsecConfig.from(config, "127.0.0.1"))
+                .start();
     }
 
     @Test

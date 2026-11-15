@@ -131,7 +131,10 @@ class ExternalEapComparisonIT {
     private static Gateway launch(Map<String, String> settings, String name) {
         Config config = Config.of(settings);
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        return Gateway.launchWith(gatewayConfig(name), nas(), auth, Gateway.storeHandler(config, auth));
+        return Gateway.builder(gatewayConfig(name), nas())
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .start();
     }
 
     /**
@@ -492,17 +495,12 @@ class ExternalEapComparisonIT {
         byte[] secret = SECRET.getBytes(StandardCharsets.UTF_8);
         int[][] ranges = {{0x7F000000, 8}, {0x0A000000, 8}, {0xAC100000, 12}, {0xC0A80000, 16}};
         return NasRegistry.of(java.util.Arrays.stream(ranges)
-                .map(r -> new NasClient(
-                        "peer-" + Integer.toHexString(r[0]),
-                        r[0] >>> 8,
-                        r[0],
-                        r[1],
-                        secret,
-                        "default",
-                        NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                        new NasClient.Identity[0],
-                        0,
-                        NasClient.MessageAuthenticatorPolicy.OPTIONAL))
+                .map(r -> NasClient.builder("peer-" + Integer.toHexString(r[0]), r[0] >>> 8)
+                        .network(r[0], r[1])
+                        .secret(secret)
+                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .accessMessageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .build())
                 .toList());
     }
 

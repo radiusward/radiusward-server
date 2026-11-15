@@ -13,11 +13,9 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.time.Duration;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -55,7 +53,6 @@ final class AccessLoad {
             long p50Micros,
             long p99Micros) {}
 
-    private static final int IDS_PER_CHANNEL = 256;
     /**
      * How far sending may fall behind the rate and still catch up. A stall of the process (GC, a busy host) of up to
      * this long is made good by sending faster for a moment, so the delivered rate is the requested one; only a longer
@@ -84,27 +81,6 @@ final class AccessLoad {
         int server;
     }
 
-    private static final class Port {
-        final DatagramChannel channel;
-        final Request[] inFlight = new Request[IDS_PER_CHANNEL];
-        final ArrayDeque<Integer> freeIds = new ArrayDeque<>();
-
-        Port(Selector selector, java.net.InetAddress local) throws IOException {
-            channel = DatagramChannel.open();
-            try {
-                channel.bind(new InetSocketAddress(local, 0));
-                channel.configureBlocking(false);
-                channel.register(selector, SelectionKey.OP_READ, this);
-            } catch (IOException | RuntimeException e) {
-                channel.close();
-                throw e;
-            }
-            for (int i = 0; i < IDS_PER_CHANNEL; i++) {
-                freeIds.add(i);
-            }
-        }
-    }
-
     AccessLoad(Settings settings, PrintStream out) {
         this.settings = settings;
         this.out = out;
@@ -129,9 +105,9 @@ final class AccessLoad {
         try (Selector selector = Selector.open()) {
             int channels = Math.max(
                     1, settings.rate() * (int) Math.max(1, settings.timeout().toSeconds()) / 200 + 1);
-            List<Port> ports = new ArrayList<>();
+            List<RequestPort<Request>> ports = new ArrayList<>();
             for (int i = 0; i < channels; i++) {
-                ports.add(new Port(selector, localAddress()));
+                ports.add(new RequestPort<>(selector, RequestPort.localAddress(settings.servers()), Request[]::new));
             }
             while (true) {
                 long now = System.nanoTime();
@@ -139,7 +115,7 @@ final class AccessLoad {
                     break;
                 }
                 while (now < end && now >= nextSendAt) {
-                    Port port = free(ports);
+                    RequestPort<Request> port = free(ports);
                     if (port == null) {
                         break; // too many in flight; wait for answers or timeouts
                     }
@@ -166,7 +142,7 @@ final class AccessLoad {
 
                 selector.select(1);
                 for (SelectionKey key : selector.selectedKeys()) {
-                    Port port = (Port) key.attachment();
+                    RequestPort<Request> port = RequestPort.<Request>of(key);
                     while (true) {
                         receive.clear();
                         if (port.channel.receive(receive) == null) {
@@ -207,8 +183,8 @@ final class AccessLoad {
                     continue; // timeouts are seconds long: scanning every in-flight slot each loop only burns CPU
                 }
                 nextTimeoutScan = now + TIMEOUT_SCAN_NANOS;
-                for (Port port : ports) {
-                    for (int id = 0; id < IDS_PER_CHANNEL; id++) {
+                for (RequestPort<Request> port : ports) {
+                    for (int id = 0; id < RequestPort.IDS; id++) {
                         Request r = port.inFlight[id];
                         if (r != null && now > r.deadlineNanos) {
                             if (r.attempts <= settings.retries()) {
@@ -227,7 +203,7 @@ final class AccessLoad {
                     }
                 }
             }
-            for (Port port : ports) {
+            for (RequestPort<Request> port : ports) {
                 port.channel.close();
             }
         }
@@ -240,8 +216,8 @@ final class AccessLoad {
                 timeouts,
                 wrong,
                 unexpected,
-                percentile(sorted, 50),
-                percentile(sorted, 99));
+                RequestPort.percentile(sorted, 50),
+                RequestPort.percentile(sorted, 99));
         out.printf(
                 "access: sent %d (%d with a wrong password), accepted %d, rejected %d, challenged %d, timeouts %d,"
                         + " unexpected %d; latency p50 %.1f ms, p99 %.1f ms%n",
@@ -257,15 +233,8 @@ final class AccessLoad {
         return result;
     }
 
-    /** Loopback when every server is local (see {@link LoadGenerator}), otherwise the wildcard address. */
-    private java.net.InetAddress localAddress() {
-        boolean loopback = settings.servers().stream()
-                .allMatch(s -> s.getAddress() != null && s.getAddress().isLoopbackAddress());
-        return loopback ? java.net.InetAddress.getLoopbackAddress() : null;
-    }
-
-    private static Port free(List<Port> ports) {
-        for (Port p : ports) {
+    private static RequestPort<Request> free(List<RequestPort<Request>> ports) {
+        for (RequestPort<Request> p : ports) {
             if (!p.freeIds.isEmpty()) {
                 return p;
             }
@@ -297,12 +266,5 @@ final class AccessLoad {
         int length = encoder.finish();
         authenticator.signAccessRequest(buffer, 0, length, messageAuthenticator, settings.secret());
         return Arrays.copyOf(buffer.byteArray(), length);
-    }
-
-    private static long percentile(long[] sorted, int p) {
-        if (sorted.length == 0) {
-            return 0;
-        }
-        return sorted[Math.min(sorted.length - 1, (int) Math.ceil(p / 100.0 * sorted.length) - 1)];
     }
 }

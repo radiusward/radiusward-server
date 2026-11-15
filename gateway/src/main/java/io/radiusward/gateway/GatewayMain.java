@@ -73,14 +73,13 @@ public final class GatewayMain {
         NasRegistry registry = NasRegistry.from(config);
         AuthConfig auth = AuthConfig.from(config);
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
-                Gateway gateway = Gateway.launchWith(
-                        gatewayConfig,
-                        registry,
-                        auth,
-                        Gateway.storeHandler(config, auth),
-                        RadsecConfig.from(config, gatewayConfig.listenHost()),
-                        CoaConfig.from(config),
-                        ProxyConfig.from(config));
+                Gateway gateway = Gateway.builder(gatewayConfig, registry)
+                        .auth(auth)
+                        .handlerFactory(Gateway.storeHandler(config, auth))
+                        .radsec(RadsecConfig.from(config, gatewayConfig.listenHost()))
+                        .coa(CoaConfig.from(config))
+                        .proxy(ProxyConfig.from(config))
+                        .start();
                 ManagementServer management = ManagementServer.start(
                         config,
                         9189 + gatewayConfig.gatewayId(),

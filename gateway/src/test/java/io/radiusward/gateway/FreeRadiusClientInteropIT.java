@@ -84,11 +84,10 @@ class FreeRadiusClientInteropIT {
                 new File(dir.toFile(), "aeron").getPath(),
                 base.dictionaryDir(),
                 base.debugResponseDelay());
-        gateway = Gateway.launchWith(
-                config,
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(stores, auth));
+        gateway = Gateway.builder(config, AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(stores, auth))
+                .start();
     }
 
     @AfterAll

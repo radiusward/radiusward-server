@@ -109,14 +109,11 @@ class ExternalHomeServerIT {
                 Map.entry("realm.partner.name", "partner.example"),
                 Map.entry("realm.partner.pool", "ext")));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        gateway = Gateway.launchWith(
-                config(),
-                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED),
-                auth,
-                Gateway.storeHandler(settings, auth),
-                RadsecConfig.DISABLED,
-                CoaConfig.DISABLED,
-                ProxyConfig.from(settings));
+        gateway = Gateway.builder(config(), AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.REQUIRED))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(settings, auth))
+                .proxy(ProxyConfig.from(settings))
+                .start();
         int gw = gateway.authPort();
 
         byte[] good = nas.pap("alice@partner.example", "home-pw", "aa-bb-cc-00-05-01");

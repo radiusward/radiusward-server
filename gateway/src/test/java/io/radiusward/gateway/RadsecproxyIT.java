@@ -114,12 +114,11 @@ class RadsecproxyIT {
         }
         Config config = Config.of(settings);
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        gateway = Gateway.launchWith(
-                gatewayConfig(),
-                registry,
-                auth,
-                Gateway.storeHandler(config, auth),
-                RadsecConfig.from(config, "0.0.0.0"));
+        gateway = Gateway.builder(gatewayConfig(), registry)
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(config, auth))
+                .radsec(RadsecConfig.from(config, "0.0.0.0"))
+                .start();
 
         Files.writeString(dir.resolve("radsecproxy.conf"), """
                 ListenUDP 127.0.0.1:1812

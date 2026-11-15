@@ -232,25 +232,25 @@ class LocalClusterIT {
         Path ackLog = dir.resolve("acks.csv");
         // 50 access points behind one address, each numbering its 10 sessions 00000000..00000009
         LoadGenerator.Result result = new LoadGenerator(
-                        new LoadGenerator.Settings(
-                                List.of(
-                                        new InetSocketAddress(
-                                                "127.0.0.1", cluster.gateway(0).radiusPort()),
-                                        new InetSocketAddress(
-                                                "127.0.0.1", cluster.gateway(1).radiusPort())),
-                                SECRET,
-                                50,
-                                500,
-                                1000,
-                                Duration.ofSeconds(5),
-                                Duration.ofSeconds(2),
-                                Duration.ofSeconds(2),
-                                3,
-                                true,
-                                false,
-                                ackLog,
-                                0,
-                                true),
+                        LoadGenerator.Settings.builder(
+                                        List.of(
+                                                new InetSocketAddress(
+                                                        "127.0.0.1",
+                                                        cluster.gateway(0).radiusPort()),
+                                                new InetSocketAddress(
+                                                        "127.0.0.1",
+                                                        cluster.gateway(1).radiusPort())),
+                                        SECRET)
+                                .nas(50)
+                                .sessions(500)
+                                .rate(1000)
+                                .duration(Duration.ofSeconds(5))
+                                .interim(Duration.ofSeconds(2))
+                                .timeout(Duration.ofSeconds(2))
+                                .retryOtherServer(true)
+                                .ackLog(ackLog)
+                                .sharedSessionIds(true)
+                                .build(),
                         new PrintStream(System.out))
                 .run();
         assertThat(result.failed()).isZero();
@@ -412,23 +412,24 @@ class LocalClusterIT {
     void loadThroughBothGatewaysConverges() throws Exception {
         start();
         LoadGenerator.Result result = new LoadGenerator(
-                        new LoadGenerator.Settings(
-                                List.of(
-                                        new InetSocketAddress(
-                                                "127.0.0.1", cluster.gateway(0).radiusPort()),
-                                        new InetSocketAddress(
-                                                "127.0.0.1", cluster.gateway(1).radiusPort())),
-                                SECRET,
-                                5,
-                                300,
-                                1000,
-                                Duration.ofSeconds(4),
-                                Duration.ofSeconds(1),
-                                Duration.ofSeconds(2),
-                                3,
-                                true,
-                                true,
-                                null),
+                        LoadGenerator.Settings.builder(
+                                        List.of(
+                                                new InetSocketAddress(
+                                                        "127.0.0.1",
+                                                        cluster.gateway(0).radiusPort()),
+                                                new InetSocketAddress(
+                                                        "127.0.0.1",
+                                                        cluster.gateway(1).radiusPort())),
+                                        SECRET)
+                                .nas(5)
+                                .sessions(300)
+                                .rate(1000)
+                                .duration(Duration.ofSeconds(4))
+                                .interim(Duration.ofSeconds(1))
+                                .timeout(Duration.ofSeconds(2))
+                                .retryOtherServer(true)
+                                .stopAtEnd(true)
+                                .build(),
                         new PrintStream(System.out))
                 .run();
         assertThat(result.failed()).isZero();

@@ -77,17 +77,12 @@ class AuthAgentTest {
     }
 
     static NasRegistry registry(NasClient.MessageAuthenticatorPolicy access) {
-        return NasRegistry.of(List.of(new NasClient(
-                "local",
-                1001,
-                0x7F000001,
-                32,
-                SECRET,
-                "default",
-                NasClient.MessageAuthenticatorPolicy.OPTIONAL,
-                new NasClient.Identity[0],
-                0,
-                access)));
+        return NasRegistry.of(List.of(NasClient.builder("local", 1001)
+                .network(0x7F000001, 32)
+                .secret(SECRET)
+                .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                .accessMessageAuthenticator(access)
+                .build()));
     }
 
     @AfterEach
@@ -331,14 +326,11 @@ class AuthAgentTest {
     @Test
     void requestsFromUnknownAddressesAreIgnored() throws Exception {
         start(
-                NasRegistry.of(List.of(new NasClient(
-                        "elsewhere",
-                        7,
-                        0x0A090909,
-                        32,
-                        SECRET,
-                        "default",
-                        NasClient.MessageAuthenticatorPolicy.OPTIONAL))),
+                NasRegistry.of(List.of(NasClient.builder("elsewhere", 7)
+                        .network(0x0A090909, 32)
+                        .secret(SECRET)
+                        .messageAuthenticator(NasClient.MessageAuthenticatorPolicy.OPTIONAL)
+                        .build())),
                 8);
         send(accessRequest(1, "arctangent", true, false));
         assertThat(receive()).isNull();

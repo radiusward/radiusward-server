@@ -14,14 +14,12 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -60,66 +58,121 @@ public final class LoadGenerator {
             int firstSession,
             boolean sharedSessionIds) {
 
-        /** Unique session ids. */
-        public Settings(
-                List<InetSocketAddress> servers,
-                byte[] secret,
-                int nas,
-                int sessions,
-                int rate,
-                Duration duration,
-                Duration interim,
-                Duration timeout,
-                int retries,
-                boolean retryOtherServer,
-                boolean stopAtEnd,
-                Path ackLog,
-                int firstSession) {
-            this(
-                    servers,
-                    secret,
-                    nas,
-                    sessions,
-                    rate,
-                    duration,
-                    interim,
-                    timeout,
-                    retries,
-                    retryOtherServer,
-                    stopAtEnd,
-                    ackLog,
-                    firstSession,
-                    false);
+        /** Settings for these servers and shared secret, every other value at its default. */
+        public static Builder builder(List<InetSocketAddress> servers, byte[] secret) {
+            return new Builder(servers, secret);
         }
 
-        /** Sessions numbered from 0. */
-        public Settings(
-                List<InetSocketAddress> servers,
-                byte[] secret,
-                int nas,
-                int sessions,
-                int rate,
-                Duration duration,
-                Duration interim,
-                Duration timeout,
-                int retries,
-                boolean retryOtherServer,
-                boolean stopAtEnd,
-                Path ackLog) {
-            this(
-                    servers,
-                    secret,
-                    nas,
-                    sessions,
-                    rate,
-                    duration,
-                    interim,
-                    timeout,
-                    retries,
-                    retryOtherServer,
-                    stopAtEnd,
-                    ackLog,
-                    0);
+        public static final class Builder {
+            private final List<InetSocketAddress> servers;
+            private final byte[] secret;
+            private int nas = 1;
+            private int sessions = 100;
+            private int rate = 100;
+            private Duration duration = Duration.ofSeconds(10);
+            private Duration interim = Duration.ofSeconds(60);
+            private Duration timeout = Duration.ofSeconds(1);
+            private int retries = 3;
+            private boolean retryOtherServer = false;
+            private boolean stopAtEnd = false;
+            private Path ackLog = null;
+            private int firstSession = 0;
+            private boolean sharedSessionIds = false;
+
+            private Builder(List<InetSocketAddress> servers, byte[] secret) {
+                this.servers = servers;
+                this.secret = secret;
+            }
+
+            /** Simulated NAS (NAS-Identifier {@code nas<n>}); default 1. */
+            public Builder nas(int nas) {
+                this.nas = nas;
+                return this;
+            }
+
+            /** Sessions per NAS; default 100. */
+            public Builder sessions(int sessions) {
+                this.sessions = sessions;
+                return this;
+            }
+
+            /** Requests per second; default 100. */
+            public Builder rate(int rate) {
+                this.rate = rate;
+                return this;
+            }
+
+            /** How long to send; default 10s. */
+            public Builder duration(Duration duration) {
+                this.duration = duration;
+                return this;
+            }
+
+            /** Interim interval of each session; default 60s. */
+            public Builder interim(Duration interim) {
+                this.interim = interim;
+                return this;
+            }
+
+            /** Per attempt; default 1s. */
+            public Builder timeout(Duration timeout) {
+                this.timeout = timeout;
+                return this;
+            }
+
+            /** Retransmissions of a request; default 3. */
+            public Builder retries(int retries) {
+                this.retries = retries;
+                return this;
+            }
+
+            /** A retransmission goes to the next server; default false. */
+            public Builder retryOtherServer(boolean retryOtherServer) {
+                this.retryOtherServer = retryOtherServer;
+                return this;
+            }
+
+            /** Stop every session at the end; default false. */
+            public Builder stopAtEnd(boolean stopAtEnd) {
+                this.stopAtEnd = stopAtEnd;
+                return this;
+            }
+
+            /** Acknowledged events as CSV ({@code null}: none); default null. */
+            public Builder ackLog(Path ackLog) {
+                this.ackLog = ackLog;
+                return this;
+            }
+
+            /** Number of the first session (several generators side by side); default 0. */
+            public Builder firstSession(int firstSession) {
+                this.firstSession = firstSession;
+                return this;
+            }
+
+            /** Session ids repeat across the NAS (devices numbering from boot); default false. */
+            public Builder sharedSessionIds(boolean sharedSessionIds) {
+                this.sharedSessionIds = sharedSessionIds;
+                return this;
+            }
+
+            public Settings build() {
+                return new Settings(
+                        servers,
+                        secret,
+                        nas,
+                        sessions,
+                        rate,
+                        duration,
+                        interim,
+                        timeout,
+                        retries,
+                        retryOtherServer,
+                        stopAtEnd,
+                        ackLog,
+                        firstSession,
+                        sharedSessionIds);
+            }
         }
     }
 
@@ -133,7 +186,6 @@ public final class LoadGenerator {
             long maxMicros,
             double seconds) {}
 
-    private static final int IDS_PER_CHANNEL = 256;
     /**
      * How far sending may fall behind the rate and still catch up. A stall of the process (GC, a busy host) of up to
      * this long is made good by sending faster for a moment, so the delivered rate is the requested one; only a longer
@@ -170,27 +222,6 @@ public final class LoadGenerator {
         long deadlineNanos;
         int server;
         int identifier;
-    }
-
-    private final class Port {
-        final DatagramChannel channel;
-        final Request[] inFlight = new Request[IDS_PER_CHANNEL];
-        final ArrayDeque<Integer> freeIds = new ArrayDeque<>();
-
-        Port(Selector selector, java.net.InetAddress local) throws IOException {
-            channel = DatagramChannel.open();
-            try {
-                channel.bind(new InetSocketAddress(local, 0));
-                channel.configureBlocking(false);
-                channel.register(selector, SelectionKey.OP_READ, this);
-            } catch (IOException | RuntimeException e) {
-                channel.close();
-                throw e;
-            }
-            for (int i = 0; i < IDS_PER_CHANNEL; i++) {
-                freeIds.add(i);
-            }
-        }
     }
 
     /** A scheduled accounting event of one session. */
@@ -236,9 +267,9 @@ public final class LoadGenerator {
             }
             int channels = Math.max(
                     2, (settings.rate() * (int) Math.max(1, settings.timeout().toSeconds())) / 200 + 1);
-            List<Port> ports = new ArrayList<>();
+            List<RequestPort<Request>> ports = new ArrayList<>();
             for (int i = 0; i < channels; i++) {
-                ports.add(new Port(selector, localAddress()));
+                ports.add(new RequestPort<>(selector, RequestPort.localAddress(settings.servers()), Request[]::new));
             }
             boolean stopping = false;
             int inFlight = 0;
@@ -290,7 +321,7 @@ public final class LoadGenerator {
                 // responses
                 selector.select(1);
                 for (SelectionKey key : selector.selectedKeys()) {
-                    Port port = (Port) key.attachment();
+                    RequestPort<Request> port = RequestPort.<Request>of(key);
                     while (true) {
                         receive.clear();
                         if (port.channel.receive(receive) == null) {
@@ -314,8 +345,8 @@ public final class LoadGenerator {
                     continue; // timeouts are seconds long: scanning every in-flight slot each loop only burns CPU
                 }
                 nextTimeoutScan = now + TIMEOUT_SCAN_NANOS;
-                for (Port port : ports) {
-                    for (int id = 0; id < IDS_PER_CHANNEL; id++) {
+                for (RequestPort<Request> port : ports) {
+                    for (int id = 0; id < RequestPort.IDS; id++) {
                         Request r = port.inFlight[id];
                         if (r != null && now > r.deadlineNanos) {
                             if (r.attempts <= settings.retries()) {
@@ -338,7 +369,7 @@ public final class LoadGenerator {
                     }
                 }
             }
-            for (Port port : ports) {
+            for (RequestPort<Request> port : ports) {
                 port.channel.close();
             }
         }
@@ -349,8 +380,8 @@ public final class LoadGenerator {
                 acked,
                 failed,
                 retransmissions,
-                percentile(sorted, 50),
-                percentile(sorted, 99),
+                RequestPort.percentile(sorted, 50),
+                RequestPort.percentile(sorted, 99),
                 sorted.length == 0 ? 0 : sorted[sorted.length - 1],
                 seconds);
         out.printf(
@@ -405,8 +436,8 @@ public final class LoadGenerator {
         return r;
     }
 
-    private static boolean hasFreeId(List<Port> ports) {
-        for (Port p : ports) {
+    private static boolean hasFreeId(List<RequestPort<Request>> ports) {
+        for (RequestPort<Request> p : ports) {
             if (!p.freeIds.isEmpty()) {
                 return true;
             }
@@ -414,11 +445,11 @@ public final class LoadGenerator {
         return false;
     }
 
-    private void send(Request r, List<Port> ports, long now) throws IOException {
-        Port port = null;
+    private void send(Request r, List<RequestPort<Request>> ports, long now) throws IOException {
+        RequestPort<Request> port = null;
         int base = random.nextInt(ports.size());
         for (int i = 0; i < ports.size() && port == null; i++) {
-            Port candidate = ports.get((base + i) % ports.size());
+            RequestPort<Request> candidate = ports.get((base + i) % ports.size());
             if (!candidate.freeIds.isEmpty()) {
                 port = candidate;
             }
@@ -434,22 +465,10 @@ public final class LoadGenerator {
     }
 
     /**
-     * The address to bind the ports to: loopback when every server is local, otherwise the wildcard. A specific
-     * bind matters on a shared host: other programs binding {@code 127.0.0.1:0} with address reuse (Aeron does)
-     * can otherwise be given a port this generator holds on the wildcard address and take its responses (seen
-     * in the in-JVM tests: whole ports of 256 requests lost).
-     */
-    private java.net.InetAddress localAddress() {
-        boolean loopback = settings.servers().stream()
-                .allMatch(s -> s.getAddress() != null && s.getAddress().isLoopbackAddress());
-        return loopback ? java.net.InetAddress.getLoopbackAddress() : null;
-    }
-
-    /**
      * A non-blocking send returns 0 when the socket buffer is momentarily full and the datagram is then not sent
      * at all; retry briefly instead of losing it, and count what still could not be sent.
      */
-    private void send(Port port, byte[] bytes, InetSocketAddress server) throws IOException {
+    private void send(RequestPort<Request> port, byte[] bytes, InetSocketAddress server) throws IOException {
         ByteBuffer datagram = ByteBuffer.wrap(bytes);
         for (int attempt = 0; attempt < 1000; attempt++) {
             if (port.channel.send(datagram, server) > 0) {
@@ -479,7 +498,7 @@ public final class LoadGenerator {
         return Arrays.copyOf(buffer.byteArray(), length);
     }
 
-    private Request matchResponse(Port port, int length) {
+    private Request matchResponse(RequestPort<Request> port, int length) {
         if (responseView.wrap(new UnsafeBuffer(receive.array(), 0, length), 0, length) != DecodeStatus.OK
                 || responseView.code() != RadiusCode.ACCOUNTING_RESPONSE) {
             unmatched++;
@@ -501,12 +520,5 @@ public final class LoadGenerator {
             log.write(r.sessionId + "," + r.status + "," + r.sessionTime + "," + (acked ? 1 : 0) + "," + r.attempts
                     + "," + String.format("%.3f", latencyMicros / 1000.0) + "," + r.device + "\n");
         }
-    }
-
-    private static long percentile(long[] sorted, int p) {
-        if (sorted.length == 0) {
-            return 0;
-        }
-        return sorted[Math.min(sorted.length - 1, (int) Math.ceil(p / 100.0 * sorted.length) - 1)];
     }
 }

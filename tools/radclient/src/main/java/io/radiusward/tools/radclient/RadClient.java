@@ -252,21 +252,20 @@ public final class RadClient {
                     "access-load");
             accessThread.start();
         }
-        LoadGenerator.Settings settings = new LoadGenerator.Settings(
-                servers,
-                o.secret(),
-                o.has("nas") ? Integer.parseInt(o.value("nas")) : 10,
-                o.has("sessions") ? Integer.parseInt(o.value("sessions")) : 1000,
-                o.has("rate") ? Integer.parseInt(o.value("rate")) : 1000,
-                o.duration("duration", Duration.ofSeconds(60)),
-                o.duration("interim", Duration.ofSeconds(10)),
-                o.timeout(),
-                o.retries(),
-                o.flag("retry-other-server"),
-                !o.flag("no-stop"),
-                o.has("ack-log") ? Path.of(o.value("ack-log")) : null,
-                o.has("first-session") ? Integer.parseInt(o.value("first-session")) : 0,
-                o.flag("shared-session-ids"));
+        LoadGenerator.Settings settings = LoadGenerator.Settings.builder(servers, o.secret())
+                .nas(o.has("nas") ? Integer.parseInt(o.value("nas")) : 10)
+                .sessions(o.has("sessions") ? Integer.parseInt(o.value("sessions")) : 1000)
+                .rate(o.has("rate") ? Integer.parseInt(o.value("rate")) : 1000)
+                .duration(o.duration("duration", Duration.ofSeconds(60)))
+                .interim(o.duration("interim", Duration.ofSeconds(10)))
+                .timeout(o.timeout())
+                .retries(o.retries())
+                .retryOtherServer(o.flag("retry-other-server"))
+                .stopAtEnd(!o.flag("no-stop"))
+                .ackLog(o.has("ack-log") ? Path.of(o.value("ack-log")) : null)
+                .firstSession(o.has("first-session") ? Integer.parseInt(o.value("first-session")) : 0)
+                .sharedSessionIds(o.flag("shared-session-ids"))
+                .build();
         LoadGenerator.Result result = new LoadGenerator(settings, out).run();
         boolean accessOk = true;
         if (accessThread != null) {

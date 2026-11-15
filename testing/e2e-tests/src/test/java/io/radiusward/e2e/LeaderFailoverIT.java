@@ -34,21 +34,22 @@ class LeaderFailoverIT extends E2eTestBase {
     void killLeaderUnderLoad() throws Exception {
         Path acks = dir.resolve("acks.csv");
         LoadGenerator load = new LoadGenerator(
-                new LoadGenerator.Settings(
-                        List.of(
-                                new InetSocketAddress("127.0.0.1", cluster.radiusPort("gateway-a")),
-                                new InetSocketAddress("127.0.0.1", cluster.radiusPort("gateway-b"))),
-                        Nas.SECRET,
-                        10,
-                        1000,
-                        2000,
-                        Duration.ofSeconds(25),
-                        Duration.ofSeconds(5),
-                        Duration.ofSeconds(3),
-                        4,
-                        true,
-                        true,
-                        acks),
+                LoadGenerator.Settings.builder(
+                                List.of(
+                                        new InetSocketAddress("127.0.0.1", cluster.radiusPort("gateway-a")),
+                                        new InetSocketAddress("127.0.0.1", cluster.radiusPort("gateway-b"))),
+                                Nas.SECRET)
+                        .nas(10)
+                        .sessions(1000)
+                        .rate(2000)
+                        .duration(Duration.ofSeconds(25))
+                        .interim(Duration.ofSeconds(5))
+                        .timeout(Duration.ofSeconds(3))
+                        .retries(4)
+                        .retryOtherServer(true)
+                        .stopAtEnd(true)
+                        .ackLog(acks)
+                        .build(),
                 new PrintStream(System.out));
         LoadGenerator.Result[] result = new LoadGenerator.Result[1];
         Thread runner = new Thread(() -> {

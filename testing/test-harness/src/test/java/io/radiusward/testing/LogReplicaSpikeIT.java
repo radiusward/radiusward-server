@@ -221,26 +221,26 @@ class LogReplicaSpikeIT {
     private static LoadGenerator.Result load(LocalCluster cluster, int rate, Duration duration, int firstSession) {
         try {
             return new LoadGenerator(
-                            new LoadGenerator.Settings(
-                                    List.of(
-                                            new InetSocketAddress(
-                                                    "127.0.0.1",
-                                                    cluster.gateway(0).radiusPort()),
-                                            new InetSocketAddress(
-                                                    "127.0.0.1",
-                                                    cluster.gateway(1).radiusPort())),
-                                    FakeNas.SECRET,
-                                    10,
-                                    rate,
-                                    rate,
-                                    duration,
-                                    Duration.ofSeconds(1),
-                                    Duration.ofSeconds(3),
-                                    4,
-                                    true,
-                                    true,
-                                    null,
-                                    firstSession),
+                            LoadGenerator.Settings.builder(
+                                            List.of(
+                                                    new InetSocketAddress(
+                                                            "127.0.0.1",
+                                                            cluster.gateway(0).radiusPort()),
+                                                    new InetSocketAddress(
+                                                            "127.0.0.1",
+                                                            cluster.gateway(1).radiusPort())),
+                                            FakeNas.SECRET)
+                                    .nas(10)
+                                    .sessions(rate)
+                                    .rate(rate)
+                                    .duration(duration)
+                                    .interim(Duration.ofSeconds(1))
+                                    .timeout(Duration.ofSeconds(3))
+                                    .retries(4)
+                                    .retryOtherServer(true)
+                                    .stopAtEnd(true)
+                                    .firstSession(firstSession)
+                                    .build(),
                             new PrintStream(System.out))
                     .run();
         } catch (java.io.IOException e) {

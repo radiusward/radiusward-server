@@ -96,34 +96,58 @@ public final class AccountingStateMachine {
         public static final int DEFAULT_MAX_RESERVATIONS = 65_536;
         public static final int DEFAULT_MAX_SUBSCRIBERS = 100_000;
 
-        public Settings(
-                int maxSessions,
-                long tombstoneMs,
-                long idleTimeoutMs,
-                long exactKeyWindowMs,
-                int supportedVersion,
-                int maxReservations) {
-            this(
+        /** The production values (1 h tombstones, 2 h idle timeout, 15 min exact keys) for {@code maxSessions}. */
+        public static Settings defaults(int maxSessions) {
+            return new Settings(
                     maxSessions,
-                    tombstoneMs,
+                    3_600_000L,
+                    7_200_000L,
+                    900_000L,
+                    STATE_VERSION,
+                    DEFAULT_MAX_RESERVATIONS,
+                    DEFAULT_MAX_SUBSCRIBERS);
+        }
+
+        public Settings withTombstoneMs(long ms) {
+            return new Settings(
+                    maxSessions,
+                    ms,
                     idleTimeoutMs,
                     exactKeyWindowMs,
                     supportedVersion,
                     maxReservations,
-                    DEFAULT_MAX_SUBSCRIBERS);
+                    maxSubscribers);
         }
 
-        public Settings(
-                int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs, int supportedVersion) {
-            this(maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, supportedVersion, DEFAULT_MAX_RESERVATIONS);
+        public Settings withIdleTimeoutMs(long ms) {
+            return new Settings(
+                    maxSessions, tombstoneMs, ms, exactKeyWindowMs, supportedVersion, maxReservations, maxSubscribers);
         }
 
-        public Settings(int maxSessions, long tombstoneMs, long idleTimeoutMs, long exactKeyWindowMs) {
-            this(maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, STATE_VERSION);
+        public Settings withExactKeyWindowMs(long ms) {
+            return new Settings(
+                    maxSessions, tombstoneMs, idleTimeoutMs, ms, supportedVersion, maxReservations, maxSubscribers);
         }
 
-        public static Settings defaults(int maxSessions) {
-            return new Settings(maxSessions, 3_600_000L, 7_200_000L, 900_000L);
+        public Settings withSupportedVersion(int version) {
+            return new Settings(
+                    maxSessions,
+                    tombstoneMs,
+                    idleTimeoutMs,
+                    exactKeyWindowMs,
+                    version,
+                    maxReservations,
+                    maxSubscribers);
+        }
+
+        public Settings withMaxReservations(int max) {
+            return new Settings(
+                    maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, supportedVersion, max, maxSubscribers);
+        }
+
+        public Settings withMaxSubscribers(int max) {
+            return new Settings(
+                    maxSessions, tombstoneMs, idleTimeoutMs, exactKeyWindowMs, supportedVersion, maxReservations, max);
         }
     }
 

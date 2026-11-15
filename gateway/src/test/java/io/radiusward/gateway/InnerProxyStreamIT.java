@@ -82,29 +82,30 @@ class InnerProxyStreamIT {
                 Map.entry("nas.local.radsec.identity", "proxy.corp.test")));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
         GatewayConfig c = UdpAgentTest.config(Duration.ZERO, 1024);
-        home = Gateway.launchWith(
-                new GatewayConfig(
-                        2,
-                        c.listenHost(),
-                        0,
-                        c.socketReceiveBuffer(),
-                        c.clusterMembers(),
-                        c.clusterBasePort(),
-                        c.egressHost(),
-                        c.profile(),
-                        c.pendingCapacity(),
-                        c.pendingTimeout(),
-                        c.resubmitAfter(),
-                        c.responseCacheTtl(),
-                        c.dedicatedThreads(),
-                        c.idleStrategy(),
-                        new File(dir.toFile(), "aeron-home").getPath(),
-                        c.dictionaryDir(),
-                        c.debugResponseDelay()),
-                NasRegistry.from(homeSettings),
-                auth,
-                Gateway.storeHandler(homeSettings, auth),
-                RadsecConfig.from(homeSettings, "127.0.0.1"));
+        home = Gateway.builder(
+                        new GatewayConfig(
+                                2,
+                                c.listenHost(),
+                                0,
+                                c.socketReceiveBuffer(),
+                                c.clusterMembers(),
+                                c.clusterBasePort(),
+                                c.egressHost(),
+                                c.profile(),
+                                c.pendingCapacity(),
+                                c.pendingTimeout(),
+                                c.resubmitAfter(),
+                                c.responseCacheTtl(),
+                                c.dedicatedThreads(),
+                                c.idleStrategy(),
+                                new File(dir.toFile(), "aeron-home").getPath(),
+                                c.dictionaryDir(),
+                                c.debugResponseDelay()),
+                        NasRegistry.from(homeSettings))
+                .auth(auth)
+                .handlerFactory(Gateway.storeHandler(homeSettings, auth))
+                .radsec(RadsecConfig.from(homeSettings, "127.0.0.1"))
+                .start();
 
         InnerProxy proxy = new InnerProxy(ProxyConfig.from(Config.of(Map.ofEntries(
                 Map.entry("proxy.enabled", "true"),
