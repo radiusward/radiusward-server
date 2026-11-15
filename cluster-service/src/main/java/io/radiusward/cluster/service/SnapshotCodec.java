@@ -101,6 +101,23 @@ public final class SnapshotCodec {
 
     public void write(AccountingStateMachine machine, Sink sink) {
         SessionStore store = machine.store();
+        writeHeader(machine, sink);
+        writeSessions(store, sink);
+        writeExactKeys(machine.window(), sink);
+        writeSinks(machine.export(), sink);
+        writeMemberPositions(machine.export(), machine.versions(), sink);
+        writeReservations(machine.reservations(), sink);
+        writeSqns(machine.sqns(), sink);
+
+        footerEncoder
+                .wrapAndApplyHeader(buffer, 0, headerEncoder)
+                .sessionCount(store.size())
+                .exactKeyCount(machine.window().size());
+        sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + footerEncoder.encodedLength());
+    }
+
+    private void writeHeader(AccountingStateMachine machine, Sink sink) {
+        SessionStore store = machine.store();
         snapshotHeaderEncoder
                 .wrapAndApplyHeader(buffer, 0, headerEncoder)
                 .stateVersion(AccountingStateMachine.STATE_VERSION)
@@ -120,7 +137,10 @@ public final class SnapshotCodec {
                 .reservationCount(machine.reservations().size())
                 .sqnCount(machine.sqns().size());
         sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + snapshotHeaderEncoder.encodedLength());
+    }
 
+    /** Every session in chunks of {@link #SESSIONS_PER_CHUNK}, in slot order (every member writes the same). */
+    private void writeSessions(SessionStore store, Sink sink) {
         int slot = 0;
         int end = store.highWater();
         while (slot < end) {
@@ -167,11 +187,13 @@ public final class SnapshotCodec {
             }
             sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + sessionChunkEncoder.encodedLength());
         }
+    }
 
+    private void writeExactKeys(ExactKeyWindow window, Sink sink) {
         long[] keys = new long[KEYS_PER_CHUNK];
         long[] expiries = new long[KEYS_PER_CHUNK];
         int[] n = {0};
-        machine.window().forEach((key, expiry) -> {
+        window.forEach((key, expiry) -> {
             keys[n[0]] = key;
             expiries[n[0]] = expiry;
             if (++n[0] == KEYS_PER_CHUNK) {
@@ -182,17 +204,6 @@ public final class SnapshotCodec {
         if (n[0] > 0) {
             writeKeys(keys, expiries, n[0], sink);
         }
-
-        writeSinks(machine.export(), sink);
-        writeMemberPositions(machine.export(), machine.versions(), sink);
-        writeReservations(machine.reservations(), sink);
-        writeSqns(machine.sqns(), sink);
-
-        footerEncoder
-                .wrapAndApplyHeader(buffer, 0, headerEncoder)
-                .sessionCount(store.size())
-                .exactKeyCount(machine.window().size());
-        sink.write(buffer, 0, MessageHeaderEncoder.ENCODED_LENGTH + footerEncoder.encodedLength());
     }
 
     private static int reportedMembers(ExportState export) {
@@ -333,142 +344,165 @@ public final class SnapshotCodec {
             throw new IllegalStateException("unexpected schema " + headerDecoder.schemaId() + " in snapshot");
         }
         switch (headerDecoder.templateId()) {
-            case SnapshotHeaderDecoder.TEMPLATE_ID -> {
-                snapshotHeaderDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                // a snapshot written by newer code is fine as long as its active version is one this code knows
-                // (a rollback before activation, ADR 0005)
-                if (headerDecoder.version() >= 5) {
-                    machine.versions()
-                            .restore(snapshotHeaderDecoder.activeVersion(), snapshotHeaderDecoder.clusterSize());
-                }
-                machine.versions().requireSupported();
-                machine.restoreCounters(
-                        snapshotHeaderDecoder.applied(),
-                        snapshotHeaderDecoder.duplicates(),
-                        snapshotHeaderDecoder.stale(),
-                        snapshotHeaderDecoder.rejected(),
-                        snapshotHeaderDecoder.stateDigest(),
-                        snapshotHeaderDecoder.timerScheduled() != 0);
-                expectedSessions = snapshotHeaderDecoder.sessionCount();
-                expectedKeys = snapshotHeaderDecoder.exactKeyCount();
-                if (headerDecoder.version() >= 2) {
-                    expectedSinks = snapshotHeaderDecoder.sinkCount();
-                    expectedMembers = snapshotHeaderDecoder.memberPositionCount();
-                    machine.export().restoreLastCommandPosition(snapshotHeaderDecoder.lastCommandPosition());
-                }
-                if (headerDecoder.version() >= 6) {
-                    expectedReservations = snapshotHeaderDecoder.reservationCount();
-                }
-                if (headerDecoder.version() >= 8) {
-                    expectedSqns = snapshotHeaderDecoder.sqnCount();
-                }
-            }
-            case SessionChunkDecoder.TEMPLATE_ID -> {
-                sessionChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                for (SessionChunkDecoder.SessionsDecoder s : sessionChunkDecoder.sessions()) {
-                    machine.restoreSession(
-                            s.keyHi(),
-                            s.keyLo(),
-                            s.nasId(),
-                            s.status() == SessionStatus.ACTIVE ? SessionStore.ACTIVE : SessionStore.STOPPED,
-                            s.statusType(),
-                            s.flags(),
-                            s.sessionTime(),
-                            s.eventTimestamp(),
-                            s.inputOctets(),
-                            s.outputOctets(),
-                            s.startKey(),
-                            s.lastSeen(),
-                            s.tombstoneUntil(),
-                            sessionChunkDecoder.actingVersion() >= 4 ? s.idleTimeoutMinutes() : 0);
-                    if (sessionChunkDecoder.actingVersion() >= 6) {
-                        machine.restoreUser(s.keyHi(), s.keyLo(), s.userKey(), s.deviceKey());
-                    }
-                    if (sessionChunkDecoder.actingVersion() >= 7) {
-                        int identity = s.getIdentity(
-                                identityScratch, 0, Math.min(s.identityLength(), SessionStore.IDENTITY_SIZE - 1));
-                        machine.restoreIdentity(s.keyHi(), s.keyLo(), s.firstSeen(), identityScratch, 0, identity);
-                    }
-                    loadedSessions++;
-                }
-            }
-            case ExactKeyChunkDecoder.TEMPLATE_ID -> {
-                exactKeyChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                for (ExactKeyChunkDecoder.KeysDecoder k : exactKeyChunkDecoder.keys()) {
-                    machine.restoreExactKey(k.key(), k.expiry());
-                    loadedKeys++;
-                }
-            }
-            case SinkChunkDecoder.TEMPLATE_ID -> {
-                sinkChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                for (SinkChunkDecoder.SinksDecoder s : sinkChunkDecoder.sinks()) {
-                    int nameLength = s.getName(nameBytes, 0);
-                    int end = 0;
-                    while (end < nameLength && nameBytes[end] != 0) {
-                        end++;
-                    }
-                    machine.export()
-                            .restore(
-                                    new String(nameBytes, 0, end, java.nio.charset.StandardCharsets.US_ASCII),
-                                    s.checkpoint(),
-                                    s.owner(),
-                                    s.epoch(),
-                                    s.leaseExpiry(),
-                                    s.lastEventTime(),
-                                    s.behindSince(),
-                                    s.required() != 0,
-                                    s.maxLagBytes(),
-                                    s.maxLagMs(),
-                                    s.onMaxLag() == io.radiusward.protocol.OnMaxLag.DETACH
-                                            ? ExportState.ON_MAX_LAG_DETACH
-                                            : ExportState.ON_MAX_LAG_BLOCK,
-                                    s.detached() != 0,
-                                    s.resyncFrom());
-                    loadedSinks++;
-                }
-            }
-            case MemberPositionChunkDecoder.TEMPLATE_ID -> {
-                memberChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                for (MemberPositionChunkDecoder.MembersDecoder m : memberChunkDecoder.members()) {
-                    machine.export().memberPosition(m.memberId(), m.logPosition());
-                    if (memberChunkDecoder.actingVersion() >= 5) {
-                        machine.versions().restoreMember(m.memberId(), m.supportedVersion(), m.hold() != 0);
-                    }
-                    loadedMembers++;
-                }
-            }
-            case ReservationChunkDecoder.TEMPLATE_ID -> {
-                reservationChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                for (ReservationChunkDecoder.ReservationsDecoder r : reservationChunkDecoder.reservations()) {
-                    machine.restoreReservation(r.userKey(), r.deviceKey(), r.expiry());
-                    loadedReservations++;
-                }
-            }
-            case io.radiusward.protocol.SqnChunkDecoder.TEMPLATE_ID -> {
-                sqnChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                for (io.radiusward.protocol.SqnChunkDecoder.SqnsDecoder q : sqnChunkDecoder.sqns()) {
-                    machine.restoreSqn(q.subscriberKey(), q.sqn());
-                    loadedSqns++;
-                }
-            }
-            case SnapshotFooterDecoder.TEMPLATE_ID -> {
-                footerDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-                if (loadedSessions != expectedSessions
-                        || loadedKeys != expectedKeys
-                        || loadedSinks != expectedSinks
-                        || loadedMembers != expectedMembers
-                        || loadedReservations != expectedReservations
-                        || loadedSqns != expectedSqns) {
-                    throw new IllegalStateException("snapshot incomplete: sessions " + loadedSessions + "/"
-                            + expectedSessions + ", keys " + loadedKeys + "/" + expectedKeys + ", sinks "
-                            + loadedSinks + "/" + expectedSinks + ", reservations " + loadedReservations + "/"
-                            + expectedReservations + ", sqns " + loadedSqns + "/" + expectedSqns);
-                }
-                complete = true;
-            }
+            case SnapshotHeaderDecoder.TEMPLATE_ID -> readHeader(machine, buffer, offset);
+            case SessionChunkDecoder.TEMPLATE_ID -> readSessions(machine, buffer, offset);
+            case ExactKeyChunkDecoder.TEMPLATE_ID -> readExactKeys(machine, buffer, offset);
+            case SinkChunkDecoder.TEMPLATE_ID -> readSinks(machine, buffer, offset);
+            case MemberPositionChunkDecoder.TEMPLATE_ID -> readMemberPositions(machine, buffer, offset);
+            case ReservationChunkDecoder.TEMPLATE_ID -> readReservations(machine, buffer, offset);
+            case io.radiusward.protocol.SqnChunkDecoder.TEMPLATE_ID -> readSqns(machine, buffer, offset);
+            case SnapshotFooterDecoder.TEMPLATE_ID -> readFooter(machine, buffer, offset);
             default ->
                 throw new IllegalStateException("unexpected template " + headerDecoder.templateId() + " in snapshot");
         }
+    }
+
+    /** The header: counters, the active state version and how many entries of each kind follow. */
+    private void readHeader(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        snapshotHeaderDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        // a snapshot written by newer code is fine as long as its active version is one this code knows
+        // (a rollback before activation, ADR 0005)
+        if (headerDecoder.version() >= 5) {
+            machine.versions().restore(snapshotHeaderDecoder.activeVersion(), snapshotHeaderDecoder.clusterSize());
+        }
+        machine.versions().requireSupported();
+        machine.restoreCounters(
+                snapshotHeaderDecoder.applied(),
+                snapshotHeaderDecoder.duplicates(),
+                snapshotHeaderDecoder.stale(),
+                snapshotHeaderDecoder.rejected(),
+                snapshotHeaderDecoder.stateDigest(),
+                snapshotHeaderDecoder.timerScheduled() != 0);
+        expectedSessions = snapshotHeaderDecoder.sessionCount();
+        expectedKeys = snapshotHeaderDecoder.exactKeyCount();
+        if (headerDecoder.version() >= 2) {
+            expectedSinks = snapshotHeaderDecoder.sinkCount();
+            expectedMembers = snapshotHeaderDecoder.memberPositionCount();
+            machine.export().restoreLastCommandPosition(snapshotHeaderDecoder.lastCommandPosition());
+        }
+        if (headerDecoder.version() >= 6) {
+            expectedReservations = snapshotHeaderDecoder.reservationCount();
+        }
+        if (headerDecoder.version() >= 8) {
+            expectedSqns = snapshotHeaderDecoder.sqnCount();
+        }
+    }
+
+    /** A chunk of sessions. */
+    private void readSessions(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        sessionChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        for (SessionChunkDecoder.SessionsDecoder s : sessionChunkDecoder.sessions()) {
+            machine.restoreSession(
+                    s.keyHi(),
+                    s.keyLo(),
+                    s.nasId(),
+                    s.status() == SessionStatus.ACTIVE ? SessionStore.ACTIVE : SessionStore.STOPPED,
+                    s.statusType(),
+                    s.flags(),
+                    s.sessionTime(),
+                    s.eventTimestamp(),
+                    s.inputOctets(),
+                    s.outputOctets(),
+                    s.startKey(),
+                    s.lastSeen(),
+                    s.tombstoneUntil(),
+                    sessionChunkDecoder.actingVersion() >= 4 ? s.idleTimeoutMinutes() : 0);
+            if (sessionChunkDecoder.actingVersion() >= 6) {
+                machine.restoreUser(s.keyHi(), s.keyLo(), s.userKey(), s.deviceKey());
+            }
+            if (sessionChunkDecoder.actingVersion() >= 7) {
+                int identity =
+                        s.getIdentity(identityScratch, 0, Math.min(s.identityLength(), SessionStore.IDENTITY_SIZE - 1));
+                machine.restoreIdentity(s.keyHi(), s.keyLo(), s.firstSeen(), identityScratch, 0, identity);
+            }
+            loadedSessions++;
+        }
+    }
+
+    /** A chunk of exact event keys. */
+    private void readExactKeys(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        exactKeyChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        for (ExactKeyChunkDecoder.KeysDecoder k : exactKeyChunkDecoder.keys()) {
+            machine.restoreExactKey(k.key(), k.expiry());
+            loadedKeys++;
+        }
+    }
+
+    /** A chunk of sinks: checkpoint, lease and lag settings. */
+    private void readSinks(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        sinkChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        for (SinkChunkDecoder.SinksDecoder s : sinkChunkDecoder.sinks()) {
+            int nameLength = s.getName(nameBytes, 0);
+            int end = 0;
+            while (end < nameLength && nameBytes[end] != 0) {
+                end++;
+            }
+            machine.export()
+                    .restore(
+                            new String(nameBytes, 0, end, java.nio.charset.StandardCharsets.US_ASCII),
+                            s.checkpoint(),
+                            s.owner(),
+                            s.epoch(),
+                            s.leaseExpiry(),
+                            s.lastEventTime(),
+                            s.behindSince(),
+                            s.required() != 0,
+                            s.maxLagBytes(),
+                            s.maxLagMs(),
+                            s.onMaxLag() == io.radiusward.protocol.OnMaxLag.DETACH
+                                    ? ExportState.ON_MAX_LAG_DETACH
+                                    : ExportState.ON_MAX_LAG_BLOCK,
+                            s.detached() != 0,
+                            s.resyncFrom());
+            loadedSinks++;
+        }
+    }
+
+    /** A chunk of members' log positions and supported versions. */
+    private void readMemberPositions(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        memberChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        for (MemberPositionChunkDecoder.MembersDecoder m : memberChunkDecoder.members()) {
+            machine.export().memberPosition(m.memberId(), m.logPosition());
+            if (memberChunkDecoder.actingVersion() >= 5) {
+                machine.versions().restoreMember(m.memberId(), m.supportedVersion(), m.hold() != 0);
+            }
+            loadedMembers++;
+        }
+    }
+
+    /** A chunk of Simultaneous-Use reservations. */
+    private void readReservations(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        reservationChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        for (ReservationChunkDecoder.ReservationsDecoder r : reservationChunkDecoder.reservations()) {
+            machine.restoreReservation(r.userKey(), r.deviceKey(), r.expiry());
+            loadedReservations++;
+        }
+    }
+
+    /** A chunk of SIM subscribers' sequence numbers. */
+    private void readSqns(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        sqnChunkDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        for (io.radiusward.protocol.SqnChunkDecoder.SqnsDecoder q : sqnChunkDecoder.sqns()) {
+            machine.restoreSqn(q.subscriberKey(), q.sqn());
+            loadedSqns++;
+        }
+    }
+
+    /** The footer: every count must match the header's. */
+    private void readFooter(AccountingStateMachine machine, DirectBuffer buffer, int offset) {
+        footerDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
+        if (loadedSessions != expectedSessions
+                || loadedKeys != expectedKeys
+                || loadedSinks != expectedSinks
+                || loadedMembers != expectedMembers
+                || loadedReservations != expectedReservations
+                || loadedSqns != expectedSqns) {
+            throw new IllegalStateException("snapshot incomplete: sessions " + loadedSessions + "/"
+                    + expectedSessions + ", keys " + loadedKeys + "/" + expectedKeys + ", sinks "
+                    + loadedSinks + "/" + expectedSinks + ", reservations " + loadedReservations + "/"
+                    + expectedReservations + ", sqns " + loadedSqns + "/" + expectedSqns);
+        }
+        complete = true;
     }
 
     /** Whether the footer has been read and the counts matched. */
