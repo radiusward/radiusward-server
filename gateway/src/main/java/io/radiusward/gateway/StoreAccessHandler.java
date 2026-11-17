@@ -22,10 +22,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Optional;
-import java.util.TreeMap;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import org.agrona.collections.IntHashSet;
 import org.agrona.collections.Object2LongHashMap;
@@ -48,20 +45,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private static final int CALLING_STATION_ID = 31;
 
     private volatile AuthStores stores; // replaced by a reload (ADR 0054)
-    private final java.util.concurrent.ConcurrentHashMap<String, StoreLookups> lookups =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    /** EAP outcomes by method type: {@code type * EAP_OUTCOMES.length + outcome}. */
-    private final java.util.concurrent.atomic.AtomicLongArray eapOutcomes =
-            new java.util.concurrent.atomic.AtomicLongArray(256 * EAP_OUTCOMES.length);
-
-    static final String[] EAP_OUTCOMES = {"succeeded", "failed", "too_many_rounds", "store_unavailable"};
+    private final AuthMetrics metrics = new AuthMetrics();
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
     private volatile long ttlMillis;
     private final OnceLogger once = new OnceLogger(LOG);
     private final CheckItems checkItems;
-    /** Per NAS entry with a vendor filter; replaced as a whole by a reload, otherwise only read. */
-    private volatile Map<String, AtomicLong> filtered = Map.of();
+    private final ReplyEncoder replies;
     /** Raised by a reload: workers then drop their caches. */
     private volatile int generation;
 
@@ -77,7 +67,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     static final class WorkerCache {
         final Object2ObjectHashMap<String, Cached> users = new Object2ObjectHashMap<>();
         final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
-        final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
+        final Object2ObjectHashMap<AttributeItem, ReplyEncoder.Encoded> encoded = new Object2ObjectHashMap<>();
         /** The request this worker is deciding, reused for every request. */
         final AuthRequest request = new AuthRequest(this);
         /** The handler's generation the caches belong to (ADR 0054). */
@@ -103,7 +93,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.passwordChecks = new PasswordChecks(this, clockMillis, once);
         this.inner = new InnerCredentials(this, passwordChecks, once);
         this.ttlMillis = stores.cacheTtl().toMillis();
-        this.filtered = counters(stores, Map.of());
+        this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
         this.conversations = new EapConversations(stores.eap().conversations());
     }
 
@@ -243,7 +233,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (c != null) {
             c.apply(request, found.user().userName(), a.reply()); // ADR 0056
         }
-        encode(auth.caches().encoded, a.reply(), context.reply(), context.nas().name());
+        String nas = context.nas().name();
+        replies.encode(
+                auth.caches().encoded,
+                a.reply(),
+                context.reply(),
+                stores.replyVendors().get(nas),
+                nas,
+                stores.cacheMax());
         writeMsChapSuccess(auth, method); // method attributes: never filtered by vendor
         writeEapSuccess(auth, method);
         return ACCEPT;
@@ -368,7 +365,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                         group.check()); // the user's own limit wins, then the first group's
             }
             passwords.addAll(groupPasswords);
-            merge(reply, group.reply());
+            ReplyEncoder.merge(reply, group.reply());
         }
         if (authType.equalsIgnoreCase("Reject")) {
             because(context, "Auth-Type := Reject", "");
@@ -401,7 +398,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 user = cached.user();
             } else {
                 IdentityStore store = stores.stores().get(name);
-                StoreLookups measured = lookups.computeIfAbsent(name, k -> new StoreLookups());
+                StoreLookups measured = metrics.lookups(name);
                 long started = System.nanoTime();
                 try {
                     user = store.lookup(userName);
@@ -548,7 +545,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             step = c.method.process(eap.identifier(), eap.data(), credentials);
         }
         if (step.unavailable()) {
-            eapOutcome(c.method.type(), 3);
+            metrics.eapOutcome(c.method.type(), AuthMetrics.STORE_UNAVAILABLE);
             // the inner credential cannot be checked now: keep the conversation for the peer's retransmission
             if (round.state != null) {
                 conversations.putBack(round.state, c, clockMillis.getAsLong());
@@ -556,12 +553,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return DROP;
         }
         if (++c.rounds > stores.eap().maxRounds()) {
-            eapOutcome(c.method.type(), 2);
+            metrics.eapOutcome(c.method.type(), AuthMetrics.TOO_MANY_ROUNDS);
             return REJECT;
         }
         if (step.done()) {
             round.msk = step.msk();
-            eapOutcome(c.method.type(), step.success() ? 0 : 1);
+            metrics.eapOutcome(c.method.type(), step.success() ? AuthMetrics.SUCCEEDED : AuthMetrics.FAILED);
             return step.success() ? ACCEPT : REJECT;
         }
         long now = clockMillis.getAsLong();
@@ -1012,94 +1009,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return null;
     }
 
-    // ---- reply -------------------------------------------------------------------------------
-
-    /** Adds group reply items: {@code +=} always, {@code =} and {@code :=} only if the user did not set it. */
-    private static void merge(List<AttributeItem> reply, List<AttributeItem> group) {
-        for (AttributeItem item : group) {
-            boolean set = reply.stream().anyMatch(r -> r.attribute().equalsIgnoreCase(item.attribute()));
-            if (item.op().equals("+=") || !set) {
-                reply.add(item);
-            }
-        }
-    }
-
-    /**
-     * Writes the reply items a NAS entry may receive: standard attributes always, vendor attributes only of its vendors
-     * ({@link AuthStores#replyVendors()}). Each distinct item is encoded once and kept.
-     */
-    private void encode(
-            Object2ObjectHashMap<AttributeItem, Encoded> encoded,
-            List<AttributeItem> reply,
-            RadiusPacketEncoder out,
-            String nas) {
-        IntHashSet vendors = stores.replyVendors().get(nas);
-        for (AttributeItem item : reply) {
-            Encoded e = encoded.get(item);
-            if (e == null && perRequest(item)) {
-                e = encode(item); // values that change per request (ADR 0049, 0050) would only churn the cache
-            } else if (e == null) {
-                e = encode(item);
-                if (encoded.size() >= stores.cacheMax()) {
-                    encoded.clear();
-                }
-                encoded.put(item, e);
-            }
-            if (e.value() == null) {
-                continue; // not encodable: warned when first seen
-            }
-            if (e.vendorId() == 0) {
-                out.attribute(e.number(), e.value());
-            } else if (vendors == null || vendors.contains(e.vendorId())) {
-                out.vendorAttribute(e.vendorId(), e.number(), e.value());
-            } else {
-                AtomicLong count = filtered.get(nas); // absent only for a moment around a reload
-                if (count != null) {
-                    count.incrementAndGet();
-                }
-            }
-        }
-    }
-
-    private static boolean perRequest(AttributeItem item) {
-        return item.attribute().equalsIgnoreCase("Framed-IP-Address")
-                || item.attribute().equalsIgnoreCase("Session-Timeout")
-                || item.attribute().equalsIgnoreCase("Chargeable-User-Identity")
-                || IpPools.IPV6_ATTRIBUTES.stream().anyMatch(item.attribute()::equalsIgnoreCase);
-    }
-
-    /** One reply item, encoded; {@code value == null} if it cannot be sent. */
-    private record Encoded(int vendorId, int number, byte[] value) {}
-
-    private Encoded encode(AttributeItem item) {
-        String problem = AuthStores.replyProblem(dictionary, item);
-        if (problem != null) {
-            warnOnce("reply:" + item.attribute(), "{}: not sent", problem);
-            return new Encoded(0, 0, null);
-        }
-        AttributeDef def = dictionary.find(item.attribute());
-        byte[] value = AttributeText.encode(def, item.value());
-        if (value.length > RadiusPacketEncoder.MAX_VALUE_LENGTH - (def.vendorId() == 0 ? 0 : 6)) {
-            warnOnce("reply-long:" + item.attribute(), "reply item {} is too long: not sent", item.attribute());
-            return new Encoded(0, 0, null);
-        }
-        return new Encoded(def.vendorId(), def.number(), value);
-    }
-
-    /** Vendor attributes left out of replies because the NAS entry is of another vendor, per NAS entry. */
-    private static Map<String, AtomicLong> counters(AuthStores stores, Map<String, AtomicLong> previous) {
-        Map<String, AtomicLong> next = new java.util.HashMap<>();
-        stores.replyVendors().keySet().forEach(nas -> next.put(nas, previous.getOrDefault(nas, new AtomicLong())));
-        return Map.copyOf(next);
-    }
-
     /**
      * Takes the stores of a reloaded configuration (ADR 0054): requests from now on use them, workers drop their
      * caches, and the previous stores are closed after {@code grace} (requests still using them finish).
      */
     void reload(AuthStores next, java.time.Duration grace) {
         AuthStores previous = stores;
-        filtered = counters(next, filtered);
+        replies.reload(next.replyVendors().keySet());
         ttlMillis = next.cacheTtl().toMillis();
         stores = next;
         generation++;
@@ -1126,20 +1042,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return stores;
     }
 
-    long filtered(String nas) {
-        AtomicLong count = filtered.get(nas);
-        return count == null ? 0 : count.get();
-    }
-
-    private void eapOutcome(int type, int outcome) {
-        eapOutcomes.getAndIncrement((type & 0xFF) * EAP_OUTCOMES.length + outcome);
-    }
-
-    long eapOutcome(String method, String outcome) {
-        return eapOutcomes.get(EapConfig.type(method) * EAP_OUTCOMES.length
-                + List.of(EAP_OUTCOMES).indexOf(outcome));
-    }
-
     /** The EAP server certificate; {@code null} without EAP-TLS based methods. */
     TlsCredentials eapTls() {
         return stores.eap().tls() == null ? null : stores.eap().tls().context();
@@ -1147,42 +1049,18 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     @Override
     public void writeMetrics(PrometheusWriter w, String gateway) {
-        w.counter(
-                "radiusward_gateway_access_reply_items_filtered_total",
-                "Vendor attributes left out of Access-Accepts because the NAS entry is of another vendor");
-        new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "gateway", gateway, "nas", nas));
-        StoreLookups.write(w, gateway, new TreeMap<>(lookups));
-        if (!stores.eap().methods().isEmpty()) {
-            w.counter(
-                    "radiusward_gateway_eap_total",
-                    "EAP conversations by the outer method and how its method ended (authorization follows a success)");
-            for (String method : new java.util.TreeSet<>(stores.eap().methods())) {
-                for (String outcome : EAP_OUTCOMES) {
-                    w.sample(eapOutcome(method, outcome), "gateway", gateway, "method", method, "outcome", outcome);
-                }
-            }
-        }
-        EapTlsConfig tls = stores.eap().tls();
-        if (tls != null) {
-            w.counter(
-                    "radiusward_gateway_eap_tls_reloads_total",
-                    "Changes of the EAP TLS certificate, key, CA or CRL files: loaded, or failed (previous kept)");
-            w.sample(tls.context().reloads(), "gateway", gateway, "result", "loaded");
-            w.sample(tls.context().reloadFailures(), "gateway", gateway, "result", "failed");
-            w.counter(
-                    "radiusward_gateway_eap_tls_resumptions_total",
-                    "EAP TLS handshakes that resumed an earlier session (PEAP and TTLS skip their inner method)");
-            w.sample(tls.context().resumptions(), "gateway", gateway);
-        }
-        if (!stores.verifiers().isEmpty()) {
-            w.counter(
-                    "radiusward_gateway_verifier_events_total",
-                    "What credential verifiers did: accepted, rejected, unavailable and their own events");
-            new TreeMap<>(stores.verifiers())
-                    .forEach((name, verifier) -> new TreeMap<>(verifier.counters())
-                            .forEach((event, count) ->
-                                    w.sample(count, "gateway", gateway, "verifier", name, "event", event)));
-        }
+        replies.writeMetrics(w, gateway);
+        metrics.write(w, gateway, stores);
+    }
+
+    /** The reply items' encoder and its counters. */
+    ReplyEncoder replies() {
+        return replies;
+    }
+
+    /** Store look-ups and EAP outcomes. */
+    AuthMetrics metrics() {
+        return metrics;
     }
 
     private static String string(RadiusPacket request, int type) {

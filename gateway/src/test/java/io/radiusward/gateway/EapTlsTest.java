@@ -404,7 +404,7 @@ class EapTlsTest {
         assertThat(metrics.finish())
                 .contains("radiusward_gateway_eap_tls_reloads_total{gateway=\"1\",result=\"loaded\"} 1")
                 .contains("radiusward_gateway_eap_tls_reloads_total{gateway=\"1\",result=\"failed\"} 1");
-        assertThat(h.eapOutcome("tls", "succeeded")).isEqualTo(1);
+        assertThat(h.metrics().eapOutcome("tls", "succeeded")).isEqualTo(1);
         assertThat(h.eapTls().notAfterMillis())
                 .as("the renewed certificate's expiry, for the alert")
                 .isGreaterThan(System.currentTimeMillis());

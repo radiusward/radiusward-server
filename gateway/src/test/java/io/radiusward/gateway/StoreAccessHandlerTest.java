@@ -823,8 +823,10 @@ class StoreAccessHandlerTest {
                     .as("unknown and unencodable items left out")
                     .containsExactly(14988);
         }
-        assertThat(h.filtered("local")).as("Cisco and Huawei, three times").isEqualTo(6);
-        assertThat(h.filtered("other")).isZero();
+        assertThat(h.replies().filtered("local"))
+                .as("Cisco and Huawei, three times")
+                .isEqualTo(6);
+        assertThat(h.replies().filtered("other")).isZero();
         var metrics = new io.radiusward.common.management.PrometheusWriter();
         h.writeMetrics(metrics, "1");
         assertThat(metrics.finish())
