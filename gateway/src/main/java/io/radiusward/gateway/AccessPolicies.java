@@ -10,7 +10,8 @@ import java.time.ZoneId;
 
 /**
  * The settings of the store handler beyond the stores: replaced as a whole when the configuration is reloaded (ADR
- * 0054), so a request sees one consistent set.
+ * 0054). Each request takes them once ({@link AuthRequest#begin}) and keeps them to the end, so a reload never gives
+ * it a mix of old and new.
  *
  * @param counters usage counters ({@code auth.counters}, ADR 0049); {@code null} without
  * @param zone the zone of Login-Time, counter periods and dates without one ({@code auth.time.zone})
