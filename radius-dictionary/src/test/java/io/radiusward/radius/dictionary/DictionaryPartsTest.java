@@ -82,4 +82,43 @@ class DictionaryPartsTest {
         assertThatThrownBy(() -> new AttributeFlags().parse(file(ParseMode.STRICT), "shiny"))
                 .isInstanceOf(DictionaryException.class);
     }
+
+    @Test
+    void skippedBlocksAreReadOnlyToTheirEnd() {
+        AttributeDef root = AttributeDef.protocolRoot(DictionaryParser.PROTOCOL_RADIUS);
+        BlockStack blocks = new BlockStack(root);
+        DictionaryFile f = file(ParseMode.LENIENT);
+        blocks.beginProtocol(f, new String[] {"BEGIN-PROTOCOL", "DHCPv4"}, 1);
+        assertThat(blocks.skipping()).as("another protocol").isTrue();
+        assertThat(warnings).containsExactly("dictionary.test:7: protocol DHCPv4 ignored");
+        blocks.skipLine("BEGIN-PROTOCOL", new String[] {"BEGIN-PROTOCOL", "DHCPv6"});
+        blocks.skipLine("ATTRIBUTE", new String[] {"ATTRIBUTE", "x", "1", "string"});
+        blocks.skipLine("END-PROTOCOL", new String[] {"END-PROTOCOL"});
+        assertThat(blocks.skipping()).as("the nested one ended").isTrue();
+        blocks.skipLine("END-PROTOCOL", new String[] {"END-PROTOCOL"});
+        assertThat(blocks.skipping()).isFalse();
+        assertThat(blocks.depth()).isEqualTo(1);
+        assertThat(blocks.top().node).isSameAs(root);
+    }
+
+    @Test
+    void blocksMustBeClosedByTheirOwnEnd() {
+        AttributeDef root = AttributeDef.protocolRoot(DictionaryParser.PROTOCOL_RADIUS);
+        BlockStack blocks = new BlockStack(root);
+        DictionaryFile f = file(ParseMode.LENIENT);
+        blocks.beginBlock(f, new String[] {"BEGIN-TLV", "Nowhere"}, 1, "END-TLV");
+        assertThat(blocks.skipping()).as("not a defined tlv").isTrue();
+        blocks.skipLine("END-TLV", new String[] {"END-TLV"});
+        blocks.end(f, new String[] {"END"}, "END");
+        blocks.endProtocol(f);
+        assertThat(warnings)
+                .containsExactly(
+                        "dictionary.test:7: BEGIN-TLV Nowhere: not a defined tlv/struct/vsa (skipped)",
+                        "dictionary.test:7: END without matching BEGIN (skipped)",
+                        "dictionary.test:7: END-PROTOCOL without BEGIN PROTOCOL (skipped)");
+        int depth = blocks.depth();
+        blocks.skip("Unknown-Vendor", "END-VENDOR");
+        assertThat(blocks.closeTo(depth)).as("left open by a file").isEqualTo("SKIP Unknown-Vendor");
+        assertThat(blocks.closeTo(depth)).isNull();
+    }
 }

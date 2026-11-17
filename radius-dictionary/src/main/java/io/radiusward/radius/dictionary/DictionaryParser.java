@@ -23,31 +23,7 @@ import org.agrona.collections.Int2ObjectHashMap;
  */
 final class DictionaryParser {
 
-    private static final String PROTOCOL_RADIUS = "RADIUS";
-
-    private enum FrameKind {
-        PROTOCOL,
-        VENDOR,
-        BLOCK,
-        SKIP
-    }
-
-    private static final class Frame {
-        final FrameKind kind;
-        final AttributeDef node;
-        final String label;
-        final String endKeyword;
-        AttributeDef lastStructural;
-        AttributeDef lastStruct;
-        int skipDepth;
-
-        Frame(FrameKind kind, AttributeDef node, String label, String endKeyword) {
-            this.kind = kind;
-            this.node = node;
-            this.label = label;
-            this.endKeyword = endKeyword;
-        }
-    }
+    static final String PROTOCOL_RADIUS = "RADIUS";
 
     final AttributeDef root = AttributeDef.protocolRoot(PROTOCOL_RADIUS);
     final Int2ObjectHashMap<VendorDef> vendorsById = new Int2ObjectHashMap<>();
@@ -56,12 +32,8 @@ final class DictionaryParser {
     final List<String> warnings = new ArrayList<>();
     final List<String> loadedFiles = new ArrayList<>();
     final Deque<String> includeStack = new ArrayDeque<>();
-    final Deque<Frame> frames = new ArrayDeque<>();
+    private final BlockStack blocks = new BlockStack(root);
     private final DictionaryLinker linker = new DictionaryLinker(root, flatNames, warnings);
-
-    DictionaryParser() {
-        frames.push(new Frame(FrameKind.PROTOCOL, root, PROTOCOL_RADIUS, "END-PROTOCOL"));
-    }
 
     void parseTopLevel(DictionarySource source, ParseMode mode) {
         if (!source.exists()) {
@@ -78,7 +50,7 @@ final class DictionaryParser {
         }
         includeStack.addLast(identity);
         loadedFiles.add(source.location());
-        int depth = frames.size();
+        int depth = blocks.depth();
         DictionaryFile file = new DictionaryFile(source, mode, warnings);
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(source.open(), StandardCharsets.UTF_8))) {
             String line;
@@ -96,11 +68,8 @@ final class DictionaryParser {
         } finally {
             includeStack.removeLast();
         }
-        if (frames.size() != depth) {
-            String open = frames.peek().kind + " " + frames.peek().label;
-            while (frames.size() > depth) {
-                frames.pop();
-            }
+        String open = blocks.closeTo(depth);
+        if (open != null) {
             file.problem("unterminated block at end of file: " + open);
         }
     }
@@ -116,9 +85,8 @@ final class DictionaryParser {
 
     private void parseLine(DictionaryFile file, String[] t) {
         String keyword = t[0].toUpperCase(Locale.ROOT);
-        Frame frame = frames.peek();
-        if (frame.kind == FrameKind.SKIP) {
-            skipLine(frame, keyword, t);
+        if (blocks.skipping()) {
+            blocks.skipLine(keyword, t);
             return;
         }
         switch (keyword) {
@@ -130,36 +98,18 @@ final class DictionaryParser {
             case "VALUE" -> value(file, t);
             case "VENDOR" -> vendor(file, t);
             case "BEGIN-VENDOR" -> beginVendor(file, t);
-            case "END-VENDOR" -> endVendor(file, t);
-            case "BEGIN" -> begin(file, t);
-            case "END" -> end(file, t, "END");
-            case "BEGIN-PROTOCOL" -> beginProtocol(file, t, 1);
-            case "END-PROTOCOL" -> endProtocol(file, t);
-            case "BEGIN-TLV" -> beginBlock(file, t, 1, "END-TLV");
-            case "END-TLV" -> end(file, t, "END-TLV");
+            case "END-VENDOR" ->
+                blocks.endVendor(file, t, t.length > 1 ? vendorsByName.get(AttributeDef.key(t[1])) : null);
+            case "BEGIN" -> blocks.begin(file, t);
+            case "END" -> blocks.end(file, t, "END");
+            case "BEGIN-PROTOCOL" -> blocks.beginProtocol(file, t, 1);
+            case "END-PROTOCOL" -> blocks.endProtocol(file);
+            case "BEGIN-TLV" -> blocks.beginBlock(file, t, 1, "END-TLV");
+            case "END-TLV" -> blocks.end(file, t, "END-TLV");
             case "ALIAS" -> alias(file, t);
             case "FLAGS" -> flagsLine(file, t);
             case "PROTOCOL" -> file.requireTokens(t, 3);
             default -> file.problem("unknown keyword " + t[0]);
-        }
-    }
-
-    private void skipLine(Frame frame, String keyword, String[] t) {
-        boolean opensSame = switch (frame.endKeyword) {
-            case "END-VENDOR" -> keyword.equals("BEGIN-VENDOR");
-            case "END-PROTOCOL" ->
-                keyword.equals("BEGIN-PROTOCOL")
-                        || (keyword.equals("BEGIN") && t.length > 1 && t[1].equalsIgnoreCase("PROTOCOL"));
-            default -> keyword.equals("BEGIN") || keyword.equals("BEGIN-TLV");
-        };
-        if (opensSame) {
-            frame.skipDepth++;
-        } else if (keyword.equals(frame.endKeyword)) {
-            if (frame.skipDepth == 0) {
-                frames.pop();
-            } else {
-                frame.skipDepth--;
-            }
         }
     }
 
@@ -185,72 +135,62 @@ final class DictionaryParser {
         if (!file.requireTokens(t, 4)) {
             return;
         }
-        String name = t[1];
-        String numberToken = t[2];
         TypeSpec type = TypeSpec.parse(file, t[3]);
         if (type == null) {
             return;
         }
-        Frame frame = frames.peek();
         AttributeFlags flags = new AttributeFlags();
         VendorDef v3Vendor = null;
         for (int i = 4; i < t.length; i++) {
             VendorDef vendor = vendorsByName.get(AttributeDef.key(t[i]));
             if (vendor != null && !t[i].contains("=")) {
-                v3Vendor = vendor;
+                v3Vendor = vendor; // v3: ATTRIBUTE <name> <number> <type> <vendor>
             } else if (!flags.parse(file, t[i])) {
                 return;
             }
         }
         flags.internal |= file.internal;
-
-        AttributeDef parent;
-        int number;
-        boolean absolute;
-        if (v3Vendor != null) {
-            parent = vendorNode(file, v3Vendor, vsaContainer(file, null));
-            if (parent == null) {
-                return;
-            }
-            number = file.number(numberToken);
-            absolute = true;
-        } else if (numberToken.startsWith(".")) {
-            if (frame.lastStructural == null) {
-                file.problem("relative number " + numberToken + " without a preceding tlv/struct/vsa");
-                return;
-            }
-            Placement placement = placeDotted(file, frame.lastStructural, numberToken.substring(1));
-            if (placement == null) {
-                return;
-            }
-            parent = placement.parent;
-            number = placement.number;
-            absolute = false;
-        } else if (numberToken.indexOf('.') > 0) {
-            Placement placement = placeDotted(file, frame.node, numberToken);
-            if (placement == null) {
-                return;
-            }
-            parent = placement.parent;
-            number = placement.number;
-            absolute = true;
-        } else {
-            parent = frame.node;
-            number = file.number(numberToken);
-            absolute = true;
-        }
-        if (number < 0) {
+        BlockStack.Frame frame = blocks.top();
+        Placement at = place(file, frame, t[2], v3Vendor);
+        if (at == null) {
             return;
         }
-
-        AttributeDef def = define(file, parent, name, number, type, flags);
+        AttributeDef def = define(file, at.parent(), t[1], at.number(), type, flags);
         if (def == null) {
             return;
         }
-        if (absolute && type.type().isStructural()) {
+        if (at.absolute() && type.type().isStructural()) {
             frame.lastStructural = def;
         }
         frame.lastStruct = type.type() == DataType.STRUCT ? def : null;
+    }
+
+    /**
+     * Where an ATTRIBUTE goes: under a v3 vendor; relative to the last tlv/struct/vsa ({@code .2}); at a dotted path
+     * from the block ({@code 26.9.1}); or in the block. {@code null} after a problem.
+     */
+    private Placement place(DictionaryFile file, BlockStack.Frame frame, String numberToken, VendorDef v3Vendor) {
+        if (v3Vendor != null) {
+            AttributeDef parent = vendorNode(file, v3Vendor, vsaContainer(file, null));
+            return parent == null ? null : numbered(file, parent, numberToken);
+        }
+        if (numberToken.startsWith(".")) {
+            if (frame.lastStructural == null) {
+                file.problem("relative number " + numberToken + " without a preceding tlv/struct/vsa");
+                return null;
+            }
+            Placement p = placeDotted(file, frame.lastStructural, numberToken.substring(1));
+            return p == null ? null : new Placement(p.parent(), p.number(), false);
+        }
+        if (numberToken.indexOf('.') > 0) {
+            return placeDotted(file, frame.node, numberToken);
+        }
+        return numbered(file, frame.node, numberToken);
+    }
+
+    private static Placement numbered(DictionaryFile file, AttributeDef parent, String numberToken) {
+        int number = file.number(numberToken);
+        return number < 0 ? null : new Placement(parent, number, true);
     }
 
     private void define(DictionaryFile file, String[] t) {
@@ -268,7 +208,7 @@ final class DictionaryParser {
             }
         }
         flags.internal |= file.internal;
-        Frame frame = frames.peek();
+        BlockStack.Frame frame = blocks.top();
         AttributeDef def = define(file, frame.node, t[1], AttributeDef.NO_NUMBER, type, flags);
         if (def != null && type.type().isStructural()) {
             frame.lastStructural = def;
@@ -279,7 +219,7 @@ final class DictionaryParser {
         if (!file.requireTokens(t, 3)) {
             return;
         }
-        Frame frame = frames.peek();
+        BlockStack.Frame frame = blocks.top();
         if (frame.lastStruct == null) {
             file.problem("MEMBER " + t[1] + " without a preceding struct");
             return;
@@ -370,7 +310,8 @@ final class DictionaryParser {
         return def;
     }
 
-    private record Placement(AttributeDef parent, int number) {}
+    /** @param absolute numbered from the block, not relative to the last tlv/struct/vsa */
+    private record Placement(AttributeDef parent, int number, boolean absolute) {}
 
     /** Walks {@code a.b.c} from {@code from}: {@code a.b} must exist, {@code c} is the new number. */
     private Placement placeDotted(DictionaryFile file, AttributeDef from, String dotted) {
@@ -393,7 +334,7 @@ final class DictionaryParser {
             parent = next;
         }
         int number = file.number(parts[parts.length - 1]);
-        return number < 0 ? null : new Placement(parent, number);
+        return number < 0 ? null : new Placement(parent, number, true);
     }
 
     // ---- VALUE -------------------------------------------------------------------------------
@@ -402,7 +343,7 @@ final class DictionaryParser {
         if (!file.requireTokens(t, 4)) {
             return;
         }
-        Frame frame = frames.peek();
+        BlockStack.Frame frame = blocks.top();
         AttributeDef context = frame.node;
         // VALUE lines directly after a struct may name one of its members
         AttributeDef target = frame.lastStruct == null ? null : frame.lastStruct.child(t[1]);
@@ -426,49 +367,62 @@ final class DictionaryParser {
         if (id < 0) {
             return;
         }
-        int typeLength = VendorDef.DEFAULT_TYPE_LENGTH;
-        int lengthLength = VendorDef.DEFAULT_LENGTH_LENGTH;
-        boolean continuation = false;
-        for (int i = 3; i < t.length; i++) {
-            if (!t[i].startsWith("format=")) {
-                file.problem("unknown VENDOR option " + t[i]);
-                return;
-            }
-            String[] format = t[i].substring("format=".length()).split(",");
-            if (format.length < 2 || format.length > 3 || (format.length == 3 && !format[2].equals("c"))) {
-                file.problem("malformed vendor format " + t[i]);
-                return;
-            }
-            typeLength = file.number(format[0]);
-            lengthLength = file.number(format[1]);
-            continuation = format.length == 3;
+        VendorFormat format = vendorFormat(file, t);
+        if (format == null) {
+            return;
         }
         VendorDef vendor;
         try {
-            vendor = new VendorDef(t[1], id, typeLength, lengthLength, continuation);
+            vendor = new VendorDef(t[1], id, format.typeLength(), format.lengthLength(), format.continuation());
         } catch (IllegalArgumentException e) {
             file.problem(e.getMessage());
             return;
         }
-        VendorDef existing = vendorsById.get(id);
-        if (existing != null) {
-            if (existing.typeLength() != typeLength
-                    || existing.lengthLength() != lengthLength
-                    || existing.continuation() != continuation) {
-                if (file.strict()) {
-                    file.problem("vendor " + t[1] + " (" + id + ") redefined with a different format");
-                    return;
-                }
-                warnings.add(file.at + ": vendor " + t[1] + " (" + id + ") format overridden");
-                vendorsById.put(id, vendor);
-                vendorsByName.put(AttributeDef.key(existing.name()), vendor);
-            } else {
-                vendor = existing;
+        register(file, vendor);
+    }
+
+    private record VendorFormat(int typeLength, int lengthLength, boolean continuation) {}
+
+    /** {@code format=<type length>,<length length>[,c]}; RFC 2865's 1,1 without one; {@code null} after a problem. */
+    private static VendorFormat vendorFormat(DictionaryFile file, String[] t) {
+        VendorFormat format = new VendorFormat(VendorDef.DEFAULT_TYPE_LENGTH, VendorDef.DEFAULT_LENGTH_LENGTH, false);
+        for (int i = 3; i < t.length; i++) {
+            if (!t[i].startsWith("format=")) {
+                file.problem("unknown VENDOR option " + t[i]);
+                return null;
             }
-        } else {
-            vendorsById.put(id, vendor);
+            String[] parts = t[i].substring("format=".length()).split(",");
+            if (parts.length < 2 || parts.length > 3 || (parts.length == 3 && !parts[2].equals("c"))) {
+                file.problem("malformed vendor format " + t[i]);
+                return null;
+            }
+            format = new VendorFormat(file.number(parts[0]), file.number(parts[1]), parts.length == 3);
         }
-        vendorsByName.put(AttributeDef.key(t[1]), vendor);
+        return format;
+    }
+
+    /**
+     * Registers a vendor by number and name. The same number again with the same format is the same vendor (another
+     * name for it); with another format it fails in strict mode and replaces the vendor in lenient mode.
+     */
+    private void register(DictionaryFile file, VendorDef vendor) {
+        VendorDef existing = vendorsById.get(vendor.id());
+        if (existing == null) {
+            vendorsById.put(vendor.id(), vendor);
+        } else if (existing.typeLength() == vendor.typeLength()
+                && existing.lengthLength() == vendor.lengthLength()
+                && existing.continuation() == vendor.continuation()) {
+            vendorsByName.put(AttributeDef.key(vendor.name()), existing);
+            return;
+        } else if (file.strict()) {
+            file.problem("vendor " + vendor.name() + " (" + vendor.id() + ") redefined with a different format");
+            return;
+        } else {
+            file.warn("vendor " + vendor.name() + " (" + vendor.id() + ") format overridden");
+            vendorsById.put(vendor.id(), vendor);
+            vendorsByName.put(AttributeDef.key(existing.name()), vendor);
+        }
+        vendorsByName.put(AttributeDef.key(vendor.name()), vendor);
     }
 
     private void beginVendor(DictionaryFile file, String[] t) {
@@ -478,7 +432,7 @@ final class DictionaryParser {
         VendorDef vendor = vendorsByName.get(AttributeDef.key(t[1]));
         if (vendor == null) {
             file.problem("BEGIN-VENDOR for undeclared vendor " + t[1]);
-            frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
+            blocks.skip(t[1], "END-VENDOR");
             return;
         }
         String parentPath = null;
@@ -489,34 +443,22 @@ final class DictionaryParser {
             } else if (t[i].startsWith("format=Extended-Vendor-Specific-")) {
                 extended = file.number(t[i].substring("format=Extended-Vendor-Specific-".length()));
                 if (extended < 0) {
-                    frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
+                    blocks.skip(t[1], "END-VENDOR");
                     return;
                 }
             } else {
                 file.problem("unknown BEGIN-VENDOR option " + t[i]);
-                frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
+                blocks.skip(t[1], "END-VENDOR");
                 return;
             }
         }
         AttributeDef container = extended >= 0 ? extendedVsaContainer(file, extended) : vsaContainer(file, parentPath);
         AttributeDef node = container == null ? null : vendorNode(file, vendor, container);
         if (node == null) {
-            frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
+            blocks.skip(t[1], "END-VENDOR");
             return;
         }
-        frames.push(new Frame(FrameKind.VENDOR, node, vendor.name(), "END-VENDOR"));
-    }
-
-    private void endVendor(DictionaryFile file, String[] t) {
-        Frame frame = frames.peek();
-        if (frame.kind != FrameKind.VENDOR) {
-            file.problem("END-VENDOR without BEGIN-VENDOR");
-            return;
-        }
-        if (t.length > 1 && vendorsByName.get(AttributeDef.key(t[1])) != frame.node.vendor()) {
-            file.problem("END-VENDOR " + t[1] + " does not match BEGIN-VENDOR " + frame.label);
-        }
-        frames.pop();
+        blocks.open(BlockStack.Kind.VENDOR, node, vendor.name(), "END-VENDOR");
     }
 
     /** The VSA attribute vendor nodes hang off: RFC 2865 Vendor-Specific (26) unless a parent path is given. */
@@ -580,75 +522,11 @@ final class DictionaryParser {
         return node;
     }
 
-    // ---- BEGIN / END blocks ------------------------------------------------------------------
-
-    private void begin(DictionaryFile file, String[] t) {
-        if (!file.requireTokens(t, 2)) {
-            return;
-        }
-        if (t[1].equalsIgnoreCase("PROTOCOL")) {
-            beginProtocol(file, t, 2);
-        } else {
-            beginBlock(file, t, 1, "END");
-        }
-    }
-
-    private void beginProtocol(DictionaryFile file, String[] t, int nameIndex) {
-        if (!file.requireTokens(t, nameIndex + 1)) {
-            return;
-        }
-        String protocol = t[nameIndex];
-        if (!protocol.equalsIgnoreCase(PROTOCOL_RADIUS)) {
-            warnings.add(file.at + ": protocol " + protocol + " ignored");
-            frames.push(new Frame(FrameKind.SKIP, null, protocol, "END-PROTOCOL"));
-            return;
-        }
-        frames.push(new Frame(FrameKind.PROTOCOL, root, PROTOCOL_RADIUS, "END-PROTOCOL"));
-    }
-
-    private void endProtocol(DictionaryFile file, String[] t) {
-        Frame frame = frames.peek();
-        if (frame.kind != FrameKind.PROTOCOL || frames.size() == 1) {
-            file.problem("END-PROTOCOL without BEGIN PROTOCOL");
-            return;
-        }
-        frames.pop();
-    }
-
-    private void beginBlock(DictionaryFile file, String[] t, int refIndex, String endKeyword) {
-        if (!file.requireTokens(t, refIndex + 1)) {
-            return;
-        }
-        Frame frame = frames.peek();
-        AttributeDef target = DictionaryLinker.resolveReference(frame.node, t[refIndex]);
-        if (target == null) {
-            target = DictionaryLinker.resolveReference(root, t[refIndex]);
-        }
-        if (target == null || !target.type().isStructural()) {
-            file.problem(t[0] + " " + t[refIndex] + ": not a defined tlv/struct/vsa");
-            frames.push(new Frame(FrameKind.SKIP, null, t[refIndex], endKeyword));
-            return;
-        }
-        frames.push(new Frame(FrameKind.BLOCK, target, t[refIndex], endKeyword));
-    }
-
-    private void end(DictionaryFile file, String[] t, String keyword) {
-        Frame frame = frames.peek();
-        if (frame.kind != FrameKind.BLOCK || !frame.endKeyword.equals(keyword)) {
-            file.problem(keyword + " without matching BEGIN");
-            return;
-        }
-        if (t.length > 1 && !t[1].equalsIgnoreCase(frame.label)) {
-            file.problem(keyword + " " + t[1] + " does not match BEGIN " + frame.label);
-        }
-        frames.pop();
-    }
-
     // ---- ALIAS / FLAGS -----------------------------------------------------------------------
 
     private void alias(DictionaryFile file, String[] t) {
         if (file.requireTokens(t, 3)) {
-            linker.aliasLater(frames.peek().node, t[1], t[2], file.at, file.mode);
+            linker.aliasLater(blocks.top().node, t[1], t[2], file.at, file.mode);
         }
     }
 
