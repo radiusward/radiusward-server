@@ -20,7 +20,6 @@ import io.radiusward.radius.dictionary.Dictionary;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HexFormat;
@@ -73,14 +72,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private record Cached(Optional<UserRecord> user, long expires) {}
 
-    private record Found(String store, UserRecord user) {}
+    record Found(String store, UserRecord user) {}
 
     /**
      * The caches of one worker, kept in its {@link AccessContext#handlerState()}: only that worker's thread touches
      * them, so they are plain Agrona maps without locks. A user's look-up is cached per worker (at most one look-up
      * per worker and TTL); each map is bounded by {@code auth.cache.max}.
      */
-    private static final class WorkerCache {
+    static final class WorkerCache {
         final Object2ObjectHashMap<String, Cached> users = new Object2ObjectHashMap<>();
         final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
         final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
@@ -93,7 +92,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** The EAP state of the request being decided; per worker, reset for every request. */
-    private static final class EapRound {
+    static final class EapRound {
         EapPacket packet;
         EapConversations.Conversation conversation;
         byte[] state;
@@ -123,7 +122,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
     }
 
-    private static WorkerCache cache(AccessContext context) {
+    static WorkerCache cache(AccessContext context) {
         if (context.handlerState() instanceof WorkerCache cache) {
             return cache;
         }
@@ -136,8 +135,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.stores = stores;
         this.dictionary = dictionary;
         this.clockMillis = clockMillis;
-        this.checkItems = new CheckItems(dictionary, clockMillis, () -> zone, once);
+        this.checkItems = new CheckItems(dictionary, clockMillis, this::zone, once);
+        this.restrictions = new Restrictions(checkItems, clockMillis, once);
         this.totp = new TotpFactor(clockMillis, saltRandom, once);
+        this.inner = new InnerCredentials(this, once);
         this.ttlMillis = stores.cacheTtl().toMillis();
         new java.security.SecureRandom().nextBytes(verifierSalt);
         this.filtered = counters(stores, Map.of());
@@ -265,17 +266,17 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             }
         }
         if (a.limit() != null) {
-            int decision = limit(context, request, found.store(), a.limit());
+            int decision = restrictions.limit(context, request, found.store(), a.limit());
             if (decision != ACCEPT) {
                 because(context, "Simultaneous-Use not granted: ", a.limit());
                 return decision;
             }
         }
-        int restricted = restrict(context, found.user().userName(), a);
+        int restricted = restrictions.restrict(context, found.user().userName(), a);
         if (restricted != ACCEPT) {
             return restricted;
         }
-        int pooled = assignAddress(context, request, found.user().userName(), a);
+        int pooled = addresses.assign(context, request, found.user().userName(), a);
         if (pooled != ACCEPT) {
             return pooled;
         }
@@ -298,7 +299,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * The authorization of a user: its store entry, check items and the groups that apply. {@code code} is
      * {@link #ACCEPT} to go on, {@link #REJECT} (unknown user, failed check, Auth-Type Reject) or {@link #DROP}.
      */
-    private record Authorization(
+    record Authorization(
             int code,
             Found found,
             String authType,
@@ -362,7 +363,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** Looks {@code userName} up and evaluates its checks and groups; {@code optional}: a missing user is empty. */
-    private Authorization authorize(AccessContext context, String userName, boolean optional) {
+    Authorization authorize(AccessContext context, String userName, boolean optional) {
         RadiusPacket request = context.request();
         Found found;
         try {
@@ -391,7 +392,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             because(context, "a check item of the user does not hold (Expiration or a comparison)", "");
             return Authorization.of(REJECT);
         }
-        String limit = simultaneousUse(found.user().check());
+        String limit = Restrictions.simultaneousUse(found.user().check());
         for (UserRecord.Group group : found.user().groups()) {
             List<AttributeItem> groupPasswords = new ArrayList<>();
             String groupAuthType = checkItems.checks(group.check(), request, groupPasswords);
@@ -408,7 +409,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 authType = groupAuthType;
             }
             if (limit == null) {
-                limit = simultaneousUse(group.check()); // the user's own limit wins, then the first group's
+                limit = Restrictions.simultaneousUse(
+                        group.check()); // the user's own limit wins, then the first group's
             }
             passwords.addAll(groupPasswords);
             merge(reply, group.reply());
@@ -421,10 +423,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             note(context, "Auth-Type: ", authType);
         }
         List<AttributeItem> restrictions = new ArrayList<>();
-        collectRestrictions(found.user().check(), restrictions);
+        this.restrictions.collect(found.user().check(), restrictions);
         for (UserRecord.Group group : found.user().groups()) {
             if (checkItems.checks(group.check(), request, new ArrayList<>()) != null) {
-                collectRestrictions(group.check(), restrictions);
+                this.restrictions.collect(group.check(), restrictions);
             }
         }
         return new Authorization(ACCEPT, found, authType, passwords, reply, limit, restrictions);
@@ -529,26 +531,22 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 passwords, stores.chap().getOrDefault(found.store(), false), new EapMethod.InnerAuth() {
                     @Override
                     public EapMethod.Inner msChapV2(String user, EapMethod.MsChapV2 exchange) {
-                        InnerProxy p = innerProxy;
-                        if (p != null && p.realm(user) != null) {
-                            return proxied(context, p.msChapV2(user, exchange));
-                        }
-                        return innerMsChapV2(context, user, exchange.challengeHash(), exchange.ntResponse());
+                        return inner.msChapV2(context, user, exchange);
                     }
 
                     @Override
                     public EapMethod.Inner password(String user, byte[] password) {
-                        return innerPassword(context, user, password);
+                        return inner.password(context, user, password);
                     }
 
                     @Override
                     public EapMethod.Inner chap(String user, int identifier, byte[] challenge, byte[] response) {
-                        return innerChap(context, user, identifier, challenge, response);
+                        return inner.chap(context, user, identifier, challenge, response);
                     }
 
                     @Override
                     public EapMethod.Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
-                        return innerMsChap(context, user, challenge, ntResponse, false);
+                        return inner.msChap(context, user, challenge, ntResponse, false);
                     }
 
                     @Override
@@ -703,7 +701,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** The user's NT hash from its store: NT-Password, or the cleartext where the store allows it; {@code null}. */
-    private byte[] localNtHash(Found found, List<AttributeItem> passwords) {
+    byte[] localNtHash(Found found, List<AttributeItem> passwords) {
         for (AttributeItem p : passwords) {
             if (p.attribute().equalsIgnoreCase("NT-Password")) {
                 byte[] ntHash = MsChap.parseNtPassword(p.value());
@@ -728,147 +726,29 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return null;
     }
 
-    // ---- time and usage restrictions (ADR 0049) ---------------------------------------------------------------
-
-    private volatile UsageCounters counters;
-    private volatile java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+    // ---- restrictions and IP pools (ADR 0049, ADR 0050) ------------------------------------------------------
 
     /** Usage counters ({@code auth.counters}) and the zone of Login-Time and counter periods. */
     void limits(UsageCounters counters, java.time.ZoneId zone) {
-        this.counters = counters;
-        this.zone = zone;
+        restrictions.limits(counters, zone);
     }
 
-    private void collectRestrictions(List<AttributeItem> checks, List<AttributeItem> into) {
-        UsageCounters c = counters;
-        for (AttributeItem item : checks) {
-            String name = item.attribute();
-            if (name.equalsIgnoreCase("Expiration")
-                    || name.equalsIgnoreCase("Expire-After")
-                    || name.equalsIgnoreCase("Login-Time")
-                    || name.equalsIgnoreCase("Pool-Name")
-                    || name.equalsIgnoreCase(TotpFactor.SECRET)) {
-                into.add(item);
-            } else if (c != null
-                    && c.counters().stream().anyMatch(k -> k.check().equalsIgnoreCase(name))) {
-                into.add(item);
-            }
-        }
+    void pools(IpPools pools) {
+        addresses.pools(pools);
     }
 
-    /**
-     * Expiration, Login-Time and usage counters of the authorized user: outside a login window or over a limit is a
-     * reject; otherwise the Accept's Session-Timeout is cut to the earliest end (expiry, the window's end, the time
-     * left on a time counter or its period). A counter that cannot be read leaves the request unanswered.
-     */
-    private int restrict(AccessContext context, String user, Authorization a) {
-        if (a.restrictions().isEmpty()) {
-            return ACCEPT;
-        }
-        Instant now = Instant.ofEpochMilli(clockMillis.getAsLong());
-        java.time.ZonedDateTime local = now.atZone(zone);
-        long cap = Long.MAX_VALUE;
-        for (AttributeItem item : a.restrictions()) {
-            String name = item.attribute();
-            if (name.equalsIgnoreCase("Expiration")) {
-                Instant expires = checkItems.date(item.value());
-                if (expires == null || !now.isBefore(expires)) {
-                    because(context, "expired: ", item.value());
-                    return REJECT;
-                }
-                cap = Math.min(
-                        cap,
-                        Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
-            } else if (name.equalsIgnoreCase("Expire-After")) {
-                long after = expireAfter(context, user, item, now);
-                if (after < 0) {
-                    return after == -2 ? DROP : REJECT;
-                }
-                cap = Math.min(cap, Math.max(1, after));
-            } else if (name.equalsIgnoreCase("Pool-Name") || name.equalsIgnoreCase(TotpFactor.SECRET)) {
-                continue; // #assignAddress, #totp
-            } else if (name.equalsIgnoreCase("Login-Time")) {
-                LoginTime window = LoginTime.parse(item.value());
-                if (window == null) {
-                    warnOnce(
-                            "login-time:" + item.value(),
-                            "Login-Time {}: not understood, the user is rejected",
-                            item.value());
-                    because(context, "Login-Time not understood: ", item.value());
-                    return REJECT;
-                }
-                long left = window.secondsLeft(local);
-                if (left < 0) {
-                    because(context, "outside Login-Time ", item.value());
-                    return REJECT;
-                }
-                cap = Math.min(cap, Math.max(1, left));
-            } else {
-                for (UsageCounters.Counter counter : counters.counters()) {
-                    if (!counter.check().equalsIgnoreCase(name)) {
-                        continue;
-                    }
-                    long limit;
-                    try {
-                        limit = Long.parseLong(item.value().trim());
-                    } catch (NumberFormatException e) {
-                        warnOnce("counter:" + name, "{}: {} is not a number, the user is rejected", name, item.value());
-                        because(context, name + " is not a number: ", item.value());
-                        return REJECT;
-                    }
-                    long used;
-                    try {
-                        used = counters.usage(counter, user, UsageCounters.periodStart(counter.reset(), local));
-                    } catch (Exception e) {
-                        warnOnce(
-                                "counter-unavailable:" + counter.name(),
-                                "usage counter {} unavailable, requests are not answered: {}",
-                                counter.name(),
-                                e.toString());
-                        because(context, "usage counter unavailable: ", counter.name());
-                        return DROP;
-                    }
-                    note(context, counter.name() + ": used " + used + " of ", item.value());
-                    if (used >= limit) {
-                        because(context, "usage limit reached: ", counter.name());
-                        return REJECT;
-                    }
-                    if (counter.kind() == UsageCounters.Kind.TIME) {
-                        cap = Math.min(cap, limit - used);
-                        Instant end = UsageCounters.periodEnd(counter.reset(), local);
-                        if (end != null) {
-                            cap = Math.min(
-                                    cap,
-                                    Math.max(
-                                            1,
-                                            java.time.Duration.between(now, end).getSeconds()));
-                        }
-                    } else if (counter.reply() != null) {
-                        replace(a.reply(), counter.reply(), Long.toString(limit - used));
-                    }
-                }
-            }
-        }
-        if (cap != Long.MAX_VALUE) {
-            long timeout = cap;
-            for (AttributeItem r : a.reply()) {
-                if (r.attribute().equalsIgnoreCase("Session-Timeout")) {
-                    try {
-                        timeout = Math.min(timeout, Long.parseLong(r.value().trim()));
-                    } catch (NumberFormatException e) {
-                        // a malformed value is replaced
-                    }
-                }
-            }
-            replace(a.reply(), "Session-Timeout", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
-            note(context, "Session-Timeout capped to ", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
-        }
-        return ACCEPT;
+    /** The zone of dates without one; set with the usage counters. */
+    private java.time.ZoneId zone() {
+        return restrictions.zone();
     }
 
     // ---- TOTP second factor (ADR 0053) -----------------------------------------------------------------------
 
     private final TotpFactor totp;
+    private final InnerCredentials inner;
+    private final Restrictions restrictions;
+    private final AddressAssignment addresses = new AddressAssignment(once);
+    static final String SIMULTANEOUS_USE = "Simultaneous-Use";
 
     void totp(Totp settings) {
         totp.settings(settings);
@@ -986,124 +866,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         };
     }
 
-    // ---- IP pools (ADR 0050) ------------------------------------------------------------------------------------
-
-    private volatile IpPools pools;
-
-    void pools(IpPools pools) {
-        this.pools = pools;
-    }
-
-    /**
-     * A {@code Framed-IP-Address} from the pool named by the user's (else a group's) {@code Pool-Name}, unless the
-     * reply already has one. An empty pool rejects (or accepts without an address, per pool); a pool that cannot be
-     * reached leaves the request unanswered.
-     */
-    private int assignAddress(AccessContext context, RadiusPacket request, String user, Authorization a) {
-        for (AttributeItem item : a.restrictions()) {
-            if (!item.attribute().equalsIgnoreCase("Pool-Name")) {
-                continue;
-            }
-            for (String name : item.value().split(",")) { // e.g. an IPv4 pool and an IPv6 one (ADR 0059)
-                int decision = assignAddress(context, request, user, a, name.trim());
-                if (decision != ACCEPT) {
-                    return decision;
-                }
-            }
-        }
-        return ACCEPT;
-    }
-
-    private int assignAddress(AccessContext context, RadiusPacket request, String user, Authorization a, String name) {
-        IpPools p = pools;
-        IpPools.Pool pool = p == null ? null : p.pool(name);
-        if (pool == null) {
-            warnOnce("pool:" + name, "Pool-Name {}: no such pool in auth.pools, the user is rejected", name);
-            because(context, "no such pool: ", name);
-            return REJECT;
-        }
-        if (a.reply().stream().anyMatch(r -> r.attribute().equalsIgnoreCase(pool.attribute()))) {
-            return ACCEPT; // the user's own address or prefix
-        }
-        int station = request.findAttribute(CALLING_STATION_ID);
-        String device = station < 0
-                ? user
-                : request.buffer()
-                        .getStringWithoutLengthUtf8(
-                                station + 2, (request.buffer().getByte(station + 1) & 0xFF) - 2);
-        String address;
-        try {
-            address = p.allocate(pool, user, device);
-        } catch (Exception e) {
-            warnOnce(
-                    "pool-unavailable:" + pool.name(),
-                    "IP pool {} unavailable, requests are not answered: {}",
-                    pool.name(),
-                    e.toString());
-            because(context, "IP pool unavailable: ", pool.name());
-            return DROP;
-        }
-        if (address == null) {
-            warnOnce("pool-empty:" + pool.name(), "IP pool {} has no free address", pool.name());
-            because(context, "IP pool has no free address: ", pool.name());
-            return pool.exhausted() ? ACCEPT : REJECT;
-        }
-        note(context, "address from pool " + pool.name() + ": ", address);
-        a.reply().add(new AttributeItem(pool.attribute(), "=", address));
-        return ACCEPT;
-    }
-
-    /**
-     * {@code Expire-After := <seconds>} (ADR 0060): the account ends that long after its first login, the start of
-     * its first exported session (the first Accept, if none yet). The seconds left, {@code -1} to reject, {@code -2}
-     * to leave the request unanswered (the database cannot be asked).
-     */
-    private long expireAfter(AccessContext context, String user, AttributeItem item, Instant now) {
-        long seconds;
-        try {
-            seconds = Long.parseLong(item.value().trim());
-        } catch (NumberFormatException e) {
-            seconds = -1;
-        }
-        if (seconds <= 0) {
-            warnOnce(
-                    "expire-after:" + item.value(), "Expire-After {}: not a number of seconds, rejected", item.value());
-            because(context, "Expire-After not understood: ", item.value());
-            return -1;
-        }
-        UsageCounters c = counters;
-        if (c == null) {
-            warnOnce(
-                    "expire-after-sql",
-                    "{} needs auth.counter.sql.url to find the first login: rejected",
-                    "Expire-After");
-            because(context, "Expire-After without auth.counter.sql.url", "");
-            return -1;
-        }
-        Instant first;
-        try {
-            first = c.firstLogin(user);
-        } catch (Exception e) {
-            warnOnce(
-                    "expire-after-unavailable",
-                    "first logins unavailable, requests are not answered: {}",
-                    e.toString());
-            because(context, "first login unavailable", "");
-            return -2;
-        }
-        Instant end = (first == null ? now : first).plusSeconds(seconds);
-        if (!now.isBefore(end)) {
-            because(context, "expired after the first login: ", end.toString());
-            return -1;
-        }
-        return java.time.Duration.between(now, end).getSeconds();
-    }
-
-    private static void replace(List<AttributeItem> reply, String attribute, String value) {
-        reply.removeIf(r -> r.attribute().equalsIgnoreCase(attribute));
-        reply.add(new AttributeItem(attribute, "=", value));
-    }
-
     /** Inner checks of proxied realms' users go to their home servers when set (ADR 0044). */
     private volatile InnerProxy innerProxy;
 
@@ -1113,142 +875,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     InnerProxy innerProxy() {
         return innerProxy;
-    }
-
-    /** A home server's verdict on the inner user: its reply kept for our Accept, the tunnel not remembered. */
-    private EapMethod.Inner proxied(AccessContext context, InnerProxy.Result r) {
-        EapConversations.Conversation c = cache(context).eap.conversation;
-        if (c != null) {
-            if (r.inner().code() == ACCEPT) {
-                c.proxiedReply = r.reply();
-            }
-            if (c.method instanceof TlsTunnel tunnel) {
-                tunnel.notResumable();
-            }
-        }
-        return r.inner();
-    }
-
-    /**
-     * MS-CHAPv2 inside a tunnel (PEAP, TTLS): the inner user is looked up and checked like outside — a credential
-     * verifier, or the local NT hash.
-     */
-    private EapMethod.Inner innerMsChapV2(AccessContext context, String user, byte[] challengeHash, byte[] ntResponse) {
-        return innerMsChap(context, user, challengeHash, ntResponse, true);
-    }
-
-    /**
-     * CHAP inside a tunnel: only with the cleartext password of a store that allows CHAP, as outside it; verifiers
-     * cannot answer CHAP.
-     */
-    private EapMethod.Inner innerChap(
-            AccessContext context, String user, int identifier, byte[] challenge, byte[] response) {
-        InnerProxy home = innerProxy;
-        if (home != null && home.realm(user) != null) {
-            return proxied(context, home.chap(user, identifier, challenge, response));
-        }
-        Authorization a = authorize(context, user, false);
-        if (a.code() != ACCEPT) {
-            return new EapMethod.Inner(a.code(), null);
-        }
-        if (a.authType().equalsIgnoreCase("Accept")) {
-            return new EapMethod.Inner(ACCEPT, null);
-        }
-        if (!stores.chap().getOrDefault(a.found().store(), false)) {
-            warnOnce(
-                    "chap:" + a.found().store(),
-                    "CHAP request for store {}, which does not allow CHAP"
-                            + " (auth.store.<name>.chap = true needs cleartext passwords): rejected",
-                    a.found().store());
-            return new EapMethod.Inner(REJECT, null);
-        }
-        for (AttributeItem p : a.passwords()) {
-            if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)) {
-                byte[] clear = p.value().getBytes(StandardCharsets.UTF_8);
-                try {
-                    java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
-                    md5.update((byte) identifier);
-                    md5.update(clear);
-                    md5.update(challenge);
-                    return new EapMethod.Inner(
-                            java.security.MessageDigest.isEqual(md5.digest(), response) ? ACCEPT : REJECT, null);
-                } catch (java.security.NoSuchAlgorithmException e) {
-                    throw new IllegalStateException(e);
-                } finally {
-                    Arrays.fill(clear, (byte) 0);
-                }
-            }
-        }
-        return new EapMethod.Inner(REJECT, null);
-    }
-
-    /** MS-CHAP inside a tunnel; {@code challenge} is the v2 challenge hash or the v1 challenge (both 8 bytes). */
-    private EapMethod.Inner innerMsChap(
-            AccessContext context, String user, byte[] challenge, byte[] ntResponse, boolean v2) {
-        Authorization a = authorize(context, user, false);
-        if (a.code() != ACCEPT) {
-            return new EapMethod.Inner(a.code(), null);
-        }
-        String verifier = verifierFor(a.authType(), a.found().store(), a.passwords());
-        if (verifier != null) {
-            try {
-                CredentialVerifier.Result r =
-                        stores.verifiers().get(verifier).verifyMsChap(user, challenge, ntResponse, v2);
-                return r.accepted() && r.ntHashHash() != null
-                        ? new EapMethod.Inner(ACCEPT, r.ntHashHash())
-                        : new EapMethod.Inner(REJECT, null);
-            } catch (StoreUnavailableException e) {
-                warnOnce(
-                        "verifier-unavailable:" + verifier + ":" + e.getMessage(),
-                        "verifier {} unavailable, requests are not answered: {}",
-                        verifier,
-                        e.getMessage());
-                return new EapMethod.Inner(DROP, null);
-            }
-        }
-        byte[] ntHash = localNtHash(a.found(), a.passwords());
-        if (ntHash == null
-                || !java.security.MessageDigest.isEqual(MsChap.challengeResponse(challenge, ntHash), ntResponse)) {
-            return new EapMethod.Inner(REJECT, null);
-        }
-        return new EapMethod.Inner(ACCEPT, Md4.digest(ntHash));
-    }
-
-    /** A password inside a tunnel (TTLS/PAP): the inner user looked up, then a verifier or the stored credentials. */
-    private EapMethod.Inner innerPassword(AccessContext context, String user, byte[] password) {
-        InnerProxy home = innerProxy;
-        if (home != null && home.realm(user) != null) {
-            return proxied(context, home.password(user, password));
-        }
-        Authorization a = authorize(context, user, false);
-        if (a.code() != ACCEPT) {
-            return new EapMethod.Inner(a.code(), null);
-        }
-        if (a.authType().equalsIgnoreCase("Accept")) {
-            return new EapMethod.Inner(ACCEPT, null);
-        }
-        String verifier = verifierFor(a.authType(), a.found().store(), a.passwords());
-        if (verifier != null) {
-            try {
-                return new EapMethod.Inner(
-                        stores.verifiers()
-                                        .get(verifier)
-                                        .verifyPassword(user, password)
-                                        .accepted()
-                                ? ACCEPT
-                                : REJECT,
-                        null);
-            } catch (StoreUnavailableException e) {
-                warnOnce(
-                        "verifier-unavailable:" + verifier + ":" + e.getMessage(),
-                        "verifier {} unavailable, requests are not answered: {}",
-                        verifier,
-                        e.getMessage());
-                return new EapMethod.Inner(DROP, null);
-            }
-        }
-        return new EapMethod.Inner(
-                checkPassword(context, a.found(), user, a.passwords(), password) ? ACCEPT : REJECT, null);
     }
 
     /**
@@ -1306,7 +932,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * The verifier that checks this user's credential: the one {@code Auth-Type} names, else the store's ({@code
      * auth.store.<name>.verifier}) for a user without a password of its own; {@code null} for a local check.
      */
-    private String verifierFor(String authType, String store, List<AttributeItem> passwords) {
+    String verifierFor(String authType, String store, List<AttributeItem> passwords) {
         if (!authType.isEmpty() && stores.verifiers().containsKey(authType)) {
             return authType;
         }
@@ -1453,59 +1079,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return null;
     }
 
-    // ---- simultaneous use ----------------------------------------------------------------------
-
-    static final String SIMULTANEOUS_USE = "Simultaneous-Use";
-
-    private static String simultaneousUse(List<AttributeItem> check) {
-        for (AttributeItem item : check) {
-            if (item.attribute().equalsIgnoreCase(SIMULTANEOUS_USE)) {
-                return item.value();
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Applies {@code Simultaneous-Use} after a successful authentication (ADR 0023): the cluster counts the user's
-     * devices online and reserved. Over the limit → Reject; no answer from the cluster → no answer to the NAS; before
-     * the cluster counts users (state version 6) the limit is ignored, as before.
-     */
-    private int limit(AccessContext context, RadiusPacket request, String store, String value) {
-        int maxDevices;
-        try {
-            maxDevices = Integer.parseInt(value.trim());
-        } catch (NumberFormatException e) {
-            maxDevices = -1;
-        }
-        if (maxDevices < 0 || maxDevices > 0xFFFF) {
-            warnOnce(
-                    "simultaneous-use:" + store,
-                    "store {}: Simultaneous-Use is not a number from 0 to 65535;" + " such users are rejected",
-                    store);
-            return REJECT;
-        }
-        int at = request.findAttribute(USER_NAME);
-        long user = UserKeys.user(request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
-        int station = request.findAttribute(CALLING_STATION_ID);
-        long device = station < 0
-                ? 0
-                : UserKeys.device(
-                        request.buffer(), station + 2, (request.buffer().getByte(station + 1) & 0xFF) - 2);
-        return switch (context.sessionLimits().reserve(user, device, maxDevices)) {
-            case SessionLimits.GRANTED -> ACCEPT;
-            case SessionLimits.DENIED -> REJECT;
-            case SessionLimits.UNSUPPORTED -> {
-                warnOnce(
-                        "simultaneous-use-unsupported",
-                        "Simultaneous-Use is not applied until the cluster activates state version 6",
-                        null);
-                yield ACCEPT;
-            }
-            default -> DROP;
-        };
-    }
-
     // ---- credentials -------------------------------------------------------------------------
 
     private boolean authenticate(
@@ -1547,7 +1120,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * A PAP password against the user's stored credentials: the first usable one decides; successful slow-hash checks
      * are cached.
      */
-    private boolean checkPassword(
+    boolean checkPassword(
             AccessContext context, Found found, String userName, List<AttributeItem> passwords, byte[] password) {
         Object2LongHashMap<String> verified = cache(context).verified;
         for (AttributeItem p : passwords) {
