@@ -130,7 +130,7 @@ site locally. On pull requests the `pr-report` job builds the integration and en
 ## Coverage
 
 `./mvnw verify` measures unit tests only and enforces the module floors of `radius-codec` (90 % lines,
-generated code excluded) and `radius-dictionary` (84 %). Most of the cluster, exporter and sink code is only
+generated code excluded) and `radius-dictionary` (90 %). Most of the cluster, exporter and sink code is only
 reached by the integration tests, so a second, honest measurement covers both:
 
 ```bash

@@ -17,7 +17,7 @@
     <description>Dictionary model and FreeRADIUS-format dictionary parser</description>
 
     <properties>
-        <jacoco.minimum.coverage>0.84</jacoco.minimum.coverage>
+        <jacoco.minimum.coverage>0.90</jacoco.minimum.coverage>
     </properties>
 
     <dependencies>

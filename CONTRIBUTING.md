@@ -137,7 +137,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
   `radius-codec/src/main/codegen/hot-attributes.txt` (at most 64 fields until the presence mask is widened).
 - **Every source file** carries the SPDX header (`./mvnw spotless:apply` adds it).
 - **Tests with every change.** Coverage floors: `radius-codec` 90 % (generated code excluded),
-  `radius-dictionary` 84 % in `./mvnw verify`; per module over unit + integration tests in
+  `radius-dictionary` 90 % in `./mvnw verify`; per module over unit + integration tests in
   `testing/coverage/floors.properties` (`-Pcoverage`, CI). Raise a floor when its module gains tests, never lower it.
 - **Docs are part of the change:** update the relevant README / ADR / doc in the same commit; new
   decisions get an ADR.
