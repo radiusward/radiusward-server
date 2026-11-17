@@ -81,10 +81,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.restrictions = new Restrictions(checkItems, clockMillis, once);
         this.totp = new TotpFactor(clockMillis, new java.security.SecureRandom(), once);
         this.msChap = new MsChapAuthenticator(this::stores, once);
-        this.passwordChecks = new PasswordChecks(this, msChap, clockMillis, once);
+        this.passwordChecks = new PasswordChecks(this::stores, msChap, totp, clockMillis, once);
         this.directory =
                 new UserDirectory(this::stores, dictionary, clockMillis, metrics, checkItems, restrictions, once);
-        this.inner = new InnerCredentials(this, directory, msChap, passwordChecks, once);
+        this.inner = new InnerCredentials(this::stores, this::innerProxy, directory, msChap, passwordChecks, once);
         this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
         this.conversations = new EapConversations(stores.eap().conversations());
     }
@@ -171,31 +171,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 found = a.found();
             }
         } else {
-            boolean firstFactor = !authType.equalsIgnoreCase("Accept");
-            boolean challenge = false;
-            String secret = TotpFactor.secretOf(a.restrictions());
-            if (secret != null) {
-                int second = totp.check(
-                        context, method, userName, secret, () -> papPassword(auth), rest -> auth.papPassword = rest);
-                if (second == TotpFactor.CODE_OK) {
-                    firstFactor = false; // the password was checked in the round that asked for the code
-                } else if (second == TotpFactor.ASK) {
-                    challenge = true;
-                } else if (second != ACCEPT) {
-                    return second;
-                }
-            }
-            if (firstFactor) {
-                String verifier = passwordChecks.verifierFor(authType, found.store(), passwords);
-                int checked = verifier != null
-                        ? passwordChecks.verify(auth, method, verifier, userName)
-                        : passwordChecks.authenticate(auth, method, found, userName, passwords) ? ACCEPT : REJECT;
-                if (checked != ACCEPT) {
-                    return checked;
-                }
-            }
-            if (challenge) {
-                return totp.challenge(context, userName);
+            int checked = passwordChecks.check(auth, method, userName, a);
+            if (checked != ACCEPT) {
+                return checked; // CHALLENGE (TOTP asks for the code), REJECT or DROP
             }
         }
         if (a.limit() != null) {
@@ -451,24 +429,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     void totp(Totp settings) {
         totp.settings(settings);
-    }
-
-    /** The PAP password: the decrypted User-Password, or what TOTP's append mode left of it; {@code null}: none. */
-    byte[] papPassword(AuthRequest auth) {
-        AccessContext context = auth.context();
-        byte[] override = auth.papPassword;
-        if (override != null) {
-            return override.clone();
-        }
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
-        int n = context.credentials()
-                .decryptUserPassword(context.request(), context.nas().secret(), buffer, 0);
-        if (n < 0) {
-            return null;
-        }
-        byte[] password = Arrays.copyOf(buffer.byteArray(), n);
-        Arrays.fill(buffer.byteArray(), (byte) 0);
-        return password;
     }
 
     // ---- SIM subscribers (ADR 0061) ------------------------------------------------------------------------------

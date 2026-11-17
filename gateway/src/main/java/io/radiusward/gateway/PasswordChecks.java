@@ -16,28 +16,70 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import org.agrona.collections.Object2LongHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
- * A user's credential checked against what the stores hold (ADR 0021, ADR 0025): a credential verifier when
+ * A user's credential checked against what the stores hold (ADR 0021, ADR 0025), with TOTP as a second factor: a credential verifier when
  * {@code Auth-Type} or the store names one, else the stored passwords for PAP and the cleartext one for CHAP. Slow
  * hashes that matched are remembered for the cache's lifetime, under a key that does not keep the password.
  */
 final class PasswordChecks {
 
-    private final StoreAccessHandler handler;
+    private final Supplier<AuthStores> stores; // replaced by a reload (ADR 0054)
     private final MsChapAuthenticator msChap;
+    private final TotpFactor totp;
     private final LongSupplier clockMillis;
     private final OnceLogger once;
     private final byte[] verifierSalt = new byte[16];
 
-    PasswordChecks(StoreAccessHandler handler, MsChapAuthenticator msChap, LongSupplier clockMillis, OnceLogger once) {
-        this.handler = handler;
+    PasswordChecks(
+            Supplier<AuthStores> stores,
+            MsChapAuthenticator msChap,
+            TotpFactor totp,
+            LongSupplier clockMillis,
+            OnceLogger once) {
+        this.stores = stores;
         this.msChap = msChap;
+        this.totp = totp;
         this.clockMillis = clockMillis;
         this.once = once;
         new SecureRandom().nextBytes(verifierSalt);
+    }
+
+    /**
+     * Checks the credential of a PAP, CHAP or MS-CHAP request of an authorized user, and the TOTP code of a user with
+     * a {@code TOTP-Secret} (ADR 0053): {@link AccessHandler#ACCEPT}, {@link AccessHandler#CHALLENGE} (the code is
+     * asked for), {@link AccessHandler#REJECT} or {@link AccessHandler#DROP}. {@code Auth-Type := Accept} skips the
+     * password, not the code.
+     */
+    int check(AuthRequest auth, int method, String userName, UserDirectory.Authorization a) {
+        boolean firstFactor = !a.authType().equalsIgnoreCase("Accept");
+        boolean challenge = false;
+        String secret = TotpFactor.secretOf(a.restrictions());
+        if (secret != null) {
+            int second = totp.check(auth, method, userName, secret);
+            if (second == TotpFactor.CODE_OK) {
+                firstFactor = false; // the password was checked in the round that asked for the code
+            } else if (second == TotpFactor.ASK) {
+                challenge = true;
+            } else if (second != AccessHandler.ACCEPT) {
+                return second;
+            }
+        }
+        if (firstFactor) {
+            String verifier = verifierFor(a.authType(), a.found().store(), a.passwords());
+            int checked = verifier != null
+                    ? verify(auth, method, verifier, userName)
+                    : authenticate(auth, method, a.found(), userName, a.passwords())
+                            ? AccessHandler.ACCEPT
+                            : AccessHandler.REJECT;
+            if (checked != AccessHandler.ACCEPT) {
+                return checked;
+            }
+        }
+        return challenge ? totp.challenge(auth.context(), userName) : AccessHandler.ACCEPT;
     }
 
     /**
@@ -45,17 +87,17 @@ final class PasswordChecks {
      * auth.store.<name>.verifier}) for a user without a password of its own; {@code null} for a local check.
      */
     String verifierFor(String authType, String store, List<AttributeItem> passwords) {
-        if (!authType.isEmpty() && handler.stores().verifiers().containsKey(authType)) {
+        if (!authType.isEmpty() && stores.get().verifiers().containsKey(authType)) {
             return authType;
         }
-        String forStore = handler.stores().storeVerifiers().get(store);
+        String forStore = stores.get().storeVerifiers().get(store);
         return forStore != null && passwords.isEmpty() ? forStore : null;
     }
 
     /** Asks a verifier: {@link #ACCEPT}, {@link #REJECT}, or {@link #DROP} when it cannot tell. */
     int verify(AuthRequest auth, int method, String name, String userName) {
         AccessContext context = auth.context();
-        CredentialVerifier verifier = handler.stores().verifiers().get(name);
+        CredentialVerifier verifier = stores.get().verifiers().get(name);
         try {
             CredentialVerifier.Result result;
             MsChapAuthenticator.Request r = null;
@@ -66,7 +108,7 @@ final class PasswordChecks {
                 }
                 result = verifier.verifyMsChap(userName, r.challenge(), r.ntResponse(), r.v2());
             } else if (method == AccessRequests.METHOD_PAP) {
-                byte[] password = handler.papPassword(auth);
+                byte[] password = auth.papPassword();
                 if (password == null) {
                     return AccessHandler.REJECT;
                 }
@@ -118,7 +160,7 @@ final class PasswordChecks {
             return msChap.verify(auth, method, found, passwords);
         }
         if (method == AccessRequests.METHOD_CHAP) {
-            if (!handler.stores().chap().getOrDefault(found.store(), false)) {
+            if (!stores.get().chap().getOrDefault(found.store(), false)) {
                 once.warn(
                         "chap:" + found.store(),
                         "CHAP request for store {}, which does not allow CHAP"
@@ -135,7 +177,7 @@ final class PasswordChecks {
             }
             return false;
         }
-        byte[] password = handler.papPassword(auth);
+        byte[] password = auth.papPassword();
         if (password == null) {
             return false;
         }
@@ -162,7 +204,7 @@ final class PasswordChecks {
             if (!PasswordCheck.isPassword(p.attribute())) {
                 continue; // not a password item (NT- and LM-Password are: their hash of the typed password)
             }
-            if (BCrypt.cost(p.value()) > handler.stores().bcryptMaxCost()) {
+            if (BCrypt.cost(p.value()) > stores.get().bcryptMaxCost()) {
                 once.warn(
                         "bcrypt-cost:" + found.store(),
                         "store {}: a bcrypt hash costs more than auth.bcrypt.max.cost; such users are rejected",
@@ -177,9 +219,9 @@ final class PasswordChecks {
                 return true;
             }
             if (PasswordCheck.verify(p.attribute(), p.value(), password)) {
-                long ttlMillis = handler.stores().cacheTtl().toMillis();
+                long ttlMillis = stores.get().cacheTtl().toMillis();
                 if (key != null && ttlMillis > 0) {
-                    if (verified.size() >= handler.stores().cacheMax()) {
+                    if (verified.size() >= stores.get().cacheMax()) {
                         verified.clear();
                     }
                     verified.put(key, now + ttlMillis);

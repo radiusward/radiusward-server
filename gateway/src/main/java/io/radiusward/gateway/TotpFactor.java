@@ -12,9 +12,7 @@ import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.Consumer;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
@@ -65,19 +63,12 @@ final class TotpFactor {
     }
 
     /**
-     * The second factor: {@link AccessHandler#ACCEPT} (append mode: the code was right, {@code remainder} got the
-     * password before it, which remains to be checked), {@link #CODE_OK}, {@link #ASK}, or {@link
+     * The second factor: {@link AccessHandler#ACCEPT} (append mode: the code was right, the password before it
+     * remains to be checked: {@link AuthRequest#papPassword()}), {@link #CODE_OK}, {@link #ASK}, or {@link
      * AccessHandler#REJECT}.
-     *
-     * @param password the decrypted User-Password, {@code null} if there is none; asked for only for PAP
      */
-    int check(
-            AccessContext context,
-            int method,
-            String userName,
-            String secret,
-            Supplier<byte[]> password,
-            Consumer<byte[]> remainder) {
+    int check(AuthRequest auth, int method, String userName, String secret) {
+        AccessContext context = auth.context();
         Totp t = totp;
         if (method != AccessRequests.METHOD_PAP) {
             once.warn(
@@ -93,7 +84,7 @@ final class TotpFactor {
             StoreAccessHandler.because(context, "TOTP-Secret not understood", "");
             return AccessHandler.REJECT;
         }
-        byte[] typed = password.get();
+        byte[] typed = auth.papPassword();
         if (typed == null) {
             return AccessHandler.REJECT;
         }
@@ -108,7 +99,7 @@ final class TotpFactor {
                         context, t, key, userName, new String(typed, split, t.digits(), StandardCharsets.US_ASCII))) {
                     return AccessHandler.REJECT;
                 }
-                remainder.accept(Arrays.copyOf(typed, split));
+                auth.papRemainder(Arrays.copyOf(typed, split));
                 return AccessHandler.ACCEPT;
             }
             RadiusPacket request = context.request();

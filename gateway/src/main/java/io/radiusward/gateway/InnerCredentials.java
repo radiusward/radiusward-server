@@ -9,29 +9,33 @@ import io.radiusward.auth.CredentialVerifier;
 import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Supplier;
 
 /**
  * The credentials of a tunnel's inner user (PEAP, TTLS, TEAP: PAP, CHAP, MS-CHAP, MS-CHAPv2), checked like the same
- * methods outside a tunnel: the user looked up and authorized by the {@link StoreAccessHandler}, then a credential
+ * methods outside a tunnel: the user looked up and authorized by the {@link UserDirectory}, then a credential
  * verifier or the stored credentials, or, for a proxied realm, its home server (ADR 0044).
  */
 final class InnerCredentials {
 
-    private final StoreAccessHandler handler;
+    private final Supplier<AuthStores> stores; // replaced by a reload (ADR 0054)
+    private final Supplier<InnerProxy> proxy;
     private final UserDirectory directory;
     private final MsChapAuthenticator msChap;
     private final PasswordChecks passwords;
     private final OnceLogger once;
 
     InnerCredentials(
-            StoreAccessHandler handler,
+            Supplier<AuthStores> stores,
+            Supplier<InnerProxy> proxy,
             UserDirectory directory,
             MsChapAuthenticator msChap,
             PasswordChecks passwords,
             OnceLogger once) {
         this.directory = directory;
         this.msChap = msChap;
-        this.handler = handler;
+        this.stores = stores;
+        this.proxy = proxy;
         this.passwords = passwords;
         this.once = once;
     }
@@ -57,7 +61,7 @@ final class InnerCredentials {
      */
     EapMethod.Inner msChapV2(AuthRequest auth, String user, EapMethod.MsChapV2 exchange) {
         AccessContext context = auth.context();
-        InnerProxy home = handler.innerProxy();
+        InnerProxy home = proxy.get();
         if (home != null && home.realm(user) != null) {
             return proxied(auth, home.msChapV2(user, exchange));
         }
@@ -70,7 +74,7 @@ final class InnerCredentials {
      */
     EapMethod.Inner chap(AuthRequest auth, String user, int identifier, byte[] challenge, byte[] response) {
         AccessContext context = auth.context();
-        InnerProxy home = handler.innerProxy();
+        InnerProxy home = proxy.get();
         if (home != null && home.realm(user) != null) {
             return proxied(auth, home.chap(user, identifier, challenge, response));
         }
@@ -81,7 +85,7 @@ final class InnerCredentials {
         if (a.authType().equalsIgnoreCase("Accept")) {
             return new EapMethod.Inner(AccessHandler.ACCEPT, null);
         }
-        if (!handler.stores().chap().getOrDefault(a.found().store(), false)) {
+        if (!stores.get().chap().getOrDefault(a.found().store(), false)) {
             once.warn(
                     "chap:" + a.found().store(),
                     "CHAP request for store {}, which does not allow CHAP"
@@ -110,7 +114,7 @@ final class InnerCredentials {
         if (verifier != null) {
             try {
                 CredentialVerifier.Result r =
-                        handler.stores().verifiers().get(verifier).verifyMsChap(user, challenge, ntResponse, v2);
+                        stores.get().verifiers().get(verifier).verifyMsChap(user, challenge, ntResponse, v2);
                 return r.accepted() && r.ntHashHash() != null
                         ? new EapMethod.Inner(AccessHandler.ACCEPT, r.ntHashHash())
                         : new EapMethod.Inner(AccessHandler.REJECT, null);
@@ -134,7 +138,7 @@ final class InnerCredentials {
     /** A password inside a tunnel (TTLS/PAP): the inner user looked up, then a verifier or the stored credentials. */
     EapMethod.Inner password(AuthRequest auth, String user, byte[] password) {
         AccessContext context = auth.context();
-        InnerProxy home = handler.innerProxy();
+        InnerProxy home = proxy.get();
         if (home != null && home.realm(user) != null) {
             return proxied(auth, home.password(user, password));
         }
@@ -149,7 +153,7 @@ final class InnerCredentials {
         if (verifier != null) {
             try {
                 return new EapMethod.Inner(
-                        handler.stores()
+                        stores.get()
                                         .verifiers()
                                         .get(verifier)
                                         .verifyPassword(user, password)

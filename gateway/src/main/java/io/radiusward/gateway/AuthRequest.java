@@ -4,7 +4,9 @@
  */
 package io.radiusward.gateway;
 
+import io.radiusward.radius.codec.AccessRequests;
 import java.util.Arrays;
+import org.agrona.concurrent.UnsafeBuffer;
 
 /**
  * The Access-Request a worker is deciding and what its checks leave for the reply: the MS-CHAP result, the EAP round,
@@ -19,7 +21,7 @@ final class AuthRequest {
     final MsChapOutcome msChap = new MsChapOutcome();
     final EapRound eap = new EapRound();
     /** What TOTP's append mode left of the PAP password (ADR 0053); {@code null}: the User-Password. */
-    byte[] papPassword;
+    private byte[] papRemainder;
 
     AuthRequest(StoreAccessHandler.WorkerCache caches) {
         this.caches = caches;
@@ -35,10 +37,34 @@ final class AuthRequest {
 
     /** The request is decided: the PAP password is wiped. */
     void end() {
-        if (papPassword != null) {
-            Arrays.fill(papPassword, (byte) 0);
-            papPassword = null;
+        if (papRemainder != null) {
+            Arrays.fill(papRemainder, (byte) 0);
+            papRemainder = null;
         }
+    }
+
+    /**
+     * The PAP password, a copy the caller wipes: the decrypted User-Password, or what TOTP's append mode left of it;
+     * {@code null}: none.
+     */
+    byte[] papPassword() {
+        if (papRemainder != null) {
+            return papRemainder.clone();
+        }
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
+        int n = context.credentials()
+                .decryptUserPassword(context.request(), context.nas().secret(), buffer, 0);
+        if (n < 0) {
+            return null;
+        }
+        byte[] password = Arrays.copyOf(buffer.byteArray(), n);
+        Arrays.fill(buffer.byteArray(), (byte) 0);
+        return password;
+    }
+
+    /** TOTP's append mode took the code off the end: {@code rest} is the password to check (wiped by {@link #end}). */
+    void papRemainder(byte[] rest) {
+        papRemainder = rest;
     }
 
     AccessContext context() {
