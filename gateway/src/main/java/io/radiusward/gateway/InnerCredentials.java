@@ -28,8 +28,9 @@ final class InnerCredentials {
     }
 
     /** A home server's verdict on the inner user: its reply kept for our Accept, the tunnel not remembered. */
-    private EapMethod.Inner proxied(AccessContext context, InnerProxy.Result r) {
-        EapConversations.Conversation c = StoreAccessHandler.cache(context).eap.conversation;
+    private EapMethod.Inner proxied(AuthRequest auth, InnerProxy.Result r) {
+        AccessContext context = auth.context();
+        EapConversations.Conversation c = auth.eap.conversation;
         if (c != null) {
             if (r.inner().code() == AccessHandler.ACCEPT) {
                 c.proxiedReply = r.reply();
@@ -45,24 +46,26 @@ final class InnerCredentials {
      * MS-CHAPv2 inside a tunnel (PEAP, TTLS): the inner user is looked up and checked like outside — a credential
      * verifier, or the local NT hash.
      */
-    EapMethod.Inner msChapV2(AccessContext context, String user, EapMethod.MsChapV2 exchange) {
+    EapMethod.Inner msChapV2(AuthRequest auth, String user, EapMethod.MsChapV2 exchange) {
+        AccessContext context = auth.context();
         InnerProxy home = handler.innerProxy();
         if (home != null && home.realm(user) != null) {
-            return proxied(context, home.msChapV2(user, exchange));
+            return proxied(auth, home.msChapV2(user, exchange));
         }
-        return msChap(context, user, exchange.challengeHash(), exchange.ntResponse(), true);
+        return msChap(auth, user, exchange.challengeHash(), exchange.ntResponse(), true);
     }
 
     /**
      * CHAP inside a tunnel: only with the cleartext password of a store that allows CHAP, as outside it; verifiers
      * cannot answer CHAP.
      */
-    EapMethod.Inner chap(AccessContext context, String user, int identifier, byte[] challenge, byte[] response) {
+    EapMethod.Inner chap(AuthRequest auth, String user, int identifier, byte[] challenge, byte[] response) {
+        AccessContext context = auth.context();
         InnerProxy home = handler.innerProxy();
         if (home != null && home.realm(user) != null) {
-            return proxied(context, home.chap(user, identifier, challenge, response));
+            return proxied(auth, home.chap(user, identifier, challenge, response));
         }
-        StoreAccessHandler.Authorization a = handler.authorize(context, user, false);
+        StoreAccessHandler.Authorization a = handler.authorize(auth, user, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }
@@ -88,8 +91,9 @@ final class InnerCredentials {
     }
 
     /** MS-CHAP inside a tunnel; {@code challenge} is the v2 challenge hash or the v1 challenge (both 8 bytes). */
-    EapMethod.Inner msChap(AccessContext context, String user, byte[] challenge, byte[] ntResponse, boolean v2) {
-        StoreAccessHandler.Authorization a = handler.authorize(context, user, false);
+    EapMethod.Inner msChap(AuthRequest auth, String user, byte[] challenge, byte[] ntResponse, boolean v2) {
+        AccessContext context = auth.context();
+        StoreAccessHandler.Authorization a = handler.authorize(auth, user, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }
@@ -119,12 +123,13 @@ final class InnerCredentials {
     }
 
     /** A password inside a tunnel (TTLS/PAP): the inner user looked up, then a verifier or the stored credentials. */
-    EapMethod.Inner password(AccessContext context, String user, byte[] password) {
+    EapMethod.Inner password(AuthRequest auth, String user, byte[] password) {
+        AccessContext context = auth.context();
         InnerProxy home = handler.innerProxy();
         if (home != null && home.realm(user) != null) {
-            return proxied(context, home.password(user, password));
+            return proxied(auth, home.password(user, password));
         }
-        StoreAccessHandler.Authorization a = handler.authorize(context, user, false);
+        StoreAccessHandler.Authorization a = handler.authorize(auth, user, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }
@@ -153,7 +158,7 @@ final class InnerCredentials {
             }
         }
         return new EapMethod.Inner(
-                passwords.checkPassword(context, a.found(), user, a.passwords(), password)
+                passwords.checkPassword(auth, a.found(), user, a.passwords(), password)
                         ? AccessHandler.ACCEPT
                         : AccessHandler.REJECT,
                 null);

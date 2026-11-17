@@ -886,6 +886,50 @@ class EapTlsTest {
     }
 
     @Test
+    void ttlsInnerChapNeedsAStoreThatAllowsItAndACleartextPassword() throws Exception {
+        store.user("gina", List.of(new AttributeItem("Cleartext-Password", ":=", "Gina-Pw")), List.of())
+                .user("kim", List.of(new AttributeItem("Crypt-Password", ":=", "$6$salt$x")), List.of())
+                .user("guest", List.of(new AttributeItem("Auth-Type", ":=", "Accept")), List.of());
+        TtlsPeer notAllowed = new TtlsPeer("gina", "Gina-Pw", false, false);
+        notAllowed.chap = true;
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.3", notAllowed), Ttls.TYPE))
+                .as("the store does not allow CHAP (auth.store.main.chap)")
+                .isEqualTo(AccessHandler.REJECT);
+
+        chap = Map.of("main", true);
+        TtlsPeer hashed = new TtlsPeer("kim", "x", false, false);
+        hashed.chap = true;
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.2", hashed), Ttls.TYPE))
+                .as("no cleartext password to compute CHAP with")
+                .isEqualTo(AccessHandler.REJECT);
+
+        TtlsPeer guest = new TtlsPeer("guest", "anything", false, false);
+        guest.chap = true;
+        assertThat(converse(ttls(Map.of(), Map.of(), Map.of()), "anonymous", ttlsClient("TLSv1.3", guest), Ttls.TYPE))
+                .as("Auth-Type := Accept: no credential checked")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
+    void ttlsInnerPapForAnUnknownUserAndForAuthTypeAccept() throws Exception {
+        store.user("guest", List.of(new AttributeItem("Auth-Type", ":=", "Accept")), List.of());
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()),
+                        "anonymous",
+                        ttlsClient("TLSv1.3", new TtlsPeer("guest", "anything", false, false)),
+                        Ttls.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(converse(
+                        ttls(Map.of(), Map.of(), Map.of()),
+                        "anonymous",
+                        ttlsClient("TLSv1.2", new TtlsPeer("nobody", "x", false, false)),
+                        Ttls.TYPE))
+                .as("an inner user no store knows")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
     void ttlsMsChapV2DuringAStoreOutage() throws Exception {
         store.user(
                 "erin",

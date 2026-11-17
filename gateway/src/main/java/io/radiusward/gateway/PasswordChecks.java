@@ -51,7 +51,8 @@ final class PasswordChecks {
     }
 
     /** Asks a verifier: {@link #ACCEPT}, {@link #REJECT}, or {@link #DROP} when it cannot tell. */
-    int verify(AccessContext context, int method, String name, String userName) {
+    int verify(AuthRequest auth, int method, String name, String userName) {
+        AccessContext context = auth.context();
         CredentialVerifier verifier = handler.stores().verifiers().get(name);
         try {
             CredentialVerifier.Result result;
@@ -63,7 +64,7 @@ final class PasswordChecks {
                 }
                 result = verifier.verifyMsChap(userName, r.challenge(), r.ntResponse(), r.v2());
             } else if (method == AccessRequests.METHOD_PAP) {
-                byte[] password = handler.papPassword(context);
+                byte[] password = handler.papPassword(auth);
                 if (password == null) {
                     return AccessHandler.REJECT;
                 }
@@ -94,7 +95,7 @@ final class PasswordChecks {
                             name);
                     return AccessHandler.REJECT;
                 }
-                handler.succeeded(context, r, result.ntHashHash());
+                handler.succeeded(auth, r, result.ntHashHash());
             }
             return AccessHandler.ACCEPT;
         } catch (StoreUnavailableException e) {
@@ -108,14 +109,15 @@ final class PasswordChecks {
     }
 
     boolean authenticate(
-            AccessContext context,
+            AuthRequest auth,
             int method,
             StoreAccessHandler.Found found,
             String userName,
             List<AttributeItem> passwords) {
-        Object2LongHashMap<String> verified = StoreAccessHandler.cache(context).verified;
+        AccessContext context = auth.context();
+        Object2LongHashMap<String> verified = auth.caches().verified;
         if (StoreAccessHandler.isMsChap(method)) {
-            return handler.msChap(context, method, found, passwords);
+            return handler.msChap(auth, method, found, passwords);
         }
         if (method == AccessRequests.METHOD_CHAP) {
             if (!handler.stores().chap().getOrDefault(found.store(), false)) {
@@ -135,12 +137,12 @@ final class PasswordChecks {
             }
             return false;
         }
-        byte[] password = handler.papPassword(context);
+        byte[] password = handler.papPassword(auth);
         if (password == null) {
             return false;
         }
         try {
-            return checkPassword(context, found, userName, passwords, password);
+            return checkPassword(auth, found, userName, passwords, password);
         } finally {
             Arrays.fill(password, (byte) 0);
         }
@@ -151,15 +153,16 @@ final class PasswordChecks {
      * are cached.
      */
     boolean checkPassword(
-            AccessContext context,
+            AuthRequest auth,
             StoreAccessHandler.Found found,
             String userName,
             List<AttributeItem> passwords,
             byte[] password) {
-        Object2LongHashMap<String> verified = StoreAccessHandler.cache(context).verified;
+        AccessContext context = auth.context();
+        Object2LongHashMap<String> verified = auth.caches().verified;
         for (AttributeItem p : passwords) {
             if (!PasswordCheck.isPassword(p.attribute())) {
-                continue; // NT-Password / LM-Password: MS-CHAP (5.6)
+                continue; // not a password item (NT- and LM-Password are: their hash of the typed password)
             }
             if (BCrypt.cost(p.value()) > handler.stores().bcryptMaxCost()) {
                 once.warn(

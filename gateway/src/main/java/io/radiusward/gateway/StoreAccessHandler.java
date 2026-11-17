@@ -78,46 +78,13 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         final Object2ObjectHashMap<String, Cached> users = new Object2ObjectHashMap<>();
         final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
         final Object2ObjectHashMap<AttributeItem, Encoded> encoded = new Object2ObjectHashMap<>();
-        final MsChapOutcome msChap = new MsChapOutcome();
-        final EapRound eap = new EapRound();
-        /** What TOTP's append mode left of the PAP password (ADR 0053); {@code null}: the User-Password. */
-        byte[] papPassword;
+        /** The request this worker is deciding, reused for every request. */
+        final AuthRequest request = new AuthRequest(this);
         /** The handler's generation the caches belong to (ADR 0054). */
         int generation;
     }
 
-    /** The EAP state of the request being decided; per worker, reset for every request. */
-    static final class EapRound {
-        EapPacket packet;
-        EapConversations.Conversation conversation;
-        byte[] state;
-        byte[] msk;
-
-        void reset() {
-            packet = null;
-            state = null;
-            conversation = null;
-            msk = null;
-        }
-    }
-
-    /** What a successful MS-CHAP check leaves for the reply; per worker, reset for every request. */
-    private static final class MsChapOutcome {
-        boolean success;
-        int ident;
-        byte[] ntHashHash;
-        byte[] ntResponse;
-        byte[] challengeHash;
-
-        void reset() {
-            success = false;
-            ntHashHash = null;
-            ntResponse = null;
-            challengeHash = null;
-        }
-    }
-
-    static WorkerCache cache(AccessContext context) {
+    private static WorkerCache cache(AccessContext context) {
         if (context.handlerState() instanceof WorkerCache cache) {
             return cache;
         }
@@ -151,22 +118,18 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             cache.encoded.clear();
             cache.generation = current;
         }
-        cache.msChap.reset();
-        cache.eap.reset();
+        AuthRequest auth = cache.request.begin(context);
         int result;
         try {
-            result = decide(context, method);
+            result = decide(auth, method);
         } finally {
-            if (cache.papPassword != null) {
-                Arrays.fill(cache.papPassword, (byte) 0);
-                cache.papPassword = null;
-            }
+            auth.end();
         }
         if (result == REJECT && isMsChap(method)) {
             writeMsChapError(context, method); // the client shows a proper failure instead of a timeout
         }
-        if (result == REJECT && method == AccessRequests.METHOD_EAP && cache.eap.packet != null) {
-            EapPacket.failure(cache.eap.packet.identifier()).writeTo(context.reply()); // RFC 3579 §2.6.3
+        if (result == REJECT && method == AccessRequests.METHOD_EAP && auth.eap.packet != null) {
+            EapPacket.failure(auth.eap.packet.identifier()).writeTo(context.reply()); // RFC 3579 §2.6.3
         }
         return result;
     }
@@ -175,7 +138,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return method == AccessRequests.METHOD_MS_CHAP || method == AccessRequests.METHOD_MS_CHAP2;
     }
 
-    private int decide(AccessContext context, int method) {
+    private int decide(AuthRequest auth, int method) {
+        AccessContext context = auth.context();
         RadiusPacket request = context.request();
         if (method != AccessRequests.METHOD_PAP
                 && method != AccessRequests.METHOD_CHAP
@@ -185,18 +149,18 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         String userName;
         if (method == AccessRequests.METHOD_EAP) {
-            int begun = eapBegin(context);
+            int begun = eapBegin(auth);
             if (begun != ACCEPT) {
                 return begun;
             }
-            userName = cache(context).eap.conversation.identity;
+            userName = auth.eap.conversation.identity;
         } else {
             userName = string(request, USER_NAME);
         }
         if (userName == null || userName.isEmpty()) {
             return REJECT;
         }
-        Authorization a = authorize(context, userName, method == AccessRequests.METHOD_EAP && outerOptional(context));
+        Authorization a = authorize(auth, userName, method == AccessRequests.METHOD_EAP && outerOptional(auth));
         if (a.code() != ACCEPT) {
             return a.code();
         }
@@ -204,11 +168,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         String authType = a.authType();
         List<AttributeItem> passwords = a.passwords();
         if (method == AccessRequests.METHOD_EAP) {
-            int round = eapRound(context, found, authType, passwords);
+            int round = eapRound(auth, found, authType, passwords);
             if (round != ACCEPT) {
                 return round; // CHALLENGE (another round trip), REJECT or DROP
             }
-            EapConversations.Conversation c = cache(context).eap.conversation;
+            EapConversations.Conversation c = auth.eap.conversation;
             String inner = c.method == null ? null : c.method.innerIdentity();
             InnerProxy p = innerProxy;
             if (inner != null && p != null && p.realm(inner) != null) {
@@ -216,12 +180,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 if (c.proxiedReply == null) {
                     return REJECT; // no verdict from it in this conversation
                 }
-                writeEapSuccess(context, method);
+                writeEapSuccess(auth, method);
                 context.reply().rawAttributes(new UnsafeBuffer(c.proxiedReply), 0, c.proxiedReply.length);
                 return ACCEPT;
             }
             if (inner != null) { // a tunnel: the inner user is the one authorized (ADR 0029)
-                a = authorize(context, inner, c.method.innerOptional());
+                a = authorize(auth, inner, c.method.innerOptional());
                 if (a.code() != ACCEPT) {
                     return a.code();
                 }
@@ -233,12 +197,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             String secret = TotpFactor.secretOf(a.restrictions());
             if (secret != null) {
                 int second = totp.check(
-                        context,
-                        method,
-                        userName,
-                        secret,
-                        () -> papPassword(context),
-                        rest -> cache(context).papPassword = rest);
+                        context, method, userName, secret, () -> papPassword(auth), rest -> auth.papPassword = rest);
                 if (second == TotpFactor.CODE_OK) {
                     firstFactor = false; // the password was checked in the round that asked for the code
                 } else if (second == TotpFactor.ASK) {
@@ -250,8 +209,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             if (firstFactor) {
                 String verifier = passwordChecks.verifierFor(authType, found.store(), passwords);
                 int checked = verifier != null
-                        ? passwordChecks.verify(context, method, verifier, userName)
-                        : passwordChecks.authenticate(context, method, found, userName, passwords) ? ACCEPT : REJECT;
+                        ? passwordChecks.verify(auth, method, verifier, userName)
+                        : passwordChecks.authenticate(auth, method, found, userName, passwords) ? ACCEPT : REJECT;
                 if (checked != ACCEPT) {
                     return checked;
                 }
@@ -284,9 +243,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (c != null) {
             c.apply(request, found.user().userName(), a.reply()); // ADR 0056
         }
-        encode(cache(context).encoded, a.reply(), context.reply(), context.nas().name());
-        writeMsChapSuccess(context, method); // method attributes: never filtered by vendor
-        writeEapSuccess(context, method);
+        encode(auth.caches().encoded, a.reply(), context.reply(), context.nas().name());
+        writeMsChapSuccess(auth, method); // method attributes: never filtered by vendor
+        writeEapSuccess(auth, method);
         return ACCEPT;
     }
 
@@ -342,7 +301,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (found == null) {
             return new Review(REJECT, false, List.of());
         }
-        Authorization a = authorize(sweepContext, userName, false);
+        Authorization a = authorize(cache(sweepContext).request.begin(sweepContext), userName, false);
         if (a.code() != ACCEPT) {
             return new Review(a.code(), true, List.of());
         }
@@ -358,11 +317,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** Looks {@code userName} up and evaluates its checks and groups; {@code optional}: a missing user is empty. */
-    Authorization authorize(AccessContext context, String userName, boolean optional) {
+    Authorization authorize(AuthRequest auth, String userName, boolean optional) {
+        AccessContext context = auth.context();
         RadiusPacket request = context.request();
         Found found;
         try {
-            found = find(cache(context), context.nas().name(), userName);
+            found = find(auth.caches(), context.nas().name(), userName);
         } catch (StoreUnavailableException e) {
             warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
             because(context, "identity store unavailable: ", e.getMessage());
@@ -480,13 +440,14 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * the State names otherwise. {@link #ACCEPT} to go on; a malformed packet is discarded ({@link #DROP}), an
      * unknown or used State is rejected.
      */
-    private int eapBegin(AccessContext context) {
+    private int eapBegin(AuthRequest auth) {
+        AccessContext context = auth.context();
         RadiusPacket request = context.request();
         EapPacket eap = EapPacket.from(request);
         if (eap == null || eap.code() != EapPacket.CODE_RESPONSE) {
             return DROP; // RFC 3579 §2.6.2: silently discard
         }
-        EapRound round = cache(context).eap;
+        AuthRequest.EapRound round = auth.eap;
         round.packet = eap;
         int at = request.findAttribute(STATE);
         if (at < 0) {
@@ -515,8 +476,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * when the method succeeded, {@link #REJECT} when it failed, {@link #DROP} when the table is full or the response
      * answers another request.
      */
-    private int eapRound(AccessContext context, Found found, String authType, List<AttributeItem> passwords) {
-        EapRound round = cache(context).eap;
+    private int eapRound(AuthRequest auth, Found found, String authType, List<AttributeItem> passwords) {
+        AccessContext context = auth.context();
+        AuthRequest.EapRound round = auth.eap;
         EapPacket eap = round.packet;
         EapConversations.Conversation c = round.conversation;
         if (authType.equalsIgnoreCase("Accept")) {
@@ -526,27 +488,27 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 passwords, stores.chap().getOrDefault(found.store(), false), new EapMethod.InnerAuth() {
                     @Override
                     public EapMethod.Inner msChapV2(String user, EapMethod.MsChapV2 exchange) {
-                        return inner.msChapV2(context, user, exchange);
+                        return inner.msChapV2(auth, user, exchange);
                     }
 
                     @Override
                     public EapMethod.Inner password(String user, byte[] password) {
-                        return inner.password(context, user, password);
+                        return inner.password(auth, user, password);
                     }
 
                     @Override
                     public EapMethod.Inner chap(String user, int identifier, byte[] challenge, byte[] response) {
-                        return inner.chap(context, user, identifier, challenge, response);
+                        return inner.chap(auth, user, identifier, challenge, response);
                     }
 
                     @Override
                     public EapMethod.Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
-                        return inner.msChap(context, user, challenge, ntResponse, false);
+                        return inner.msChap(auth, user, challenge, ntResponse, false);
                     }
 
                     @Override
                     public EapMethod.Subscriber subscriber(String imsi) {
-                        return simSubscriber(context, imsi);
+                        return simSubscriber(auth, imsi);
                     }
 
                     @Override
@@ -613,8 +575,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** Whether this conversation's method (or the one it will start, or a Nak asks for) needs no store entry. */
-    private boolean outerOptional(AccessContext context) {
-        EapRound round = cache(context).eap;
+    private boolean outerOptional(AuthRequest auth) {
+        AccessContext context = auth.context();
+        AuthRequest.EapRound round = auth.eap;
         EapConversations.Conversation c = round.conversation;
         if (c.method != null) {
             if (round.packet.type() == EapPacket.TYPE_NAK) {
@@ -630,8 +593,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** EAP-Success and, for methods that derive one, the MSK as MS-MPPE keys (RFC 3748 §7.10, RFC 2548). */
-    private void writeEapSuccess(AccessContext context, int method) {
-        EapRound round = cache(context).eap;
+    private void writeEapSuccess(AuthRequest auth, int method) {
+        AccessContext context = auth.context();
+        AuthRequest.EapRound round = auth.eap;
         if (method != AccessRequests.METHOD_EAP || round.packet == null) {
             return;
         }
@@ -680,7 +644,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * Verifies MS-CHAPv1 or v2 from the user's NT hash: {@code NT-Password}, or the cleartext password where the
      * store allows it ({@code auth.store.<name>.mschap}). The first usable credential decides.
      */
-    boolean msChap(AccessContext context, int method, Found found, List<AttributeItem> passwords) {
+    boolean msChap(AuthRequest auth, int method, Found found, List<AttributeItem> passwords) {
+        AccessContext context = auth.context();
         byte[] ntHash = localNtHash(found, passwords);
         if (ntHash == null) {
             return false;
@@ -691,7 +656,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                         MsChap.challengeResponse(r.challenge(), ntHash), r.ntResponse())) {
             return false;
         }
-        succeeded(context, r, Md4.digest(ntHash));
+        succeeded(auth, r, Md4.digest(ntHash));
         return true;
     }
 
@@ -751,8 +716,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** The PAP password: the decrypted User-Password, or what TOTP's append mode left of it; {@code null}: none. */
-    byte[] papPassword(AccessContext context) {
-        byte[] override = cache(context).papPassword;
+    byte[] papPassword(AuthRequest auth) {
+        AccessContext context = auth.context();
+        byte[] override = auth.papPassword;
         if (override != null) {
             return override.clone();
         }
@@ -770,10 +736,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     // ---- SIM subscribers (ADR 0061) ------------------------------------------------------------------------------
 
     /** A SIM subscriber's check items by IMSI, from the stores of this NAS entry; keys are checked here once. */
-    private EapMethod.Subscriber simSubscriber(AccessContext context, String imsi) {
+    private EapMethod.Subscriber simSubscriber(AuthRequest auth, String imsi) {
+        AccessContext context = auth.context();
         Found found;
         try {
-            found = find(cache(context), context.nas().name(), imsi);
+            found = find(auth.caches(), context.nas().name(), imsi);
         } catch (StoreUnavailableException e) {
             warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
             because(context, "identity store unavailable: ", e.getMessage());
@@ -937,8 +904,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return new MsChapRequest(challenge, ntResponse, response[0] & 0xFF, null, false);
     }
 
-    void succeeded(AccessContext context, MsChapRequest r, byte[] ntHashHash) {
-        MsChapOutcome outcome = cache(context).msChap;
+    void succeeded(AuthRequest auth, MsChapRequest r, byte[] ntHashHash) {
+        AccessContext context = auth.context();
+        AuthRequest.MsChapOutcome outcome = auth.msChap;
         outcome.success = true;
         outcome.ident = r.ident();
         outcome.ntHashHash = ntHashHash;
@@ -959,8 +927,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** MS-CHAP2-Success and the MPPE keys (v2), or MS-CHAP-MPPE-Keys (v1). */
-    private void writeMsChapSuccess(AccessContext context, int method) {
-        MsChapOutcome outcome = cache(context).msChap;
+    private void writeMsChapSuccess(AuthRequest auth, int method) {
+        AccessContext context = auth.context();
+        AuthRequest.MsChapOutcome outcome = auth.msChap;
         if (!outcome.success) {
             return; // not MS-CHAP, or Auth-Type := Accept without a check: nothing to prove to the client
         }

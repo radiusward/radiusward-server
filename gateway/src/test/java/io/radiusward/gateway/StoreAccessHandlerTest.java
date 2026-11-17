@@ -1170,6 +1170,48 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void aVerifierCannotAcceptMalformedMsChapOrMsChapWithoutASessionKey() {
+        // a directory that says yes to any MS-CHAP response, but gives no key to prove it to the client
+        verifiers.put("keyless", new io.radiusward.auth.CredentialVerifier() {
+            @Override
+            public Result verifyMsChap(String userName, byte[] challenge, byte[] ntResponse, boolean v2) {
+                return Result.accepted(null);
+            }
+
+            @Override
+            public void close() {}
+        });
+        storeVerifiers.put("main", "keyless");
+        main.user("User", List.of(), List.of());
+        StoreAccessHandler h = handler();
+        assertThat(handle(h, msChap2("User", "anything")))
+                .as("MS-CHAPv2 accepted without a session key: the client could not check the server")
+                .isEqualTo(AccessHandler.REJECT);
+        byte[] response = new byte[50];
+        response[0] = 7;
+        assertThat(handle(h, msChapRequest("User", new byte[8], 25, response)))
+                .as("an MS-CHAPv2 challenge of 8 bytes is malformed: not sent to the verifier")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void usersWithoutAUsablePasswordAreRejected() {
+        main.user("nothing", List.of(), List.of())
+                .user("ntOnly", List.of(item("NT-Password", ":=", "8846F7EAEE8FB117AD06BDD830B7586C")), List.of())
+                .user("hashed", List.of(item("Crypt-Password", ":=", "$6$salt$x")), List.of());
+        StoreAccessHandler h = handler(Map.of("main", true), Map.of());
+        assertThat(pap(h, "nothing", "anything"))
+                .as("no password stored and no verifier: rejected, never accepted")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(pap(h, "ntOnly", "password"))
+                .as("NT-Password checks PAP too: the NT hash of what was typed")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(handle(h, AccessRequestBuilder.chapSafe("hashed", "x")))
+                .as("CHAP needs the cleartext password, even where the store allows CHAP")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
     void authTypeNamesAVerifier() {
         FakeVerifier ad = new FakeVerifier();
         verifiers.put("ad", ad);
