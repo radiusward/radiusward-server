@@ -107,7 +107,7 @@ class AuthStoresTest {
         values.put("nas.open.vendor", "mikrotik");
         values.put("nas.open.reply.vendors", "all");
         values.put("nas.plain.reply.vendors", "none");
-        try (AuthStores stores = AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY)) {
+        try (AuthStores stores = AuthStores.from(Config.of(values), 1, HandlerFixture.DICTIONARY)) {
             assertThat(stores.replyVendors().get("mx")).containsExactlyInAnyOrder(2636, 4874);
             assertThat(stores.replyVendors().get("mt")).containsExactly(14988);
             assertThat(stores.replyVendors().get("mixed")).containsExactlyInAnyOrder(14988, 9);
@@ -118,7 +118,7 @@ class AuthStoresTest {
         }
         Map<String, String> unknown = base();
         unknown.put("nas.x.reply.vendors", "no-such-vendor");
-        assertThatThrownBy(() -> AuthStores.from(Config.of(unknown), 1, StoreAccessHandlerTest.DICTIONARY))
+        assertThatThrownBy(() -> AuthStores.from(Config.of(unknown), 1, HandlerFixture.DICTIONARY))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("nas.x.reply.vendors: unknown vendor no-such-vendor");
     }
@@ -129,13 +129,13 @@ class AuthStoresTest {
         Files.writeString(
                 dir.resolve("users"),
                 "alice Cleartext-Password := \"a\"\n    Session-Timeout = 60,\n    Mikrotik-Rate-Limit = \"1M\"\n");
-        AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY).close();
+        AuthStores.from(Config.of(values), 1, HandlerFixture.DICTIONARY).close();
         Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"a\"\n    Sesion-Timeout = 60\n");
-        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY))
+        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 1, HandlerFixture.DICTIONARY))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("line 2: reply item Sesion-Timeout is not in the dictionary");
         Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"a\"\n    Session-Timeout = soon\n");
-        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 1, StoreAccessHandlerTest.DICTIONARY))
+        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 1, HandlerFixture.DICTIONARY))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("line 2: reply item Session-Timeout");
     }

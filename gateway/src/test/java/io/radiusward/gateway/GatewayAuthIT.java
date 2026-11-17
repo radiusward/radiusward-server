@@ -138,15 +138,15 @@ class GatewayAuthIT {
             byte[] wrong = AuthAgentTest.accessRequest(2, "wrong", true, false);
             AuthAgentTest.assertSignedReplyTo(send(port, wrong), wrong, RadiusCode.ACCESS_REJECT);
 
-            byte[] chap = StoreAccessHandlerTest.AccessRequestBuilder.chap("nemo", "arctangent");
+            byte[] chap = HandlerFixture.AccessRequestBuilder.chap("nemo", "arctangent");
             assertThat(send(port, chap)[0]).isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
 
-            byte[] msChap2 = StoreAccessHandlerTest.msChap2("User", "clientPass");
+            byte[] msChap2 = HandlerFixture.msChap2("User", "clientPass");
             byte[] accepted = send(port, msChap2);
             assertThat(accepted[0]).as("MS-CHAPv2 from NT-Password").isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
             assertThat(new String(accepted, StandardCharsets.ISO_8859_1))
                     .contains("S=407A5589115FD0D6209F510FE9C04566932CDA56");
-            byte[] wrongMsChap2 = StoreAccessHandlerTest.msChap2("User", "other");
+            byte[] wrongMsChap2 = HandlerFixture.msChap2("User", "other");
             assertThat(new String(send(port, wrongMsChap2), StandardCharsets.ISO_8859_1))
                     .contains("E=691");
         }
@@ -185,7 +185,7 @@ class GatewayAuthIT {
     }
 
     private static byte[] eapOverUdp(int port, String identity, EapTlsClient client) throws Exception {
-        EapPacket eap = StoreAccessHandlerTest.identity(1, identity);
+        EapPacket eap = HandlerFixture.identity(1, identity);
         byte[] state = null;
         for (int round = 0; round < 100; round++) {
             byte[] auth = new byte[16];

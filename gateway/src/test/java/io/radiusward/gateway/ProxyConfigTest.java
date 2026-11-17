@@ -147,7 +147,7 @@ class ProxyConfigTest {
 
     @Test
     void rewritesAreCheckedAgainstTheDictionary() {
-        io.radiusward.radius.dictionary.Dictionary dictionary = StoreAccessHandlerTest.DICTIONARY;
+        io.radiusward.radius.dictionary.Dictionary dictionary = HandlerFixture.DICTIONARY;
         Map<String, String> settings = base();
         settings.put("realm.partner.pre-proxy.remove", "Calling-Station-Id, NAS-Port");
         settings.put("realm.partner.pre-proxy.add", "Operator-Name = \"1op.example\", Cisco-AVPair += \"a=b\"");

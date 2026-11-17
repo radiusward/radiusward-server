@@ -19,19 +19,13 @@ import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.junit.jupiter.api.Test;
 
-class ReplyEncoderTest {
+class ReplyEncoderTest extends HandlerFixture {
 
     private static final int CISCO = 9;
 
     private final ReplyEncoder encoder = new ReplyEncoder(
-            StoreAccessHandlerTest.DICTIONARY,
-            new OnceLogger(LogManager.getLogger(ReplyEncoderTest.class)),
-            Set.of("nas"));
+            HandlerFixture.DICTIONARY, new OnceLogger(LogManager.getLogger(ReplyEncoderTest.class)), Set.of("nas"));
     private final Object2ObjectHashMap<AttributeItem, ReplyEncoder.Encoded> cache = new Object2ObjectHashMap<>();
-
-    private static AttributeItem item(String attribute, String op, String value) {
-        return new AttributeItem(attribute, op, value);
-    }
 
     /** Encodes {@code reply} into an Access-Accept and returns it. */
     private RadiusPacket encode(List<AttributeItem> reply, IntHashSet vendors, int cacheMax) {
@@ -134,5 +128,48 @@ class ReplyEncoderTest {
         assertThat(encoder.filtered("nas"))
                 .as("not counted while the entry has no filter")
                 .isZero();
+    }
+
+    @Test
+    void replyCarriesOnlyTheVendorAttributesOfTheNasEntry() {
+        main.user(
+                "alice",
+                List.of(item("Cleartext-Password", ":=", "a")),
+                List.of(
+                        item("Session-Timeout", "=", "3600"),
+                        item("Mikrotik-Rate-Limit", "=", "10M/20M"),
+                        item("Cisco-AVPair", "+=", "sub-qos-policy-out=20M"),
+                        item("Huawei-Input-Peak-Rate", "=", "10000000"),
+                        item("No-Such-Attribute", "=", "x"),
+                        item("Session-Timeout", "+=", "not a number")));
+        IntHashSet mikrotik = new IntHashSet();
+        mikrotik.add(14988);
+        replyVendors.put("local", mikrotik);
+        StoreAccessHandler h = handler();
+        for (int i = 0; i < 3; i++) {
+            assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+            RadiusPacket reply = reply();
+            assertThat(reply.findAttribute(27)).as("standard attributes always").isPositive();
+            assertThat(vendors(reply))
+                    .as("unknown and unencodable items left out")
+                    .containsExactly(14988);
+        }
+        assertThat(h.replies().filtered("local"))
+                .as("Cisco and Huawei, three times")
+                .isEqualTo(6);
+        assertThat(h.replies().filtered("other")).isZero();
+        var metrics = new io.radiusward.common.management.PrometheusWriter();
+        h.writeMetrics(metrics, "1");
+        assertThat(metrics.finish())
+                .contains("radiusward_gateway_access_reply_items_filtered_total{gateway=\"1\",nas=\"local\"} 6")
+                .contains("radiusward_gateway_store_lookups_total{gateway=\"1\",store=\"main\",result=\"found\"} ")
+                .contains("radiusward_gateway_store_lookup_seconds_count{gateway=\"1\",store=\"main\"} ")
+                .contains("radiusward_gateway_eap_total{gateway=\"1\",method=\"md5\",outcome=\"succeeded\"} 0");
+        io.radiusward.common.management.PrometheusWriter.validate(metrics.finish());
+
+        replyVendors.clear(); // no vendor set for the entry: everything that can be encoded
+        StoreAccessHandler all = handler();
+        assertThat(pap(all, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(vendors(reply())).containsExactly(14988, 9, 2011);
     }
 }

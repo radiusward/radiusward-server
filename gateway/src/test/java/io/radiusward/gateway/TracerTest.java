@@ -37,18 +37,17 @@ class TracerTest {
     }
 
     static RadiusPacket request(String user, String station) {
-        return packet(StoreAccessHandlerTest.AccessRequestBuilder.pap(
+        return packet(HandlerFixture.AccessRequestBuilder.pap(
                 user,
                 "very-secret-password",
-                StoreAccessHandlerTest.AccessRequestBuilder.attribute(
-                        31, station.getBytes(StandardCharsets.US_ASCII))));
+                HandlerFixture.AccessRequestBuilder.attribute(31, station.getBytes(StandardCharsets.US_ASCII))));
     }
 
     @Test
     void conditionsSelectRequestsAndSecretsStayHidden() {
         long[] now = {1000};
         Tracer tracer = new Tracer(
-                StoreAccessHandlerTest.DICTIONARY,
+                HandlerFixture.DICTIONARY,
                 List.of(
                         new Tracer.Condition(Tracer.Kind.USER, "alice", Long.MAX_VALUE),
                         new Tracer.Condition(Tracer.Kind.STATION, "aabbcc", Long.MAX_VALUE)),
@@ -88,11 +87,11 @@ class TracerTest {
         tracer.clear();
         assertThat(tracer.conditions()).hasSize(2);
 
-        Tracer none = Tracer.from(Config.of(Map.of()), StoreAccessHandlerTest.DICTIONARY);
+        Tracer none = Tracer.from(Config.of(Map.of()), HandlerFixture.DICTIONARY);
         assertThat(none.start(request("alice", "x"), NAS)).isNull();
         Tracer configured = Tracer.from(
                 Config.of(Map.of("trace.users", "alice", "trace.nas", "edge", "trace.stations", "AA-BB")),
-                StoreAccessHandlerTest.DICTIONARY);
+                HandlerFixture.DICTIONARY);
         assertThat(configured.conditions())
                 .extracting(Tracer.Condition::value)
                 .containsExactly("alice", "edge", "aabb");
@@ -100,7 +99,7 @@ class TracerTest {
 
     @Test
     void theApi() throws Exception {
-        Tracer tracer = Tracer.from(Config.of(Map.of()), StoreAccessHandlerTest.DICTIONARY);
+        Tracer tracer = Tracer.from(Config.of(Map.of()), HandlerFixture.DICTIONARY);
         assertThatThrownBy(() -> tracer.api("short")).isInstanceOf(ConfigException.class);
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/trace", tracer.api("a-token-of-16-chars"));

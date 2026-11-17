@@ -79,7 +79,7 @@ class CoaServiceTest {
                 NasRegistry.of(List.of(clients)),
                 new ClusterQueries(),
                 sender,
-                StoreAccessHandlerTest.DICTIONARY,
+                HandlerFixture.DICTIONARY,
                 new RadsecLink(new NasClient[0]),
                 Map.of(),
                 Map.of(),

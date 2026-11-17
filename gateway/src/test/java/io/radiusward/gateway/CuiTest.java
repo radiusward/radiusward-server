@@ -21,14 +21,14 @@ import org.junit.jupiter.api.Test;
 class CuiTest {
 
     static RadiusPacket request(byte[]... extra) {
-        byte[] bytes = StoreAccessHandlerTest.AccessRequestBuilder.pap("alice", "pw", extra);
+        byte[] bytes = HandlerFixture.AccessRequestBuilder.pap("alice", "pw", extra);
         RadiusPacket p = new RadiusPacket();
         p.wrap(new UnsafeBuffer(bytes), 0, bytes.length);
         return p;
     }
 
     static byte[] attribute(int type, String value) {
-        return StoreAccessHandlerTest.AccessRequestBuilder.attribute(type, value.getBytes(StandardCharsets.UTF_8));
+        return HandlerFixture.AccessRequestBuilder.attribute(type, value.getBytes(StandardCharsets.UTF_8));
     }
 
     @Test

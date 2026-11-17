@@ -17,7 +17,7 @@ class AccessPoliciesTest {
 
     @Test
     void aConfigurationWithoutThemHasNone() {
-        AccessPolicies none = AccessPolicies.from(Config.of(Map.of()), StoreAccessHandlerTest.DICTIONARY);
+        AccessPolicies none = AccessPolicies.from(Config.of(Map.of()), HandlerFixture.DICTIONARY);
         assertThat(none.counters()).isNull();
         assertThat(none.pools()).isNull();
         assertThat(none.cui()).isNull();
@@ -33,11 +33,11 @@ class AccessPoliciesTest {
                 Config.of(Map.of(
                         "auth.time.zone", "Europe/Kyiv",
                         "auth.cui.key", "a-key-of-sixteen-chars")),
-                StoreAccessHandlerTest.DICTIONARY);
+                HandlerFixture.DICTIONARY);
         assertThat(set.zone()).isEqualTo(ZoneId.of("Europe/Kyiv"));
         assertThat(set.cui()).isNotNull();
         assertThatThrownBy(() -> AccessPolicies.from(
-                        Config.of(Map.of("auth.time.zone", "Nowhere/Else")), StoreAccessHandlerTest.DICTIONARY))
+                        Config.of(Map.of("auth.time.zone", "Nowhere/Else")), HandlerFixture.DICTIONARY))
                 .isInstanceOf(ConfigException.class);
     }
 }

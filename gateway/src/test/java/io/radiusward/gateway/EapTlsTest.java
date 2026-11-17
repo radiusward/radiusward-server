@@ -35,7 +35,7 @@ class EapTlsTest {
     static TestPki pki;
     static TestPki other;
 
-    private final StoreAccessHandlerTest.MemoryStore store = new StoreAccessHandlerTest.MemoryStore();
+    private final HandlerFixture.MemoryStore store = new HandlerFixture.MemoryStore();
     private final AccessContext context = new AccessContext();
     private final NasClient nas = AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF)
             .clients()
@@ -104,11 +104,11 @@ class EapTlsTest {
                         binding,
                         peapCertificate,
                         EapConfig.DEFAULT_TTLS_INNER));
-        return new StoreAccessHandler(auth, StoreAccessHandlerTest.DICTIONARY, System::currentTimeMillis);
+        return new StoreAccessHandler(auth, HandlerFixture.DICTIONARY, System::currentTimeMillis);
     }
 
     private int handle(StoreAccessHandler h, EapPacket eap, byte[] state) {
-        byte[] request = StoreAccessHandlerTest.eapRequest(eap, state);
+        byte[] request = HandlerFixture.eapRequest(eap, state);
         context.reset(new UnsafeBuffer(request), 0, request.length, nas);
         lastRequest = request;
         return h.handle(context);
@@ -154,7 +154,7 @@ class EapTlsTest {
     private boolean peapCertificate;
 
     private int converse(StoreAccessHandler h, String identity, EapTlsClient client, int type) throws Exception {
-        int code = handle(h, StoreAccessHandlerTest.identity(1, identity), null);
+        int code = handle(h, HandlerFixture.identity(1, identity), null);
         int rounds = 0;
         while (code == AccessHandler.CHALLENGE && rounds++ < 300) {
             EapPacket request = EapPacket.from(reply());
@@ -729,7 +729,7 @@ class EapTlsTest {
 
     @Test
     void peapWithACredentialVerifierAndItsOutage() throws Exception {
-        StoreAccessHandlerTest.FakeVerifier ad = new StoreAccessHandlerTest.FakeVerifier();
+        HandlerFixture.FakeVerifier ad = new HandlerFixture.FakeVerifier();
         store.user("User", List.of(), List.of());
         StoreAccessHandler h = peap(Map.of(), Map.of("ad", ad), Map.of("main", "ad"));
         PeapPeer peer = new PeapPeer("User", "clientPass");
@@ -832,7 +832,7 @@ class EapTlsTest {
 
     @Test
     void ttlsPapThroughAVerifierAndItsOutage() throws Exception {
-        StoreAccessHandlerTest.FakeVerifier ad = new StoreAccessHandlerTest.FakeVerifier();
+        HandlerFixture.FakeVerifier ad = new HandlerFixture.FakeVerifier();
         store.user("User", List.of(), List.of());
         StoreAccessHandler h = ttls(Map.of(), Map.of("ad", ad), Map.of("main", "ad"));
         assertThat(converse(
@@ -1019,7 +1019,7 @@ class EapTlsTest {
 
     @Test
     void peapGtcAgainstAPapOnlyDirectory() throws Exception {
-        StoreAccessHandlerTest.FakeVerifier ldap = new StoreAccessHandlerTest.FakeVerifier();
+        HandlerFixture.FakeVerifier ldap = new HandlerFixture.FakeVerifier();
         store.user("User", List.of(), List.of());
         StoreAccessHandler h = peapWith(List.of(Peap.GTC), Map.of("ldap", ldap), Map.of("main", "ldap"));
         assertThat(converse(
