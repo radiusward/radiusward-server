@@ -25,6 +25,11 @@
             <groupId>io.radiusward</groupId>
             <artifactId>radius-dictionary-freeradius</artifactId>
         </dependency>
+        <dependency>
+            <!-- MD4 for MS-CHAP requests -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>auth-api</artifactId>
+        </dependency>
     </dependencies>
 
     <build>

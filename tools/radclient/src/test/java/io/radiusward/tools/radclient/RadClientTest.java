@@ -458,7 +458,7 @@ class RadClientTest {
     void msChapV2NtResponseMatchesRfc2759() {
         // RFC 2759 §9.2
         HexFormat hex = HexFormat.of();
-        assertThat(AccessCredentials.md4("clientPass".getBytes(StandardCharsets.UTF_16LE)))
+        assertThat(io.radiusward.auth.Md4.digest("clientPass".getBytes(StandardCharsets.UTF_16LE)))
                 .isEqualTo(hex.parseHex("44ebba8d5312b8d611474411f56989ae"));
         assertThat(AccessCredentials.ntResponse(
                         hex.parseHex("5b5d7c7d7b3f2f3e3c2c602132262628"),

@@ -4,6 +4,7 @@
  */
 package io.radiusward.tools.radclient;
 
+import io.radiusward.auth.Md4;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.radius.codec.attributes.Microsoft;
@@ -117,7 +118,7 @@ final class AccessCredentials {
         sha.update(authenticatorChallenge);
         sha.update(userWithoutDomain(user).getBytes(StandardCharsets.UTF_8));
         byte[] challenge = Arrays.copyOf(sha.digest(), 8);
-        byte[] z = Arrays.copyOf(md4(password.getBytes(StandardCharsets.UTF_16LE)), 21);
+        byte[] z = Arrays.copyOf(Md4.digest(password.getBytes(StandardCharsets.UTF_16LE)), 21);
         byte[] out = new byte[24];
         for (int i = 0; i < 3; i++) {
             System.arraycopy(des(Arrays.copyOfRange(z, i * 7, i * 7 + 7), challenge), 0, out, i * 8, 8);
@@ -145,60 +146,6 @@ final class AccessCredentials {
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("DES is part of every JDK", e);
         }
-    }
-
-    /** MD4 (RFC 1320), which the JDK does not offer; only for the NT password hash. */
-    static byte[] md4(byte[] message) {
-        long bits = (long) message.length * 8;
-        int padded = ((message.length + 8) / 64 + 1) * 64;
-        byte[] m = Arrays.copyOf(message, padded);
-        m[message.length] = (byte) 0x80;
-        for (int i = 0; i < 8; i++) {
-            m[padded - 8 + i] = (byte) (bits >>> (8 * i));
-        }
-        int a = 0x67452301;
-        int b = 0xefcdab89;
-        int c = 0x98badcfe;
-        int d = 0x10325476;
-        int[] x = new int[16];
-        for (int block = 0; block < padded; block += 64) {
-            for (int i = 0; i < 16; i++) {
-                int o = block + i * 4;
-                x[i] = (m[o] & 0xFF) | (m[o + 1] & 0xFF) << 8 | (m[o + 2] & 0xFF) << 16 | (m[o + 3] & 0xFF) << 24;
-            }
-            int aa = a;
-            int bb = b;
-            int cc = c;
-            int dd = d;
-            for (int i : new int[] {0, 4, 8, 12}) {
-                a = Integer.rotateLeft(a + ((b & c) | (~b & d)) + x[i], 3);
-                d = Integer.rotateLeft(d + ((a & b) | (~a & c)) + x[i + 1], 7);
-                c = Integer.rotateLeft(c + ((d & a) | (~d & b)) + x[i + 2], 11);
-                b = Integer.rotateLeft(b + ((c & d) | (~c & a)) + x[i + 3], 19);
-            }
-            for (int i : new int[] {0, 1, 2, 3}) {
-                a = Integer.rotateLeft(a + ((b & c) | (b & d) | (c & d)) + x[i] + 0x5a827999, 3);
-                d = Integer.rotateLeft(d + ((a & b) | (a & c) | (b & c)) + x[i + 4] + 0x5a827999, 5);
-                c = Integer.rotateLeft(c + ((d & a) | (d & b) | (a & b)) + x[i + 8] + 0x5a827999, 9);
-                b = Integer.rotateLeft(b + ((c & d) | (c & a) | (d & a)) + x[i + 12] + 0x5a827999, 13);
-            }
-            for (int i : new int[] {0, 2, 1, 3}) {
-                a = Integer.rotateLeft(a + (b ^ c ^ d) + x[i] + 0x6ed9eba1, 3);
-                d = Integer.rotateLeft(d + (a ^ b ^ c) + x[i + 8] + 0x6ed9eba1, 9);
-                c = Integer.rotateLeft(c + (d ^ a ^ b) + x[i + 4] + 0x6ed9eba1, 11);
-                b = Integer.rotateLeft(b + (c ^ d ^ a) + x[i + 12] + 0x6ed9eba1, 15);
-            }
-            a += aa;
-            b += bb;
-            c += cc;
-            d += dd;
-        }
-        byte[] out = new byte[16];
-        int[] words = {a, b, c, d};
-        for (int i = 0; i < 16; i++) {
-            out[i] = (byte) (words[i / 4] >>> (8 * (i % 4)));
-        }
-        return out;
     }
 
     private static MessageDigest digest(String algorithm) {
