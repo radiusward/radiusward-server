@@ -877,7 +877,41 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * The parts of an MS-CHAP request a check needs: the 8-byte challenge the NT response answers (v2: the challenge
      * hash), the response, its ident; {@code null} if malformed.
      */
-    record MsChapRequest(byte[] challenge, byte[] ntResponse, int ident, byte[] challengeHash, boolean v2) {}
+    static final class MsChapRequest { // not a record: its arrays have no value equality, and it is never compared
+        private final byte[] challenge;
+        private final byte[] ntResponse;
+        private final int ident;
+        private final byte[] challengeHash;
+        private final boolean v2;
+
+        MsChapRequest(byte[] challenge, byte[] ntResponse, int ident, byte[] challengeHash, boolean v2) {
+            this.challenge = challenge;
+            this.ntResponse = ntResponse;
+            this.ident = ident;
+            this.challengeHash = challengeHash;
+            this.v2 = v2;
+        }
+
+        byte[] challenge() {
+            return challenge;
+        }
+
+        byte[] ntResponse() {
+            return ntResponse;
+        }
+
+        int ident() {
+            return ident;
+        }
+
+        byte[] challengeHash() {
+            return challengeHash;
+        }
+
+        boolean v2() {
+            return v2;
+        }
+    }
 
     static MsChapRequest msChapRequest(RadiusPacket request, int method) {
         byte[] challenge = vendorValue(request, MS_CHAP_CHALLENGE);
