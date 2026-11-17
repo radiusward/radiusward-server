@@ -8,7 +8,6 @@ import static io.radiusward.radius.codec.attributes.Ietf.ACCT_SESSION_ID;
 import static io.radiusward.radius.codec.attributes.Ietf.NAS_IDENTIFIER;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
-import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -17,9 +16,6 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -190,42 +186,22 @@ public final class LoadGenerator {
             long maxMicros,
             double seconds) {}
 
-    /**
-     * How far sending may fall behind the rate and still catch up. A stall of the process (GC, a busy host) of up to
-     * this long is made good by sending faster for a moment, so the delivered rate is the requested one; only a longer
-     * stall drops its share instead of bursting it all at once.
-     */
-    private static final long CATCH_UP_NANOS = 100_000_000L;
-
-    private static final long TIMEOUT_SCAN_NANOS = 10_000_000L;
-
     private final Settings settings;
     private final PrintStream out;
     private final Random random = new Random(42);
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
     private final RadiusPacketEncoder encoder = new RadiusPacketEncoder();
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
-    private final ByteBuffer receive = ByteBuffer.allocate(RadiusPacket.MAX_LENGTH);
-    private final RadiusPacket responseView = new RadiusPacket();
-    /** Responses received that matched no request in flight (late, duplicate or not authentic). */
-    private long unmatched;
-    /** Sends that found the socket buffer full, and datagrams that could not be sent at all. */
-    private long sendStalls;
-
-    private long sendDropped;
+    private long acked;
+    private long failed;
+    private final List<Long> latencies = new ArrayList<>();
 
     /** One request in flight. */
-    private static final class Request {
+    private static final class Request extends RequestPorts.Outstanding {
         String device;
         String sessionId;
         int status;
         long sessionTime;
-        byte[] bytes;
-        int attempts;
-        long firstSentNanos;
-        long deadlineNanos;
-        int server;
-        int identifier;
     }
 
     /** A scheduled accounting event of one session. */
@@ -254,31 +230,31 @@ public final class LoadGenerator {
             schedule.add(new Due(start + offset, s, 1, 0));
         }
 
-        List<Long> latencies = new ArrayList<>();
         long sent = 0;
-        long acked = 0;
-        long failed = 0;
-        long retransmissions = 0;
         int nextServer = 0;
         long nextSendAt = start;
+        long retransmissions;
+        long unmatched;
+        long sendStalls;
+        long sendDropped;
 
-        try (Selector selector = Selector.open();
-                BufferedWriter log = settings.ackLog() == null
+        try (BufferedWriter log = settings.ackLog() == null
                         ? null
-                        : Files.newBufferedWriter(settings.ackLog(), StandardCharsets.UTF_8)) {
+                        : Files.newBufferedWriter(settings.ackLog(), StandardCharsets.UTF_8);
+                RequestPorts<Request> ports = new RequestPorts<>(
+                        RequestPorts.portsFor(settings.rate(), settings.timeout(), 2),
+                        settings.servers(),
+                        settings.secret(),
+                        settings.timeout(),
+                        settings.retries(),
+                        settings.retryOtherServer(),
+                        code -> code == RadiusCode.ACCOUNTING_RESPONSE,
+                        random,
+                        Request[]::new)) {
             if (log != null) {
                 log.write("session_id,status,session_time,acked,attempts,latency_ms,nas_identifier\n");
             }
-            int channels = Math.max(
-                    2, (settings.rate() * (int) Math.max(1, settings.timeout().toSeconds())) / 200 + 1);
-            List<RequestPort<Request>> ports = new ArrayList<>();
-            for (int i = 0; i < channels; i++) {
-                ports.add(new RequestPort<>(selector, RequestPort.localAddress(settings.servers()), Request[]::new));
-            }
             boolean stopping = false;
-            int inFlight = 0;
-            long nextTimeoutScan = 0;
-
             while (true) {
                 long now = System.nanoTime();
                 if (!stopping && now >= end) {
@@ -291,17 +267,15 @@ public final class LoadGenerator {
                         schedule.clear();
                     }
                 }
-                if (stopping && schedule.isEmpty() && inFlight == 0) {
+                if (stopping && schedule.isEmpty() && ports.inFlight() == 0) {
                     break;
                 }
 
                 // new events, paced to the rate
                 while (now >= nextSendAt
                         && !schedule.isEmpty()
-                        && schedule.peek().atNanos() <= now) {
-                    if (!hasFreeId(ports)) {
-                        break; // too many in flight; wait for responses or timeouts
-                    }
+                        && schedule.peek().atNanos() <= now
+                        && ports.hasFree()) {
                     Due d = schedule.poll();
                     Request r = newRequest(d);
                     r.server = nextServer;
@@ -313,69 +287,28 @@ public final class LoadGenerator {
                                 3,
                                 d.sessionTime() + settings.interim().toSeconds()));
                     }
-                    send(r, ports, now);
+                    ports.send(r, now, this::encode);
                     sent++;
-                    inFlight++;
                     nextSendAt += gapNanos;
-                    if (nextSendAt < now - CATCH_UP_NANOS) {
+                    if (nextSendAt < now - RequestPorts.CATCH_UP_NANOS) {
                         nextSendAt = now; // a longer stall is lost rather than sent as one burst
                     }
                 }
 
-                // responses
-                selector.select(1);
-                for (SelectionKey key : selector.selectedKeys()) {
-                    RequestPort<Request> port = RequestPort.<Request>of(key);
-                    while (true) {
-                        receive.clear();
-                        if (port.channel.receive(receive) == null) {
-                            break;
-                        }
-                        Request r = matchResponse(port, receive.position());
-                        if (r != null) {
-                            long latency = (System.nanoTime() - r.firstSentNanos) / 1000;
-                            latencies.add(latency);
-                            acked++;
-                            inFlight--;
-                            record(log, r, true, latency);
-                        }
-                    }
-                }
-                selector.selectedKeys().clear();
-
-                // timeouts: retransmit the identical datagram (same port, Identifier and authenticator) like a NAS
-                now = System.nanoTime();
-                if (now < nextTimeoutScan) {
-                    continue; // timeouts are seconds long: scanning every in-flight slot each loop only burns CPU
-                }
-                nextTimeoutScan = now + TIMEOUT_SCAN_NANOS;
-                for (RequestPort<Request> port : ports) {
-                    for (int id = 0; id < RequestPort.IDS; id++) {
-                        Request r = port.inFlight[id];
-                        if (r != null && now > r.deadlineNanos) {
-                            if (r.attempts <= settings.retries()) {
-                                if (settings.retryOtherServer()) {
-                                    r.server =
-                                            (r.server + 1) % settings.servers().size();
-                                }
-                                r.attempts++;
-                                r.deadlineNanos = now + settings.timeout().toNanos();
-                                send(port, r.bytes, settings.servers().get(r.server));
-                                retransmissions++;
-                            } else {
-                                port.inFlight[id] = null;
-                                port.freeIds.add(id);
-                                failed++;
-                                inFlight--;
-                                record(log, r, false, 0);
-                            }
-                        }
-                    }
-                }
+                ports.receive((r, answer, latency) -> {
+                    latencies.add(latency);
+                    acked++;
+                    record(log, r, true, latency);
+                });
+                ports.expire(System.nanoTime(), r -> {
+                    failed++;
+                    record(log, r, false, 0);
+                });
             }
-            for (RequestPort<Request> port : ports) {
-                port.channel.close();
-            }
+            retransmissions = ports.retransmissions();
+            unmatched = ports.unmatched();
+            sendStalls = ports.sendStalls();
+            sendDropped = ports.sendDropped();
         }
         double seconds = (System.nanoTime() - start) / 1e9;
         long[] sorted = latencies.stream().mapToLong(Long::longValue).sorted().toArray();
@@ -440,50 +373,6 @@ public final class LoadGenerator {
         return r;
     }
 
-    private static boolean hasFreeId(List<RequestPort<Request>> ports) {
-        for (RequestPort<Request> p : ports) {
-            if (!p.freeIds.isEmpty()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private void send(Request r, List<RequestPort<Request>> ports, long now) throws IOException {
-        RequestPort<Request> port = null;
-        int base = random.nextInt(ports.size());
-        for (int i = 0; i < ports.size() && port == null; i++) {
-            RequestPort<Request> candidate = ports.get((base + i) % ports.size());
-            if (!candidate.freeIds.isEmpty()) {
-                port = candidate;
-            }
-        }
-        int id = port.freeIds.poll();
-        r.bytes = encode(r, id);
-        r.identifier = id;
-        port.inFlight[id] = r;
-        r.firstSentNanos = now;
-        r.attempts = 1;
-        r.deadlineNanos = now + settings.timeout().toNanos();
-        send(port, r.bytes, settings.servers().get(r.server));
-    }
-
-    /**
-     * A non-blocking send returns 0 when the socket buffer is momentarily full and the datagram is then not sent
-     * at all; retry briefly instead of losing it, and count what still could not be sent.
-     */
-    private void send(RequestPort<Request> port, byte[] bytes, InetSocketAddress server) throws IOException {
-        ByteBuffer datagram = ByteBuffer.wrap(bytes);
-        for (int attempt = 0; attempt < 1000; attempt++) {
-            if (port.channel.send(datagram, server) > 0) {
-                return;
-            }
-            sendStalls++;
-            java.util.concurrent.locks.LockSupport.parkNanos(50_000);
-        }
-        sendDropped++;
-    }
-
     private byte[] encode(Request r, int identifier) {
         long octets = r.sessionTime * 125_000L; // ~1 Mbit/s
         encoder.wrap(buffer, 0)
@@ -500,23 +389,6 @@ public final class LoadGenerator {
         int length = encoder.finish();
         authenticator.signAccountingRequest(buffer, 0, length, -1, settings.secret());
         return Arrays.copyOf(buffer.byteArray(), length);
-    }
-
-    private Request matchResponse(RequestPort<Request> port, int length) {
-        if (responseView.wrap(new UnsafeBuffer(receive.array(), 0, length), 0, length) != DecodeStatus.OK
-                || responseView.code() != RadiusCode.ACCOUNTING_RESPONSE) {
-            unmatched++;
-            return null;
-        }
-        int id = responseView.identifier();
-        Request r = port.inFlight[id];
-        if (r == null || !authenticator.verifyResponse(responseView, new UnsafeBuffer(r.bytes), 4, settings.secret())) {
-            unmatched++;
-            return null;
-        }
-        port.inFlight[id] = null;
-        port.freeIds.add(id);
-        return r;
     }
 
     private static void record(BufferedWriter log, Request r, boolean acked, long latencyMicros) throws IOException {

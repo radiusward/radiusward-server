@@ -7,7 +7,6 @@ package io.radiusward.tools.radclient;
 import static io.radiusward.radius.codec.attributes.Ietf.NAS_IDENTIFIER;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
-import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -15,9 +14,6 @@ import io.radiusward.radius.codec.RadiusPacketEncoder;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.SelectionKey;
-import java.nio.channels.Selector;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -56,15 +52,6 @@ final class AccessLoad {
             long p50Micros,
             long p99Micros) {}
 
-    /**
-     * How far sending may fall behind the rate and still catch up. A stall of the process (GC, a busy host) of up to
-     * this long is made good by sending faster for a moment, so the delivered rate is the requested one; only a longer
-     * stall drops its share instead of bursting it all at once.
-     */
-    private static final long CATCH_UP_NANOS = 100_000_000L;
-
-    private static final long TIMEOUT_SCAN_NANOS = 10_000_000L;
-
     private final Settings settings;
     private final PrintStream out;
     private final Random random = new java.security.SecureRandom(); // request authenticators must not be predictable
@@ -72,17 +59,20 @@ final class AccessLoad {
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
     private final RadiusPacketEncoder encoder = new RadiusPacketEncoder();
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
-    private final ByteBuffer receive = ByteBuffer.allocate(RadiusPacket.MAX_LENGTH);
-    private final RadiusPacket view = new RadiusPacket();
 
-    private static final class Request {
-        byte[] bytes;
+    private static final class Request extends RequestPorts.Outstanding {
+        /** Which request it is: its user and method go round-robin. */
+        long number;
+
         boolean wrongPassword;
-        int attempts;
-        long firstSentNanos;
-        long deadlineNanos;
-        int server;
     }
+
+    private long accepted;
+    private long rejected;
+    private long challenged;
+    private long timeouts;
+    private long unexpected;
+    private final List<Long> latencies = new ArrayList<>();
 
     AccessLoad(Settings settings, PrintStream out) {
         this.settings = settings;
@@ -95,119 +85,39 @@ final class AccessLoad {
         long gapNanos = 1_000_000_000L / Math.max(1, settings.rate());
         long nextSendAt = start;
         long sent = 0;
-        long accepted = 0;
-        long rejected = 0;
-        long challenged = 0;
-        long timeouts = 0;
         long wrong = 0;
-        long unexpected = 0;
-        int inFlight = 0;
-        long nextTimeoutScan = 0;
         int nextServer = 0;
-        List<Long> latencies = new ArrayList<>();
-        try (Selector selector = Selector.open()) {
-            int channels = Math.max(
-                    1, settings.rate() * (int) Math.max(1, settings.timeout().toSeconds()) / 200 + 1);
-            List<RequestPort<Request>> ports = new ArrayList<>();
-            for (int i = 0; i < channels; i++) {
-                ports.add(new RequestPort<>(selector, RequestPort.localAddress(settings.servers()), Request[]::new));
-            }
+        try (RequestPorts<Request> ports = new RequestPorts<>(
+                RequestPorts.portsFor(settings.rate(), settings.timeout(), 1),
+                settings.servers(),
+                settings.secret(),
+                settings.timeout(),
+                settings.retries(),
+                false,
+                code -> true, // Accept, Reject and Challenge are all answers
+                random,
+                Request[]::new)) {
             while (true) {
                 long now = System.nanoTime();
-                if (now >= end && inFlight == 0) {
+                if (now >= end && ports.inFlight() == 0) {
                     break;
                 }
-                while (now < end && now >= nextSendAt) {
-                    RequestPort<Request> port = free(ports);
-                    if (port == null) {
-                        break; // too many in flight; wait for answers or timeouts
-                    }
-                    int id = port.freeIds.poll();
+                while (now < end && now >= nextSendAt && ports.hasFree()) {
                     Request r = new Request();
+                    r.number = sent;
                     r.wrongPassword = random.nextDouble() < settings.rejectRatio();
-                    r.bytes = encode(id, sent, r.wrongPassword);
                     r.server = nextServer;
                     nextServer = (nextServer + 1) % settings.servers().size();
-                    r.attempts = 1;
-                    r.firstSentNanos = now;
-                    r.deadlineNanos = now + settings.timeout().toNanos();
-                    port.inFlight[id] = r;
-                    port.channel.send(
-                            ByteBuffer.wrap(r.bytes), settings.servers().get(r.server));
+                    ports.send(r, now, (q, id) -> encode(id, q.number, q.wrongPassword));
                     sent++;
                     wrong += r.wrongPassword ? 1 : 0;
-                    inFlight++;
                     nextSendAt += gapNanos;
-                    if (nextSendAt < now - CATCH_UP_NANOS) {
+                    if (nextSendAt < now - RequestPorts.CATCH_UP_NANOS) {
                         nextSendAt = now; // a longer stall is lost rather than sent as one burst
                     }
                 }
-
-                selector.select(1);
-                for (SelectionKey key : selector.selectedKeys()) {
-                    RequestPort<Request> port = RequestPort.<Request>of(key);
-                    while (true) {
-                        receive.clear();
-                        if (port.channel.receive(receive) == null) {
-                            break;
-                        }
-                        int length = receive.position();
-                        if (view.wrap(new UnsafeBuffer(receive.array(), 0, length), 0, length) != DecodeStatus.OK) {
-                            continue;
-                        }
-                        Request r = port.inFlight[view.identifier()];
-                        if (r == null
-                                || !authenticator.verifyResponse(
-                                        view, new UnsafeBuffer(r.bytes), 4, settings.secret())) {
-                            continue;
-                        }
-                        port.inFlight[view.identifier()] = null;
-                        port.freeIds.add(view.identifier());
-                        inFlight--;
-                        latencies.add((System.nanoTime() - r.firstSentNanos) / 1000);
-                        switch (view.code()) {
-                            case RadiusCode.ACCESS_ACCEPT -> {
-                                accepted++;
-                                unexpected += r.wrongPassword ? 1 : 0;
-                            }
-                            case RadiusCode.ACCESS_REJECT -> {
-                                rejected++;
-                                unexpected += r.wrongPassword ? 0 : 1;
-                            }
-                            case RadiusCode.ACCESS_CHALLENGE -> challenged++;
-                            default -> unexpected++;
-                        }
-                    }
-                }
-                selector.selectedKeys().clear();
-
-                now = System.nanoTime();
-                if (now < nextTimeoutScan) {
-                    continue; // timeouts are seconds long: scanning every in-flight slot each loop only burns CPU
-                }
-                nextTimeoutScan = now + TIMEOUT_SCAN_NANOS;
-                for (RequestPort<Request> port : ports) {
-                    for (int id = 0; id < RequestPort.IDS; id++) {
-                        Request r = port.inFlight[id];
-                        if (r != null && now > r.deadlineNanos) {
-                            if (r.attempts <= settings.retries()) {
-                                r.attempts++;
-                                r.deadlineNanos = now + settings.timeout().toNanos();
-                                port.channel.send(
-                                        ByteBuffer.wrap(r.bytes),
-                                        settings.servers().get(r.server));
-                            } else {
-                                port.inFlight[id] = null;
-                                port.freeIds.add(id);
-                                timeouts++;
-                                inFlight--;
-                            }
-                        }
-                    }
-                }
-            }
-            for (RequestPort<Request> port : ports) {
-                port.channel.close();
+                ports.receive(this::answered);
+                ports.expire(System.nanoTime(), r -> timeouts++);
             }
         }
         long[] sorted = latencies.stream().mapToLong(Long::longValue).sorted().toArray();
@@ -236,13 +146,20 @@ final class AccessLoad {
         return result;
     }
 
-    private static RequestPort<Request> free(List<RequestPort<Request>> ports) {
-        for (RequestPort<Request> p : ports) {
-            if (!p.freeIds.isEmpty()) {
-                return p;
+    private void answered(Request r, RadiusPacket answer, long latencyMicros) {
+        latencies.add(latencyMicros);
+        switch (answer.code()) {
+            case RadiusCode.ACCESS_ACCEPT -> {
+                accepted++;
+                unexpected += r.wrongPassword ? 1 : 0;
             }
+            case RadiusCode.ACCESS_REJECT -> {
+                rejected++;
+                unexpected += r.wrongPassword ? 0 : 1;
+            }
+            case RadiusCode.ACCESS_CHALLENGE -> challenged++;
+            default -> unexpected++;
         }
-        return null;
     }
 
     /** Request {@code n}: its user and method round-robin, the password wrong when the request is meant to fail. */
