@@ -70,6 +70,20 @@ class ConfigReloadIT {
         return values;
     }
 
+    /** Whether a reply packet carries an attribute of {@code type}. */
+    private static boolean hasAttribute(byte[] packet, int type) {
+        int length = ((packet[2] & 0xFF) << 8) | (packet[3] & 0xFF);
+        for (int pos = 20; pos + 2 <= length; pos += packet[pos + 1] & 0xFF) {
+            if ((packet[pos] & 0xFF) == type) {
+                return true;
+            }
+            if ((packet[pos + 1] & 0xFF) < 2) {
+                return false;
+            }
+        }
+        return false;
+    }
+
     @Test
     void secretsAndStoresChangeWithoutARestart() throws Exception {
         Path first = Files.writeString(dir.resolve("users"), "nemo    Cleartext-Password := \"arctangent\"\n");
@@ -117,6 +131,23 @@ class ConfigReloadIT {
         AuthAgentTest.assertSignedReplyTo(exchange(changed), changed, RadiusCode.ACCESS_ACCEPT, NEW_SECRET);
         byte[] old = AuthAgentTest.accessRequest(4, "arctangent", true, false, NEW_SECRET);
         AuthAgentTest.assertSignedReplyTo(exchange(old), old, RadiusCode.ACCESS_REJECT, NEW_SECRET);
+
+        // the settings beyond the stores come with the reload too: Chargeable-User-Identity on, then off again
+        assertThat(hasAttribute(exchange(AuthAgentTest.accessRequest(5, "changed", true, false, NEW_SECRET)), 89))
+                .isFalse();
+        Map<String, String> withCui = config(second, NEW_SECRET);
+        withCui.put("auth.cui.key", "a-key-of-sixteen-chars");
+        withCui.put("auth.cui.mode", "always");
+        gateway.reload(Config.of(withCui));
+        byte[] cui = exchange(AuthAgentTest.accessRequest(6, "changed", true, false, NEW_SECRET));
+        assertThat(cui[0]).isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
+        assertThat(hasAttribute(cui, 89))
+                .as("Chargeable-User-Identity after the reload")
+                .isTrue();
+        gateway.reload(Config.of(config(second, NEW_SECRET)));
+        assertThat(hasAttribute(exchange(AuthAgentTest.accessRequest(7, "changed", true, false, NEW_SECRET)), 89))
+                .as("and gone after the next")
+                .isFalse();
 
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         Map<String, String> next = config(first, AuthAgentTest.SECRET);
