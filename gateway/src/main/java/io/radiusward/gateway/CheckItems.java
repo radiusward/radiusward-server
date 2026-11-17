@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -43,23 +42,21 @@ final class CheckItems {
 
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
-    private final Supplier<ZoneId> zone;
     private final OnceLogger once;
 
-    /** @param zone the zone of dates without one (Login-Time's zone, {@code auth.counter.zone}) */
-    CheckItems(Dictionary dictionary, LongSupplier clockMillis, Supplier<ZoneId> zone, OnceLogger once) {
+    CheckItems(Dictionary dictionary, LongSupplier clockMillis, OnceLogger once) {
         this.dictionary = dictionary;
         this.clockMillis = clockMillis;
-        this.zone = zone;
         this.once = once;
     }
 
     /**
      * Evaluates check items; collects passwords.
      *
+     * @param zone the zone of dates without one ({@code auth.time.zone})
      * @return the {@code Auth-Type} ("" if none), or {@code null} if a condition fails
      */
-    String checks(List<AttributeItem> items, RadiusPacket request, List<AttributeItem> passwords) {
+    String checks(List<AttributeItem> items, RadiusPacket request, List<AttributeItem> passwords, ZoneId zone) {
         String authType = "";
         for (AttributeItem item : items) {
             String name = item.attribute();
@@ -70,7 +67,7 @@ final class CheckItems {
             } else if (name.equalsIgnoreCase("Auth-Type")) {
                 authType = item.value();
             } else if (name.equalsIgnoreCase("Expiration")) {
-                Instant expires = date(item.value());
+                Instant expires = date(item.value(), zone);
                 if (expires == null
                         || !Instant.ofEpochMilli(clockMillis.getAsLong()).isBefore(expires)) {
                     return null;
@@ -131,7 +128,8 @@ final class CheckItems {
         }
     }
 
-    Instant date(String text) {
+    /** A date as the stores write it; {@code zone}: the zone of dates without one. */
+    Instant date(String text, ZoneId zone) {
         String t = text.trim().replaceAll("\\s+", " ");
         try {
             return Instant.parse(t);
@@ -140,20 +138,20 @@ final class CheckItems {
         }
         for (DateTimeFormatter f : DATES) {
             try {
-                return LocalDateTime.parse(t, f).atZone(zone.get()).toInstant();
+                return LocalDateTime.parse(t, f).atZone(zone).toInstant();
             } catch (DateTimeParseException ignored) {
                 // next format
             }
         }
         for (DateTimeFormatter f : DAYS) {
             try {
-                return LocalDate.parse(t, f).atStartOfDay(zone.get()).toInstant();
+                return LocalDate.parse(t, f).atStartOfDay(zone).toInstant();
             } catch (DateTimeParseException ignored) {
                 // next format
             }
         }
         try {
-            return LocalDate.parse(t).atStartOfDay(zone.get()).toInstant();
+            return LocalDate.parse(t).atStartOfDay(zone).toInstant();
         } catch (DateTimeParseException e) {
             return null; // fail closed
         }

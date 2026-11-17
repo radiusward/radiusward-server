@@ -69,15 +69,15 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.stores = stores;
         this.dictionary = dictionary;
         this.clockMillis = clockMillis;
-        this.checkItems = new CheckItems(dictionary, clockMillis, () -> policies.zone(), once);
-        this.restrictions = new Restrictions(checkItems, clockMillis, once, this::policies);
-        this.totp = new TotpFactor(clockMillis, new java.security.SecureRandom(), once, this::policies);
+        this.checkItems = new CheckItems(dictionary, clockMillis, once);
+        this.restrictions = new Restrictions(checkItems, clockMillis, once);
+        this.totp = new TotpFactor(clockMillis, new java.security.SecureRandom(), once);
         this.msChap = new MsChapAuthenticator(this::stores, once);
         this.passwordChecks = new PasswordChecks(this::stores, msChap, totp, clockMillis, once);
-        this.directory =
-                new UserDirectory(this::stores, dictionary, clockMillis, metrics, checkItems, restrictions, once);
+        this.directory = new UserDirectory(
+                this::stores, this::policies, dictionary, clockMillis, metrics, checkItems, restrictions, once);
         this.inner = new InnerCredentials(this::stores, this::innerProxy, directory, msChap, passwordChecks, once);
-        this.admission = new Admission(dictionary, checkItems, restrictions, once, this::policies);
+        this.admission = new Admission(dictionary, checkItems, restrictions, once);
         this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
         this.eap = new EapAuthenticator(
                 this::stores, this::innerProxy, clockMillis, metrics, directory, inner, msChap, once);
@@ -94,7 +94,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             cache.encoded.clear();
             cache.generation = current;
         }
-        AuthRequest auth = cache.request.begin(context);
+        AuthRequest auth = cache.request.begin(context, policies); // one set of policies per request
         int result;
         try {
             result = decide(auth, method);
@@ -153,7 +153,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 return checked; // CHALLENGE (TOTP asks for the code), REJECT or DROP
             }
         }
-        int admitted = admission.admit(context, found, a);
+        int admitted = admission.admit(auth, found, a);
         if (admitted != ACCEPT) {
             return admitted;
         }

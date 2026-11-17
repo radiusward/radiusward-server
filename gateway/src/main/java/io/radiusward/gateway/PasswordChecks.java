@@ -79,7 +79,7 @@ final class PasswordChecks {
                 return checked;
             }
         }
-        return challenge ? totp.challenge(auth.context(), userName) : AccessHandler.ACCEPT;
+        return challenge ? totp.challenge(auth, userName) : AccessHandler.ACCEPT;
     }
 
     /**

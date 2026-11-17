@@ -401,6 +401,42 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void aRequestKeepsItsPoliciesWhenAReloadSwapsThemMidway() {
+        // the reload happens at a known point: while the pool hands out the address, before CUI is decided
+        StoreAccessHandler[] handler = {null};
+        AccessPolicies[] reloaded = {null};
+        IpPools pools = new IpPools(
+                Map.of("office", new IpPools.Pool("office", List.of(), Duration.ofMinutes(5), false)),
+                (pool, user, device) -> {
+                    if (reloaded[0] != null) {
+                        handler[0].policies(reloaded[0]);
+                        reloaded[0] = null;
+                    }
+                    return "10.0.0.7";
+                });
+        Cui cui = Cui.from(io.radiusward.common.config.Config.of(
+                Map.of("auth.cui.key", "a-key-of-sixteen-chars", "auth.cui.mode", "always")));
+        main.user(
+                "alice", List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "office")), List.of());
+        StoreAccessHandler h = handler();
+        handler[0] = h;
+        h.policies(new AccessPolicies(null, java.time.ZoneOffset.UTC, pools, Totp.DEFAULT, null, null));
+        reloaded[0] = new AccessPolicies(null, java.time.ZoneOffset.UTC, pools, Totp.DEFAULT, cui, null);
+
+        assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(reloaded[0]).as("the reload happened during the request").isNull();
+        assertThat(reply().findAttribute(8)).as("Framed-IP-Address").isPositive();
+        assertThat(reply().findAttribute(89))
+                .as("no Chargeable-User-Identity: the request began before the reload")
+                .isNegative();
+
+        assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(reply().findAttribute(89))
+                .as("the next request has the new policies")
+                .isPositive();
+    }
+
+    @Test
     void poolNameGetsAnAddress() {
         String[] next = {"10.0.0.7"};
         boolean[] down = {false};
@@ -1466,7 +1502,7 @@ class StoreAccessHandlerTest {
                         .clients()
                         .iterator()
                         .next());
-        AuthRequest auth = new StoreAccessHandler.WorkerCache().request.begin(context);
+        AuthRequest auth = new StoreAccessHandler.WorkerCache().request.begin(context, AccessPolicies.NONE);
         EapAuthenticator eap = h.eap();
         assertThat(eap.simSubscriber(auth, "001010000000003").code()).isEqualTo(AccessHandler.ACCEPT);
         assertThat(eap.simSubscriber(auth, "001010000000001").code())
@@ -1477,7 +1513,9 @@ class StoreAccessHandlerTest {
                 .isEqualTo(AccessHandler.REJECT);
         assertThat(eap.simSubscriber(auth, "001010000000009").code()).isEqualTo(AccessHandler.REJECT);
         main.down = true;
-        assertThat(eap.simSubscriber(new StoreAccessHandler.WorkerCache().request.begin(context), "001010000000003")
+        assertThat(eap.simSubscriber(
+                                new StoreAccessHandler.WorkerCache().request.begin(context, AccessPolicies.NONE),
+                                "001010000000003")
                         .code())
                 .as("a store that is down")
                 .isEqualTo(AccessHandler.DROP);

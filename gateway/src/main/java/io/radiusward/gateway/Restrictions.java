@@ -9,7 +9,6 @@ import io.radiusward.radius.codec.RadiusPacket;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 
 /**
  * What limits an authorized user (ADR 0049, ADR 0060, ADR 0023): Expiration, Expire-After, Login-Time and usage
@@ -24,22 +23,15 @@ final class Restrictions {
     private final LongSupplier clockMillis;
     private final OnceLogger once;
 
-    private final Supplier<AccessPolicies> policies;
-
-    Restrictions(CheckItems checkItems, LongSupplier clockMillis, OnceLogger once, Supplier<AccessPolicies> policies) {
-        this.policies = policies;
+    Restrictions(CheckItems checkItems, LongSupplier clockMillis, OnceLogger once) {
         this.checkItems = checkItems;
         this.clockMillis = clockMillis;
         this.once = once;
     }
 
-    /** The zone of Login-Time, counter periods and dates without one. */
-    java.time.ZoneId zone() {
-        return policies.get().zone();
-    }
-
-    void collect(List<AttributeItem> checks, List<AttributeItem> into) {
-        UsageCounters c = policies.get().counters();
+    /** The check items {@link #restrict} applies; usage counters only those {@code counters} define. */
+    void collect(List<AttributeItem> checks, List<AttributeItem> into, UsageCounters counters) {
+        UsageCounters c = counters;
         for (AttributeItem item : checks) {
             String name = item.attribute();
             if (name.equalsIgnoreCase("Expiration")
@@ -60,11 +52,10 @@ final class Restrictions {
      * reject; otherwise the Accept's Session-Timeout is cut to the earliest end (expiry, the window's end, the time
      * left on a time counter or its period). A counter that cannot be read leaves the request unanswered.
      */
-    int restrict(AccessContext context, String user, UserDirectory.Authorization a) {
+    int restrict(AccessContext context, String user, UserDirectory.Authorization a, AccessPolicies p) {
         if (a.restrictions().isEmpty()) {
             return AccessHandler.ACCEPT;
         }
-        AccessPolicies p = policies.get();
         UsageCounters counters = p.counters();
         Instant now = Instant.ofEpochMilli(clockMillis.getAsLong());
         java.time.ZonedDateTime local = now.atZone(p.zone());
@@ -72,7 +63,7 @@ final class Restrictions {
         for (AttributeItem item : a.restrictions()) {
             String name = item.attribute();
             if (name.equalsIgnoreCase("Expiration")) {
-                Instant expires = checkItems.date(item.value());
+                Instant expires = checkItems.date(item.value(), p.zone());
                 if (expires == null || !now.isBefore(expires)) {
                     StoreAccessHandler.because(context, "expired: ", item.value());
                     return AccessHandler.REJECT;
@@ -81,7 +72,7 @@ final class Restrictions {
                         cap,
                         Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
             } else if (name.equalsIgnoreCase("Expire-After")) {
-                long after = expireAfter(context, user, item, now);
+                long after = expireAfter(context, user, item, now, counters);
                 if (after < 0) {
                     return after == -2 ? AccessHandler.DROP : AccessHandler.REJECT;
                 }
@@ -223,7 +214,7 @@ final class Restrictions {
      * its first exported session (the first Accept, if none yet). The seconds left, {@code -1} to reject, {@code -2}
      * to leave the request unanswered (the database cannot be asked).
      */
-    private long expireAfter(AccessContext context, String user, AttributeItem item, Instant now) {
+    private long expireAfter(AccessContext context, String user, AttributeItem item, Instant now, UsageCounters c) {
         long seconds;
         try {
             seconds = Long.parseLong(item.value().trim());
@@ -236,7 +227,6 @@ final class Restrictions {
             StoreAccessHandler.because(context, "Expire-After not understood: ", item.value());
             return -1;
         }
-        UsageCounters c = policies.get().counters();
         if (c == null) {
             once.warn(
                     "expire-after-sql",

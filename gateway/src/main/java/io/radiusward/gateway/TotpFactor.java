@@ -13,7 +13,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
@@ -42,10 +41,7 @@ final class TotpFactor {
     /** The last time step used per user: a code is accepted once. */
     private final ConcurrentHashMap<String, Long> usedSteps = new ConcurrentHashMap<>();
 
-    private final Supplier<AccessPolicies> policies;
-
-    TotpFactor(LongSupplier clockMillis, SecureRandom random, OnceLogger once, Supplier<AccessPolicies> policies) {
-        this.policies = policies;
+    TotpFactor(LongSupplier clockMillis, SecureRandom random, OnceLogger once) {
         this.clockMillis = clockMillis;
         this.random = random;
         this.once = once;
@@ -68,7 +64,7 @@ final class TotpFactor {
      */
     int check(AuthRequest auth, int method, String userName, String secret) {
         AccessContext context = auth.context();
-        Totp t = policies.get().totp();
+        Totp t = auth.policies().totp();
         if (method != AccessRequests.METHOD_PAP) {
             once.warn(
                     "totp:" + method,
@@ -145,8 +141,9 @@ final class TotpFactor {
     }
 
     /** Asks for the code: an Access-Challenge with a fresh State and the prompt. */
-    int challenge(AccessContext context, String userName) {
-        Totp totp = policies.get().totp();
+    int challenge(AuthRequest auth, String userName) {
+        AccessContext context = auth.context();
+        Totp totp = auth.policies().totp();
         long now = clockMillis.getAsLong();
         if (challenges.size() >= MAX_CHALLENGES) {
             challenges.values().removeIf(p -> p.expiresMillis() < now);

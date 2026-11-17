@@ -18,6 +18,7 @@ final class AuthRequest {
 
     private final StoreAccessHandler.WorkerCache caches;
     private AccessContext context;
+    private AccessPolicies policies = AccessPolicies.NONE;
     final MsChapOutcome msChap = new MsChapOutcome();
     final EapRound eap = new EapRound();
     /** What TOTP's append mode left of the PAP password (ADR 0053); {@code null}: the User-Password. */
@@ -27,9 +28,13 @@ final class AuthRequest {
         this.caches = caches;
     }
 
-    /** Starts deciding {@code request}: the previous request's results are forgotten. */
-    AuthRequest begin(AccessContext request) {
+    /**
+     * Starts deciding {@code request} under {@code policies}: the previous request's results are forgotten. The
+     * request keeps these policies to the end, whatever a reload sets meanwhile.
+     */
+    AuthRequest begin(AccessContext request, AccessPolicies policies) {
         this.context = request;
+        this.policies = policies;
         msChap.reset();
         eap.reset();
         return this;
@@ -69,6 +74,11 @@ final class AuthRequest {
 
     AccessContext context() {
         return context;
+    }
+
+    /** The policies this request is decided under. */
+    AccessPolicies policies() {
+        return policies;
     }
 
     StoreAccessHandler.WorkerCache caches() {

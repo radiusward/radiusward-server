@@ -35,6 +35,7 @@ final class UserDirectory {
     record Found(String store, UserRecord user) {}
 
     private final Supplier<AuthStores> stores; // replaced by a reload (ADR 0054)
+    private final Supplier<AccessPolicies> policies; // the sweep's; requests carry their own
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
     private final AuthMetrics metrics;
@@ -44,6 +45,7 @@ final class UserDirectory {
 
     UserDirectory(
             Supplier<AuthStores> stores,
+            Supplier<AccessPolicies> policies,
             Dictionary dictionary,
             LongSupplier clockMillis,
             AuthMetrics metrics,
@@ -51,6 +53,7 @@ final class UserDirectory {
             Restrictions restrictions,
             OnceLogger once) {
         this.stores = stores;
+        this.policies = policies;
         this.dictionary = dictionary;
         this.clockMillis = clockMillis;
         this.metrics = metrics;
@@ -112,7 +115,7 @@ final class UserDirectory {
         if (found == null) {
             return new Review(AccessHandler.REJECT, false, List.of());
         }
-        Authorization a = authorize(sweepCaches.request.begin(sweepContext), userName, false);
+        Authorization a = authorize(sweepCaches.request.begin(sweepContext, policies.get()), userName, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new Review(a.code(), true, List.of());
         }
@@ -153,7 +156,8 @@ final class UserDirectory {
                 context,
                 "user found in store ",
                 found.store().isEmpty() ? "(none, certificate or tunnel)" : found.store());
-        String authType = checkItems.checks(found.user().check(), request, passwords);
+        String authType = checkItems.checks(
+                found.user().check(), request, passwords, auth.policies().zone());
         if (authType == null) {
             StoreAccessHandler.because(
                     context, "a check item of the user does not hold (Expiration or a comparison)", "");
@@ -162,7 +166,8 @@ final class UserDirectory {
         String limit = Restrictions.simultaneousUse(found.user().check());
         for (UserRecord.Group group : found.user().groups()) {
             List<AttributeItem> groupPasswords = new ArrayList<>();
-            String groupAuthType = checkItems.checks(group.check(), request, groupPasswords);
+            String groupAuthType = checkItems.checks(
+                    group.check(), request, groupPasswords, auth.policies().zone());
             if (groupAuthType == null) {
                 StoreAccessHandler.note(context, "group does not apply: ", group.name());
                 continue; // the group's conditions do not hold: it does not apply
@@ -190,10 +195,15 @@ final class UserDirectory {
             StoreAccessHandler.note(context, "Auth-Type: ", authType);
         }
         List<AttributeItem> collected = new ArrayList<>();
-        restrictions.collect(found.user().check(), collected);
+        restrictions.collect(found.user().check(), collected, auth.policies().counters());
         for (UserRecord.Group group : found.user().groups()) {
-            if (checkItems.checks(group.check(), request, new ArrayList<>()) != null) {
-                restrictions.collect(group.check(), collected);
+            if (checkItems.checks(
+                            group.check(),
+                            request,
+                            new ArrayList<>(),
+                            auth.policies().zone())
+                    != null) {
+                restrictions.collect(group.check(), collected, auth.policies().counters());
             }
         }
         return new Authorization(AccessHandler.ACCEPT, found, authType, passwords, reply, limit, collected);

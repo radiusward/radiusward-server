@@ -6,7 +6,6 @@ package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.RadiusPacket;
-import java.util.function.Supplier;
 
 /**
  * Addresses from IP pools for an Accept (ADR 0050, ADR 0059): the pools a user's {@code Pool-Name} names, unless the
@@ -18,11 +17,8 @@ final class AddressAssignment {
 
     private final OnceLogger once;
 
-    private final Supplier<AccessPolicies> policies;
-
-    AddressAssignment(OnceLogger once, Supplier<AccessPolicies> policies) {
+    AddressAssignment(OnceLogger once) {
         this.once = once;
-        this.policies = policies;
     }
 
     /**
@@ -30,13 +26,13 @@ final class AddressAssignment {
      * reply already has one. An empty pool rejects (or accepts without an address, per pool); a pool that cannot be
      * reached leaves the request unanswered.
      */
-    int assign(AccessContext context, RadiusPacket request, String user, UserDirectory.Authorization a) {
+    int assign(AccessContext context, RadiusPacket request, String user, UserDirectory.Authorization a, IpPools pools) {
         for (AttributeItem item : a.restrictions()) {
             if (!item.attribute().equalsIgnoreCase("Pool-Name")) {
                 continue;
             }
             for (String name : item.value().split(",")) { // e.g. an IPv4 pool and an IPv6 one (ADR 0059)
-                int decision = assign(context, request, user, a, name.trim());
+                int decision = assign(context, request, user, a, pools, name.trim());
                 if (decision != AccessHandler.ACCEPT) {
                     return decision;
                 }
@@ -46,8 +42,12 @@ final class AddressAssignment {
     }
 
     private int assign(
-            AccessContext context, RadiusPacket request, String user, UserDirectory.Authorization a, String name) {
-        IpPools p = policies.get().pools();
+            AccessContext context,
+            RadiusPacket request,
+            String user,
+            UserDirectory.Authorization a,
+            IpPools p,
+            String name) {
         IpPools.Pool pool = p == null ? null : p.pool(name);
         if (pool == null) {
             once.warn("pool:" + name, "Pool-Name {}: no such pool in auth.pools, the user is rejected", name);

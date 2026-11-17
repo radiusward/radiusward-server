@@ -10,7 +10,6 @@ import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.AttributeDef;
 import io.radiusward.radius.dictionary.Dictionary;
 import java.util.ArrayList;
-import java.util.function.Supplier;
 
 /**
  * What decides after the credential was checked whether an authorized user gets in, and with what: Simultaneous-Use
@@ -24,26 +23,21 @@ final class Admission {
     private final CheckItems checkItems;
     private final Restrictions restrictions;
     private final AddressAssignment addresses;
-    private final Supplier<AccessPolicies> policies;
 
-    Admission(
-            Dictionary dictionary,
-            CheckItems checkItems,
-            Restrictions restrictions,
-            OnceLogger once,
-            Supplier<AccessPolicies> policies) {
-        this.policies = policies;
+    Admission(Dictionary dictionary, CheckItems checkItems, Restrictions restrictions, OnceLogger once) {
         this.dictionary = dictionary;
         this.checkItems = checkItems;
         this.restrictions = restrictions;
-        this.addresses = new AddressAssignment(once, policies);
+        this.addresses = new AddressAssignment(once);
     }
 
     /**
      * {@link AccessHandler#ACCEPT} with the reply items of {@code a} completed, {@link AccessHandler#REJECT} or
      * {@link AccessHandler#DROP} (a session or pool look-up that cannot be answered now).
      */
-    int admit(AccessContext context, UserDirectory.Found found, UserDirectory.Authorization a) {
+    int admit(AuthRequest auth, UserDirectory.Found found, UserDirectory.Authorization a) {
+        AccessContext context = auth.context();
+        AccessPolicies p = auth.policies();
         RadiusPacket request = context.request();
         if (a.limit() != null) {
             int decision = restrictions.limit(context, request, found.store(), a.limit());
@@ -52,17 +46,16 @@ final class Admission {
                 return decision;
             }
         }
-        int restricted = restrictions.restrict(context, found.user().userName(), a);
+        int restricted = restrictions.restrict(context, found.user().userName(), a, p);
         if (restricted != AccessHandler.ACCEPT) {
             return restricted;
         }
-        int pooled = addresses.assign(context, request, found.user().userName(), a);
+        int pooled = addresses.assign(context, request, found.user().userName(), a, p.pools());
         if (pooled != AccessHandler.ACCEPT) {
             return pooled;
         }
-        AccessPolicies p = policies.get();
         RulesFile r = p.rules();
-        if (r != null && !r.current().apply(ruleRequest(request, found.user()), a.reply())) {
+        if (r != null && !r.current().apply(ruleRequest(request, found.user(), p.zone()), a.reply())) {
             StoreAccessHandler.because(context, "rejected by a rule of ", "auth.rules");
             return AccessHandler.REJECT;
         }
@@ -73,7 +66,7 @@ final class Admission {
         return AccessHandler.ACCEPT;
     }
 
-    private Rules.Request ruleRequest(RadiusPacket request, UserRecord user) {
+    private Rules.Request ruleRequest(RadiusPacket request, UserRecord user, java.time.ZoneId zone) {
         return new Rules.Request() {
             @Override
             public String value(String attribute) {
@@ -92,7 +85,7 @@ final class Admission {
             public boolean inGroup(String group) {
                 for (UserRecord.Group g : user.groups()) {
                     if (g.name().equalsIgnoreCase(group)
-                            && checkItems.checks(g.check(), request, new ArrayList<>()) != null) {
+                            && checkItems.checks(g.check(), request, new ArrayList<>(), zone) != null) {
                         return true;
                     }
                 }
