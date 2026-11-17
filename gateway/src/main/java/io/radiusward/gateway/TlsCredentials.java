@@ -6,6 +6,7 @@ package io.radiusward.gateway;
 
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.units.Pem;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -279,7 +280,7 @@ final class TlsCredentials {
 
     private SSLContext build(String protocol) {
         try {
-            Certificate[] certificates = certificates(chain).toArray(Certificate[]::new);
+            Certificate[] certificates = Pem.certificates(chain).toArray(Certificate[]::new);
             if (certificates.length == 0) {
                 throw new ConfigException(prefix + "certificate: no certificate in " + chain);
             }
@@ -312,7 +313,7 @@ final class TlsCredentials {
         KeyStore anchors = KeyStore.getInstance("PKCS12");
         anchors.load(null, null);
         int n = 0;
-        for (Certificate c : certificates(ca)) {
+        for (Certificate c : Pem.certificates(ca)) {
             anchors.setCertificateEntry("ca-" + n++, c);
         }
         if (n == 0) {
@@ -372,12 +373,6 @@ final class TlsCredentials {
             return verify.verify(signature);
         } catch (GeneralSecurityException e) {
             return false; // a key of another algorithm
-        }
-    }
-
-    static List<? extends Certificate> certificates(Path pem) throws IOException, GeneralSecurityException {
-        try (InputStream in = Files.newInputStream(pem)) {
-            return List.copyOf(CertificateFactory.getInstance("X.509").generateCertificates(in));
         }
     }
 }

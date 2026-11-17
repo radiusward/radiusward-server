@@ -5,28 +5,22 @@
 package io.radiusward.gateway;
 
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.units.Pem;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.SocketChannel;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
-import java.security.KeyStore;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateFactory;
 import java.util.List;
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
 import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
-import javax.net.ssl.TrustManagerFactory;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
@@ -72,31 +66,9 @@ final class TlsClient implements HomeConnection {
     /** The same for {@code protocol} {@code TLS} or {@code DTLS}. */
     static SSLContext context(Path certificate, Path key, Path ca, String protocol) {
         try {
-            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            KeyStore keys = KeyStore.getInstance("PKCS12");
-            keys.load(null, null);
-            if (certificate != null && key != null) {
-                List<? extends Certificate> chain = TlsCredentials.certificates(certificate);
-                keys.setKeyEntry(
-                        "client",
-                        EapTlsConfig.privateKey(key, "home.tls.key"),
-                        new char[0],
-                        chain.toArray(Certificate[]::new));
-            }
-            kmf.init(keys, new char[0]);
-            KeyStore trust = KeyStore.getInstance("PKCS12");
-            trust.load(null, null);
-            try (InputStream in = Files.newInputStream(ca)) {
-                int n = 0;
-                for (Certificate c : CertificateFactory.getInstance("X.509").generateCertificates(in)) {
-                    trust.setCertificateEntry("ca-" + n++, c);
-                }
-            }
-            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            tmf.init(trust);
-            SSLContext context = SSLContext.getInstance(protocol);
-            context.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
-            return context;
+            return Pem.clientContext(protocol, certificate, key, ca);
+        } catch (IllegalArgumentException e) {
+            throw new io.radiusward.common.config.ConfigException("home.tls.key: " + e.getMessage(), e);
         } catch (IOException | GeneralSecurityException e) {
             throw new io.radiusward.common.config.ConfigException("home TLS: " + e.getMessage(), e);
         }

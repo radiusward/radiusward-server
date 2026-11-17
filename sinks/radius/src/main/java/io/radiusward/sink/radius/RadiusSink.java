@@ -17,9 +17,9 @@ import io.radiusward.radius.codec.AttributeValues;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.units.Pem;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -28,27 +28,16 @@ import java.net.InetSocketAddress;
 import java.net.SocketTimeoutException;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.GeneralSecurityException;
-import java.security.KeyFactory;
-import java.security.KeyStore;
-import java.security.PrivateKey;
 import java.security.SecureRandom;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateFactory;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
-import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
-import javax.net.ssl.TrustManagerFactory;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
@@ -124,7 +113,8 @@ public final class RadiusSink implements AccountingSink {
         retries = Integer.parseInt(context.setting("retries", "2"));
         strip = Boolean.parseBoolean(context.setting("strip", "false"));
         if (tls) {
-            tlsContext = context(
+            tlsContext = Pem.clientContext(
+                    "TLS",
                     path(context.setting("tls.certificate", "")),
                     path(context.setting("tls.key", "")),
                     Path.of(context.required("tls.ca")));
@@ -376,55 +366,6 @@ public final class RadiusSink implements AccountingSink {
     }
 
     /** A TLS client context: our certificate and PKCS#8 key (PEM, optional) and the CAs the server must chain to. */
-    static SSLContext context(Path certificate, Path key, Path ca) throws IOException, GeneralSecurityException {
-        KeyStore keys = KeyStore.getInstance("PKCS12");
-        keys.load(null, null);
-        if (certificate != null && key != null) {
-            keys.setKeyEntry(
-                    "client",
-                    privateKey(key),
-                    new char[0],
-                    certificates(certificate).toArray(Certificate[]::new));
-        }
-        KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        kmf.init(keys, new char[0]);
-        KeyStore trust = KeyStore.getInstance("PKCS12");
-        trust.load(null, null);
-        int n = 0;
-        for (Certificate c : certificates(ca)) {
-            trust.setCertificateEntry("ca-" + n++, c);
-        }
-        TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        tmf.init(trust);
-        SSLContext context = SSLContext.getInstance("TLS");
-        context.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
-        return context;
-    }
-
-    static List<? extends Certificate> certificates(Path pem) throws IOException, GeneralSecurityException {
-        try (InputStream in = Files.newInputStream(pem)) {
-            return List.copyOf(CertificateFactory.getInstance("X.509").generateCertificates(in));
-        }
-    }
-
-    static PrivateKey privateKey(Path pem) throws IOException, GeneralSecurityException {
-        String text = Files.readString(pem, StandardCharsets.US_ASCII);
-        int begin = text.indexOf("-----BEGIN PRIVATE KEY-----");
-        int end = text.indexOf("-----END PRIVATE KEY-----");
-        if (begin < 0 || end < begin) {
-            throw new IllegalArgumentException(pem + ": an unencrypted PKCS#8 key (BEGIN PRIVATE KEY) is needed");
-        }
-        byte[] der = Base64.getMimeDecoder().decode(text.substring(begin + 27, end));
-        for (String algorithm : List.of("RSA", "EC", "Ed25519", "Ed448")) {
-            try {
-                return KeyFactory.getInstance(algorithm).generatePrivate(new PKCS8EncodedKeySpec(der));
-            } catch (GeneralSecurityException e) {
-                // not this algorithm
-            }
-        }
-        throw new IllegalArgumentException(pem + ": no RSA, EC or EdDSA key");
-    }
-
     @Override
     public void close() {
         closeConnection();

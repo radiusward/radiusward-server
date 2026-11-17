@@ -6,16 +6,11 @@ package io.radiusward.gateway;
 
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.units.Pem;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.security.GeneralSecurityException;
-import java.security.KeyFactory;
 import java.security.PrivateKey;
-import java.security.spec.PKCS8EncodedKeySpec;
 import java.time.Duration;
-import java.util.Base64;
 import java.util.List;
 
 /**
@@ -85,23 +80,12 @@ record EapTlsConfig(
                 chainFile, keyFile, caFile, List.of(), TlsCredentials.Revocation.NONE, null, false, Duration.ZERO);
     }
 
-    /** An unencrypted PKCS#8 key ({@code BEGIN PRIVATE KEY}): RSA, EC or EdDSA. */
-    static PrivateKey privateKey(Path pem, String setting) throws IOException, GeneralSecurityException {
-        String text = Files.readString(pem, StandardCharsets.US_ASCII);
-        int begin = text.indexOf("-----BEGIN PRIVATE KEY-----");
-        int end = text.indexOf("-----END PRIVATE KEY-----");
-        if (begin < 0 || end < begin) {
-            throw new ConfigException(setting + ": " + pem + " needs an unencrypted PKCS#8 key (BEGIN PRIVATE"
-                    + " KEY); convert with: openssl pkcs8 -topk8 -nocrypt -in key.pem");
+    /** An unencrypted PKCS#8 key ({@link Pem#privateKey}); a configuration error naming {@code setting} otherwise. */
+    static PrivateKey privateKey(Path pem, String setting) throws IOException {
+        try {
+            return Pem.privateKey(pem);
+        } catch (IllegalArgumentException e) {
+            throw new ConfigException(setting + ": " + e.getMessage(), e);
         }
-        byte[] der = Base64.getMimeDecoder().decode(text.substring(begin + 27, end));
-        for (String algorithm : List.of("RSA", "EC", "Ed25519", "Ed448")) {
-            try {
-                return KeyFactory.getInstance(algorithm).generatePrivate(new PKCS8EncodedKeySpec(der));
-            } catch (GeneralSecurityException e) {
-                // not this algorithm
-            }
-        }
-        throw new ConfigException(setting + ": " + pem + " holds no RSA, EC or EdDSA key");
     }
 }

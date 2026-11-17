@@ -131,19 +131,21 @@ class RadiusSinkTlsTest {
         final List<byte[]> received = new CopyOnWriteArrayList<>();
 
         FakeRadsecServer(Pki pki) throws Exception {
-            PrivateKey key = RadiusSink.privateKey(pki.serverKey());
+            PrivateKey key = io.radiusward.units.Pem.privateKey(pki.serverKey());
             KeyStore keys = KeyStore.getInstance("PKCS12");
             keys.load(null, null);
             keys.setKeyEntry(
                     "server",
                     key,
                     new char[0],
-                    RadiusSink.certificates(pki.serverCert()).toArray(java.security.cert.Certificate[]::new));
+                    io.radiusward.units.Pem.certificates(pki.serverCert())
+                            .toArray(java.security.cert.Certificate[]::new));
             KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             kmf.init(keys, new char[0]);
             KeyStore trust = KeyStore.getInstance("PKCS12");
             trust.load(null, null);
-            trust.setCertificateEntry("ca", RadiusSink.certificates(pki.ca()).get(0));
+            trust.setCertificateEntry(
+                    "ca", io.radiusward.units.Pem.certificates(pki.ca()).get(0));
             TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             tmf.init(trust);
             SSLContext context = SSLContext.getInstance("TLS");
@@ -284,7 +286,7 @@ class RadiusSinkTlsTest {
                 .hasMessageContaining("secret is required over UDP");
         Path plain = Files.writeString(
                 dir.resolve("rsa.key"), "-----BEGIN RSA PRIVATE KEY-----\n-----END RSA PRIVATE KEY-----\n");
-        assertThatThrownBy(() -> RadiusSink.privateKey(plain)).hasMessageContaining("BEGIN PRIVATE KEY");
+        assertThatThrownBy(() -> io.radiusward.units.Pem.privateKey(plain)).hasMessageContaining("BEGIN PRIVATE KEY");
         assertThat(sink(Map.of("servers", "127.0.0.1", "secret", "s", "timeout", "3")))
                 .as("a bare timeout means seconds")
                 .isNotNull();

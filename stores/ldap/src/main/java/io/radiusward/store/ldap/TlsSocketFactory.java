@@ -4,16 +4,13 @@
  */
 package io.radiusward.store.ldap;
 
+import io.radiusward.units.Pem;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.GeneralSecurityException;
 import java.security.KeyStore;
-import java.security.cert.Certificate;
-import java.security.cert.CertificateFactory;
 import javax.net.SocketFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLSocketFactory;
@@ -42,14 +39,9 @@ public final class TlsSocketFactory extends SSLSocketFactory {
 
     /** A factory trusting the certificates in a PEM file. */
     static SSLSocketFactory trusting(Path pem) {
-        try (InputStream in = Files.newInputStream(pem)) {
-            KeyStore store = KeyStore.getInstance(KeyStore.getDefaultType());
-            store.load(null, null);
-            int n = 0;
-            for (Certificate c : CertificateFactory.getInstance("X.509").generateCertificates(in)) {
-                store.setCertificateEntry("ca-" + n++, c);
-            }
-            if (n == 0) {
+        try {
+            KeyStore store = Pem.trustStore(pem);
+            if (store.size() == 0) {
                 throw new IllegalArgumentException("tls.ca: no certificate in " + pem);
             }
             TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
