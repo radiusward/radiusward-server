@@ -270,7 +270,7 @@ final class AuthAgent implements Agent, Proxy.Replies {
         if (proxy != null) {
             int at = packet.findAttribute(1); // User-Name: a proxied realm goes to its home servers (ADR 0037)
             ProxyConfig.Realm realm =
-                    at < 0 ? null : proxy.config().realmOf(received, at + 2, (received.getByte(at + 1) & 0xFF) - 2);
+                    at < 0 ? null : proxy.config().realmOf(received, packet.valueOffset(at), packet.valueLength(at));
             if (realm != null) {
                 int taken = proxy.offer(packet, realm, nas, from, route, key, now);
                 if (taken == Proxy.TAKEN) {

@@ -137,13 +137,13 @@ final class Tracer {
                 case NAS -> c.value().equals(nas.name());
                 case USER -> {
                     if (user == null) {
-                        user = text(request, USER_NAME);
+                        user = request.string(USER_NAME);
                     }
                     yield c.value().equals(user);
                 }
                 case STATION -> {
                     if (station == null) {
-                        String s = text(request, CALLING_STATION_ID);
+                        String s = request.string(CALLING_STATION_ID);
                         station = s == null ? "" : normalized(s);
                     }
                     yield c.value().equals(station);
@@ -179,15 +179,6 @@ final class Tracer {
         return "trace: Access-Request id " + request.identifier() + " from NAS " + nas.name() + " -> "
                 + (code == AccessHandler.DROP ? "no answer" : RadiusCode.name(code)) + " in " + micros + " µs"
                 + trace.steps;
-    }
-
-    private String text(RadiusPacket request, int type) {
-        int at = request.findAttribute(type);
-        if (at < 0) {
-            return null;
-        }
-        return request.buffer()
-                .getStringWithoutLengthUtf8(at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
     }
 
     private static String normalized(String station) {

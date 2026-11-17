@@ -82,6 +82,24 @@ public final class AttributeValues {
         return new String(bytes, StandardCharsets.UTF_8);
     }
 
+    /**
+     * The UTF-8 value of the first attribute of {@code type} in raw attributes (no packet header), or {@code null};
+     * {@code null} too at a malformed length. Allocates.
+     */
+    public static String string(byte[] attributes, int type) {
+        for (int at = 0; at + 2 <= attributes.length; ) {
+            int length = attributes[at + 1] & 0xFF;
+            if (length < 2 || at + length > attributes.length) {
+                return null;
+            }
+            if ((attributes[at] & 0xFF) == type) {
+                return new String(attributes, at + 2, length - 2, StandardCharsets.UTF_8);
+            }
+            at += length;
+        }
+        return null;
+    }
+
     /** Dotted-quad IPv4 address. Allocates. */
     public static String ipv4String(long address) {
         return ((address >> 24) & 0xFF) + "." + ((address >> 16) & 0xFF) + "." + ((address >> 8) & 0xFF) + "."

@@ -189,12 +189,11 @@ final class Restrictions {
             return AccessHandler.REJECT;
         }
         int at = request.findAttribute(USER_NAME);
-        long user = UserKeys.user(request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
+        long user = UserKeys.user(request.buffer(), request.valueOffset(at), request.valueLength(at));
         int station = request.findAttribute(CALLING_STATION_ID);
         long device = station < 0
                 ? 0
-                : UserKeys.device(
-                        request.buffer(), station + 2, (request.buffer().getByte(station + 1) & 0xFF) - 2);
+                : UserKeys.device(request.buffer(), request.valueOffset(station), request.valueLength(station));
         return switch (context.sessionLimits().reserve(user, device, maxDevices)) {
             case SessionLimits.GRANTED -> AccessHandler.ACCEPT;
             case SessionLimits.DENIED -> AccessHandler.REJECT;

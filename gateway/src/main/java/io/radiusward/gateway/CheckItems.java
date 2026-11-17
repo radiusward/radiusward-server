@@ -94,8 +94,7 @@ final class CheckItems {
         int at = request.findAttribute(def.number());
         String actual = at < 0
                 ? null
-                : AttributeText.decode(
-                        def, request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
+                : AttributeText.decode(def, request.buffer(), request.valueOffset(at), request.valueLength(at));
         String expected = item.value();
         try {
             return switch (item.op()) {

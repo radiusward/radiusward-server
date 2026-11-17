@@ -9,6 +9,7 @@ import io.radiusward.export.Batch;
 import io.radiusward.export.ExportEvent;
 import io.radiusward.export.SinkContext;
 import io.radiusward.export.StorageMode;
+import io.radiusward.radius.codec.AttributeValues;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -176,7 +177,7 @@ public final class RadiusSink implements AccountingSink {
 
     /** Whether the event's User-Name has one of the forwarded realms. */
     boolean forwarded(ExportEvent e) {
-        String user = attribute(e.rawAttributes(), USER_NAME);
+        String user = AttributeValues.string(e.rawAttributes(), USER_NAME);
         if (user == null) {
             return false;
         }
@@ -367,20 +368,6 @@ public final class RadiusSink implements AccountingSink {
         }
         connection = null;
         connectedTo = -1;
-    }
-
-    static String attribute(byte[] raw, int type) {
-        for (int at = 0; at + 2 <= raw.length; ) {
-            int l = raw[at + 1] & 0xFF;
-            if (l < 2 || at + l > raw.length) {
-                return null;
-            }
-            if ((raw[at] & 0xFF) == type) {
-                return new String(raw, at + 2, l - 2, StandardCharsets.UTF_8);
-            }
-            at += l;
-        }
-        return null;
     }
 
     private static Path path(String value) {

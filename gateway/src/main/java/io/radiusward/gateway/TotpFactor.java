@@ -101,8 +101,8 @@ final class TotpFactor {
             int at = request.findAttribute(STATE);
             Pending pending = null;
             if (at >= 0) {
-                pending = challenges.remove(
-                        stateKey(request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2));
+                pending =
+                        challenges.remove(stateKey(request.buffer(), request.valueOffset(at), request.valueLength(at)));
             }
             if (pending == null) {
                 return ASK;

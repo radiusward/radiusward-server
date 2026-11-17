@@ -57,12 +57,10 @@ final class AddressAssignment {
         if (a.reply().stream().anyMatch(r -> r.attribute().equalsIgnoreCase(pool.attribute()))) {
             return AccessHandler.ACCEPT; // the user's own address or prefix
         }
-        int station = request.findAttribute(CALLING_STATION_ID);
-        String device = station < 0
-                ? user
-                : request.buffer()
-                        .getStringWithoutLengthUtf8(
-                                station + 2, (request.buffer().getByte(station + 1) & 0xFF) - 2);
+        String device = request.string(CALLING_STATION_ID);
+        if (device == null) {
+            device = user; // without Calling-Station-Id the user is the device
+        }
         String address;
         try {
             address = p.allocate(pool, user, device);

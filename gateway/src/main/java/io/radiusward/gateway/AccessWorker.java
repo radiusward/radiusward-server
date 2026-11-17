@@ -79,8 +79,8 @@ final class AccessWorker implements Agent {
             log.record(new AuthLog.Entry(
                     java.time.Instant.now(),
                     nas.name(),
-                    text(context.request(), 1),
-                    text(context.request(), 31),
+                    context.request().string(1),
+                    context.request().string(31),
                     code == AccessHandler.ACCEPT,
                     code == AccessHandler.REJECT
                             ? (context.reason() != null
@@ -126,14 +126,6 @@ final class AccessWorker implements Agent {
             end--;
         }
         return reason.substring(0, end);
-    }
-
-    private static String text(io.radiusward.radius.codec.RadiusPacket request, int type) {
-        int at = request.findAttribute(type);
-        return at < 0
-                ? null
-                : request.buffer()
-                        .getStringWithoutLengthUtf8(at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
     }
 
     /** Per-request traces (ADR 0052); {@code null}: none. */

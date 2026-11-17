@@ -49,4 +49,20 @@ class AttributeValuesTest {
         assertThat(AttributeValues.octets64(0xFFFF_FFFFL, 1)).isEqualTo(0x1_FFFF_FFFFL);
         assertThat(AttributeValues.octets64(-1, 2)).isEqualTo(0x2_FFFF_FFFFL);
     }
+
+    @Test
+    void textOfRawAttributes() {
+        byte[] attributes = {1, 6, 'n', 'e', 'm', 'o', 31, 4, 'a', 'b', 30, 2};
+        assertThat(AttributeValues.string(attributes, 1)).isEqualTo("nemo");
+        assertThat(AttributeValues.string(attributes, 31)).isEqualTo("ab");
+        assertThat(AttributeValues.string(attributes, 30)).as("empty").isEmpty();
+        assertThat(AttributeValues.string(attributes, 44)).isNull();
+        assertThat(AttributeValues.string(new byte[] {1, 1, 'x'}, 1))
+                .as("a length below 2")
+                .isNull();
+        assertThat(AttributeValues.string(new byte[] {1, 9, 'x'}, 1))
+                .as("a length past the end")
+                .isNull();
+        assertThat(AttributeValues.string(new byte[0], 1)).isNull();
+    }
 }

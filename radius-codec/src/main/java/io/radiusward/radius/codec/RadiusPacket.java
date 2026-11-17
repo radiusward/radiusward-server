@@ -154,6 +154,33 @@ public final class RadiusPacket {
         return messageAuthenticatorOffset >= 0;
     }
 
+    /** Absolute offset of the value of the attribute whose header is at {@code at} ({@link #findAttribute}). */
+    public int valueOffset(int at) {
+        return at + 2;
+    }
+
+    /** Length of the value of the attribute whose header is at {@code at}. Allocation-free. */
+    public int valueLength(int at) {
+        return (buffer.getByte(at + 1) & 0xFF) - 2;
+    }
+
+    /** The UTF-8 value of the first top-level attribute of {@code type}, or {@code null}. Allocates. */
+    public String string(int type) {
+        int at = findAttribute(type);
+        return at < 0 ? null : buffer.getStringWithoutLengthUtf8(valueOffset(at), valueLength(at));
+    }
+
+    /** A copy of the value of the first top-level attribute of {@code type}, or {@code null}. Allocates. */
+    public byte[] octets(int type) {
+        int at = findAttribute(type);
+        if (at < 0) {
+            return null;
+        }
+        byte[] value = new byte[valueLength(at)];
+        buffer.getBytes(valueOffset(at), value);
+        return value;
+    }
+
     /**
      * Absolute offset of the first top-level attribute of the given type (its header), or {@code -1}.
      * Allocation-free.

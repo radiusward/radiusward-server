@@ -127,7 +127,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             }
             userName = auth.eap.conversation.identity;
         } else {
-            userName = string(request, USER_NAME);
+            userName = request.string(USER_NAME);
         }
         if (userName == null || userName.isEmpty()) {
             return REJECT;
@@ -291,15 +291,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     /** Store look-ups and EAP outcomes. */
     AuthMetrics metrics() {
         return metrics;
-    }
-
-    private static String string(RadiusPacket request, int type) {
-        int at = request.findAttribute(type);
-        if (at < 0) {
-            return null;
-        }
-        return request.buffer()
-                .getStringWithoutLengthUtf8(at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
     }
 
     private void warnOnce(String key, String message, Object detail) {

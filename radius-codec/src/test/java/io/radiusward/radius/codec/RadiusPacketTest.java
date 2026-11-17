@@ -36,6 +36,18 @@ class RadiusPacketTest {
     }
 
     @Test
+    void attributeValuesAsTextBytesOrOffsetAndLength() {
+        RadiusPacket packet = wrap(hex(RFC2865_ACCESS_REQUEST));
+        assertThat(packet.string(1)).as("User-Name").isEqualTo("nemo");
+        assertThat(packet.octets(4)).as("NAS-IP-Address").containsExactly(0xc0, 0xa8, 0x01, 0x10);
+        int at = packet.findAttribute(4);
+        assertThat(packet.valueOffset(at)).isEqualTo(46);
+        assertThat(packet.valueLength(at)).isEqualTo(4);
+        assertThat(packet.string(99)).isNull();
+        assertThat(packet.octets(99)).isNull();
+    }
+
+    @Test
     void worksAtNonZeroOffset() {
         byte[] packet = hex(RFC2865_ACCESS_REQUEST);
         byte[] shifted = new byte[packet.length + 7];

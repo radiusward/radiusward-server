@@ -78,7 +78,7 @@ public final class AdminClient implements AutoCloseable, EgressListener {
 
         /** An attribute of the identity as text (e.g. 1 = User-Name, 44 = Acct-Session-Id), or {@code null}. */
         public String attribute(int type) {
-            return AdminClient.attribute(identity, type);
+            return io.radiusward.radius.codec.AttributeValues.string(identity, type);
         }
     }
 
@@ -87,26 +87,12 @@ public final class AdminClient implements AutoCloseable, EgressListener {
             long keyHi, long keyLo, int nasId, long userKey, int firstSeen, int lastSeen, byte[] identity) {
 
         public String attribute(int type) {
-            return AdminClient.attribute(identity, type);
+            return io.radiusward.radius.codec.AttributeValues.string(identity, type);
         }
     }
 
     /** A page of active sessions with a user; {@code nextSlot} -1 at the end. */
     public record SessionPage(int nextSlot, List<ListedSession> sessions) {}
-
-    static String attribute(byte[] identity, int type) {
-        for (int at = 0; at + 2 <= identity.length; ) {
-            int length = identity[at + 1] & 0xFF;
-            if (length < 2 || at + length > identity.length) {
-                return null;
-            }
-            if ((identity[at] & 0xFF) == type) {
-                return new String(identity, at + 2, length - 2, java.nio.charset.StandardCharsets.UTF_8);
-            }
-            at += length;
-        }
-        return null;
-    }
 
     private final MediaDriver driver;
     private final String ingressEndpoints;

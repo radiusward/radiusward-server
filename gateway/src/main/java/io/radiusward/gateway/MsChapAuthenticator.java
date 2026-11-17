@@ -147,9 +147,10 @@ final class MsChapAuthenticator {
             if (challenge.length != 16) {
                 return null;
             }
-            int at = request.findAttribute(1);
-            byte[] name = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
-            request.buffer().getBytes(at + 2, name);
+            byte[] name = request.octets(1);
+            if (name == null) {
+                return null; // MS-CHAPv2 hashes the User-Name in
+            }
             byte[] hash = MsChap.challengeHash(Arrays.copyOfRange(response, 2, 18), challenge, MsChap.v2UserName(name));
             return new Request(hash, ntResponse, response[0] & 0xFF, hash, true);
         }

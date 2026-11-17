@@ -77,8 +77,7 @@ final class Admission {
                 int at = request.findAttribute(def.number());
                 return at < 0
                         ? null
-                        : AttributeText.decode(
-                                def, request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
+                        : AttributeText.decode(def, request.buffer(), request.valueOffset(at), request.valueLength(at));
             }
 
             @Override

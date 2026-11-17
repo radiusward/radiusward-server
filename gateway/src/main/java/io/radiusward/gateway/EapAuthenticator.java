@@ -113,8 +113,7 @@ final class EapAuthenticator {
             round.conversation = new EapConversations.Conversation(context.nas().name(), identity);
             return AccessHandler.ACCEPT;
         }
-        byte[] state = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
-        request.buffer().getBytes(at + 2, state);
+        byte[] state = request.octets(STATE);
         round.state = state;
         round.conversation = conversations.take(state, context.nas().name(), clockMillis.getAsLong());
         return round.conversation == null ? AccessHandler.REJECT : AccessHandler.ACCEPT;

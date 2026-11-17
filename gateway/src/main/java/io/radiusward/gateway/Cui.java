@@ -57,11 +57,10 @@ record Cui(byte[] key, boolean always) {
                 return;
             }
         }
-        int at = request.findAttribute(OPERATOR_NAME);
-        String operator = at < 0
-                ? ""
-                : request.buffer()
-                        .getStringWithoutLengthUtf8(at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
+        String operator = request.string(OPERATOR_NAME);
+        if (operator == null) {
+            operator = "";
+        }
         reply.add(new AttributeItem("Chargeable-User-Identity", "=", value(user, operator)));
     }
 

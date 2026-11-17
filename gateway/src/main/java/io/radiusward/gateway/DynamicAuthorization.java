@@ -293,7 +293,7 @@ public final class DynamicAuthorization implements Agent {
 
     private int errorCause() {
         int at = response.findAttribute(ERROR_CAUSE);
-        if (at < 0 || (response.buffer().getByte(at + 1) & 0xFF) != 6) {
+        if (at < 0 || response.valueLength(at) != 4) {
             return 0;
         }
         return response.buffer().getInt(at + 2, java.nio.ByteOrder.BIG_ENDIAN);
