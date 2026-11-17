@@ -21,7 +21,7 @@ import javax.naming.directory.InitialDirContext;
  * {@code aaa+auth:radius.tls.tcp} and flag {@code s}, in order and preference, name SRV records; those give host and
  * port, by priority and weight. Blocking: called from a thread of its own, never from the auth thread.
  */
-final class RealmDiscovery {
+final class RealmDiscovery implements DiscoveredRealms.Resolver {
 
     static final String SERVICE = "aaa+auth:radius.tls.tcp";
 
@@ -36,7 +36,8 @@ final class RealmDiscovery {
     }
 
     /** The realm's RadSec servers, best first; empty if it publishes none. */
-    List<Target> lookup(String realm) throws NamingException {
+    @Override
+    public List<Target> lookup(String realm) throws NamingException {
         DirContext dns = context();
         try {
             List<String[]> naptrs = new ArrayList<>();
@@ -72,7 +73,8 @@ final class RealmDiscovery {
     }
 
     /** The address of a host, from the same DNS server (A record), or the system's resolver without one. */
-    java.net.InetAddress address(String host) throws NamingException, java.net.UnknownHostException {
+    @Override
+    public java.net.InetAddress address(String host) throws NamingException, java.net.UnknownHostException {
         if (dnsServer == null) {
             return java.net.InetAddress.getByName(host);
         }

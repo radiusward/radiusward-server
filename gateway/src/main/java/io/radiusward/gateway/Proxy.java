@@ -20,7 +20,6 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.security.SecureRandom;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -203,12 +202,7 @@ final class Proxy {
             }
         }
         if (config.discovery() != ProxyConfig.Discovery.OFF) {
-            discovery = new RealmDiscovery(config.discovery().dnsServer());
-            discoveryThread = java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-                Thread t = new Thread(r, "realm-discovery");
-                t.setDaemon(true);
-                return t;
-            });
+            discovered = DiscoveredRealms.of(config.discovery());
             discoveryContext = TlsClient.context(
                     config.discovery().certificate(),
                     config.discovery().key(),
@@ -273,7 +267,9 @@ final class Proxy {
             long via,
             long key,
             long now) {
-        int[] pool = realm.discover() ? discovered(realm.name(), now) : pools.get(realm.pool());
+        int[] pool = !realm.discover()
+                ? pools.get(realm.pool())
+                : discovered == null ? null : discovered.pool(realm.name(), now, this::discoveredHome);
         if (pool == null || pool.length == 0) {
             return DROPPED; // a realm being looked up, or publishing no server: the NAS asks again
         }
@@ -316,66 +312,8 @@ final class Proxy {
 
     // ---- dynamic discovery (RFC 7585) -----------------------------------------------------------
 
-    private record Found(List<RealmDiscovery.Target> targets, List<java.net.InetAddress> addresses, long expires) {}
-
-    private RealmDiscovery discovery;
-    private java.util.concurrent.ExecutorService discoveryThread;
+    private DiscoveredRealms discovered; // null without discovery
     private javax.net.ssl.SSLContext discoveryContext;
-    private final java.util.concurrent.ConcurrentHashMap<String, Found> found =
-            new java.util.concurrent.ConcurrentHashMap<>();
-    private final java.util.Set<String> looking = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    private final Map<String, int[]> discoveredPools = new HashMap<>();
-    private final Map<String, Long> discoveredUntil = new HashMap<>();
-
-    /**
-     * The home servers of a discovered realm, by index; {@code null} while it is being looked up (the lookup runs on
-     * the discovery thread, the request is dropped and its retransmission finds the result).
-     */
-    private int[] discovered(String realm, long now) {
-        Long until = discoveredUntil.get(realm);
-        if (until != null && now - until < 0) {
-            return discoveredPools.get(realm);
-        }
-        Found f = found.get(realm);
-        if (f != null && now - f.expires() < 0) {
-            int[] pool = new int[f.targets().size()];
-            for (int i = 0; i < pool.length; i++) {
-                pool[i] = discoveredHome(f.targets().get(i), f.addresses().get(i));
-            }
-            discoveredPools.put(realm, pool);
-            discoveredUntil.put(realm, f.expires());
-            return pool;
-        }
-        if (discovery != null && looking.add(realm)) {
-            discoveryThread.execute(() -> lookup(realm));
-        }
-        return null;
-    }
-
-    /** On the discovery thread: NAPTR, SRV, addresses; kept for the TTL, a failure for the negative TTL. */
-    private void lookup(String realm) {
-        ProxyConfig.Discovery d = config.discovery();
-        try {
-            List<RealmDiscovery.Target> targets = discovery.lookup(realm);
-            List<java.net.InetAddress> addresses = new ArrayList<>();
-            for (RealmDiscovery.Target t : targets) {
-                addresses.add(discovery.address(t.host()));
-            }
-            long ttl = (targets.isEmpty() ? d.negativeTtl() : d.ttl()).toNanos();
-            found.put(realm, new Found(targets, addresses, System.nanoTime() + ttl));
-            LOG.info("realm {}: {} RadSec home server(s) from DNS {}", realm, targets.size(), targets);
-        } catch (Exception e) {
-            found.put(
-                    realm,
-                    new Found(
-                            List.of(),
-                            List.of(),
-                            System.nanoTime() + d.negativeTtl().toNanos()));
-            LOG.warn("realm {}: DNS discovery failed: {}", realm, e.toString());
-        } finally {
-            looking.remove(realm);
-        }
-    }
 
     /** The index of a discovered home server, created once per host and port. */
     private int discoveredHome(RealmDiscovery.Target target, java.net.InetAddress address) {
@@ -723,8 +661,8 @@ final class Proxy {
     }
 
     void close() {
-        if (discoveryThread != null) {
-            discoveryThread.shutdownNow();
+        if (discovered != null) {
+            discovered.close();
         }
         for (HomeState h : homes) {
             if (h.tls != null) {
