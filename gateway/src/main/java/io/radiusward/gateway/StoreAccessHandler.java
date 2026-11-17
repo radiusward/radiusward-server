@@ -521,6 +521,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         EapMethod.Step step;
         if (c.method == null) {
             c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)), c.identity);
+            if (c.method == null) {
+                return REJECT; // not reached: configuration refuses TLS methods without a certificate
+            }
             step = c.method.start(eap.identifier() + 1, credentials);
         } else if (eap.identifier() != c.identifier) {
             return DROP; // a response to an earlier request
