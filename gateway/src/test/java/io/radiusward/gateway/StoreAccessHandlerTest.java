@@ -1457,6 +1457,17 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void anEapMethodThatCannotStartIsARejectNotACrash() {
+        // EapConfig.from refuses PEAP without auth.eap.tls.certificate; made directly, the check is bypassed
+        main.user("alice", List.of(item("Cleartext-Password", ":=", "arctangent")), List.of());
+        eapConfig = new EapConfig(List.of("peap"), EapConfig.DEFAULT.timeout(), 10, 50, null);
+        StoreAccessHandler h = handler();
+        assertThat(handle(h, eapRequest(identity(1, "alice"), null))).isEqualTo(AccessHandler.REJECT);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.CODE_FAILURE);
+        assertThat(h.eapConversations()).isZero();
+    }
+
+    @Test
     void eapWithoutACredentialToCheckAndEapThatIsNotUnderstood() throws Exception {
         main.user("guest", List.of(item("Auth-Type", ":=", "Accept")), List.of())
                 .user("alice", List.of(item("Cleartext-Password", ":=", "arctangent")), List.of());
