@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.OPERATOR_NAME;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
@@ -29,7 +31,6 @@ import javax.crypto.spec.SecretKeySpec;
 record Cui(byte[] key, boolean always) {
 
     static final int CHARGEABLE_USER_IDENTITY = 89;
-    static final int OPERATOR_NAME = 126;
 
     /** {@code auth.cui.*}; {@code null} without {@code auth.cui.key}. */
     static Cui from(Config config) {

@@ -4,6 +4,13 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CHAP_CHALLENGE;
+import static io.radiusward.radius.codec.attributes.Ietf.CHAP_PASSWORD;
+import static io.radiusward.radius.codec.attributes.Ietf.EAP_MESSAGE;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
+
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -23,16 +30,6 @@ import javax.net.ssl.SSLException;
 final class Ttls extends TlsTunnel {
 
     static final int TYPE = 21;
-    static final int USER_NAME = 1;
-    static final int USER_PASSWORD = 2;
-    static final int CHAP_PASSWORD = 3;
-    static final int CHAP_CHALLENGE = 60;
-    static final int EAP_MESSAGE = 79;
-    static final int MICROSOFT = 311;
-    static final int MS_CHAP_RESPONSE = 1;
-    static final int MS_CHAP_CHALLENGE = 11;
-    static final int MS_CHAP2_RESPONSE = 25;
-    static final int MS_CHAP2_SUCCESS = 26;
     static final int FLAG_VENDOR = 0x80;
     static final int FLAG_MANDATORY = 0x40;
 
@@ -142,11 +139,11 @@ final class Ttls extends TlsTunnel {
                 name = value;
             } else if (vendor == 0 && code == USER_PASSWORD) {
                 password = value;
-            } else if (vendor == MICROSOFT && code == MS_CHAP_CHALLENGE) {
+            } else if (vendor == Microsoft.VENDOR_ID && code == Microsoft.CHAP_CHALLENGE) {
                 challenge = value;
-            } else if (vendor == MICROSOFT && code == MS_CHAP2_RESPONSE) {
+            } else if (vendor == Microsoft.VENDOR_ID && code == Microsoft.CHAP2_RESPONSE) {
                 response = value;
-            } else if (vendor == MICROSOFT && code == MS_CHAP_RESPONSE) {
+            } else if (vendor == Microsoft.VENDOR_ID && code == Microsoft.CHAP_RESPONSE) {
                 msChapResponse = value;
             } else if (vendor == 0 && code == CHAP_CHALLENGE) {
                 chapChallenge = value;
@@ -320,7 +317,7 @@ final class Ttls extends TlsTunnel {
         byte[] value = new byte[1 + s.length()];
         value[0] = response[0];
         System.arraycopy(s.getBytes(StandardCharsets.US_ASCII), 0, value, 1, s.length());
-        return sendApplication(avp(MS_CHAP2_SUCCESS, MICROSOFT, value));
+        return sendApplication(avp(Microsoft.CHAP2_SUCCESS, Microsoft.VENDOR_ID, value));
     }
 
     /** {@code ttls challenge} from the tunnel: 16 bytes of challenge and the ident; {@code null} if not available. */

@@ -4,6 +4,10 @@
  */
 package io.radiusward.sink.radius;
 
+import static io.radiusward.radius.codec.attributes.Ietf.ACCT_DELAY_TIME;
+import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.export.AccountingSink;
 import io.radiusward.export.Batch;
 import io.radiusward.export.ExportEvent;
@@ -65,9 +69,6 @@ public final class RadiusSink implements AccountingSink {
 
     static final int ACCOUNTING_REQUEST = 4;
     static final int ACCOUNTING_RESPONSE = 5;
-    static final int USER_NAME = 1;
-    static final int ACCT_DELAY_TIME = 41;
-    static final int MESSAGE_AUTHENTICATOR = 80;
     private static final int WINDOW = 256;
 
     private List<String> realms;

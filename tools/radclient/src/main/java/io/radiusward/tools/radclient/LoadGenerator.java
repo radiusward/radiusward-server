@@ -4,6 +4,10 @@
  */
 package io.radiusward.tools.radclient;
 
+import static io.radiusward.radius.codec.attributes.Ietf.ACCT_SESSION_ID;
+import static io.radiusward.radius.codec.attributes.Ietf.NAS_IDENTIFIER;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -485,9 +489,9 @@ public final class LoadGenerator {
         encoder.wrap(buffer, 0)
                 .header(RadiusCode.ACCOUNTING_REQUEST, identifier)
                 .uint32(40, r.status)
-                .attribute(44, r.sessionId)
-                .attribute(1, r.sessionId + "@load.example")
-                .attribute(32, r.device)
+                .attribute(ACCT_SESSION_ID, r.sessionId)
+                .attribute(USER_NAME, r.sessionId + "@load.example")
+                .attribute(NAS_IDENTIFIER, r.device)
                 .ipv4(4, 0x7F000001L)
                 .uint32(55, 1_780_000_000L + r.sessionTime);
         if (r.status != 1) {

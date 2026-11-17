@@ -4,11 +4,21 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CHAP_CHALLENGE;
+import static io.radiusward.radius.codec.attributes.Ietf.CHAP_PASSWORD;
+import static io.radiusward.radius.codec.attributes.Ietf.EAP_MESSAGE;
+import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
+import static io.radiusward.radius.codec.attributes.Ietf.PROXY_STATE;
+import static io.radiusward.radius.codec.attributes.Ietf.STATE;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
+
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.DatagramPacket;
@@ -33,12 +43,6 @@ import org.agrona.concurrent.UnsafeBuffer;
  */
 final class InnerProxy {
 
-    private static final int MICROSOFT = 311;
-    private static final int MS_CHAP_CHALLENGE = 11;
-    private static final int MS_CHAP2_RESPONSE = 25;
-    private static final int MS_CHAP2_SUCCESS = 26;
-    private static final int MS_MPPE_SEND_KEY = 16;
-    private static final int MS_MPPE_RECV_KEY = 17;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     enum Counter {
@@ -76,7 +80,7 @@ final class InnerProxy {
                 realm,
                 user,
                 realm.strip(),
-                (enc, auth, secret) -> enc.attribute(2, encryptPassword(password, auth, secret)));
+                (enc, auth, secret) -> enc.attribute(USER_PASSWORD, encryptPassword(password, auth, secret)));
     }
 
     Result chap(String user, int identifier, byte[] challenge, byte[] response) {
@@ -88,7 +92,8 @@ final class InnerProxy {
                 realm,
                 user,
                 realm.strip(),
-                (enc, auth, secret) -> enc.attribute(3, chapPassword).attribute(60, challenge));
+                (enc, auth, secret) ->
+                        enc.attribute(CHAP_PASSWORD, chapPassword).attribute(CHAP_CHALLENGE, challenge));
     }
 
     /** MS-CHAPv2: the user name unstripped, since the peer's challenge hash covers it. */
@@ -102,8 +107,8 @@ final class InnerProxy {
                 user,
                 false,
                 (enc, auth, secret) -> enc.vendorAttribute(
-                                MICROSOFT, MS_CHAP_CHALLENGE, exchange.authenticatorChallenge())
-                        .vendorAttribute(MICROSOFT, MS_CHAP2_RESPONSE, response));
+                                Microsoft.VENDOR_ID, Microsoft.CHAP_CHALLENGE, exchange.authenticatorChallenge())
+                        .vendorAttribute(Microsoft.VENDOR_ID, Microsoft.CHAP2_RESPONSE, response));
     }
 
     private interface Credential {
@@ -144,7 +149,7 @@ final class InnerProxy {
                 .header(RadiusCode.ACCESS_REQUEST, id)
                 .authenticator(authenticator);
         int ma = enc.messageAuthenticator();
-        enc.attribute(1, name);
+        enc.attribute(USER_NAME, name);
         credential.write(enc, authenticator, home.secret());
         int length = enc.finish();
         RadiusAuthenticator signer = new RadiusAuthenticator();
@@ -294,7 +299,7 @@ final class InnerProxy {
         for (int at = answer.attributesOffset(); at < answer.attributesEnd(); ) {
             int type = packet[at] & 0xFF;
             int length = packet[at + 1] & 0xFF;
-            boolean pass = type != 80 && type != 33 && type != 24 && type != 79;
+            boolean pass = type != MESSAGE_AUTHENTICATOR && type != PROXY_STATE && type != STATE && type != EAP_MESSAGE;
             if (type == 26 && length >= 8) {
                 int vendor = ((packet[at + 2] & 0xFF) << 24)
                         | ((packet[at + 3] & 0xFF) << 16)
@@ -302,12 +307,13 @@ final class InnerProxy {
                         | (packet[at + 5] & 0xFF);
                 int sub = packet[at + 6] & 0xFF;
                 byte[] value = Arrays.copyOfRange(packet, at + 8, at + length);
-                if (vendor == MICROSOFT && sub == MS_CHAP2_SUCCESS && value.length > 1) {
+                if (vendor == Microsoft.VENDOR_ID && sub == Microsoft.CHAP2_SUCCESS && value.length > 1) {
                     success = new String(value, 1, value.length - 1, StandardCharsets.US_ASCII);
                     pass = false;
-                } else if (vendor == MICROSOFT && (sub == MS_MPPE_SEND_KEY || sub == MS_MPPE_RECV_KEY)) {
+                } else if (vendor == Microsoft.VENDOR_ID
+                        && (sub == Microsoft.MPPE_SEND_KEY || sub == Microsoft.MPPE_RECV_KEY)) {
                     byte[] key = decryptKey(value, authenticator, secret);
-                    if (sub == MS_MPPE_SEND_KEY) {
+                    if (sub == Microsoft.MPPE_SEND_KEY) {
                         send = key;
                     } else {
                         receive = key;

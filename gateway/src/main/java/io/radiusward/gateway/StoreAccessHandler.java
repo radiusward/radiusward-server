@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.AccessRequests;
@@ -25,7 +27,6 @@ import org.apache.logging.log4j.Logger;
 final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private static final Logger LOG = LogManager.getLogger(StoreAccessHandler.class);
-    private static final int USER_NAME = 1;
 
     private volatile AuthStores stores; // replaced by a reload (ADR 0054)
     private final AuthMetrics metrics = new AuthMetrics();

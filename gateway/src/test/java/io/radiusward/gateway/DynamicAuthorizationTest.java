@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.radius.codec.attributes.Ietf;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -81,7 +82,7 @@ class DynamicAuthorizationTest {
         out.putByte(1, r.bytes()[1]);
         int length = 20;
         if (errorCause != 0) {
-            out.putByte(20, (byte) DynamicAuthorization.ERROR_CAUSE);
+            out.putByte(20, (byte) Ietf.ERROR_CAUSE);
             out.putByte(21, (byte) 6);
             out.putInt(22, errorCause, java.nio.ByteOrder.BIG_ENDIAN);
             length = 26;
@@ -200,7 +201,7 @@ class DynamicAuthorizationTest {
         UnsafeBuffer out = new UnsafeBuffer(new byte[64]);
         out.putByte(0, (byte) DynamicAuthorization.COA_NAK);
         out.putByte(1, r.bytes()[1]);
-        out.putByte(20, (byte) DynamicAuthorization.ERROR_CAUSE);
+        out.putByte(20, (byte) Ietf.ERROR_CAUSE);
         out.putByte(21, (byte) 4);
         out.putShort(22, (short) 503, java.nio.ByteOrder.BIG_ENDIAN);
         out.putShort(2, (short) 24, java.nio.ByteOrder.BIG_ENDIAN);

@@ -4,6 +4,9 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.REPLY_MESSAGE;
+import static io.radiusward.radius.codec.attributes.Ietf.STATE;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -28,8 +31,6 @@ final class TotpFactor {
     /** {@link #check}: check the password, then ask for the code ({@link #challenge}). */
     static final int ASK = -2;
 
-    private static final int STATE = 24;
-    private static final int REPLY_MESSAGE = 18;
     private static final int MAX_CHALLENGES = 10_000;
 
     private record Pending(String user, long expiresMillis) {}

@@ -4,6 +4,7 @@
  */
 package io.radiusward.radius.codec;
 
+import io.radiusward.radius.codec.attributes.Ietf;
 import org.agrona.MutableDirectBuffer;
 
 /**
@@ -14,7 +15,7 @@ import org.agrona.MutableDirectBuffer;
 public final class AccountingResponses {
 
     /** RFC 2865 Proxy-State. */
-    public static final int PROXY_STATE = 33;
+    public static final int PROXY_STATE = Ietf.PROXY_STATE;
 
     private final RadiusPacketEncoder encoder = new RadiusPacketEncoder();
     private final RadiusAuthenticator authenticator;

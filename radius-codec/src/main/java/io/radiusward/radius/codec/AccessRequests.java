@@ -4,6 +4,8 @@
  */
 package io.radiusward.radius.codec;
 
+import io.radiusward.radius.codec.attributes.Ietf;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.security.DigestException;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,16 +22,16 @@ import org.agrona.MutableDirectBuffer;
  */
 public final class AccessRequests {
 
-    public static final int USER_PASSWORD = 2;
-    public static final int CHAP_PASSWORD = 3;
-    public static final int STATE = 24;
-    public static final int CHAP_CHALLENGE = 60;
-    public static final int EAP_MESSAGE = 79;
+    public static final int USER_PASSWORD = Ietf.USER_PASSWORD;
+    public static final int CHAP_PASSWORD = Ietf.CHAP_PASSWORD;
+    public static final int STATE = Ietf.STATE;
+    public static final int CHAP_CHALLENGE = Ietf.CHAP_CHALLENGE;
+    public static final int EAP_MESSAGE = Ietf.EAP_MESSAGE;
     /** Microsoft vendor attributes (RFC 2548) carrying MS-CHAP responses. */
-    public static final int MICROSOFT = 311;
+    public static final int MICROSOFT = Microsoft.VENDOR_ID;
 
-    public static final int MS_CHAP_RESPONSE = 1;
-    public static final int MS_CHAP2_RESPONSE = 25;
+    public static final int MS_CHAP_RESPONSE = Microsoft.CHAP_RESPONSE;
+    public static final int MS_CHAP2_RESPONSE = Microsoft.CHAP2_RESPONSE;
 
     /** {@link #method} results. */
     public static final int METHOD_NONE = 0;

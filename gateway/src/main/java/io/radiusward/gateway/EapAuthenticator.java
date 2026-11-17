@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.STATE;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.radius.codec.AccessRequests;
@@ -82,8 +84,6 @@ final class EapAuthenticator {
         }
         return a;
     }
-
-    private static final int STATE = 24;
 
     /**
      * Reads the EAP response and finds its conversation: a new one for an Identity response without State, the one

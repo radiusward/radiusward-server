@@ -4,6 +4,9 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.radiusward.common.config.Config;
@@ -46,9 +49,6 @@ final class Tracer {
 
     /** The longest a condition from the API lasts. */
     static final Duration MAX_FOR = Duration.ofHours(24);
-
-    private static final int USER_NAME = 1;
-    private static final int CALLING_STATION_ID = 31;
 
     enum Kind {
         USER,

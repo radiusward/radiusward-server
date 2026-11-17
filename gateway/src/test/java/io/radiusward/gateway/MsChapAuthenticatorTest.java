@@ -67,6 +67,23 @@ class MsChapAuthenticatorTest extends HandlerFixture {
     }
 
     @Test
+    void msChapV2WithoutAUserNameIsMalformed() {
+        // the challenge hash covers the User-Name (RFC 2759 §8.2): without one there is nothing to check
+        byte[] response = new byte[50];
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
+        int length = new io.radiusward.radius.codec.RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(io.radiusward.radius.codec.RadiusCode.ACCESS_REQUEST, 1)
+                .authenticator(new byte[16])
+                .vendorAttribute(311, 11, new byte[16])
+                .vendorAttribute(311, 25, response)
+                .finish();
+        assertThat(MsChapAuthenticator.request(
+                        packet(java.util.Arrays.copyOf(buffer.byteArray(), length)), AccessRequests.METHOD_MS_CHAP2))
+                .isNull();
+    }
+
+    @Test
     void onlyTheTwoMsChapMethodsAreMsChap() {
         assertThat(MsChapAuthenticator.isMsChap(AccessRequests.METHOD_MS_CHAP)).isTrue();
         assertThat(MsChapAuthenticator.isMsChap(AccessRequests.METHOD_MS_CHAP2)).isTrue();

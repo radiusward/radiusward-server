@@ -4,6 +4,9 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.ERROR_CAUSE;
+import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
+
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
@@ -42,8 +45,6 @@ public final class DynamicAuthorization implements Agent {
     public static final int COA_REQUEST = 43;
     public static final int COA_ACK = 44;
     public static final int COA_NAK = 45;
-    static final int ERROR_CAUSE = 101;
-    private static final int MESSAGE_AUTHENTICATOR = 80;
 
     /** What became of a request. */
     public enum Outcome {

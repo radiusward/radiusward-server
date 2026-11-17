@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import io.radiusward.radius.codec.attributes.Ietf;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
@@ -61,15 +63,15 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
             md5.update(challenge);
             byte[] chapPassword = concat(new byte[] {implicit[16]}, md5.digest());
             return concat(
-                    Ttls.avp(Ttls.USER_NAME, 0, name),
-                    Ttls.avp(Ttls.CHAP_CHALLENGE, 0, challenge),
-                    Ttls.avp(Ttls.CHAP_PASSWORD, 0, chapPassword));
+                    Ttls.avp(Ietf.USER_NAME, 0, name),
+                    Ttls.avp(Ietf.CHAP_CHALLENGE, 0, challenge),
+                    Ttls.avp(Ietf.CHAP_PASSWORD, 0, chapPassword));
         }
         if (!msChapV2) {
             byte[] padded = Arrays.copyOf(
                     password.getBytes(StandardCharsets.UTF_8),
                     ((password.length() + 15) / 16) * 16); // zero padding to 16 (RFC 5281 §11.2.5)
-            return concat(Ttls.avp(Ttls.USER_NAME, 0, name), Ttls.avp(Ttls.USER_PASSWORD, 0, padded));
+            return concat(Ttls.avp(Ietf.USER_NAME, 0, name), Ttls.avp(Ietf.USER_PASSWORD, 0, padded));
         }
         byte[] implicit = client.export("ttls challenge", 17);
         if (wrongChallenge) {
@@ -85,9 +87,9 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
         System.arraycopy(peer, 0, response, 2, 16);
         System.arraycopy(ntResponse, 0, response, 26, 24);
         return concat(
-                Ttls.avp(Ttls.USER_NAME, 0, name),
-                Ttls.avp(Ttls.MS_CHAP_CHALLENGE, Ttls.MICROSOFT, challenge),
-                Ttls.avp(Ttls.MS_CHAP2_RESPONSE, Ttls.MICROSOFT, response));
+                Ttls.avp(Ietf.USER_NAME, 0, name),
+                Ttls.avp(Microsoft.CHAP_CHALLENGE, Microsoft.VENDOR_ID, challenge),
+                Ttls.avp(Microsoft.CHAP2_RESPONSE, Microsoft.VENDOR_ID, response));
     }
 
     /** MS-CHAP2-Success: check S=, then acknowledge with no data. */
@@ -95,7 +97,7 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
         ByteBuffer b = ByteBuffer.wrap(in);
         int code = b.getInt(0);
         int length = b.getInt(4) & 0xFFFFFF;
-        if (code == Ttls.MS_CHAP2_SUCCESS && length > 12) {
+        if (code == Microsoft.CHAP2_SUCCESS && length > 12) {
             String text = new String(in, 13, length - 13, StandardCharsets.US_ASCII);
             serverProved =
                     text.equals(MsChap.authenticatorResponse(MsChap.ntHash(password), ntResponse, challengeHash));

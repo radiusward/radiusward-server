@@ -6,7 +6,7 @@
 #
 # Changing this file changes the generated AccountingFields / AccountingAttributeExtractor API.
 
-constants Cisco Juniper Unisphere Mikrotik Huawei Meraki Ruckus
+constants Cisco Juniper Unisphere Mikrotik Huawei Meraki Ruckus Microsoft
 
 # --- RFC 2866 / 2869 accounting ----------------------------------------------------------------
 ietf      Acct-Status-Type            statusType

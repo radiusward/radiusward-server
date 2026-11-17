@@ -4,12 +4,22 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
+import static io.radiusward.radius.codec.attributes.Ietf.CHAP_CHALLENGE;
+import static io.radiusward.radius.codec.attributes.Ietf.CHAP_PASSWORD;
+import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
+import static io.radiusward.radius.codec.attributes.Ietf.PROXY_STATE;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
+import static io.radiusward.radius.codec.attributes.Ietf.VENDOR_SPECIFIC;
+
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -53,16 +63,7 @@ final class Proxy {
     static final int TAKEN = 1;
     static final int DROPPED = 2;
 
-    private static final int USER_NAME = 1;
-    private static final int USER_PASSWORD = 2;
-    private static final int CHAP_PASSWORD = 3;
-    private static final int VENDOR_SPECIFIC = 26;
-    private static final int CALLING_STATION_ID = 31;
-    private static final int PROXY_STATE = 33;
-    private static final int CHAP_CHALLENGE = 60;
     private static final int TUNNEL_PASSWORD = 69;
-    private static final int MESSAGE_AUTHENTICATOR = 80;
-    private static final int MICROSOFT = 311;
     private static final int STATUS_ID = -2; // a home server's identifier used by its Status-Server probe
 
     /** Answers to the NAS go through the agent's own socket and reply cache. */
@@ -763,7 +764,7 @@ final class Proxy {
                     nasAuthenticators,
                     slot * 16);
         }
-        if (type == VENDOR_SPECIFIC && l > 8 && reply.getInt(w + 2, ByteOrder.BIG_ENDIAN) == MICROSOFT) {
+        if (type == VENDOR_SPECIFIC && l > 8 && reply.getInt(w + 2, ByteOrder.BIG_ENDIAN) == Microsoft.VENDOR_ID) {
             for (int p = w + 6; p + 2 <= w + l; ) {
                 int sub = reply.getByte(p) & 0xFF;
                 int sl = reply.getByte(p + 1) & 0xFF;

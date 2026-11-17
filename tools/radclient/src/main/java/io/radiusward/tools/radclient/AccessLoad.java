@@ -4,6 +4,9 @@
  */
 package io.radiusward.tools.radclient;
 
+import static io.radiusward.radius.codec.attributes.Ietf.NAS_IDENTIFIER;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -252,9 +255,9 @@ final class AccessLoad {
         encoder.wrap(buffer, 0)
                 .header(RadiusCode.ACCESS_REQUEST, identifier)
                 .authenticator(requestAuthenticator)
-                .attribute(1, user)
+                .attribute(USER_NAME, user)
                 .ipv4(4, 0x7F000001L)
-                .attribute(32, "load");
+                .attribute(NAS_IDENTIFIER, "load");
         credentials.write(
                 encoder,
                 requestAuthenticator,

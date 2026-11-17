@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.EAP_MESSAGE;
+
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import java.util.Arrays;
@@ -25,7 +27,6 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
     static final int TYPE_NAK = 3;
     static final int TYPE_MD5 = 4;
 
-    private static final int EAP_MESSAGE = 79;
     private static final int MAX_LENGTH = 4096;
 
     /**

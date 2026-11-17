@@ -5,6 +5,7 @@
 package io.radiusward.gateway;
 
 import static io.radiusward.gateway.GatewayStats.Counter;
+import static io.radiusward.radius.codec.attributes.Ietf.PROXY_STATE;
 
 import io.radiusward.protocol.AccountingCommandEncoder;
 import io.radiusward.protocol.AccountingCommittedDecoder;
@@ -55,7 +56,6 @@ final class UdpAgent implements Agent {
     static final int NEW_LEADER_MSG = 4;
 
     private static final int RECEIVE_BATCH = 64;
-    private static final int PROXY_STATE = 33;
     private static final long HOUSEKEEPING_INTERVAL_NS = 100_000_000L;
 
     private final GatewayConfig config;

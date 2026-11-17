@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.RadiusPacket;
 
@@ -12,8 +14,6 @@ import io.radiusward.radius.codec.RadiusPacket;
  * reply already carries an address or prefix of that kind.
  */
 final class AddressAssignment {
-
-    private static final int CALLING_STATION_ID = 31;
 
     private final OnceLogger once;
 

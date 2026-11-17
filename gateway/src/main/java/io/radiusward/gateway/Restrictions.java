@@ -4,6 +4,9 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.time.Instant;
@@ -15,9 +18,6 @@ import java.util.function.LongSupplier;
  * counters, which reject or cap the Accept's Session-Timeout, and Simultaneous-Use, which the cluster counts.
  */
 final class Restrictions {
-
-    private static final int USER_NAME = 1;
-    private static final int CALLING_STATION_ID = 31;
 
     private final CheckItems checkItems;
     private final LongSupplier clockMillis;

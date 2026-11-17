@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.ACCT_SESSION_ID;
+
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
@@ -65,7 +67,8 @@ final class DisconnectOldest implements SessionLimits {
                     .join();
             service.countSimultaneousUse(r.outcome() == DynamicAuthorization.Outcome.ACK);
             if (r.outcome() != DynamicAuthorization.Outcome.ACK) {
-                LOG.debug("Simultaneous-Use: disconnecting session {} failed: {}", oldest.attribute(44), r);
+                LOG.debug(
+                        "Simultaneous-Use: disconnecting session {} failed: {}", oldest.attribute(ACCT_SESSION_ID), r);
                 continue;
             }
             long deadline = System.nanoTime() + wait.toNanos();

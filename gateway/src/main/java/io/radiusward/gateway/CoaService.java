@@ -4,6 +4,11 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.ACCT_SESSION_ID;
+import static io.radiusward.radius.codec.attributes.Ietf.NAS_IDENTIFIER;
+import static io.radiusward.radius.codec.attributes.Ietf.NAS_IP_ADDRESS;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.AttributeText;
 import io.radiusward.radius.dictionary.AttributeDef;
@@ -29,8 +34,6 @@ import org.agrona.concurrent.UnsafeBuffer;
  */
 public final class CoaService {
 
-    static final int NAS_IP_ADDRESS = 4;
-    static final int NAS_IDENTIFIER = 32;
     static final int NAS_IPV6_ADDRESS = 95;
     static final Duration QUERY_TIMEOUT = Duration.ofSeconds(5);
 
@@ -150,7 +153,11 @@ public final class CoaService {
                     .join();
             NasClient nas = nasOf(s);
             out.add(new SessionResult(
-                    nas == null ? null : nas.name(), s.attribute(44), s.attribute(1), r.outcome(), r.errorCause()));
+                    nas == null ? null : nas.name(),
+                    s.attribute(ACCT_SESSION_ID),
+                    s.attribute(USER_NAME),
+                    r.outcome(),
+                    r.errorCause()));
         }
         return out;
     }
@@ -167,7 +174,7 @@ public final class CoaService {
         if (user != null) {
             for (ClusterQueries.Session s :
                     queries.userSessions(UserKeys.user(new UnsafeBuffer(user), 0, user.length), QUERY_TIMEOUT)) {
-                String id = s.attribute(44);
+                String id = s.attribute(ACCT_SESSION_ID);
                 if (sessionId == null || (id != null && id.equals(new String(sessionId, StandardCharsets.UTF_8)))) {
                     NasClient nas = nasOf(s);
                     return nas == null ? null : deliver(nas, s, code, attributes);

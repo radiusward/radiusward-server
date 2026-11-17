@@ -6,6 +6,7 @@ package io.radiusward.tools.radclient;
 
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -36,10 +37,6 @@ final class AccessCredentials {
             };
         }
     }
-
-    static final int MICROSOFT = 311;
-    static final int MS_CHAP_CHALLENGE = 11;
-    static final int MS_CHAP2_RESPONSE = 25;
 
     private final Random random;
     private final AccessRequests requests = new AccessRequests();
@@ -89,8 +86,8 @@ final class AccessCredentials {
                 System.arraycopy(peerChallenge, 0, response, 2, 16);
                 System.arraycopy(
                         ntResponse(authenticatorChallenge, peerChallenge, user, password), 0, response, 26, 24);
-                encoder.vendorAttribute(MICROSOFT, MS_CHAP_CHALLENGE, authenticatorChallenge);
-                encoder.vendorAttribute(MICROSOFT, MS_CHAP2_RESPONSE, response);
+                encoder.vendorAttribute(Microsoft.VENDOR_ID, Microsoft.CHAP_CHALLENGE, authenticatorChallenge);
+                encoder.vendorAttribute(Microsoft.VENDOR_ID, Microsoft.CHAP2_RESPONSE, response);
             }
         }
     }

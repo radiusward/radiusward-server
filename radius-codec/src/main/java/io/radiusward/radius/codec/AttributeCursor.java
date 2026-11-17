@@ -6,6 +6,7 @@ package io.radiusward.radius.codec;
 
 import static java.nio.ByteOrder.BIG_ENDIAN;
 
+import io.radiusward.radius.codec.attributes.Ietf;
 import org.agrona.DirectBuffer;
 
 /**
@@ -28,7 +29,7 @@ import org.agrona.DirectBuffer;
  */
 public final class AttributeCursor {
 
-    public static final int VENDOR_SPECIFIC = 26;
+    public static final int VENDOR_SPECIFIC = Ietf.VENDOR_SPECIFIC;
 
     private static final int VSA_HEADER_LENGTH = 6; // type, length, 4 byte vendor id
 

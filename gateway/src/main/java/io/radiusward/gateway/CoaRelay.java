@@ -4,6 +4,10 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.ERROR_CAUSE;
+import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
+import static io.radiusward.radius.codec.attributes.Ietf.PROXY_STATE;
+
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
@@ -37,9 +41,6 @@ import org.apache.logging.log4j.Logger;
 final class CoaRelay implements AutoCloseable {
 
     private static final Logger LOG = LogManager.getLogger(CoaRelay.class);
-    private static final int PROXY_STATE = 33;
-    private static final int MESSAGE_AUTHENTICATOR = 80;
-    private static final int ERROR_CAUSE = 101;
     static final int SESSION_CONTEXT_NOT_FOUND = 503;
     static final int RESOURCES_UNAVAILABLE = 506;
     private static final long REMEMBER_MS = 30_000;

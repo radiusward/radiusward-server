@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.common.management.PrometheusWriter;
 import java.util.HashMap;
@@ -103,7 +105,7 @@ final class StoreSweep implements Runnable {
         do {
             ClusterQueries.Page page = coa.queries().page(from, 64, CoaService.QUERY_TIMEOUT);
             for (ClusterQueries.Session s : page.sessions()) {
-                String user = s.attribute(1);
+                String user = s.attribute(USER_NAME);
                 NasClient nas = coa.nasOf(s);
                 if (!running || user == null || nas == null || !seen.add(user)) {
                     continue;

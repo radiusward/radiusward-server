@@ -4,11 +4,14 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.Md4;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -24,15 +27,6 @@ import java.util.function.Supplier;
  */
 final class MsChapAuthenticator {
 
-    static final int MICROSOFT = 311;
-    private static final int MS_CHAP_RESPONSE = 1;
-    private static final int MS_CHAP_ERROR = 2;
-    private static final int MS_CHAP_CHALLENGE = 11;
-    private static final int MS_CHAP_MPPE_KEYS = 12;
-    private static final int MS_MPPE_SEND_KEY = 16;
-    private static final int MS_MPPE_RECV_KEY = 17;
-    private static final int MS_CHAP2_RESPONSE = 25;
-    private static final int MS_CHAP2_SUCCESS = 26;
     private static final int RESPONSE_LENGTH = 50;
 
     private final SecureRandom saltRandom = new SecureRandom();
@@ -136,9 +130,9 @@ final class MsChapAuthenticator {
 
     /** The MS-CHAP request of {@code request}; {@code null} if malformed. */
     static Request request(RadiusPacket request, int method) {
-        byte[] challenge = vendorValue(request, MS_CHAP_CHALLENGE);
+        byte[] challenge = vendorValue(request, Microsoft.CHAP_CHALLENGE);
         boolean v2 = method == AccessRequests.METHOD_MS_CHAP2;
-        byte[] response = vendorValue(request, v2 ? MS_CHAP2_RESPONSE : MS_CHAP_RESPONSE);
+        byte[] response = vendorValue(request, v2 ? Microsoft.CHAP2_RESPONSE : Microsoft.CHAP_RESPONSE);
         if (challenge == null || response == null || response.length != RESPONSE_LENGTH) {
             return null;
         }
@@ -147,7 +141,7 @@ final class MsChapAuthenticator {
             if (challenge.length != 16) {
                 return null;
             }
-            byte[] name = request.octets(1);
+            byte[] name = request.octets(USER_NAME);
             if (name == null) {
                 return null; // MS-CHAPv2 hashes the User-Name in
             }
@@ -187,13 +181,13 @@ final class MsChapAuthenticator {
             byte[] value = new byte[1 + success.length()];
             value[0] = (byte) outcome.ident;
             System.arraycopy(success.getBytes(StandardCharsets.US_ASCII), 0, value, 1, success.length());
-            out.vendorAttribute(MICROSOFT, MS_CHAP2_SUCCESS, value);
+            out.vendorAttribute(Microsoft.VENDOR_ID, Microsoft.CHAP2_SUCCESS, value);
             byte[] master = MsChap.masterKeyFromKey(outcome.ntHashHash, outcome.ntResponse);
             writeMppeKeys(context, MsChap.serverKey(master, true), MsChap.serverKey(master, false));
         } else {
             out.vendorAttribute(
-                    MICROSOFT,
-                    MS_CHAP_MPPE_KEYS,
+                    Microsoft.VENDOR_ID,
+                    Microsoft.CHAP_MPPE_KEYS,
                     MsChap.encryptV1Keys(new byte[8], outcome.ntHashHash, secret, authenticator));
         }
     }
@@ -205,9 +199,14 @@ final class MsChapAuthenticator {
         context.request().buffer().getBytes(context.request().authenticatorOffset(), authenticator);
         int salt = saltRandom.nextInt(0x8000) & ~1; // high bit set by salt()
         RadiusPacketEncoder out = context.reply();
-        out.vendorAttribute(MICROSOFT, MS_MPPE_SEND_KEY, MsChap.encryptKey(sendKey, secret, authenticator, salt(salt)));
         out.vendorAttribute(
-                MICROSOFT, MS_MPPE_RECV_KEY, MsChap.encryptKey(recvKey, secret, authenticator, salt(salt | 1)));
+                Microsoft.VENDOR_ID,
+                Microsoft.MPPE_SEND_KEY,
+                MsChap.encryptKey(sendKey, secret, authenticator, salt(salt)));
+        out.vendorAttribute(
+                Microsoft.VENDOR_ID,
+                Microsoft.MPPE_RECV_KEY,
+                MsChap.encryptKey(recvKey, secret, authenticator, salt(salt | 1)));
     }
 
     private static byte[] salt(int value) {
@@ -217,12 +216,12 @@ final class MsChapAuthenticator {
     /** MS-CHAP-Error "authentication failure" (E=691), no retry; the reason stays in the logs. */
     static void writeError(AccessContext context, int method) {
         RadiusPacket request = context.request();
-        byte[] response =
-                vendorValue(request, method == AccessRequests.METHOD_MS_CHAP2 ? MS_CHAP2_RESPONSE : MS_CHAP_RESPONSE);
+        byte[] response = vendorValue(
+                request, method == AccessRequests.METHOD_MS_CHAP2 ? Microsoft.CHAP2_RESPONSE : Microsoft.CHAP_RESPONSE);
         int ident = response == null || response.length == 0 ? 0 : response[0] & 0xFF;
         String text = "E=691 R=0";
         if (method == AccessRequests.METHOD_MS_CHAP2) {
-            byte[] challenge = vendorValue(request, MS_CHAP_CHALLENGE);
+            byte[] challenge = vendorValue(request, Microsoft.CHAP_CHALLENGE);
             text += " C="
                     + (challenge == null
                             ? ""
@@ -231,7 +230,7 @@ final class MsChapAuthenticator {
         byte[] value = new byte[1 + text.length()];
         value[0] = (byte) ident;
         System.arraycopy(text.getBytes(StandardCharsets.US_ASCII), 0, value, 1, text.length());
-        context.reply().vendorAttribute(MICROSOFT, MS_CHAP_ERROR, value);
+        context.reply().vendorAttribute(Microsoft.VENDOR_ID, Microsoft.CHAP_ERROR, value);
     }
 
     /** The value of a Microsoft vendor attribute (RFC 2548 layout), or {@code null}. */
@@ -243,7 +242,7 @@ final class MsChapAuthenticator {
             if (length < 2) {
                 return null;
             }
-            if (type == 26 && length >= 8 && b.getInt(pos + 2, java.nio.ByteOrder.BIG_ENDIAN) == MICROSOFT) {
+            if (type == 26 && length >= 8 && b.getInt(pos + 2, java.nio.ByteOrder.BIG_ENDIAN) == Microsoft.VENDOR_ID) {
                 int vType = b.getByte(pos + 6) & 0xFF;
                 int vLength = b.getByte(pos + 7) & 0xFF;
                 if (vType == vendorType && vLength >= 2 && 6 + vLength <= length) {

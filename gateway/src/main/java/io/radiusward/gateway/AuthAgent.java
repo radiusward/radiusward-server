@@ -4,6 +4,8 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
@@ -268,7 +270,7 @@ final class AuthAgent implements Agent, Proxy.Replies {
         }
 
         if (proxy != null) {
-            int at = packet.findAttribute(1); // User-Name: a proxied realm goes to its home servers (ADR 0037)
+            int at = packet.findAttribute(USER_NAME); // a proxied realm goes to its home servers (ADR 0037)
             ProxyConfig.Realm realm =
                     at < 0 ? null : proxy.config().realmOf(received, packet.valueOffset(at), packet.valueLength(at));
             if (realm != null) {

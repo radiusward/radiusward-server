@@ -4,6 +4,9 @@
  */
 package io.radiusward.gateway;
 
+import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
+import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
+
 import io.radiusward.radius.codec.AccessResponses;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import org.agrona.concurrent.Agent;
@@ -79,8 +82,8 @@ final class AccessWorker implements Agent {
             log.record(new AuthLog.Entry(
                     java.time.Instant.now(),
                     nas.name(),
-                    context.request().string(1),
-                    context.request().string(31),
+                    context.request().string(USER_NAME),
+                    context.request().string(CALLING_STATION_ID),
                     code == AccessHandler.ACCEPT,
                     code == AccessHandler.REJECT
                             ? (context.reason() != null

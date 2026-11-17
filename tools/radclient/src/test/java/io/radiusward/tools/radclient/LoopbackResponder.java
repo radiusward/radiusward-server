@@ -11,6 +11,7 @@ import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.radius.codec.attributes.Microsoft;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -106,8 +107,8 @@ final class LoopbackResponder implements AutoCloseable {
                         == AccessRequests.CHAP_MATCH;
             }
             case AccessRequests.METHOD_MS_CHAP2 -> {
-                byte[] challenge = vendorAttribute(data, AccessCredentials.MS_CHAP_CHALLENGE);
-                byte[] response = vendorAttribute(data, AccessCredentials.MS_CHAP2_RESPONSE);
+                byte[] challenge = vendorAttribute(data, Microsoft.CHAP_CHALLENGE);
+                byte[] response = vendorAttribute(data, Microsoft.CHAP2_RESPONSE);
                 yield challenge != null
                         && response != null
                         && response.length == 50
@@ -135,7 +136,7 @@ final class LoopbackResponder implements AutoCloseable {
                                     | (data[at + 3] & 0xFF) << 16
                                     | (data[at + 4] & 0xFF) << 8
                                     | (data[at + 5] & 0xFF))
-                            == AccessCredentials.MICROSOFT
+                            == Microsoft.VENDOR_ID
                     && (data[at + 6] & 0xFF) == type) {
                 return Arrays.copyOfRange(data, at + 8, at + 6 + (data[at + 7] & 0xFF));
             }

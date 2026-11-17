@@ -6,6 +6,7 @@ package io.radiusward.radius.codec;
 
 import static java.nio.ByteOrder.BIG_ENDIAN;
 
+import io.radiusward.radius.codec.attributes.Ietf;
 import org.agrona.DirectBuffer;
 
 /**
@@ -37,7 +38,7 @@ public final class RadiusPacket {
     public static final int MAX_LENGTH = 4096;
 
     /** RFC 2869 Message-Authenticator. */
-    public static final int MESSAGE_AUTHENTICATOR = 80;
+    public static final int MESSAGE_AUTHENTICATOR = Ietf.MESSAGE_AUTHENTICATOR;
 
     public static final int MESSAGE_AUTHENTICATOR_LENGTH = 18;
 
