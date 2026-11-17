@@ -49,10 +49,13 @@ public final class NasRegistry {
         NasClient[] ranges;
         NasClient[] ranges6; // IPv6 entries, longest prefix first
         List<NasClient> all;
-        // the last IPv6 sender and its entry: the JDK hands out the same address object for a repeating sender
-        volatile Inet6Address lastAddress6;
-        volatile NasClient lastClient6;
+        // the last IPv6 sender and its entry: the JDK hands out the same address object for a repeating sender.
+        // One object, so threads looking up at once never see one sender's address with another's entry.
+        volatile LastSender last6;
     }
+
+    /** An IPv6 sender and the entry it matched ({@code null}: none). */
+    private record LastSender(Inet6Address address, NasClient client) {}
 
     private volatile Table table;
     private volatile DynamicClients dynamic; // entries looked up on demand (ADR 0046), after the configured ones
@@ -190,8 +193,9 @@ public final class NasRegistry {
     public NasClient lookup(InetAddress address) {
         Table t = table;
         if (address instanceof Inet6Address v6) {
-            if (v6 == t.lastAddress6) {
-                return t.lastClient6;
+            LastSender last = t.last6;
+            if (last != null && last.address() == v6) {
+                return last.client();
             }
             byte[] bytes = v6.getAddress();
             NasClient found = null;
@@ -201,8 +205,7 @@ public final class NasRegistry {
                     break;
                 }
             }
-            t.lastClient6 = found;
-            t.lastAddress6 = v6;
+            t.last6 = new LastSender(v6, found); // a miss allocates already (getAddress)
             return found;
         }
         if (!(address instanceof Inet4Address)) {

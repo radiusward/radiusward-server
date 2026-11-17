@@ -190,6 +190,56 @@ class NasRegistryTest {
     }
 
     @Test
+    void concurrentIpv6SendersAlwaysGetTheirOwnEntry() throws Exception {
+        // agents on their own threads look up at once: the cached last sender must never pair one sender's address
+        // with another sender's entry
+        int senders = 4;
+        Map<String, String> settings = new java.util.HashMap<>();
+        InetAddress[] addresses = new InetAddress[senders];
+        for (int i = 0; i < senders; i++) {
+            settings.put("nas.n" + i + ".address", "2001:db8:" + i + "::/64");
+            settings.put("nas.n" + i + ".secret", "s" + i);
+            addresses[i] = InetAddress.getByName("2001:db8:" + i + "::1"); // one object per sender, as the JDK does
+        }
+        NasRegistry r = NasRegistry.from(Config.of(settings));
+        NasClient[] expected = new NasClient[senders];
+        for (int i = 0; i < senders; i++) {
+            expected[i] = r.lookup(addresses[i]);
+            assertThat(expected[i].name()).isEqualTo("n" + i);
+        }
+        java.util.concurrent.atomic.AtomicLong wrong = new java.util.concurrent.atomic.AtomicLong();
+        java.util.concurrent.CountDownLatch go = new java.util.concurrent.CountDownLatch(1);
+        long until = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+        Thread[] threads = new Thread[senders];
+        for (int i = 0; i < senders; i++) {
+            int me = i;
+            threads[i] = new Thread(() -> {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                while (System.nanoTime() - until < 0) {
+                    for (int n = 0; n < 1000; n++) {
+                        if (r.lookup(addresses[me]) != expected[me]) {
+                            wrong.incrementAndGet();
+                        }
+                    }
+                }
+            });
+            threads[i].start();
+        }
+        go.countDown();
+        for (Thread t : threads) {
+            t.join();
+        }
+        assertThat(wrong.get())
+                .as("lookups answered with another sender's entry")
+                .isZero();
+    }
+
+    @Test
     void ipv6EntriesMatchLongestPrefixFirst() throws Exception {
         NasRegistry r = NasRegistry.from(Config.of(Map.of(
                 "nas.lab.address", "2001:db8:1::/48",
