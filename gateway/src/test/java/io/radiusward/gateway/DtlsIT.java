@@ -224,6 +224,53 @@ class DtlsIT {
         assertThat(agent().getDtls(RadsecAgent.Counter.CONNECTIONS_ACCEPTED)).isEqualTo(1);
     }
 
+    /** A DTLS ClientHello from a fresh loopback socket, as a NAS starting a handshake sends it. */
+    private void sendClientHello(DatagramSocket from, int port) throws Exception {
+        javax.net.ssl.SSLEngine e =
+                TestPki.clientContext(pki.client("nas-1"), pki.ca, "DTLS").createSSLEngine();
+        e.setUseClientMode(true);
+        e.beginHandshake();
+        java.nio.ByteBuffer out = java.nio.ByteBuffer.allocate(1 << 16);
+        e.wrap(java.nio.ByteBuffer.allocate(0), out);
+        from.send(new java.net.DatagramPacket(out.array(), out.position(), InetAddress.getLoopbackAddress(), port));
+    }
+
+    @Test
+    void aClientHelloFromAnAddressNoEntryAllowsGetsNoState() throws Exception {
+        // the only NAS entry is elsewhere, and none is identified by its certificate alone
+        int port = start(
+                Map.of(),
+                NasRegistry.of(java.util.List.of(NasClient.builder("local", 1001)
+                        .network(0x0A000001, 32)
+                        .secret(AuthAgentTest.SECRET)
+                        .build())));
+        try (DatagramSocket stranger = new DatagramSocket(0, InetAddress.getLoopbackAddress())) {
+            sendClientHello(stranger, port);
+            RadsecIT.LocalWait.until(() -> agent().getDtls(RadsecAgent.Counter.NAS_REFUSED) == 1);
+        }
+        assertThat(agent().getDtls(RadsecAgent.Counter.CONNECTIONS_ACCEPTED))
+                .as("no association, no engine for strangers")
+                .isZero();
+        assertThat(agent().openAssociations()).isZero();
+    }
+
+    @Test
+    void aFullAssociationTableRefusesNewClientHellos() throws Exception {
+        int port = start(Map.of("radsec.dtls.associations", "1"));
+        try (DtlsClient client = connect(port, "nas-1");
+                DatagramSocket second = new DatagramSocket(0, InetAddress.getLoopbackAddress())) {
+            byte[] good = AuthAgentTest.accessRequest(1, "arctangent", true, false, DTLS);
+            client.send(good);
+            AuthAgentTest.assertSignedReplyTo(client.receive(), good, RadiusCode.ACCESS_ACCEPT, DTLS);
+            sendClientHello(second, port);
+            RadsecIT.LocalWait.until(() -> agent().getDtls(RadsecAgent.Counter.CONNECTIONS_REFUSED) == 1);
+            assertThat(agent().openAssociations()).as("the first one stays").isEqualTo(1);
+            byte[] again = AuthAgentTest.accessRequest(2, "arctangent", true, false, DTLS);
+            client.send(again);
+            AuthAgentTest.assertSignedReplyTo(client.receive(), again, RadiusCode.ACCESS_ACCEPT, DTLS);
+        }
+    }
+
     @Test
     void idleAssociationsAndUnfinishedHandshakesTimeOut() throws Exception {
         int port = start(Map.of("radsec.dtls.idle.timeout", "300ms", "radsec.handshake.timeout", "300ms"));
