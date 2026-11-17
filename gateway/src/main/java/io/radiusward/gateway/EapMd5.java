@@ -41,18 +41,31 @@ final class EapMd5 implements EapMethod {
         }
         for (AttributeItem p : credentials.passwords()) {
             if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)) {
-                try {
-                    MessageDigest md5 = MessageDigest.getInstance("MD5");
-                    md5.update((byte) identifier);
-                    md5.update(p.value().getBytes(StandardCharsets.UTF_8));
-                    md5.update(challenge);
-                    byte[] value = java.util.Arrays.copyOfRange(data, 1, 17);
-                    return MessageDigest.isEqual(md5.digest(), value) ? Step.succeeded(null) : Step.FAILED;
-                } catch (NoSuchAlgorithmException e) {
-                    throw new IllegalStateException(e);
-                }
+                byte[] value = java.util.Arrays.copyOfRange(data, 1, 17);
+                return chapMatches(identifier, p.value().getBytes(StandardCharsets.UTF_8), challenge, value)
+                        ? Step.succeeded(null)
+                        : Step.FAILED;
             }
         }
         return Step.FAILED;
+    }
+
+    /**
+     * Whether {@code response} is {@code MD5(identifier + password + challenge)}: CHAP (RFC 1994 §4.1), and EAP-MD5,
+     * which is the same computation (RFC 3748 §5.4). Constant-time comparison; {@code password} is cleared.
+     */
+    @SuppressWarnings("java:S4790") // MD5 is what CHAP and EAP-MD5 are defined with; not a choice of hash
+    static boolean chapMatches(int identifier, byte[] password, byte[] challenge, byte[] response) {
+        try {
+            MessageDigest md5 = MessageDigest.getInstance("MD5");
+            md5.update((byte) identifier);
+            md5.update(password);
+            md5.update(challenge);
+            return MessageDigest.isEqual(md5.digest(), response);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("MD5 is required by the Java platform", e);
+        } finally {
+            java.util.Arrays.fill(password, (byte) 0);
+        }
     }
 }

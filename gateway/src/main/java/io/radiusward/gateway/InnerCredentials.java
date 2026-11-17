@@ -9,7 +9,6 @@ import io.radiusward.auth.CredentialVerifier;
 import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 /**
  * The credentials of a tunnel's inner user (PEAP, TTLS, TEAP: PAP, CHAP, MS-CHAP, MS-CHAPv2), checked like the same
@@ -78,22 +77,9 @@ final class InnerCredentials {
         }
         for (AttributeItem p : a.passwords()) {
             if (p.attribute().equalsIgnoreCase(PasswordCheck.CLEARTEXT)) {
-                byte[] clear = p.value().getBytes(StandardCharsets.UTF_8);
-                try {
-                    java.security.MessageDigest md5 = java.security.MessageDigest.getInstance("MD5");
-                    md5.update((byte) identifier);
-                    md5.update(clear);
-                    md5.update(challenge);
-                    return new EapMethod.Inner(
-                            java.security.MessageDigest.isEqual(md5.digest(), response)
-                                    ? AccessHandler.ACCEPT
-                                    : AccessHandler.REJECT,
-                            null);
-                } catch (java.security.NoSuchAlgorithmException e) {
-                    throw new IllegalStateException(e);
-                } finally {
-                    Arrays.fill(clear, (byte) 0);
-                }
+                boolean matches =
+                        EapMd5.chapMatches(identifier, p.value().getBytes(StandardCharsets.UTF_8), challenge, response);
+                return new EapMethod.Inner(matches ? AccessHandler.ACCEPT : AccessHandler.REJECT, null);
             }
         }
         return new EapMethod.Inner(AccessHandler.REJECT, null);
