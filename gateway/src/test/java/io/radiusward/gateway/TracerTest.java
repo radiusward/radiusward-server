@@ -44,6 +44,20 @@ class TracerTest {
     }
 
     @Test
+    void vendorAttributesAreNamedWithTheirVendorAndMsChapValuesStayHidden() {
+        Tracer tracer = new Tracer(
+                HandlerFixture.DICTIONARY,
+                List.of(new Tracer.Condition(Tracer.Kind.USER, "User", Long.MAX_VALUE)),
+                () -> 1000);
+        RadiusPacket request = packet(HandlerFixture.msChap2("User", "clientPass"));
+        Tracer.Trace trace = tracer.start(request, NAS);
+        String text = tracer.render(trace, request, NAS, AccessHandler.REJECT, new UnsafeBuffer(new byte[20]), 0);
+        assertThat(text)
+                .contains("Microsoft.CHAP-Challenge = <16 bytes>", "Microsoft.CHAP2-Response = <50 bytes>")
+                .doesNotContain("0x");
+    }
+
+    @Test
     void conditionsSelectRequestsAndSecretsStayHidden() {
         long[] now = {1000};
         Tracer tracer = new Tracer(

@@ -5,6 +5,7 @@
 package io.radiusward.radius.codec;
 
 import io.radiusward.radius.dictionary.AttributeDef;
+import io.radiusward.radius.dictionary.Dictionary;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -20,6 +21,26 @@ import org.agrona.DirectBuffer;
 public final class AttributeText {
 
     private AttributeText() {}
+
+    /** The dictionary entry of the attribute at the cursor, top level or of a vendor; {@code null} if it has none. */
+    public static AttributeDef definition(Dictionary dictionary, AttributeCursor cursor) {
+        return cursor.vendorId() == 0
+                ? dictionary.attribute(cursor.type())
+                : dictionary.vendorAttribute(cursor.vendorId(), cursor.type());
+    }
+
+    /**
+     * The name an attribute is shown by: its dictionary name, {@code Vendor.Name} for a vendor's, and without an entry
+     * {@code Attr-<type>} or {@code Vendor-<id>-Attr-<type>}.
+     */
+    public static String name(AttributeDef def, AttributeCursor cursor) {
+        if (def != null) {
+            return cursor.vendorId() == 0 ? def.name() : def.vendor().name() + "." + def.name();
+        }
+        return cursor.vendorId() == 0
+                ? "Attr-" + cursor.type()
+                : "Vendor-" + cursor.vendorId() + "-Attr-" + cursor.type();
+    }
 
     /**
      * The value bytes of {@code text} for {@code def}: integers as numbers or the dictionary's {@code VALUE} names,

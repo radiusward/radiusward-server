@@ -5,6 +5,7 @@
 package io.radiusward.export;
 
 import io.radiusward.radius.codec.AttributeCursor;
+import io.radiusward.radius.codec.AttributeText;
 import io.radiusward.radius.codec.AttributeValues;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.VendorFormats;
@@ -146,14 +147,8 @@ public final class Attributes {
         cursor.wrap(raw, 0, attributes.length);
         Map<String, List<String>> values = new LinkedHashMap<>();
         while (cursor.next()) {
-            AttributeDef def = cursor.vendorId() == 0
-                    ? dictionary.attribute(cursor.type())
-                    : dictionary.vendorAttribute(cursor.vendorId(), cursor.type());
-            String name = def != null
-                    ? (cursor.vendorId() == 0 ? def.name() : def.vendor().name() + "." + def.name())
-                    : (cursor.vendorId() == 0
-                            ? "Attr-" + cursor.type()
-                            : "Vendor-" + cursor.vendorId() + "-Attr-" + cursor.type());
+            AttributeDef def = AttributeText.definition(dictionary, cursor);
+            String name = AttributeText.name(def, cursor);
             if (exclude.contains(name)) {
                 continue;
             }

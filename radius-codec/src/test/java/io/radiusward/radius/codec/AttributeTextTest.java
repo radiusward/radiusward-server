@@ -78,4 +78,20 @@ class AttributeTextTest {
         assertThat(AttributeText.decode(prefix, new UnsafeBuffer(new byte[] {0}), 0, 1))
                 .isEqualTo("0x00");
     }
+
+    @Test
+    void namesOfTopLevelVendorAndUnknownAttributes() {
+        io.radiusward.radius.dictionary.Dictionary dictionary =
+                io.radiusward.radius.dictionary.DictionaryLoader.loadBundled();
+        // User-Name, a Microsoft MS-CHAP-Challenge, an unknown top-level type and an unknown vendor's attribute
+        byte[] attributes =
+                Packets.hex("01 05 616263" + " 1a 0a 00000137 0b 04 aaaa" + " f0 03 00" + " 1a 09 0000ffff 07 03 01");
+        AttributeCursor cursor =
+                new AttributeCursor().wrap(new org.agrona.concurrent.UnsafeBuffer(attributes), 0, attributes.length);
+        java.util.List<String> names = new java.util.ArrayList<>();
+        while (cursor.next()) {
+            names.add(AttributeText.name(AttributeText.definition(dictionary, cursor), cursor));
+        }
+        assertThat(names).containsExactly("User-Name", "Microsoft.CHAP-Challenge", "Attr-240", "Vendor-65535-Attr-7");
+    }
 }

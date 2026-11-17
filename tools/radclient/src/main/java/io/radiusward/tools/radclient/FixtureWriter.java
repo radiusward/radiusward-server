@@ -5,6 +5,7 @@
 package io.radiusward.tools.radclient;
 
 import io.radiusward.radius.codec.AttributeCursor;
+import io.radiusward.radius.codec.AttributeText;
 import io.radiusward.radius.codec.AttributeValues;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.VendorFormats;
@@ -54,9 +55,7 @@ final class FixtureWriter {
         out.append("attributes:\n");
         AttributeCursor cursor = new AttributeCursor(VendorFormats.from(dictionary)).wrap(packet);
         while (cursor.next()) {
-            AttributeDef def = cursor.vendorId() == 0
-                    ? dictionary.attribute(cursor.type())
-                    : dictionary.vendorAttribute(cursor.vendorId(), cursor.type());
+            AttributeDef def = AttributeText.definition(dictionary, cursor);
             if (def == null) {
                 out.append("  # not in the dictionary: vendor ")
                         .append(cursor.vendorId())
@@ -71,7 +70,7 @@ final class FixtureWriter {
                         .append('\n');
                 continue;
             }
-            String name = cursor.vendorId() == 0 ? def.name() : def.vendor().name() + "." + def.name();
+            String name = AttributeText.name(def, cursor);
             out.append("  ")
                     .append(name)
                     .append(": ")

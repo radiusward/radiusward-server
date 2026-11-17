@@ -190,14 +190,8 @@ final class Tracer {
         StringBuilder out = new StringBuilder();
         AttributeCursor cursor = new AttributeCursor(formats).wrap(buffer, start, end);
         while (cursor.next()) {
-            AttributeDef def = cursor.vendorId() == 0
-                    ? dictionary.attribute(cursor.type())
-                    : dictionary.vendorAttribute(cursor.vendorId(), cursor.type());
-            String name = def == null
-                    ? (cursor.vendorId() == 0
-                            ? "Attr-" + cursor.type()
-                            : "Vendor-" + cursor.vendorId() + "-Attr-" + cursor.type())
-                    : def.name();
+            AttributeDef def = AttributeText.definition(dictionary, cursor);
+            String name = AttributeText.name(def, cursor);
             if (!out.isEmpty()) {
                 out.append(", ");
             }
@@ -215,12 +209,18 @@ final class Tracer {
         return out.toString();
     }
 
+    /**
+     * Whether a value stays out of traces, judged by the dictionary name without a vendor's prefix: passwords, keys,
+     * everything of CHAP, MS-CHAP and MPPE (the dictionaries name Microsoft's {@code CHAP-Challenge} and {@code
+     * CHAP2-Response}: with the challenge, a response is enough to guess the password offline), EAP and
+     * Message-Authenticator.
+     */
     static boolean secret(AttributeDef def, String name) {
-        String n = name.toLowerCase(Locale.ROOT);
+        String n = (def != null ? def.name() : name).toLowerCase(Locale.ROOT);
         return (def != null && def.encrypt() != null)
                 || n.contains("password")
-                || n.startsWith("ms-chap")
-                || n.startsWith("ms-mppe")
+                || n.contains("chap")
+                || n.contains("mppe")
                 || n.equals("eap-message")
                 || n.equals("message-authenticator")
                 || n.contains("key");
