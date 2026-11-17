@@ -23,10 +23,7 @@ import io.radiusward.radius.codec.attributes.AccountingAttributeExtractor;
 import io.radiusward.radius.codec.attributes.AccountingFields;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
-import java.nio.channels.DatagramChannel;
 import org.agrona.BufferUtil;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.Agent;
@@ -65,8 +62,9 @@ final class UdpAgent implements Agent {
     private final GatewayStats stats;
     private final NanoClock clock;
 
-    private final ByteBuffer receiveBuffer = BufferUtil.allocateDirectAligned(RadiusPacket.MAX_LENGTH + 64, 64);
-    private final UnsafeBuffer received = new UnsafeBuffer(receiveBuffer);
+    private final UdpReceiver socket = new UdpReceiver("RADIUS accounting");
+    private final UnsafeBuffer received = socket.received();
+    private final UdpReceiver.Datagrams datagramHandler = this::onDatagram;
     private final ByteBuffer sendBuffer = BufferUtil.allocateDirectAligned(RadiusPacket.MAX_LENGTH, 64);
     private final UnsafeBuffer sending = new UnsafeBuffer(sendBuffer);
     private final UnsafeBuffer commandBuffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH + 256]);
@@ -96,7 +94,6 @@ final class UdpAgent implements Agent {
     private final RadsecLink radsec;
     private final MessageHandler radsecHandler = this::onRadsec;
 
-    private DatagramChannel channel;
     private long now;
     private long nextHousekeeping;
 
@@ -141,12 +138,8 @@ final class UdpAgent implements Agent {
     @Override
     public void onStart() {
         try {
-            channel = DatagramChannel.open();
-            channel.setOption(StandardSocketOptions.SO_RCVBUF, config.socketReceiveBuffer());
-            channel.bind(new InetSocketAddress(config.listenHost(), config.listenPort()));
-            channel.configureBlocking(false);
+            socket.open(config.listenHost(), config.listenPort(), config.socketReceiveBuffer());
             stats.bound(true);
-            LOG.info("listening for RADIUS accounting on {}", channel.getLocalAddress());
         } catch (IOException e) {
             throw new IllegalStateException(
                     "cannot bind RADIUS socket " + config.listenHost() + ":" + config.listenPort(), e);
@@ -155,26 +148,13 @@ final class UdpAgent implements Agent {
 
     /** Port actually bound (useful when configured as 0). */
     int localPort() {
-        try {
-            return ((InetSocketAddress) channel.getLocalAddress()).getPort();
-        } catch (IOException e) {
-            return -1;
-        }
+        return socket.localPort();
     }
 
     @Override
     public int doWork() throws IOException {
         now = clock.nanoTime();
-        int work = 0;
-        for (int i = 0; i < RECEIVE_BATCH; i++) {
-            receiveBuffer.clear();
-            SocketAddress from = channel.receive(receiveBuffer);
-            if (from == null) {
-                break;
-            }
-            onDatagram((InetSocketAddress) from, receiveBuffer.position());
-            work++;
-        }
+        int work = socket.receive(RECEIVE_BATCH, datagramHandler);
         if (radsec != null) {
             work += radsec.toAccounting.read(radsecHandler, RECEIVE_BATCH);
         }
@@ -195,8 +175,7 @@ final class UdpAgent implements Agent {
 
     /** An Accounting-Request from a RadSec connection (ADR 0034): copied in and handled like a datagram. */
     private void onRadsec(int msgTypeId, DirectBuffer buffer, int index, int length) {
-        int packetLength = length - 12;
-        received.putBytes(0, buffer, index + 12, packetLength);
+        int packetLength = socket.copyRadsec(buffer, index, length);
         onPacket(null, radsec.clients[buffer.getInt(index + 8)], buffer.getLong(index), packetLength);
     }
 
@@ -522,7 +501,7 @@ final class UdpAgent implements Agent {
         stats.increment(
                 RadsecLink.sendReply(
                                 radsec == null ? null : radsec.fromAccounting,
-                                channel,
+                                socket.channel(),
                                 sendBuffer,
                                 sending,
                                 length,
@@ -557,13 +536,7 @@ final class UdpAgent implements Agent {
     @Override
     public void onClose() {
         stats.bound(false);
-        if (channel != null) {
-            try {
-                channel.close();
-            } catch (IOException e) {
-                LOG.warn("closing RADIUS socket failed", e);
-            }
-        }
+        socket.close();
     }
 
     @Override

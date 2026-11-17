@@ -13,8 +13,6 @@ import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.io.IOException;
 import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.net.StandardSocketOptions;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
 import org.agrona.BufferUtil;
@@ -49,8 +47,9 @@ final class AuthAgent implements Agent, Proxy.Replies {
     private final UdpAgent.NanoClock clock;
     private final long ttlNanos;
 
-    private final ByteBuffer receiveBuffer = BufferUtil.allocateDirectAligned(RadiusPacket.MAX_LENGTH + 64, 64);
-    private final UnsafeBuffer received = new UnsafeBuffer(receiveBuffer);
+    private final UdpReceiver socket = new UdpReceiver("RADIUS Access-Requests");
+    private final UnsafeBuffer received = socket.received();
+    private final UdpReceiver.Datagrams datagramHandler = this::onDatagram;
     private final ByteBuffer sendBuffer = BufferUtil.allocateDirectAligned(RadiusPacket.MAX_LENGTH, 64);
     private final UnsafeBuffer sending = new UnsafeBuffer(sendBuffer);
     private final RadiusPacket packet = new RadiusPacket();
@@ -62,7 +61,6 @@ final class AuthAgent implements Agent, Proxy.Replies {
     private Proxy proxy;
     private final MessageHandler radsecHandler = this::onRadsec;
 
-    private DatagramChannel channel;
     private long now;
 
     AuthAgent(
@@ -156,12 +154,8 @@ final class AuthAgent implements Agent, Proxy.Replies {
             if (proxy != null) {
                 proxy.open(gateway.listenHost());
             }
-            channel = DatagramChannel.open();
-            channel.setOption(StandardSocketOptions.SO_RCVBUF, gateway.socketReceiveBuffer());
-            channel.bind(new InetSocketAddress(gateway.listenHost(), config.port()));
-            channel.configureBlocking(false);
+            socket.open(gateway.listenHost(), config.port(), gateway.socketReceiveBuffer());
             stats.bound(true);
-            LOG.info("listening for RADIUS Access-Requests on {}", channel.getLocalAddress());
         } catch (IOException e) {
             throw new IllegalStateException(
                     "cannot bind RADIUS authentication socket " + gateway.listenHost() + ":" + config.port(), e);
@@ -170,26 +164,13 @@ final class AuthAgent implements Agent, Proxy.Replies {
 
     /** Port actually bound (useful when configured as 0). */
     int localPort() {
-        try {
-            return ((InetSocketAddress) channel.getLocalAddress()).getPort();
-        } catch (IOException e) {
-            return -1;
-        }
+        return socket.localPort();
     }
 
     @Override
     public int doWork() throws IOException {
         now = clock.nanoTime();
-        int work = 0;
-        for (int i = 0; i < RECEIVE_BATCH; i++) {
-            receiveBuffer.clear();
-            SocketAddress from = channel.receive(receiveBuffer);
-            if (from == null) {
-                break;
-            }
-            onDatagram((InetSocketAddress) from, receiveBuffer.position());
-            work++;
-        }
+        int work = socket.receive(RECEIVE_BATCH, datagramHandler);
         if (radsec != null) {
             work += radsec.toAuth.read(radsecHandler, RECEIVE_BATCH);
         }
@@ -212,8 +193,7 @@ final class AuthAgent implements Agent, Proxy.Replies {
 
     /** A request from a RadSec connection: copied into the receive buffer and decided like a datagram. */
     private void onRadsec(int msgTypeId, DirectBuffer buffer, int index, int length) {
-        int packetLength = length - 12;
-        received.putBytes(0, buffer, index + 12, packetLength);
+        int packetLength = socket.copyRadsec(buffer, index, length);
         onPacket(null, radsec.clients[buffer.getInt(index + 8)], buffer.getLong(index), packetLength);
     }
 
@@ -340,7 +320,14 @@ final class AuthAgent implements Agent, Proxy.Replies {
     /** From this socket, or back to the RadSec connection the request came from. */
     private void send(ByteBuffer buffer, UnsafeBuffer view, int length, InetSocketAddress to, long route) {
         stats.increment(
-                RadsecLink.sendReply(radsec == null ? null : radsec.fromAuth, channel, buffer, view, length, to, route)
+                RadsecLink.sendReply(
+                                radsec == null ? null : radsec.fromAuth,
+                                socket.channel(),
+                                buffer,
+                                view,
+                                length,
+                                to,
+                                route)
                         ? AuthStats.Counter.RESPONSES_SENT
                         : AuthStats.Counter.SEND_FAILED);
     }
@@ -364,13 +351,7 @@ final class AuthAgent implements Agent, Proxy.Replies {
             proxy.close();
         }
         stats.bound(false);
-        try {
-            if (channel != null) {
-                channel.close();
-            }
-        } catch (IOException e) {
-            LOG.warn("closing the authentication socket: {}", e.toString());
-        }
+        socket.close();
     }
 
     @Override
