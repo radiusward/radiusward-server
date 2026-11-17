@@ -5,21 +5,14 @@
 package io.radiusward.gateway;
 
 import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
-import static io.radiusward.radius.codec.attributes.Ietf.CHAP_CHALLENGE;
-import static io.radiusward.radius.codec.attributes.Ietf.CHAP_PASSWORD;
 import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
-import static io.radiusward.radius.codec.attributes.Ietf.PROXY_STATE;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
-import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
-import static io.radiusward.radius.codec.attributes.Ietf.VENDOR_SPECIFIC;
 
 import io.radiusward.common.management.PrometheusWriter;
-import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.attributes.Microsoft;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
@@ -34,7 +27,6 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLongArray;
 import org.agrona.BufferUtil;
-import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -63,7 +55,6 @@ final class Proxy {
     static final int TAKEN = 1;
     static final int DROPPED = 2;
 
-    private static final int TUNNEL_PASSWORD = 69;
     private static final int STATUS_ID = -2; // a home server's identifier used by its Status-Server probe
 
     /** Answers to the NAS go through the agent's own socket and reply cache. */
@@ -141,11 +132,8 @@ final class Proxy {
     private final Map<String, int[]> pools = new HashMap<>();
     private final Map<String, Boolean> loadBalanced = new HashMap<>();
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
-    private final AccessRequests credentials = new AccessRequests();
-    private final SaltedValues salted = new SaltedValues();
     private final SecureRandom random = new SecureRandom();
     private final RadiusPacket response = new RadiusPacket();
-    private final byte[] token = new byte[8]; // Proxy-State: 4 random bytes of this gateway, slot, generation
 
     // requests in flight
     private final int capacity;
@@ -165,6 +153,7 @@ final class Proxy {
     private final NasClient[] nas;
     private final boolean[] inUse;
     private final ProxyConfig.Realm[] realmOfSlot; // for the answer's rewriting (ADR 0055)
+    private final ProxyCodec codec;
     private final int[] free;
     private int freeCount;
 
@@ -174,10 +163,7 @@ final class Proxy {
     private final UnsafeBuffer reply = new UnsafeBuffer(replyBuffer);
     private final ByteBuffer sendBuffer = BufferUtil.allocateDirectAligned(RadiusPacket.MAX_LENGTH, 64);
     private final UnsafeBuffer sending = new UnsafeBuffer(sendBuffer);
-    private final UnsafeBuffer plain = new UnsafeBuffer(new byte[256]);
-    private final UnsafeBuffer cipher = new UnsafeBuffer(new byte[256]);
     private final UnsafeBuffer statusAuth = new UnsafeBuffer(new byte[16]);
-    private final byte[] authScratch = new byte[16];
     private DatagramChannel channel;
     private java.nio.channels.Selector selector;
     private long nextTimeoutCheck;
@@ -237,7 +223,6 @@ final class Proxy {
                             .toArray());
             loadBalanced.put(p.name(), p.loadBalance());
         }
-        random.nextBytes(token);
         capacity = config.pending();
         packets = new UnsafeBuffer(new byte[capacity * RadiusPacket.MAX_LENGTH]);
         ourAuthenticators = new UnsafeBuffer(new byte[capacity * 16]);
@@ -255,6 +240,7 @@ final class Proxy {
         nas = new NasClient[capacity];
         inUse = new boolean[capacity];
         realmOfSlot = new ProxyConfig.Realm[capacity];
+        codec = new ProxyCodec(packets, ourAuthenticators, nasAuthenticators, reply);
         free = new int[capacity];
         for (int i = 0; i < capacity; i++) {
             free[i] = capacity - 1 - i;
@@ -301,7 +287,7 @@ final class Proxy {
             free[freeCount++] = slot;
             return DROPPED;
         }
-        int len = encode(request, realm, client, h, slot, id);
+        int len = codec.request(request, realm, client.secret(), h.config.secret(), slot, generation[slot], id);
         if (len < 0) {
             h.slotById[id] = -1;
             free[freeCount++] = slot;
@@ -449,108 +435,6 @@ final class Proxy {
         return homes.get(pool[0]);
     }
 
-    /** The request for the home server into the slot's buffer; its length, or -1 if it does not fit. */
-    private int encode(RadiusPacket request, ProxyConfig.Realm realm, NasClient client, HomeState h, int slot, int id) {
-        UnsafeBuffer out = packets;
-        int o = slot * RadiusPacket.MAX_LENGTH;
-        int end = o + RadiusPacket.MAX_LENGTH;
-        out.putByte(o, (byte) RadiusCode.ACCESS_REQUEST);
-        out.putByte(o + 1, (byte) id);
-        random.nextBytes(authScratch);
-        out.putBytes(o + 4, authScratch);
-        out.getBytes(o + 4, ourAuthenticators, slot * 16, 16);
-        int w = o + RadiusPacket.HEADER_LENGTH;
-        int ma = w;
-        out.putByte(w, (byte) MESSAGE_AUTHENTICATOR);
-        out.putByte(w + 1, (byte) 18);
-        out.setMemory(w + 2, 16, (byte) 0);
-        w += 18;
-        DirectBuffer in = request.buffer();
-        boolean chap = false;
-        boolean challenge = false;
-        for (int at = request.attributesOffset(); at < request.attributesEnd(); ) {
-            int type = in.getByte(at) & 0xFF;
-            int l = in.getByte(at + 1) & 0xFF;
-            if (type == MESSAGE_AUTHENTICATOR || realm.rewrite().dropsFromRequest(type)) {
-                at += l;
-                continue;
-            }
-            if (type == USER_PASSWORD) {
-                int n = credentials.decryptUserPassword(request, client.secret(), plain, 0);
-                if (n < 0) {
-                    return -1;
-                }
-                int c = credentials.encryptUserPassword(plain, 0, n, out, o + 4, h.config.secret(), cipher, 0);
-                if (w + 2 + c > end) {
-                    return -1;
-                }
-                out.putByte(w, (byte) USER_PASSWORD);
-                out.putByte(w + 1, (byte) (2 + c));
-                out.putBytes(w + 2, cipher, 0, c);
-                w += 2 + c;
-            } else if (type == USER_NAME && realm.strip()) {
-                int start = at + 2;
-                int stop = at + l;
-                for (int i = at + 2; i < at + l; i++) {
-                    byte b = in.getByte(i);
-                    if (b == '@') {
-                        stop = i;
-                        break;
-                    }
-                    if (b == '\\' && start == at + 2) {
-                        start = i + 1;
-                    }
-                }
-                if (w + 2 + (stop - start) > end) {
-                    return -1;
-                }
-                out.putByte(w, (byte) USER_NAME);
-                out.putByte(w + 1, (byte) (2 + stop - start));
-                out.putBytes(w + 2, in, start, stop - start);
-                w += 2 + stop - start;
-            } else {
-                chap |= type == CHAP_PASSWORD;
-                challenge |= type == CHAP_CHALLENGE;
-                if (w + l > end) {
-                    return -1;
-                }
-                out.putBytes(w, in, at, l);
-                w += l;
-            }
-            at += l;
-        }
-        if (chap && !challenge) { // the original Request Authenticator was the challenge (RFC 2865 §2.2)
-            if (w + 18 > end) {
-                return -1;
-            }
-            out.putByte(w, (byte) CHAP_CHALLENGE);
-            out.putByte(w + 1, (byte) 18);
-            out.putBytes(w + 2, in, request.authenticatorOffset(), 16);
-            w += 18;
-        }
-        byte[] added = realm.rewrite().added();
-        if (added.length > 0) {
-            if (w + added.length > end) {
-                return -1;
-            }
-            out.putBytes(w, added);
-            w += added.length;
-        }
-        if (w + 10 > end) {
-            return -1;
-        }
-        out.putByte(w, (byte) PROXY_STATE);
-        out.putByte(w + 1, (byte) 10);
-        out.putBytes(w + 2, token, 0, 4);
-        out.putShort(w + 6, (short) slot, ByteOrder.BIG_ENDIAN);
-        out.putShort(w + 8, (short) generation[slot], ByteOrder.BIG_ENDIAN);
-        w += 10;
-        int len = w - o;
-        out.putShort(o + 2, (short) len, ByteOrder.BIG_ENDIAN);
-        authenticator.signAccessRequest(out, o, len, ma, h.config.secret());
-        return len;
-    }
-
     private void transmit(int slot, long now) {
         HomeState h = homes.get(home[slot]);
         if (h.tls != null && !h.tls.lossy()) {
@@ -689,7 +573,8 @@ final class Proxy {
                         ? Counter.ACCEPTED
                         : code == RadiusCode.ACCESS_REJECT ? Counter.REJECTED : Counter.CHALLENGED)
                 .ordinal());
-        int out = answer(h, slot, code);
+        int out = codec.answer(
+                response, code, nasIdentifier[slot], realmOfSlot[slot], h.config.secret(), nas[slot].secret(), slot);
         if (out > 0) {
             replies.reply(replyBuffer, reply, out, from[slot], route[slot], cacheKey[slot]);
         } else {
@@ -704,90 +589,6 @@ final class Proxy {
             h.alive = true;
             LOG.info("home server {} ({}) answers again", h.config.name(), h.address);
         }
-    }
-
-    /** The home server's answer for the NAS: its length in the reply buffer, or -1. */
-    private int answer(HomeState h, int slot, int code) {
-        NasClient client = nas[slot];
-        reply.putByte(0, (byte) code);
-        reply.putByte(1, (byte) nasIdentifier[slot]);
-        int w = RadiusPacket.HEADER_LENGTH;
-        reply.putByte(w, (byte) MESSAGE_AUTHENTICATOR);
-        reply.putByte(w + 1, (byte) 18);
-        reply.setMemory(w + 2, 16, (byte) 0);
-        w += 18;
-        DirectBuffer in = response.buffer();
-        for (int at = response.attributesOffset(); at < response.attributesEnd(); ) {
-            int type = in.getByte(at) & 0xFF;
-            int l = in.getByte(at + 1) & 0xFF;
-            boolean ours = type == PROXY_STATE && l == 10 && sameToken(in, at + 2, slot);
-            ProxyConfig.Realm r = realmOfSlot[slot];
-            boolean dropped = r != null && r.rewrite().dropsFromAnswer(type);
-            if (type != MESSAGE_AUTHENTICATOR && !ours && !dropped) {
-                if (w + l > RadiusPacket.MAX_LENGTH) {
-                    return -1;
-                }
-                reply.putBytes(w, in, at, l);
-                if (!reencrypt(type, w, l, h, slot, client)) {
-                    return -1;
-                }
-                w += l;
-            }
-            at += l;
-        }
-        reply.putShort(2, (short) w, ByteOrder.BIG_ENDIAN);
-        authenticator.signResponse(
-                reply, 0, w, RadiusPacket.HEADER_LENGTH, nasAuthenticators, slot * 16, client.secret());
-        return w;
-    }
-
-    private boolean sameToken(DirectBuffer in, int at, int slot) {
-        for (int i = 0; i < 4; i++) {
-            if (in.getByte(at + i) != token[i]) {
-                return false;
-            }
-        }
-        return (in.getShort(at + 4, ByteOrder.BIG_ENDIAN) & 0xFFFF) == slot;
-    }
-
-    /** MS-MPPE-Send/Recv-Key and Tunnel-Password, copied to the reply at {@code w}, for the NAS's secret. */
-    private boolean reencrypt(int type, int w, int l, HomeState h, int slot, NasClient client) {
-        if (type == TUNNEL_PASSWORD && l > 3) {
-            return salted.reencrypt(
-                    reply,
-                    w + 3,
-                    l - 3,
-                    h.config.secret(),
-                    ourAuthenticators,
-                    slot * 16,
-                    client.secret(),
-                    nasAuthenticators,
-                    slot * 16);
-        }
-        if (type == VENDOR_SPECIFIC && l > 8 && reply.getInt(w + 2, ByteOrder.BIG_ENDIAN) == Microsoft.VENDOR_ID) {
-            for (int p = w + 6; p + 2 <= w + l; ) {
-                int sub = reply.getByte(p) & 0xFF;
-                int sl = reply.getByte(p + 1) & 0xFF;
-                if (sl < 2 || p + sl > w + l) {
-                    return false;
-                }
-                if ((sub == Microsoft.MPPE_SEND_KEY || sub == Microsoft.MPPE_RECV_KEY)
-                        && !salted.reencrypt(
-                                reply,
-                                p + 2,
-                                sl - 2,
-                                h.config.secret(),
-                                ourAuthenticators,
-                                slot * 16,
-                                client.secret(),
-                                nasAuthenticators,
-                                slot * 16)) {
-                    return false;
-                }
-                p += sl;
-            }
-        }
-        return true;
     }
 
     private int timeouts(long now) {
