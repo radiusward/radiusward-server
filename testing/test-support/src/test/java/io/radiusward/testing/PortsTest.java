@@ -18,11 +18,15 @@ class PortsTest {
                 System.setProperty("radiusward.fork", Integer.toString(fork));
                 for (int i = 0; i < 20; i++) {
                     int base = Ports.freePortBase(3);
-                    assertThat((base - 20_000) / 100 % Ports.FORK_SLOTS).isEqualTo(fork - 1);
-                    assertThat(base).isBetween(20_000, 31_900);
+                    int first = (base - 20_000) / 100;
+                    assertThat(first / 30)
+                            .as("the cluster's first step in this fork's quarter")
+                            .isEqualTo(fork - 1);
+                    assertThat((first + 2) / 30)
+                            .as("its last member's step too: no overlap with another fork")
+                            .isEqualTo(fork - 1);
                     int port = Ports.freePort();
-                    assertThat((port - 10_000) % Ports.FORK_SLOTS).isEqualTo(fork - 1);
-                    assertThat(port).isBetween(10_000, 19_999);
+                    assertThat((port - 10_000) / 2_500).isEqualTo(fork - 1);
                 }
             }
         } finally {
