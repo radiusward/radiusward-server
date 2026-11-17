@@ -4,9 +4,7 @@
  */
 package io.radiusward.gateway;
 
-import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
 import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
-import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.DecodeStatus;
@@ -20,11 +18,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.security.SecureRandom;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicLongArray;
 import org.agrona.BufferUtil;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
@@ -73,63 +67,10 @@ final class Proxy {
         INVALID
     }
 
-    /** A home server: its identifiers in flight, its health, its counters. */
-    static final class HomeState {
-        final ProxyConfig.Home config;
-        final InetSocketAddress address;
-        final int[] slotById = new int[256];
-        final byte[] statusAuthenticator = new byte[16];
-        final AtomicLongArray counts = new AtomicLongArray(Counter.values().length);
-        int nextId;
-        volatile boolean alive = true;
-        long waitingSince; // first request sent since the last answer; 0 while answered
-        long nextStatus;
-        int statusId = -1;
-        final HomeConnection tls; // RadSec, TCP or DTLS home servers (ADR 0055); null over UDP
-
-        HomeState(ProxyConfig.Home config) {
-            this(
-                    config,
-                    switch (config.transport()) {
-                        case TLS -> TlsClient.context(config.certificate(), config.key(), config.ca());
-                        case DTLS -> TlsClient.context(config.certificate(), config.key(), config.ca(), "DTLS");
-                        default -> null;
-                    });
-        }
-
-        HomeState(ProxyConfig.Home config, javax.net.ssl.SSLContext context) {
-            this.config = config;
-            this.address = new InetSocketAddress(config.address(), config.port());
-            String serverName = config.serverName() != null ? config.serverName() : config.host();
-            this.tls = switch (config.transport()) {
-                case TLS -> new TlsClient(context, serverName, address);
-                case DTLS -> new HomeDtlsClient(context, serverName, address);
-                case TCP -> new HomeTcpClient(address);
-                case UDP -> null;
-            };
-            java.util.Arrays.fill(slotById, -1);
-        }
-
-        int allocateId(int slot) {
-            for (int n = 0; n < 256; n++) {
-                int id = (nextId + n) & 0xFF;
-                if (slotById[id] == -1) {
-                    slotById[id] = slot;
-                    nextId = (id + 1) & 0xFF;
-                    return id;
-                }
-            }
-            return -1;
-        }
-    }
-
     private final ProxyConfig config;
     private final Replies replies;
     private final boolean requireMessageAuthenticator;
-    private final List<HomeState> homes = new java.util.concurrent.CopyOnWriteArrayList<>(); // read by metrics
-    private final Map<InetSocketAddress, HomeState> byAddress = new HashMap<>();
-    private final Map<String, int[]> pools = new HashMap<>();
-    private final Map<String, Boolean> loadBalanced = new HashMap<>();
+    private final HomeServers homes;
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
     private final SecureRandom random = new SecureRandom();
     private final RadiusPacket response = new RadiusPacket();
@@ -192,31 +133,9 @@ final class Proxy {
         this.config = config;
         this.replies = replies;
         this.requireMessageAuthenticator = requireMessageAuthenticator;
-        Map<String, Integer> index = new HashMap<>();
-        for (ProxyConfig.Home h : config.homes().values()) {
-            index.put(h.name(), homes.size());
-            HomeState s = new HomeState(h);
-            homes.add(s);
-            if (s.tls == null) {
-                byAddress.put(s.address, s);
-            }
-        }
-        if (config.discovery() != ProxyConfig.Discovery.OFF) {
-            discovered = DiscoveredRealms.of(config.discovery());
-            discoveryContext = TlsClient.context(
-                    config.discovery().certificate(),
-                    config.discovery().key(),
-                    config.discovery().ca());
-        }
-        for (ProxyConfig.Pool p : config.pools().values()) {
-            pools.put(
-                    p.name(),
-                    p.servers().stream()
-                            .filter(index::containsKey)
-                            .mapToInt(index::get)
-                            .toArray());
-            loadBalanced.put(p.name(), p.loadBalance());
-        }
+        this.homes = new HomeServers(config);
+        this.discovered =
+                config.discovery() != ProxyConfig.Discovery.OFF ? DiscoveredRealms.of(config.discovery()) : null;
         capacity = config.pending();
         packets = new UnsafeBuffer(new byte[capacity * RadiusPacket.MAX_LENGTH]);
         ourAuthenticators = new UnsafeBuffer(new byte[capacity * 16]);
@@ -268,12 +187,12 @@ final class Proxy {
             long key,
             long now) {
         int[] pool = !realm.discover()
-                ? pools.get(realm.pool())
-                : discovered == null ? null : discovered.pool(realm.name(), now, this::discoveredHome);
+                ? homes.pool(realm.pool())
+                : discovered == null ? null : discovered.pool(realm.name(), now, homes::discovered);
         if (pool == null || pool.length == 0) {
             return DROPPED; // a realm being looked up, or publishing no server: the NAS asks again
         }
-        HomeState h = choose(realm.discover() ? null : realm.pool(), pool, request);
+        HomeState h = homes.choose(realm.discover() ? null : realm.pool(), pool, request);
         if (freeCount == 0) {
             return DROPPED;
         }
@@ -291,7 +210,7 @@ final class Proxy {
         }
         inUse[slot] = true;
         realmOfSlot[slot] = realm;
-        home[slot] = indexOf(h);
+        home[slot] = h.index;
         identifier[slot] = id;
         nasIdentifier[slot] = request.identifier();
         length[slot] = len;
@@ -306,72 +225,9 @@ final class Proxy {
         return TAKEN;
     }
 
-    private int indexOf(HomeState h) {
-        return homes.indexOf(h);
-    }
-
     // ---- dynamic discovery (RFC 7585) -----------------------------------------------------------
 
-    private DiscoveredRealms discovered; // null without discovery
-    private javax.net.ssl.SSLContext discoveryContext;
-
-    /** The index of a discovered home server, created once per host and port. */
-    private int discoveredHome(RealmDiscovery.Target target, java.net.InetAddress address) {
-        String name = "discovered:" + target.host() + ":" + target.port();
-        for (int i = 0; i < homes.size(); i++) {
-            if (homes.get(i).config.name().equals(name)) {
-                return i;
-            }
-        }
-        ProxyConfig.Discovery d = config.discovery();
-        ProxyConfig.Home h = new ProxyConfig.Home(
-                name,
-                address,
-                target.host(),
-                target.port(),
-                d.secret(),
-                true,
-                d.certificate(),
-                d.key(),
-                d.ca(),
-                target.host(),
-                false);
-        homes.add(new HomeState(h, discoveryContext));
-        return homes.size() - 1;
-    }
-
-    /** Failover: the first one alive. Load-balance: by device (Calling-Station-Id, else User-Name) among those alive. */
-    private HomeState choose(String poolName, int[] pool, RadiusPacket request) {
-        int alive = 0;
-        for (int i : pool) {
-            if (homes.get(i).alive) {
-                alive++;
-            }
-        }
-        if (alive == 0) {
-            return homes.get(pool[0]); // all dead: try the first; a request is as good a probe as a Status-Server
-        }
-        int pick = 0;
-        if (poolName != null && Boolean.TRUE.equals(loadBalanced.get(poolName)) && alive > 1) {
-            int at = request.findAttribute(CALLING_STATION_ID);
-            if (at < 0) {
-                at = request.findAttribute(USER_NAME);
-            }
-            int h = 0;
-            if (at >= 0) {
-                for (int i = 2, n = request.buffer().getByte(at + 1) & 0xFF; i < n; i++) {
-                    h = h * 31 + request.buffer().getByte(at + i);
-                }
-            }
-            pick = Math.floorMod(h, alive);
-        }
-        for (int i : pool) {
-            if (homes.get(i).alive && pick-- == 0) {
-                return homes.get(i);
-            }
-        }
-        return homes.get(pool[0]);
-    }
+    private final DiscoveredRealms discovered; // null without discovery
 
     private void transmit(int slot, long now) {
         HomeState h = homes.get(home[slot]);
@@ -444,7 +300,7 @@ final class Proxy {
                 it.remove();
                 work++;
                 if (key.isValid() && key.attachment() instanceof HomeConnection client) {
-                    reading = homeOf(client);
+                    reading = homes.of(client);
                     try {
                         client.onSelected(tlsPackets);
                     } catch (IOException e) {
@@ -461,7 +317,7 @@ final class Proxy {
                 break;
             }
             work++;
-            HomeState h = byAddress.get(sender);
+            HomeState h = homes.at(sender);
             if (h != null) {
                 onAnswer(h, receiveBuffer.position(), now);
             }
@@ -469,7 +325,7 @@ final class Proxy {
         if (now - nextTimeoutCheck >= 0) {
             nextTimeoutCheck = now + 10_000_000L;
             work += timeouts(now);
-            health(now);
+            homes.health(now, this::probe);
         }
         return work;
     }
@@ -485,7 +341,7 @@ final class Proxy {
             if (authenticator.verifyResponse(response, statusAuth, 0, h.config.secret())) {
                 h.slotById[id] = -1;
                 h.statusId = -1;
-                alive(h);
+                homes.alive(h);
             }
             return;
         }
@@ -506,7 +362,7 @@ final class Proxy {
             h.counts.incrementAndGet(Counter.INVALID.ordinal());
             return;
         }
-        alive(h);
+        homes.alive(h);
         h.counts.incrementAndGet((code == RadiusCode.ACCESS_ACCEPT
                         ? Counter.ACCEPTED
                         : code == RadiusCode.ACCESS_REJECT ? Counter.REJECTED : Counter.CHALLENGED)
@@ -519,14 +375,6 @@ final class Proxy {
             replies.drop(cacheKey[slot]);
         }
         release(slot);
-    }
-
-    private void alive(HomeState h) {
-        h.waitingSince = 0;
-        if (!h.alive) {
-            h.alive = true;
-            LOG.info("home server {} ({}) answers again", h.config.name(), h.address);
-        }
     }
 
     private int timeouts(long now) {
@@ -545,41 +393,6 @@ final class Proxy {
             }
         }
         return work;
-    }
-
-    private void health(long now) {
-        long dead = config.deadAfter().toNanos();
-        for (HomeState h : homes) {
-            if (h.alive && h.waitingSince != 0 && now - h.waitingSince > dead) {
-                h.alive = false;
-                LOG.warn(
-                        "home server {} ({}) is dead: no answer for {}",
-                        h.config.name(),
-                        h.address,
-                        config.deadAfter());
-            }
-            if (now - h.nextStatus >= 0) {
-                h.nextStatus = now + config.statusInterval().toNanos();
-                probe(h);
-            }
-            if (h.tls != null) {
-                try {
-                    h.tls.tick(now);
-                } catch (IOException e) {
-                    LOG.debug("home server {}: {}", h.config.name(), e.toString());
-                    h.tls.close();
-                }
-            }
-        }
-    }
-
-    private HomeState homeOf(HomeConnection client) {
-        for (HomeState h : homes) {
-            if (h.tls == client) {
-                return h;
-            }
-        }
-        throw new IllegalStateException("unknown connection");
     }
 
     /** Status-Server (RFC 5997) with a Message-Authenticator; any valid answer means the server is up. */
@@ -637,38 +450,18 @@ final class Proxy {
     }
 
     List<HomeState> homes() {
-        return homes;
+        return homes.all();
     }
 
     void writeMetrics(PrometheusWriter w, String gateway) {
-        w.counter("radiusward_gateway_proxy_requests_total", "Access-Requests proxied to home servers (ADR 0037)");
-        for (HomeState h : homes) {
-            for (Counter c : Counter.values()) {
-                w.sample(
-                        h.counts.get(c.ordinal()),
-                        "gateway",
-                        gateway,
-                        "home",
-                        h.config.name(),
-                        "result",
-                        c.name().toLowerCase(Locale.ROOT));
-            }
-        }
-        w.gauge("radiusward_gateway_proxy_home_alive", "1 while a home server answers");
-        for (HomeState h : homes) {
-            w.sample(h.alive ? 1 : 0, "gateway", gateway, "home", h.config.name());
-        }
+        homes.writeMetrics(w, gateway);
     }
 
     void close() {
         if (discovered != null) {
             discovered.close();
         }
-        for (HomeState h : homes) {
-            if (h.tls != null) {
-                h.tls.close();
-            }
-        }
+        homes.close();
         try {
             if (selector != null) {
                 selector.close();
