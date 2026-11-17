@@ -12,14 +12,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import org.agrona.collections.Int2ObjectHashMap;
-import org.agrona.collections.Long2ObjectHashMap;
 
 /**
  * The parser behind {@link DictionaryLoader}: reads FreeRADIUS-format files (v3 and the v4 subset) into the attribute
@@ -28,25 +24,6 @@ import org.agrona.collections.Long2ObjectHashMap;
 final class DictionaryParser {
 
     private static final String PROTOCOL_RADIUS = "RADIUS";
-
-    private static final Set<String> KNOWN_FLAGS = Set.of(
-            "has_tag",
-            "encrypt",
-            "concat",
-            "internal",
-            "array",
-            "counter",
-            "ref",
-            "clone",
-            "abinary",
-            "secret",
-            "precision",
-            "extended",
-            "long_extended",
-            "enum",
-            "key",
-            "virtual",
-            "length");
 
     private enum FrameKind {
         PROTOCOL,
@@ -72,28 +49,15 @@ final class DictionaryParser {
         }
     }
 
-    private record Location(String file, int line) {
-        @Override
-        public String toString() {
-            return file + ":" + line;
-        }
-    }
-
-    private record PendingAlias(AttributeDef context, String name, String target, Location at, ParseMode mode) {}
-
-    private record PendingValue(
-            AttributeDef context, String attribute, String name, String value, Location at, ParseMode mode) {}
-
     final AttributeDef root = AttributeDef.protocolRoot(PROTOCOL_RADIUS);
     final Int2ObjectHashMap<VendorDef> vendorsById = new Int2ObjectHashMap<>();
     final Map<String, VendorDef> vendorsByName = new HashMap<>();
     final Map<String, AttributeDef> flatNames = new HashMap<>();
     final List<String> warnings = new ArrayList<>();
     final List<String> loadedFiles = new ArrayList<>();
-    final List<PendingAlias> pendingAliases = new ArrayList<>();
-    final List<PendingValue> pendingValues = new ArrayList<>();
     final Deque<String> includeStack = new ArrayDeque<>();
     final Deque<Frame> frames = new ArrayDeque<>();
+    private final DictionaryLinker linker = new DictionaryLinker(root, flatNames, warnings);
 
     DictionaryParser() {
         frames.push(new Frame(FrameKind.PROTOCOL, root, PROTOCOL_RADIUS, "END-PROTOCOL"));
@@ -106,7 +70,7 @@ final class DictionaryParser {
         parseFile(source, mode, null);
     }
 
-    private void parseFile(DictionarySource source, ParseMode mode, Location includedFrom) {
+    private void parseFile(DictionarySource source, ParseMode mode, DictionaryFile.Location includedFrom) {
         String identity = source.identity();
         if (includeStack.contains(identity)) {
             throw new DictionaryException(
@@ -115,7 +79,7 @@ final class DictionaryParser {
         includeStack.addLast(identity);
         loadedFiles.add(source.location());
         int depth = frames.size();
-        FileState file = new FileState(source, mode);
+        DictionaryFile file = new DictionaryFile(source, mode, warnings);
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(source.open(), StandardCharsets.UTF_8))) {
             String line;
             int lineNo = 0;
@@ -123,7 +87,7 @@ final class DictionaryParser {
                 lineNo++;
                 String[] tokens = tokenize(line);
                 if (tokens.length > 0) {
-                    file.at = new Location(source.location(), lineNo);
+                    file.at = new DictionaryFile.Location(source.location(), lineNo);
                     parseLine(file, tokens);
                 }
             }
@@ -137,32 +101,8 @@ final class DictionaryParser {
             while (frames.size() > depth) {
                 frames.pop();
             }
-            problem(file, "unterminated block at end of file: " + open);
+            file.problem("unterminated block at end of file: " + open);
         }
-    }
-
-    private static final class FileState {
-        final DictionarySource source;
-        final ParseMode mode;
-        boolean internal;
-        Location at;
-
-        FileState(DictionarySource source, ParseMode mode) {
-            this.source = source;
-            this.mode = mode;
-        }
-
-        boolean strict() {
-            return mode == ParseMode.STRICT;
-        }
-    }
-
-    /** Strict mode: fail. Lenient mode: record a warning and continue. */
-    private void problem(FileState file, String message) {
-        if (file.strict()) {
-            throw new DictionaryException(file.at + ": " + message);
-        }
-        warnings.add(file.at + ": " + message + " (skipped)");
     }
 
     private static String[] tokenize(String line) {
@@ -174,7 +114,7 @@ final class DictionaryParser {
         return content.split("\\s+");
     }
 
-    private void parseLine(FileState file, String[] t) {
+    private void parseLine(DictionaryFile file, String[] t) {
         String keyword = t[0].toUpperCase(Locale.ROOT);
         Frame frame = frames.peek();
         if (frame.kind == FrameKind.SKIP) {
@@ -199,8 +139,8 @@ final class DictionaryParser {
             case "END-TLV" -> end(file, t, "END-TLV");
             case "ALIAS" -> alias(file, t);
             case "FLAGS" -> flagsLine(file, t);
-            case "PROTOCOL" -> requireTokens(file, t, 3);
-            default -> problem(file, "unknown keyword " + t[0]);
+            case "PROTOCOL" -> file.requireTokens(t, 3);
+            default -> file.problem("unknown keyword " + t[0]);
         }
     }
 
@@ -223,24 +163,16 @@ final class DictionaryParser {
         }
     }
 
-    private boolean requireTokens(FileState file, String[] t, int min) {
-        if (t.length < min) {
-            problem(file, t[0] + " needs at least " + (min - 1) + " arguments");
-            return false;
-        }
-        return true;
-    }
-
     // ---- $INCLUDE ------------------------------------------------------------------------
 
-    private void include(FileState file, String[] t, boolean optional) {
-        if (!requireTokens(file, t, 2)) {
+    private void include(DictionaryFile file, String[] t, boolean optional) {
+        if (!file.requireTokens(t, 2)) {
             return;
         }
         DictionarySource target = file.source.resolve(t[1]);
         if (!target.exists()) {
             if (!optional) {
-                problem(file, "$INCLUDE target not found: " + target.location());
+                file.problem("$INCLUDE target not found: " + target.location());
             }
             return;
         }
@@ -249,24 +181,24 @@ final class DictionaryParser {
 
     // ---- ATTRIBUTE / DEFINE / MEMBER -------------------------------------------------------
 
-    private void attribute(FileState file, String[] t) {
-        if (!requireTokens(file, t, 4)) {
+    private void attribute(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 4)) {
             return;
         }
         String name = t[1];
         String numberToken = t[2];
-        TypeSpec type = typeSpec(file, t[3]);
+        TypeSpec type = TypeSpec.parse(file, t[3]);
         if (type == null) {
             return;
         }
         Frame frame = frames.peek();
-        Flags flags = new Flags();
+        AttributeFlags flags = new AttributeFlags();
         VendorDef v3Vendor = null;
         for (int i = 4; i < t.length; i++) {
             VendorDef vendor = vendorsByName.get(AttributeDef.key(t[i]));
             if (vendor != null && !t[i].contains("=")) {
                 v3Vendor = vendor;
-            } else if (!flags.parse(this, file, t[i])) {
+            } else if (!flags.parse(file, t[i])) {
                 return;
             }
         }
@@ -280,11 +212,11 @@ final class DictionaryParser {
             if (parent == null) {
                 return;
             }
-            number = parseNumber(file, numberToken);
+            number = file.number(numberToken);
             absolute = true;
         } else if (numberToken.startsWith(".")) {
             if (frame.lastStructural == null) {
-                problem(file, "relative number " + numberToken + " without a preceding tlv/struct/vsa");
+                file.problem("relative number " + numberToken + " without a preceding tlv/struct/vsa");
                 return;
             }
             Placement placement = placeDotted(file, frame.lastStructural, numberToken.substring(1));
@@ -304,7 +236,7 @@ final class DictionaryParser {
             absolute = true;
         } else {
             parent = frame.node;
-            number = parseNumber(file, numberToken);
+            number = file.number(numberToken);
             absolute = true;
         }
         if (number < 0) {
@@ -315,44 +247,44 @@ final class DictionaryParser {
         if (def == null) {
             return;
         }
-        if (absolute && type.type.isStructural()) {
+        if (absolute && type.type().isStructural()) {
             frame.lastStructural = def;
         }
-        frame.lastStruct = type.type == DataType.STRUCT ? def : null;
+        frame.lastStruct = type.type() == DataType.STRUCT ? def : null;
     }
 
-    private void define(FileState file, String[] t) {
-        if (!requireTokens(file, t, 3)) {
+    private void define(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 3)) {
             return;
         }
-        TypeSpec type = typeSpec(file, t[2]);
+        TypeSpec type = TypeSpec.parse(file, t[2]);
         if (type == null) {
             return;
         }
-        Flags flags = new Flags();
+        AttributeFlags flags = new AttributeFlags();
         for (int i = 3; i < t.length; i++) {
-            if (!flags.parse(this, file, t[i])) {
+            if (!flags.parse(file, t[i])) {
                 return;
             }
         }
         flags.internal |= file.internal;
         Frame frame = frames.peek();
         AttributeDef def = define(file, frame.node, t[1], AttributeDef.NO_NUMBER, type, flags);
-        if (def != null && type.type.isStructural()) {
+        if (def != null && type.type().isStructural()) {
             frame.lastStructural = def;
         }
     }
 
-    private void member(FileState file, String[] t) {
-        if (!requireTokens(file, t, 3)) {
+    private void member(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 3)) {
             return;
         }
         Frame frame = frames.peek();
         if (frame.lastStruct == null) {
-            problem(file, "MEMBER " + t[1] + " without a preceding struct");
+            file.problem("MEMBER " + t[1] + " without a preceding struct");
             return;
         }
-        TypeSpec type = typeSpec(file, t[2]);
+        TypeSpec type = TypeSpec.parse(file, t[2]);
         if (type == null) {
             return;
         }
@@ -362,36 +294,34 @@ final class DictionaryParser {
                 String flagName = flag.contains("=") ? flag.substring(0, flag.indexOf('=')) : flag;
                 if (flagName.equals("key")) {
                     key = true;
-                } else if (!KNOWN_FLAGS.contains(flagName)) {
-                    problem(file, "unknown flag " + flag);
+                } else if (!AttributeFlags.known(flagName)) {
+                    file.problem("unknown flag " + flag);
                     return;
                 }
             }
         }
         AttributeDef struct = frame.lastStruct;
-        struct.addMember(new AttributeDef.MemberDef(t[1], type.type, type.length, key));
+        struct.addMember(new AttributeDef.MemberDef(t[1], type.type(), type.length(), key));
         // members are addressable by name, e.g. BEGIN Vendor-Specific.3GPP.User-Location-Info.Data
         if (struct.child(t[1]) == null) {
             AttributeDef node =
-                    new AttributeDef(t[1], AttributeDef.NO_NUMBER, type.type, type.length, struct, struct.vendor());
+                    new AttributeDef(t[1], AttributeDef.NO_NUMBER, type.type(), type.length(), struct, struct.vendor());
             struct.addChild(node);
         }
     }
 
     private AttributeDef define(
-            FileState file, AttributeDef parent, String name, int number, TypeSpec type, Flags flags) {
-        if (parent.type() == DataType.VSA && type.type != DataType.VENDOR) {
-            problem(
-                    file,
-                    "attribute " + name + " cannot be a direct child of " + parent.path()
-                            + "; declare it inside BEGIN-VENDOR");
+            DictionaryFile file, AttributeDef parent, String name, int number, TypeSpec type, AttributeFlags flags) {
+        if (parent.type() == DataType.VSA && type.type() != DataType.VENDOR) {
+            file.problem("attribute " + name + " cannot be a direct child of " + parent.path()
+                    + "; declare it inside BEGIN-VENDOR");
             return null;
         }
         VendorDef vendor = parent.vendor();
 
         AttributeDef existing = number == AttributeDef.NO_NUMBER ? null : parent.child(number);
         if (existing != null) {
-            if (existing.type() == type.type) {
+            if (existing.type() == type.type()) {
                 // compatible redefinition, typically a v3 operator file re-declaring a bundled attribute
                 if (!existing.name().equalsIgnoreCase(name)) {
                     existing.addAlternateName(name);
@@ -403,14 +333,13 @@ final class DictionaryParser {
                 return existing;
             }
             if (file.strict()) {
-                problem(
-                        file,
-                        "attribute " + name + " (" + number + ") redefines " + existing + " with a different type "
-                                + type.type.dictionaryName());
+                file.problem("attribute " + name + " (" + number + ") redefines " + existing + " with a different type "
+                        + type.type().dictionaryName());
                 return null;
             }
-            warnings.add(file.at + ": " + name + " overrides " + existing + " with type " + type.type.dictionaryName());
-            AttributeDef replacement = new AttributeDef(name, number, type.type, type.length, parent, vendor);
+            file.warn(name + " overrides " + existing + " with type "
+                    + type.type().dictionaryName());
+            AttributeDef replacement = new AttributeDef(name, number, type.type(), type.length(), parent, vendor);
             flags.apply(replacement);
             parent.replaceChild(existing, replacement);
             flatNames.put(AttributeDef.key(name), replacement);
@@ -423,18 +352,18 @@ final class DictionaryParser {
                 return sameName;
             }
             if (file.strict()) {
-                problem(file, "attribute " + name + " already defined as " + sameName);
+                file.problem("attribute " + name + " already defined as " + sameName);
                 return null;
             }
-            warnings.add(file.at + ": " + name + " renumbered from " + sameName.oid() + " to " + number);
-            AttributeDef replacement = new AttributeDef(name, number, type.type, type.length, parent, vendor);
+            file.warn(name + " renumbered from " + sameName.oid() + " to " + number);
+            AttributeDef replacement = new AttributeDef(name, number, type.type(), type.length(), parent, vendor);
             flags.apply(replacement);
             parent.replaceChild(sameName, replacement);
             flatNames.put(AttributeDef.key(name), replacement);
             return replacement;
         }
 
-        AttributeDef def = new AttributeDef(name, number, type.type, type.length, parent, vendor);
+        AttributeDef def = new AttributeDef(name, number, type.type(), type.length(), parent, vendor);
         flags.apply(def);
         parent.addChild(def);
         flatNames.putIfAbsent(AttributeDef.key(name), def);
@@ -444,11 +373,11 @@ final class DictionaryParser {
     private record Placement(AttributeDef parent, int number) {}
 
     /** Walks {@code a.b.c} from {@code from}: {@code a.b} must exist, {@code c} is the new number. */
-    private Placement placeDotted(FileState file, AttributeDef from, String dotted) {
+    private Placement placeDotted(DictionaryFile file, AttributeDef from, String dotted) {
         String[] parts = dotted.split("\\.");
         AttributeDef parent = from;
         for (int i = 0; i < parts.length - 1; i++) {
-            int n = parseNumber(file, parts[i]);
+            int n = file.number(parts[i]);
             if (n < 0) {
                 return null;
             }
@@ -458,88 +387,19 @@ final class DictionaryParser {
                 next = vendor == null ? null : vendorNode(file, vendor, parent);
             }
             if (next == null) {
-                problem(file, "parent " + n + " not defined under " + parent.path() + " for " + dotted);
+                file.problem("parent " + n + " not defined under " + parent.path() + " for " + dotted);
                 return null;
             }
             parent = next;
         }
-        int number = parseNumber(file, parts[parts.length - 1]);
+        int number = file.number(parts[parts.length - 1]);
         return number < 0 ? null : new Placement(parent, number);
-    }
-
-    private record TypeSpec(DataType type, int length) {}
-
-    private TypeSpec typeSpec(FileState file, String token) {
-        DataType type = DataType.fromDictionaryName(token);
-        if (type == null) {
-            problem(file, "unknown data type " + token);
-            return null;
-        }
-        int length = -1;
-        int bracket = token.indexOf('[');
-        if (bracket >= 0) {
-            if (!token.endsWith("]")) {
-                problem(file, "malformed type " + token);
-                return null;
-            }
-            length = parseNumber(file, token.substring(bracket + 1, token.length() - 1));
-            if (length < 0) {
-                return null;
-            }
-        }
-        return new TypeSpec(type, length);
-    }
-
-    private final class Flags {
-        boolean hasTag;
-        boolean concat;
-        boolean internal;
-        boolean array;
-        String encrypt;
-        final Map<String, String> options = new LinkedHashMap<>();
-
-        boolean parse(DictionaryParser parser, FileState file, String token) {
-            for (String flag : token.split(",")) {
-                if (flag.isEmpty()) {
-                    continue;
-                }
-                int eq = flag.indexOf('=');
-                String name = eq >= 0 ? flag.substring(0, eq) : flag;
-                String value = eq >= 0 ? flag.substring(eq + 1) : "";
-                if (!KNOWN_FLAGS.contains(name)) {
-                    parser.problem(file, "unknown flag " + flag);
-                    return !file.strict();
-                }
-                switch (name) {
-                    case "has_tag" -> hasTag = true;
-                    case "concat" -> concat = true;
-                    case "internal" -> internal = true;
-                    case "array" -> array = true;
-                    case "encrypt" -> encrypt = encryptName(value);
-                    default -> options.put(name, value);
-                }
-            }
-            return true;
-        }
-
-        void apply(AttributeDef def) {
-            def.flags(hasTag, concat, internal, array, encrypt, options);
-        }
-    }
-
-    private static String encryptName(String value) {
-        return switch (value) {
-            case "1" -> "User-Password";
-            case "2" -> "Tunnel-Password";
-            case "3" -> "Ascend-Secret";
-            default -> value;
-        };
     }
 
     // ---- VALUE -------------------------------------------------------------------------------
 
-    private void value(FileState file, String[] t) {
-        if (!requireTokens(file, t, 4)) {
+    private void value(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 4)) {
             return;
         }
         Frame frame = frames.peek();
@@ -547,59 +407,22 @@ final class DictionaryParser {
         // VALUE lines directly after a struct may name one of its members
         AttributeDef target = frame.lastStruct == null ? null : frame.lastStruct.child(t[1]);
         if (target == null) {
-            target = lookup(context, t[1]);
+            target = linker.lookup(context, t[1]);
         }
         if (target == null) {
-            pendingValues.add(new PendingValue(context, t[1], t[2], t[3], file.at, file.mode));
+            linker.valueLater(context, t[1], t[2], t[3], file.at, file.mode);
             return;
         }
-        addValue(target, t[2], t[3], file.at, file.mode);
-    }
-
-    private void addValue(AttributeDef target, String name, String raw, Location at, ParseMode mode) {
-        Long value = parseValue(target.type(), raw);
-        if (value == null) {
-            String message = at + ": VALUE " + name + "=" + raw + " is not valid for " + target;
-            if (mode == ParseMode.STRICT) {
-                throw new DictionaryException(message);
-            }
-            warnings.add(message + " (skipped)");
-            return;
-        }
-        target.addValue(name, value);
-    }
-
-    private static Long parseValue(DataType type, String raw) {
-        if (type.isInteger() || type == DataType.OCTETS || type == DataType.STRING) {
-            Long number = parseLong(raw);
-            if (number != null) {
-                return number;
-            }
-        }
-        if (type == DataType.IPV4_ADDR) {
-            String[] octets = raw.split("\\.");
-            if (octets.length == 4) {
-                long v = 0;
-                for (String o : octets) {
-                    Long part = parseLong(o);
-                    if (part == null || part < 0 || part > 255) {
-                        return null;
-                    }
-                    v = (v << 8) | part;
-                }
-                return v;
-            }
-        }
-        return null;
+        linker.addValue(target, t[2], t[3], file.at, file.mode);
     }
 
     // ---- VENDOR ------------------------------------------------------------------------------
 
-    private void vendor(FileState file, String[] t) {
-        if (!requireTokens(file, t, 3)) {
+    private void vendor(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 3)) {
             return;
         }
-        int id = parseNumber(file, t[2]);
+        int id = file.number(t[2]);
         if (id < 0) {
             return;
         }
@@ -608,23 +431,23 @@ final class DictionaryParser {
         boolean continuation = false;
         for (int i = 3; i < t.length; i++) {
             if (!t[i].startsWith("format=")) {
-                problem(file, "unknown VENDOR option " + t[i]);
+                file.problem("unknown VENDOR option " + t[i]);
                 return;
             }
             String[] format = t[i].substring("format=".length()).split(",");
             if (format.length < 2 || format.length > 3 || (format.length == 3 && !format[2].equals("c"))) {
-                problem(file, "malformed vendor format " + t[i]);
+                file.problem("malformed vendor format " + t[i]);
                 return;
             }
-            typeLength = parseNumber(file, format[0]);
-            lengthLength = parseNumber(file, format[1]);
+            typeLength = file.number(format[0]);
+            lengthLength = file.number(format[1]);
             continuation = format.length == 3;
         }
         VendorDef vendor;
         try {
             vendor = new VendorDef(t[1], id, typeLength, lengthLength, continuation);
         } catch (IllegalArgumentException e) {
-            problem(file, e.getMessage());
+            file.problem(e.getMessage());
             return;
         }
         VendorDef existing = vendorsById.get(id);
@@ -633,7 +456,7 @@ final class DictionaryParser {
                     || existing.lengthLength() != lengthLength
                     || existing.continuation() != continuation) {
                 if (file.strict()) {
-                    problem(file, "vendor " + t[1] + " (" + id + ") redefined with a different format");
+                    file.problem("vendor " + t[1] + " (" + id + ") redefined with a different format");
                     return;
                 }
                 warnings.add(file.at + ": vendor " + t[1] + " (" + id + ") format overridden");
@@ -648,13 +471,13 @@ final class DictionaryParser {
         vendorsByName.put(AttributeDef.key(t[1]), vendor);
     }
 
-    private void beginVendor(FileState file, String[] t) {
-        if (!requireTokens(file, t, 2)) {
+    private void beginVendor(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 2)) {
             return;
         }
         VendorDef vendor = vendorsByName.get(AttributeDef.key(t[1]));
         if (vendor == null) {
-            problem(file, "BEGIN-VENDOR for undeclared vendor " + t[1]);
+            file.problem("BEGIN-VENDOR for undeclared vendor " + t[1]);
             frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
             return;
         }
@@ -664,13 +487,13 @@ final class DictionaryParser {
             if (t[i].startsWith("parent=")) {
                 parentPath = t[i].substring("parent=".length());
             } else if (t[i].startsWith("format=Extended-Vendor-Specific-")) {
-                extended = parseNumber(file, t[i].substring("format=Extended-Vendor-Specific-".length()));
+                extended = file.number(t[i].substring("format=Extended-Vendor-Specific-".length()));
                 if (extended < 0) {
                     frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
                     return;
                 }
             } else {
-                problem(file, "unknown BEGIN-VENDOR option " + t[i]);
+                file.problem("unknown BEGIN-VENDOR option " + t[i]);
                 frames.push(new Frame(FrameKind.SKIP, null, t[1], "END-VENDOR"));
                 return;
             }
@@ -684,20 +507,20 @@ final class DictionaryParser {
         frames.push(new Frame(FrameKind.VENDOR, node, vendor.name(), "END-VENDOR"));
     }
 
-    private void endVendor(FileState file, String[] t) {
+    private void endVendor(DictionaryFile file, String[] t) {
         Frame frame = frames.peek();
         if (frame.kind != FrameKind.VENDOR) {
-            problem(file, "END-VENDOR without BEGIN-VENDOR");
+            file.problem("END-VENDOR without BEGIN-VENDOR");
             return;
         }
         if (t.length > 1 && vendorsByName.get(AttributeDef.key(t[1])) != frame.node.vendor()) {
-            problem(file, "END-VENDOR " + t[1] + " does not match BEGIN-VENDOR " + frame.label);
+            file.problem("END-VENDOR " + t[1] + " does not match BEGIN-VENDOR " + frame.label);
         }
         frames.pop();
     }
 
     /** The VSA attribute vendor nodes hang off: RFC 2865 Vendor-Specific (26) unless a parent path is given. */
-    private AttributeDef vsaContainer(FileState file, String parentPath) {
+    private AttributeDef vsaContainer(DictionaryFile file, String parentPath) {
         AttributeDef container;
         if (parentPath == null) {
             container = root.child(Dictionary.VENDOR_SPECIFIC);
@@ -709,14 +532,14 @@ final class DictionaryParser {
                 flatNames.putIfAbsent(AttributeDef.key(container.name()), container);
             }
         } else {
-            container = resolveReference(root, parentPath);
+            container = DictionaryLinker.resolveReference(root, parentPath);
             if (container == null) {
-                problem(file, "vendor parent " + parentPath + " not defined");
+                file.problem("vendor parent " + parentPath + " not defined");
                 return null;
             }
         }
         if (container.type() != DataType.VSA && container.type() != DataType.EVS) {
-            problem(file, "vendor parent " + container + " is not a vsa");
+            file.problem("vendor parent " + container + " is not a vsa");
             return null;
         }
         return container;
@@ -727,24 +550,22 @@ final class DictionaryParser {
      * {@code BEGIN-VENDOR <name> format=Extended-Vendor-Specific-<n>}: found by number, as the v3 files name the
      * attributes differently.
      */
-    private AttributeDef extendedVsaContainer(FileState file, int n) {
+    private AttributeDef extendedVsaContainer(DictionaryFile file, int n) {
         AttributeDef extended = n < 1 || n > 6 ? null : root.child(240 + n);
         AttributeDef container = extended == null ? null : extended.child(Dictionary.VENDOR_SPECIFIC);
         if (container == null) {
-            problem(
-                    file,
-                    "vendor parent Extended-Vendor-Specific-" + n + " (" + (240 + n) + "." + Dictionary.VENDOR_SPECIFIC
-                            + ") not defined");
+            file.problem("vendor parent Extended-Vendor-Specific-" + n + " (" + (240 + n) + "."
+                    + Dictionary.VENDOR_SPECIFIC + ") not defined");
             return null;
         }
         if (container.type() != DataType.VSA && container.type() != DataType.EVS) {
-            problem(file, "vendor parent " + container + " is not a vsa");
+            file.problem("vendor parent " + container + " is not a vsa");
             return null;
         }
         return container;
     }
 
-    private AttributeDef vendorNode(FileState file, VendorDef vendor, AttributeDef container) {
+    private AttributeDef vendorNode(DictionaryFile file, VendorDef vendor, AttributeDef container) {
         if (container == null) {
             return null;
         }
@@ -753,7 +574,7 @@ final class DictionaryParser {
             node = new AttributeDef(vendor.name(), vendor.id(), DataType.VENDOR, -1, container, vendor);
             container.addChild(node);
         } else if (node.type() != DataType.VENDOR) {
-            problem(file, "vendor " + vendor.name() + " collides with " + node);
+            file.problem("vendor " + vendor.name() + " collides with " + node);
             return null;
         }
         return node;
@@ -761,8 +582,8 @@ final class DictionaryParser {
 
     // ---- BEGIN / END blocks ------------------------------------------------------------------
 
-    private void begin(FileState file, String[] t) {
-        if (!requireTokens(file, t, 2)) {
+    private void begin(DictionaryFile file, String[] t) {
+        if (!file.requireTokens(t, 2)) {
             return;
         }
         if (t[1].equalsIgnoreCase("PROTOCOL")) {
@@ -772,8 +593,8 @@ final class DictionaryParser {
         }
     }
 
-    private void beginProtocol(FileState file, String[] t, int nameIndex) {
-        if (!requireTokens(file, t, nameIndex + 1)) {
+    private void beginProtocol(DictionaryFile file, String[] t, int nameIndex) {
+        if (!file.requireTokens(t, nameIndex + 1)) {
             return;
         }
         String protocol = t[nameIndex];
@@ -785,180 +606,66 @@ final class DictionaryParser {
         frames.push(new Frame(FrameKind.PROTOCOL, root, PROTOCOL_RADIUS, "END-PROTOCOL"));
     }
 
-    private void endProtocol(FileState file, String[] t) {
+    private void endProtocol(DictionaryFile file, String[] t) {
         Frame frame = frames.peek();
         if (frame.kind != FrameKind.PROTOCOL || frames.size() == 1) {
-            problem(file, "END-PROTOCOL without BEGIN PROTOCOL");
+            file.problem("END-PROTOCOL without BEGIN PROTOCOL");
             return;
         }
         frames.pop();
     }
 
-    private void beginBlock(FileState file, String[] t, int refIndex, String endKeyword) {
-        if (!requireTokens(file, t, refIndex + 1)) {
+    private void beginBlock(DictionaryFile file, String[] t, int refIndex, String endKeyword) {
+        if (!file.requireTokens(t, refIndex + 1)) {
             return;
         }
         Frame frame = frames.peek();
-        AttributeDef target = resolveReference(frame.node, t[refIndex]);
+        AttributeDef target = DictionaryLinker.resolveReference(frame.node, t[refIndex]);
         if (target == null) {
-            target = resolveReference(root, t[refIndex]);
+            target = DictionaryLinker.resolveReference(root, t[refIndex]);
         }
         if (target == null || !target.type().isStructural()) {
-            problem(file, t[0] + " " + t[refIndex] + ": not a defined tlv/struct/vsa");
+            file.problem(t[0] + " " + t[refIndex] + ": not a defined tlv/struct/vsa");
             frames.push(new Frame(FrameKind.SKIP, null, t[refIndex], endKeyword));
             return;
         }
         frames.push(new Frame(FrameKind.BLOCK, target, t[refIndex], endKeyword));
     }
 
-    private void end(FileState file, String[] t, String keyword) {
+    private void end(DictionaryFile file, String[] t, String keyword) {
         Frame frame = frames.peek();
         if (frame.kind != FrameKind.BLOCK || !frame.endKeyword.equals(keyword)) {
-            problem(file, keyword + " without matching BEGIN");
+            file.problem(keyword + " without matching BEGIN");
             return;
         }
         if (t.length > 1 && !t[1].equalsIgnoreCase(frame.label)) {
-            problem(file, keyword + " " + t[1] + " does not match BEGIN " + frame.label);
+            file.problem(keyword + " " + t[1] + " does not match BEGIN " + frame.label);
         }
         frames.pop();
     }
 
     // ---- ALIAS / FLAGS -----------------------------------------------------------------------
 
-    private void alias(FileState file, String[] t) {
-        if (requireTokens(file, t, 3)) {
-            pendingAliases.add(new PendingAlias(frames.peek().node, t[1], t[2], file.at, file.mode));
+    private void alias(DictionaryFile file, String[] t) {
+        if (file.requireTokens(t, 3)) {
+            linker.aliasLater(frames.peek().node, t[1], t[2], file.at, file.mode);
         }
     }
 
-    private void flagsLine(FileState file, String[] t) {
+    private void flagsLine(DictionaryFile file, String[] t) {
         for (int i = 1; i < t.length; i++) {
             for (String flag : t[i].split(",")) {
                 switch (flag) {
                     case "internal" -> file.internal = true;
                     case "-internal" -> file.internal = false;
-                    default -> problem(file, "unknown FLAGS value " + flag);
+                    default -> file.problem("unknown FLAGS value " + flag);
                 }
             }
         }
     }
 
-    // ---- lookups -----------------------------------------------------------------------------
-
-    private AttributeDef lookup(AttributeDef context, String ref) {
-        AttributeDef def = resolveReference(context, ref);
-        if (def == null && context != root) {
-            def = resolveReference(root, ref);
-        }
-        if (def == null) {
-            def = flatNames.get(AttributeDef.key(ref));
-        }
-        return def;
-    }
-
-    private static AttributeDef resolveReference(AttributeDef context, String ref) {
-        String path = ref.startsWith("@") ? ref.substring(1) : ref;
-        return Dictionary.resolvePath(context, path);
-    }
-
-    // ---- numbers -----------------------------------------------------------------------------
-
-    private int parseNumber(FileState file, String token) {
-        Long value = parseLong(token);
-        if (value == null || value < 0 || value > 0xFFFF_FFFFL) {
-            problem(file, "invalid number " + token);
-            return -1;
-        }
-        return (int) (long) value;
-    }
-
-    private static Long parseLong(String token) {
-        try {
-            if (token.startsWith("0x") || token.startsWith("0X")) {
-                return Long.parseUnsignedLong(token.substring(2), 16);
-            }
-            return Long.parseLong(token);
-        } catch (NumberFormatException e) {
-            return null;
-        }
-    }
-
-    // ---- finish ------------------------------------------------------------------------------
-
+    /** The dictionary: aliases and values that came before their attribute resolved now. */
     Dictionary finish() {
-        resolveAliases();
-        for (PendingValue pending : pendingValues) {
-            AttributeDef target = lookup(pending.context(), pending.attribute());
-            if (target == null) {
-                String message = pending.at() + ": VALUE for undefined attribute " + pending.attribute();
-                if (pending.mode() == ParseMode.STRICT) {
-                    throw new DictionaryException(message);
-                }
-                warnings.add(message + " (skipped)");
-                continue;
-            }
-            addValue(target, pending.name(), pending.value(), pending.at(), pending.mode());
-        }
-
-        Long2ObjectHashMap<AttributeDef> vsaIndex = new Long2ObjectHashMap<>();
-        AttributeDef vsa = root.child(Dictionary.VENDOR_SPECIFIC);
-        if (vsa != null) {
-            for (AttributeDef vendorNode : vsa.children()) {
-                for (AttributeDef attr : vendorNode.children()) {
-                    vsaIndex.put(Dictionary.vsaKey(vendorNode.number(), attr.number()), attr);
-                }
-            }
-        }
-        Map<String, VendorDef> vendorNames = new HashMap<>(vendorsByName);
-        return new Dictionary(
-                root,
-                vendorsById,
-                vendorNames,
-                vsaIndex,
-                flatNames,
-                warnings,
-                loadedFiles,
-                countAttributes(root, new HashSet<>()));
-    }
-
-    private void resolveAliases() {
-        List<PendingAlias> remaining = new ArrayList<>(pendingAliases);
-        boolean progress = true;
-        while (!remaining.isEmpty() && progress) {
-            progress = false;
-            for (var it = remaining.iterator(); it.hasNext(); ) {
-                PendingAlias alias = it.next();
-                AttributeDef target = lookup(alias.context(), alias.target());
-                if (target != null) {
-                    if (!alias.context().hasNameOrAlias(alias.name())) {
-                        alias.context().addAlias(alias.name(), target);
-                    }
-                    flatNames.putIfAbsent(AttributeDef.key(alias.name()), target);
-                    it.remove();
-                    progress = true;
-                }
-            }
-        }
-        for (PendingAlias alias : remaining) {
-            String message = alias.at() + ": ALIAS " + alias.name() + " target not found: " + alias.target();
-            if (alias.mode() == ParseMode.STRICT) {
-                throw new DictionaryException(message);
-            }
-            warnings.add(message + " (skipped)");
-        }
-    }
-
-    private static int countAttributes(AttributeDef node, Set<AttributeDef> seen) {
-        int count = 0;
-        for (AttributeDef child : node.children()) {
-            if (!seen.add(child)) {
-                continue;
-            }
-            if (child.type() != DataType.VENDOR) {
-                count++;
-            }
-            count += countAttributes(child, seen);
-        }
-        return count;
+        return linker.link(vendorsById, vendorsByName, loadedFiles);
     }
 }
