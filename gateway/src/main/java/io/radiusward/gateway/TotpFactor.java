@@ -13,6 +13,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.UnsafeBuffer;
 
@@ -37,19 +38,17 @@ final class TotpFactor {
     private final LongSupplier clockMillis;
     private final SecureRandom random;
     private final OnceLogger once;
-    private volatile Totp totp = Totp.DEFAULT;
     private final ConcurrentHashMap<String, Pending> challenges = new ConcurrentHashMap<>();
     /** The last time step used per user: a code is accepted once. */
     private final ConcurrentHashMap<String, Long> usedSteps = new ConcurrentHashMap<>();
 
-    TotpFactor(LongSupplier clockMillis, SecureRandom random, OnceLogger once) {
+    private final Supplier<AccessPolicies> policies;
+
+    TotpFactor(LongSupplier clockMillis, SecureRandom random, OnceLogger once, Supplier<AccessPolicies> policies) {
+        this.policies = policies;
         this.clockMillis = clockMillis;
         this.random = random;
         this.once = once;
-    }
-
-    void settings(Totp totp) {
-        this.totp = totp;
     }
 
     /** The user's TOTP secret among the authorization's restrictions, {@code null} without one. */
@@ -69,7 +68,7 @@ final class TotpFactor {
      */
     int check(AuthRequest auth, int method, String userName, String secret) {
         AccessContext context = auth.context();
-        Totp t = totp;
+        Totp t = policies.get().totp();
         if (method != AccessRequests.METHOD_PAP) {
             once.warn(
                     "totp:" + method,
@@ -147,6 +146,7 @@ final class TotpFactor {
 
     /** Asks for the code: an Access-Challenge with a fresh State and the prompt. */
     int challenge(AccessContext context, String userName) {
+        Totp totp = policies.get().totp();
         long now = clockMillis.getAsLong();
         if (challenges.size() >= MAX_CHALLENGES) {
             challenges.values().removeIf(p -> p.expiresMillis() < now);

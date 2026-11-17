@@ -10,6 +10,7 @@ import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.AttributeDef;
 import io.radiusward.radius.dictionary.Dictionary;
 import java.util.ArrayList;
+import java.util.function.Supplier;
 
 /**
  * What decides after the credential was checked whether an authorized user gets in, and with what: Simultaneous-Use
@@ -23,26 +24,19 @@ final class Admission {
     private final CheckItems checkItems;
     private final Restrictions restrictions;
     private final AddressAssignment addresses;
-    private volatile RulesFile rules;
-    private volatile Cui cui;
+    private final Supplier<AccessPolicies> policies;
 
-    Admission(Dictionary dictionary, CheckItems checkItems, Restrictions restrictions, OnceLogger once) {
+    Admission(
+            Dictionary dictionary,
+            CheckItems checkItems,
+            Restrictions restrictions,
+            OnceLogger once,
+            Supplier<AccessPolicies> policies) {
+        this.policies = policies;
         this.dictionary = dictionary;
         this.checkItems = checkItems;
         this.restrictions = restrictions;
-        this.addresses = new AddressAssignment(once);
-    }
-
-    void pools(IpPools pools) {
-        addresses.pools(pools);
-    }
-
-    void rules(RulesFile rules) {
-        this.rules = rules;
-    }
-
-    void cui(Cui cui) {
-        this.cui = cui;
+        this.addresses = new AddressAssignment(once, policies);
     }
 
     /**
@@ -66,12 +60,13 @@ final class Admission {
         if (pooled != AccessHandler.ACCEPT) {
             return pooled;
         }
-        RulesFile r = rules;
+        AccessPolicies p = policies.get();
+        RulesFile r = p.rules();
         if (r != null && !r.current().apply(ruleRequest(request, found.user()), a.reply())) {
             StoreAccessHandler.because(context, "rejected by a rule of ", "auth.rules");
             return AccessHandler.REJECT;
         }
-        Cui c = cui;
+        Cui c = p.cui();
         if (c != null) {
             c.apply(request, found.user().userName(), a.reply()); // ADR 0056
         }

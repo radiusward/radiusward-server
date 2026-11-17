@@ -9,6 +9,7 @@ import io.radiusward.radius.codec.RadiusPacket;
 import java.time.Instant;
 import java.util.List;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 /**
  * What limits an authorized user (ADR 0049, ADR 0060, ADR 0023): Expiration, Expire-After, Login-Time and usage
@@ -23,7 +24,10 @@ final class Restrictions {
     private final LongSupplier clockMillis;
     private final OnceLogger once;
 
-    Restrictions(CheckItems checkItems, LongSupplier clockMillis, OnceLogger once) {
+    private final Supplier<AccessPolicies> policies;
+
+    Restrictions(CheckItems checkItems, LongSupplier clockMillis, OnceLogger once, Supplier<AccessPolicies> policies) {
+        this.policies = policies;
         this.checkItems = checkItems;
         this.clockMillis = clockMillis;
         this.once = once;
@@ -31,20 +35,11 @@ final class Restrictions {
 
     /** The zone of Login-Time, counter periods and dates without one. */
     java.time.ZoneId zone() {
-        return zone;
-    }
-
-    private volatile UsageCounters counters;
-    private volatile java.time.ZoneId zone = java.time.ZoneId.systemDefault();
-
-    /** Usage counters ({@code auth.counters}) and the zone of Login-Time and counter periods. */
-    void limits(UsageCounters counters, java.time.ZoneId zone) {
-        this.counters = counters;
-        this.zone = zone;
+        return policies.get().zone();
     }
 
     void collect(List<AttributeItem> checks, List<AttributeItem> into) {
-        UsageCounters c = counters;
+        UsageCounters c = policies.get().counters();
         for (AttributeItem item : checks) {
             String name = item.attribute();
             if (name.equalsIgnoreCase("Expiration")
@@ -69,8 +64,10 @@ final class Restrictions {
         if (a.restrictions().isEmpty()) {
             return AccessHandler.ACCEPT;
         }
+        AccessPolicies p = policies.get();
+        UsageCounters counters = p.counters();
         Instant now = Instant.ofEpochMilli(clockMillis.getAsLong());
-        java.time.ZonedDateTime local = now.atZone(zone);
+        java.time.ZonedDateTime local = now.atZone(p.zone());
         long cap = Long.MAX_VALUE;
         for (AttributeItem item : a.restrictions()) {
             String name = item.attribute();
@@ -239,7 +236,7 @@ final class Restrictions {
             StoreAccessHandler.because(context, "Expire-After not understood: ", item.value());
             return -1;
         }
-        UsageCounters c = counters;
+        UsageCounters c = policies.get().counters();
         if (c == null) {
             once.warn(
                     "expire-after-sql",

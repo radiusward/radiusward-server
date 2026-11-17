@@ -339,19 +339,11 @@ public final class Gateway implements AutoCloseable {
      */
     public static java.util.function.Function<Dictionary, AccessHandler> storeHandler(
             io.radiusward.common.config.Config config, AuthConfig auth) {
-        UsageCounters counters = UsageCounters.from(config);
-        java.time.ZoneId zone = UsageCounters.zone(config);
-        IpPools pools = IpPools.from(config);
-        Totp totp = Totp.from(config);
-        Cui cui = Cui.from(config);
         return dictionary -> {
+            AccessPolicies policies = AccessPolicies.from(config, dictionary);
             StoreAccessHandler handler = new StoreAccessHandler(
                     AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
-            handler.limits(counters, zone); // ADR 0049
-            handler.totp(totp); // ADR 0053
-            handler.cui(cui); // ADR 0056
-            handler.pools(pools); // ADR 0050
-            handler.rules(RulesFile.from(config, name -> dictionary.find(name) != null)); // ADR 0051
+            handler.policies(policies);
             return handler;
         };
     }
@@ -567,21 +559,11 @@ public final class Gateway implements AutoCloseable {
         }
         StoreAccessHandler stores = handler instanceof StoreAccessHandler h ? h : null;
         AuthStores nextStores = null;
-        UsageCounters counters = null;
-        java.time.ZoneId zone = null;
-        IpPools pools = null;
-        Totp totp = null;
-        Cui cui = null;
-        RulesFile rules = null;
+        AccessPolicies policies = null;
         if (stores != null) {
             nextStores = AuthStores.from(raw, workers.size(), dictionary);
             try {
-                counters = UsageCounters.from(raw);
-                zone = UsageCounters.zone(raw);
-                pools = IpPools.from(raw);
-                totp = Totp.from(raw);
-                cui = Cui.from(raw);
-                rules = RulesFile.from(raw, name -> dictionary.find(name) != null);
+                policies = AccessPolicies.from(raw, dictionary);
             } catch (RuntimeException e) {
                 nextStores.close();
                 throw e;
@@ -592,11 +574,7 @@ public final class Gateway implements AutoCloseable {
         rejectDelay(delay);
         if (stores != null) {
             stores.reload(nextStores, java.time.Duration.ofSeconds(30));
-            stores.limits(counters, zone);
-            stores.pools(pools);
-            stores.totp(totp);
-            stores.cui(cui);
-            stores.rules(rules);
+            stores.policies(policies);
         }
         if (tracer != null) {
             tracer.reconfigure(raw);

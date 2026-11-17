@@ -6,6 +6,7 @@ package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.RadiusPacket;
+import java.util.function.Supplier;
 
 /**
  * Addresses from IP pools for an Accept (ADR 0050, ADR 0059): the pools a user's {@code Pool-Name} names, unless the
@@ -17,14 +18,11 @@ final class AddressAssignment {
 
     private final OnceLogger once;
 
-    AddressAssignment(OnceLogger once) {
+    private final Supplier<AccessPolicies> policies;
+
+    AddressAssignment(OnceLogger once, Supplier<AccessPolicies> policies) {
         this.once = once;
-    }
-
-    private volatile IpPools pools;
-
-    void pools(IpPools pools) {
-        this.pools = pools;
+        this.policies = policies;
     }
 
     /**
@@ -49,7 +47,7 @@ final class AddressAssignment {
 
     private int assign(
             AccessContext context, RadiusPacket request, String user, UserDirectory.Authorization a, String name) {
-        IpPools p = pools;
+        IpPools p = policies.get().pools();
         IpPools.Pool pool = p == null ? null : p.pool(name);
         if (pool == null) {
             once.warn("pool:" + name, "Pool-Name {}: no such pool in auth.pools, the user is rejected", name);

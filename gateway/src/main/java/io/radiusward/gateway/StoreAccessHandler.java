@@ -69,15 +69,15 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.stores = stores;
         this.dictionary = dictionary;
         this.clockMillis = clockMillis;
-        this.checkItems = new CheckItems(dictionary, clockMillis, this::zone, once);
-        this.restrictions = new Restrictions(checkItems, clockMillis, once);
-        this.totp = new TotpFactor(clockMillis, new java.security.SecureRandom(), once);
+        this.checkItems = new CheckItems(dictionary, clockMillis, () -> policies.zone(), once);
+        this.restrictions = new Restrictions(checkItems, clockMillis, once, this::policies);
+        this.totp = new TotpFactor(clockMillis, new java.security.SecureRandom(), once, this::policies);
         this.msChap = new MsChapAuthenticator(this::stores, once);
         this.passwordChecks = new PasswordChecks(this::stores, msChap, totp, clockMillis, once);
         this.directory =
                 new UserDirectory(this::stores, dictionary, clockMillis, metrics, checkItems, restrictions, once);
         this.inner = new InnerCredentials(this::stores, this::innerProxy, directory, msChap, passwordChecks, once);
-        this.admission = new Admission(dictionary, checkItems, restrictions, once);
+        this.admission = new Admission(dictionary, checkItems, restrictions, once, this::policies);
         this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
         this.eap = new EapAuthenticator(
                 this::stores, this::innerProxy, clockMillis, metrics, directory, inner, msChap, once);
@@ -185,41 +185,24 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return directory.review(nas, userName, identity);
     }
 
-    // ---- restrictions and IP pools (ADR 0049, ADR 0050) ------------------------------------------------------
+    // ---- policies (ADR 0049, 0050, 0051, 0053, 0056) ----------------------------------------------------------------
 
-    /** Usage counters ({@code auth.counters}) and the zone of Login-Time and counter periods. */
-    void limits(UsageCounters counters, java.time.ZoneId zone) {
-        restrictions.limits(counters, zone);
+    private volatile AccessPolicies policies = AccessPolicies.NONE;
+
+    /** Takes the settings beyond the stores, at start and on a reload: requests from now on use them. */
+    void policies(AccessPolicies policies) {
+        this.policies = policies;
     }
 
-    void pools(IpPools pools) {
-        admission.pools(pools);
+    AccessPolicies policies() {
+        return policies;
     }
-
-    /** The zone of dates without one; set with the usage counters. */
-    private java.time.ZoneId zone() {
-        return restrictions.zone();
-    }
-
-    // ---- TOTP second factor (ADR 0053) -----------------------------------------------------------------------
 
     private final TotpFactor totp;
     private final PasswordChecks passwordChecks;
     private final InnerCredentials inner;
     private final Restrictions restrictions;
     static final String SIMULTANEOUS_USE = "Simultaneous-Use";
-
-    void totp(Totp settings) {
-        totp.settings(settings);
-    }
-
-    void cui(Cui cui) {
-        admission.cui(cui);
-    }
-
-    void rules(RulesFile rules) {
-        admission.rules(rules);
-    }
 
     // ---- traces (ADR 0052) ---------------------------------------------------------------------------------------
 

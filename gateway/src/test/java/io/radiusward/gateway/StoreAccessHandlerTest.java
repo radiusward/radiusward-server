@@ -369,7 +369,7 @@ class StoreAccessHandlerTest {
                         List.of(item("Cleartext-Password", ":=", "a"), item("Max-Daily-Session", ":=", "lots")),
                         List.of());
         StoreAccessHandler h = handler();
-        h.limits(counters, java.time.ZoneOffset.UTC);
+        h.policies(new AccessPolicies(counters, java.time.ZoneOffset.UTC, null, Totp.DEFAULT, null, null));
 
         assertThat(pap(h, "office", "a")).isEqualTo(AccessHandler.ACCEPT);
         assertThat(sessionTimeout())
@@ -436,7 +436,7 @@ class StoreAccessHandlerTest {
                         List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "nowhere")),
                         List.of());
         StoreAccessHandler h = handler();
-        h.pools(pools);
+        h.policies(new AccessPolicies(null, java.time.ZoneOffset.UTC, pools, Totp.DEFAULT, null, null));
         byte[] station = AccessRequestBuilder.attribute(31, "aa-bb-cc".getBytes(StandardCharsets.US_ASCII));
 
         assertThat(pap(h, "alice", "a", station)).isEqualTo(AccessHandler.ACCEPT);
@@ -480,7 +480,13 @@ class StoreAccessHandlerTest {
                         new UserRecord.Group("staff", List.of(), List.of()))
                 .user("mallory", List.of(item("Cleartext-Password", ":=", "a")), List.of());
         StoreAccessHandler h = handler();
-        h.rules(new RulesFile(file, Duration.ZERO, name -> DICTIONARY.find(name) != null, () -> now[0]));
+        h.policies(new AccessPolicies(
+                null,
+                java.time.ZoneOffset.UTC,
+                null,
+                Totp.DEFAULT,
+                null,
+                new RulesFile(file, Duration.ZERO, name -> DICTIONARY.find(name) != null, () -> now[0])));
         assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
         assertThat(reply().findAttribute(18)).as("Reply-Message").isPositive();
         assertThat(pap(h, "mallory", "a")).isEqualTo(AccessHandler.REJECT);
@@ -496,7 +502,7 @@ class StoreAccessHandlerTest {
                 new UserRecord.Group("staff", List.of(), List.of()),
                 new UserRecord.Group("wifi", List.of(item("NAS-Port-Type", "==", "Wireless-802.11")), List.of()));
         StoreAccessHandler h = handler();
-        h.limits(null, java.time.ZoneOffset.UTC);
+        h.policies(new AccessPolicies(null, java.time.ZoneOffset.UTC, null, Totp.DEFAULT, null, null));
         byte[] request = AccessRequestBuilder.pap("alice", "a");
         context.reset(
                 new UnsafeBuffer(request),
@@ -601,7 +607,13 @@ class StoreAccessHandlerTest {
                         item("TOTP-Secret", ":=", "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")),
                 List.of());
         StoreAccessHandler h = handler();
-        h.totp(new Totp(true, 6, 1, Duration.ofSeconds(30), Duration.ofMinutes(1), "x"));
+        h.policies(new AccessPolicies(
+                null,
+                java.time.ZoneOffset.UTC,
+                null,
+                new Totp(true, 6, 1, Duration.ofSeconds(30), Duration.ofMinutes(1), "x"),
+                null,
+                null));
         assertThat(pap(h, "alice", "arctangent" + totpCode(-1))).isEqualTo(AccessHandler.ACCEPT);
         assertThat(pap(h, "alice", "arctangent" + totpCode(-1))).as("replayed").isEqualTo(AccessHandler.REJECT);
         assertThat(pap(h, "alice", "arctangent" + totpCode(0))).isEqualTo(AccessHandler.ACCEPT);
@@ -632,9 +644,9 @@ class StoreAccessHandlerTest {
         main.user(
                 "alice", List.of(item("Cleartext-Password", ":=", "a"), item("Pool-Name", ":=", "v4, pd")), List.of());
         StoreAccessHandler h = handler();
-        h.pools(pools);
-        h.cui(Cui.from(io.radiusward.common.config.Config.of(
-                Map.of("auth.cui.key", "a-key-of-sixteen-chars", "auth.cui.mode", "always"))));
+        Cui cui = Cui.from(io.radiusward.common.config.Config.of(
+                Map.of("auth.cui.key", "a-key-of-sixteen-chars", "auth.cui.mode", "always")));
+        h.policies(new AccessPolicies(null, java.time.ZoneOffset.UTC, pools, Totp.DEFAULT, cui, null));
         assertThat(pap(h, "alice", "a")).isEqualTo(AccessHandler.ACCEPT);
         assertThat(asked).containsExactly("v4", "pd");
         RadiusPacket reply = reply();
@@ -668,7 +680,7 @@ class StoreAccessHandlerTest {
         first.put("used", java.time.Instant.parse("2027-01-15T06:00:00Z"));
         first.put("over", java.time.Instant.parse("2027-01-14T07:59:59Z"));
         StoreAccessHandler h = handler();
-        h.limits(counters, java.time.ZoneOffset.UTC);
+        h.policies(new AccessPolicies(counters, java.time.ZoneOffset.UTC, null, Totp.DEFAULT, null, null));
         assertThat(pap(h, "fresh", "a")).isEqualTo(AccessHandler.ACCEPT);
         assertThat(sessionTimeout()).as("a day from now: the first login").isEqualTo(86400);
         assertThat(pap(h, "used", "a")).isEqualTo(AccessHandler.ACCEPT);
