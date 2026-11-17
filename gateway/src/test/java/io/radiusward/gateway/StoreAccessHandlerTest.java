@@ -1391,6 +1391,87 @@ class StoreAccessHandlerTest {
     }
 
     @Test
+    void eapRoundsAndConversationsAreBounded() throws Exception {
+        main.user("alice", List.of(item("Cleartext-Password", ":=", "arctangent")), List.of());
+        chapStores.put("main", true);
+        eapConfig = new EapConfig(List.of("md5"), EapConfig.DEFAULT.timeout(), 1, 1, null);
+        StoreAccessHandler h = handler(chapStores, Map.of());
+        assertThat(handle(h, eapRequest(identity(1, "alice"), null))).isEqualTo(AccessHandler.CHALLENGE);
+        EapPacket challenge = replyEap();
+        byte[] state = replyState();
+        assertThat(handle(h, eapRequest(identity(1, "alice"), null)))
+                .as("auth.eap.conversations = 1, and it is taken")
+                .isEqualTo(AccessHandler.DROP);
+        assertThat(handle(h, eapRequest(md5Response(challenge, "arctangent"), state)))
+                .as("auth.eap.rounds = 1: the answer is a second round")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(h.metrics().eapOutcome("md5", "too_many_rounds")).isEqualTo(1);
+    }
+
+    @Test
+    void eapWithoutACredentialToCheckAndEapThatIsNotUnderstood() throws Exception {
+        main.user("guest", List.of(item("Auth-Type", ":=", "Accept")), List.of())
+                .user("alice", List.of(item("Cleartext-Password", ":=", "arctangent")), List.of());
+        chapStores.put("main", true);
+        StoreAccessHandler h = handler(chapStores, Map.of());
+        assertThat(handle(h, eapRequest(identity(3, "guest"), null)))
+                .as("Auth-Type := Accept: EAP-Success right away")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertThat(replyEap().code()).isEqualTo(EapPacket.CODE_SUCCESS);
+        assertThat(handle(h, eapRequest(identity(1, " \0 "), null)))
+                .as("an empty identity")
+                .isEqualTo(AccessHandler.REJECT);
+
+        handle(h, eapRequest(identity(1, "alice"), null));
+        EapPacket challenge = replyEap();
+        EapPacket otherType =
+                new EapPacket(EapPacket.CODE_RESPONSE, challenge.identifier(), EapTls.TYPE, new byte[] {0});
+        assertThat(handle(h, eapRequest(otherType, replyState())))
+                .as("a response of another method than the one running")
+                .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void simSubscribersNeedUsableKeys() {
+        main.user("001010000000001", List.of(), List.of())
+                .user(
+                        "001010000000002",
+                        List.of(item("SIM-Ki", ":=", "0x1234"), item("SIM-OPc", ":=", "zz")),
+                        List.of())
+                .user(
+                        "001010000000003",
+                        List.of(
+                                item("SIM-Ki", ":=", "465b5ce8b199b49faa5f0a2ee238a6bc"),
+                                item("SIM-OPc", ":=", "cd63cb71954a9f4e48a5994e37a02baf")),
+                        List.of());
+        StoreAccessHandler h = handler();
+        byte[] request = AccessRequestBuilder.userOnly("x");
+        context.reset(
+                new UnsafeBuffer(request),
+                0,
+                request.length,
+                AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF)
+                        .clients()
+                        .iterator()
+                        .next());
+        AuthRequest auth = new StoreAccessHandler.WorkerCache().request.begin(context);
+        EapAuthenticator eap = h.eap();
+        assertThat(eap.simSubscriber(auth, "001010000000003").code()).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(eap.simSubscriber(auth, "001010000000001").code())
+                .as("no keys")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(eap.simSubscriber(auth, "001010000000002").code())
+                .as("keys that are not hex of the right length")
+                .isEqualTo(AccessHandler.REJECT);
+        assertThat(eap.simSubscriber(auth, "001010000000009").code()).isEqualTo(AccessHandler.REJECT);
+        main.down = true;
+        assertThat(eap.simSubscriber(new StoreAccessHandler.WorkerCache().request.begin(context), "001010000000003")
+                        .code())
+                .as("a store that is down")
+                .isEqualTo(AccessHandler.DROP);
+    }
+
+    @Test
     void bcryptAboveTheCostCeilingIsRejectedWithoutHashing() {
         String cost31 = "$2b$31$" + "DCq7YPn5Rq63x1Lad4cll.TV4S6ytwfsfvkgY8jIucDrjc8deX1s.";
         String cost4 = org.bouncycastle.crypto.generators.OpenBSDBCrypt.generate(

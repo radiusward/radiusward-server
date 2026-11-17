@@ -265,7 +265,7 @@ final class EapAuthenticator {
     }
 
     /** A SIM subscriber's check items by IMSI, from the stores of this NAS entry; keys are checked here once. */
-    private EapMethod.Subscriber simSubscriber(AuthRequest auth, String imsi) {
+    EapMethod.Subscriber simSubscriber(AuthRequest auth, String imsi) {
         AccessContext context = auth.context();
         UserDirectory.Found found;
         try {

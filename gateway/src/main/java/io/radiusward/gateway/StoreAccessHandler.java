@@ -193,6 +193,11 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return ACCEPT;
     }
 
+    /** The EAP side (for tests). */
+    EapAuthenticator eap() {
+        return eap;
+    }
+
     /** EAP conversations in the table (for {@code /state} and tests). */
     int eapConversations() {
         return eap.conversations();
