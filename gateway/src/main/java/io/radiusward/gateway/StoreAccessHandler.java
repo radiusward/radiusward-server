@@ -5,14 +5,10 @@
 package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
-import io.radiusward.auth.UserRecord;
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.AccessRequests;
-import io.radiusward.radius.codec.AttributeText;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.dictionary.AttributeDef;
 import io.radiusward.radius.dictionary.Dictionary;
-import java.util.ArrayList;
 import java.util.function.LongSupplier;
 import org.agrona.collections.Object2LongHashMap;
 import org.agrona.collections.Object2ObjectHashMap;
@@ -30,7 +26,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     private static final Logger LOG = LogManager.getLogger(StoreAccessHandler.class);
     private static final int USER_NAME = 1;
-    private static final int CALLING_STATION_ID = 31;
 
     private volatile AuthStores stores; // replaced by a reload (ADR 0054)
     private final AuthMetrics metrics = new AuthMetrics();
@@ -42,6 +37,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private final MsChapAuthenticator msChap;
     private final EapAuthenticator eap;
     private final ReplyEncoder replies;
+    private final Admission admission;
     /** Raised by a reload: workers then drop their caches. */
     private volatile int generation;
 
@@ -81,6 +77,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.directory =
                 new UserDirectory(this::stores, dictionary, clockMillis, metrics, checkItems, restrictions, once);
         this.inner = new InnerCredentials(this::stores, this::innerProxy, directory, msChap, passwordChecks, once);
+        this.admission = new Admission(dictionary, checkItems, restrictions, once);
         this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
         this.eap = new EapAuthenticator(
                 this::stores, this::innerProxy, clockMillis, metrics, directory, inner, msChap, once);
@@ -156,29 +153,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 return checked; // CHALLENGE (TOTP asks for the code), REJECT or DROP
             }
         }
-        if (a.limit() != null) {
-            int decision = restrictions.limit(context, request, found.store(), a.limit());
-            if (decision != ACCEPT) {
-                because(context, "Simultaneous-Use not granted: ", a.limit());
-                return decision;
-            }
-        }
-        int restricted = restrictions.restrict(context, found.user().userName(), a);
-        if (restricted != ACCEPT) {
-            return restricted;
-        }
-        int pooled = addresses.assign(context, request, found.user().userName(), a);
-        if (pooled != ACCEPT) {
-            return pooled;
-        }
-        RulesFile r = rules;
-        if (r != null && !r.current().apply(ruleRequest(request, found.user()), a.reply())) {
-            because(context, "rejected by a rule of ", "auth.rules");
-            return REJECT;
-        }
-        Cui c = cui;
-        if (c != null) {
-            c.apply(request, found.user().userName(), a.reply()); // ADR 0056
+        int admitted = admission.admit(context, found, a);
+        if (admitted != ACCEPT) {
+            return admitted;
         }
         String nas = context.nas().name();
         replies.encode(
@@ -216,7 +193,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     void pools(IpPools pools) {
-        addresses.pools(pools);
+        admission.pools(pools);
     }
 
     /** The zone of dates without one; set with the usage counters. */
@@ -230,11 +207,18 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private final PasswordChecks passwordChecks;
     private final InnerCredentials inner;
     private final Restrictions restrictions;
-    private final AddressAssignment addresses = new AddressAssignment(once);
     static final String SIMULTANEOUS_USE = "Simultaneous-Use";
 
     void totp(Totp settings) {
         totp.settings(settings);
+    }
+
+    void cui(Cui cui) {
+        admission.cui(cui);
+    }
+
+    void rules(RulesFile rules) {
+        admission.rules(rules);
     }
 
     // ---- traces (ADR 0052) ---------------------------------------------------------------------------------------
@@ -252,50 +236,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (trace != null) {
             trace.because(step + detail);
         }
-    }
-
-    // ---- Chargeable-User-Identity (ADR 0056) -------------------------------------------------------------------
-
-    private volatile Cui cui;
-
-    void cui(Cui cui) {
-        this.cui = cui;
-    }
-
-    // ---- rules (ADR 0051) ---------------------------------------------------------------------------------------
-
-    private volatile RulesFile rules;
-
-    void rules(RulesFile rules) {
-        this.rules = rules;
-    }
-
-    private Rules.Request ruleRequest(RadiusPacket request, UserRecord user) {
-        return new Rules.Request() {
-            @Override
-            public String value(String attribute) {
-                AttributeDef def = dictionary.find(attribute);
-                if (def == null || def.vendorId() != 0) {
-                    return null;
-                }
-                int at = request.findAttribute(def.number());
-                return at < 0
-                        ? null
-                        : AttributeText.decode(
-                                def, request.buffer(), at + 2, (request.buffer().getByte(at + 1) & 0xFF) - 2);
-            }
-
-            @Override
-            public boolean inGroup(String group) {
-                for (UserRecord.Group g : user.groups()) {
-                    if (g.name().equalsIgnoreCase(group)
-                            && checkItems.checks(g.check(), request, new ArrayList<>()) != null) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-        };
     }
 
     /** Inner checks of proxied realms' users go to their home servers when set (ADR 0044). */
