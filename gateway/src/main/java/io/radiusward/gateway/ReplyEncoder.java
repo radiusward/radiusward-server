@@ -95,20 +95,46 @@ final class ReplyEncoder {
                 || IpPools.IPV6_ATTRIBUTES.stream().anyMatch(item.attribute()::equalsIgnoreCase);
     }
 
-    /** One reply item, encoded; {@code value == null} if it cannot be sent. */
-    record Encoded(int vendorId, int number, byte[] value) {}
+    /** One reply item, encoded; {@code value == null} if it cannot be sent. Identity equality: a cached value. */
+    static final class Encoded {
+        private static final Encoded UNSENDABLE = new Encoded(0, 0, null);
+        private final int vendorId;
+        private final int number;
+        private final byte[] value;
+
+        Encoded(int vendorId, int number, byte[] value) {
+            this.vendorId = vendorId;
+            this.number = number;
+            this.value = value;
+        }
+
+        int vendorId() {
+            return vendorId;
+        }
+
+        int number() {
+            return number;
+        }
+
+        byte[] value() {
+            return value;
+        }
+    }
 
     private Encoded encode(AttributeItem item) {
-        String problem = AuthStores.replyProblem(dictionary, item);
-        if (problem != null) {
-            once.warn("reply:" + item.attribute(), "{}: not sent", problem);
-            return new Encoded(0, 0, null);
+        if (dictionary == null) {
+            return Encoded.UNSENDABLE; // without a dictionary nothing can be encoded
         }
+        String problem = AuthStores.replyProblem(dictionary, item);
         AttributeDef def = dictionary.find(item.attribute());
+        if (problem != null || def == null) {
+            once.warn("reply:" + item.attribute(), "{}: not sent", problem);
+            return Encoded.UNSENDABLE;
+        }
         byte[] value = AttributeText.encode(def, item.value());
         if (value.length > RadiusPacketEncoder.MAX_VALUE_LENGTH - (def.vendorId() == 0 ? 0 : 6)) {
             once.warn("reply-long:" + item.attribute(), "reply item {} is too long: not sent", item.attribute());
-            return new Encoded(0, 0, null);
+            return Encoded.UNSENDABLE;
         }
         return new Encoded(def.vendorId(), def.number(), value);
     }

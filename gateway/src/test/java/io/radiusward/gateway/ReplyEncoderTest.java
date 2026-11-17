@@ -110,6 +110,18 @@ class ReplyEncoderTest {
     }
 
     @Test
+    void withoutADictionaryNothingIsSent() {
+        ReplyEncoder bare =
+                new ReplyEncoder(null, new OnceLogger(LogManager.getLogger(ReplyEncoderTest.class)), Set.of());
+        RadiusPacketEncoder out = new RadiusPacketEncoder()
+                .wrap(new UnsafeBuffer(new byte[4096]), 0)
+                .header(RadiusCode.ACCESS_ACCEPT, 1)
+                .authenticator(new byte[16]);
+        bare.encode(cache, List.of(item("Idle-Timeout", ":=", "60")), out, null, "nas", 100);
+        assertThat(out.finish()).isEqualTo(RadiusPacket.HEADER_LENGTH);
+    }
+
+    @Test
     void aReloadKeepsTheCountsOfKeptEntries() {
         IntHashSet none = new IntHashSet();
         encode(List.of(item("Cisco-AVPair", "+=", "a=b")), none, 100);
