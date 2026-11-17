@@ -67,6 +67,30 @@ class MsChapAuthenticatorTest extends HandlerFixture {
     }
 
     @Test
+    void msChapV2WithChallengeAndResponseInOneVendorSpecific() {
+        main.user("User", List.of(item("NT-Password", ":=", "44EBBA8D5312B8D611474411F56989AE")), List.of());
+        byte[] name = "User".getBytes(StandardCharsets.US_ASCII);
+        byte[] hash = MsChap.challengeHash(PEER_CHALLENGE, AUTH_CHALLENGE, MsChap.v2UserName(name));
+        byte[] response = new byte[50];
+        response[0] = 7;
+        System.arraycopy(PEER_CHALLENGE, 0, response, 2, 16);
+        System.arraycopy(MsChap.challengeResponse(hash, MsChap.ntHash("clientPass")), 0, response, 26, 24);
+        java.nio.ByteBuffer vsa = java.nio.ByteBuffer.allocate(4 + 18 + 52);
+        vsa.putInt(311).put((byte) 11).put((byte) 18).put(AUTH_CHALLENGE);
+        vsa.put((byte) 25).put((byte) 52).put(response);
+        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
+        int length = new io.radiusward.radius.codec.RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(io.radiusward.radius.codec.RadiusCode.ACCESS_REQUEST, 1)
+                .authenticator(new byte[16])
+                .attribute(1, "User")
+                .attribute(26, vsa.array())
+                .finish();
+        assertThat(handle(handler(), java.util.Arrays.copyOf(buffer.byteArray(), length)))
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
     void msChapV2WithoutAUserNameIsMalformed() {
         // the challenge hash covers the User-Name (RFC 2759 §8.2): without one there is nothing to check
         byte[] response = new byte[50];

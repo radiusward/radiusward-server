@@ -58,6 +58,7 @@ public final class AccessRequests {
     private static final int CHAP_RESPONSE_LENGTH = 1 + BLOCK;
 
     private final MessageDigest md5;
+    private final AttributeCursor cursor = new AttributeCursor();
     private final byte[] previous = new byte[BLOCK];
     private final byte[] keystream = new byte[BLOCK];
     private final byte[] plaintext = new byte[MAX_PASSWORD];
@@ -76,33 +77,30 @@ public final class AccessRequests {
      * EAP request may also carry a User-Name only).
      */
     public int method(RadiusPacket request) {
-        DirectBuffer buffer = request.buffer();
         int found = METHOD_NONE;
         int count = 0;
         boolean eap = false;
-        for (int position = request.attributesOffset(); position < request.attributesEnd(); ) {
-            int type = buffer.getByte(position) & 0xFF;
-            int length = buffer.getByte(position + 1) & 0xFF;
+        AttributeCursor attributes = cursor.wrap(request);
+        while (attributes.next()) {
+            int type = attributes.type();
             int method = METHOD_NONE;
-            if (type == EAP_MESSAGE) {
-                eap = true;
-            } else if (type == USER_PASSWORD) {
-                method = METHOD_PAP;
-            } else if (type == CHAP_PASSWORD) {
-                method = METHOD_CHAP;
-            } else if (type == 26
-                    && length >= 8
-                    && buffer.getInt(position + 2, java.nio.ByteOrder.BIG_ENDIAN) == MICROSOFT) {
-                int vendorType = buffer.getByte(position + 6) & 0xFF;
-                method = vendorType == MS_CHAP_RESPONSE
+            if (attributes.vendorId() == 0) {
+                if (type == EAP_MESSAGE) {
+                    eap = true;
+                } else if (type == USER_PASSWORD) {
+                    method = METHOD_PAP;
+                } else if (type == CHAP_PASSWORD) {
+                    method = METHOD_CHAP;
+                }
+            } else if (attributes.vendorId() == MICROSOFT) { // any sub-attribute, also when several share one VSA
+                method = type == MS_CHAP_RESPONSE
                         ? METHOD_MS_CHAP
-                        : vendorType == MS_CHAP2_RESPONSE ? METHOD_MS_CHAP2 : METHOD_NONE;
+                        : type == MS_CHAP2_RESPONSE ? METHOD_MS_CHAP2 : METHOD_NONE;
             }
             if (method != METHOD_NONE && method != found) {
                 found = method;
                 count++;
             }
-            position += length;
         }
         if (eap) {
             return METHOD_EAP;

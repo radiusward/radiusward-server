@@ -771,7 +771,7 @@ final class Proxy {
                 if (sl < 2 || p + sl > w + l) {
                     return false;
                 }
-                if ((sub == 16 || sub == 17)
+                if ((sub == Microsoft.MPPE_SEND_KEY || sub == Microsoft.MPPE_RECV_KEY)
                         && !salted.reencrypt(
                                 reply,
                                 p + 2,

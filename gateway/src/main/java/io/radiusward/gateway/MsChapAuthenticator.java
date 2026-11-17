@@ -9,6 +9,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.Md4;
 import io.radiusward.radius.codec.AccessRequests;
+import io.radiusward.radius.codec.AttributeCursor;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.radius.codec.attributes.Microsoft;
@@ -233,26 +234,14 @@ final class MsChapAuthenticator {
         context.reply().vendorAttribute(Microsoft.VENDOR_ID, Microsoft.CHAP_ERROR, value);
     }
 
-    /** The value of a Microsoft vendor attribute (RFC 2548 layout), or {@code null}. */
+    /** The value of a Microsoft vendor attribute (RFC 2548), wherever in a Vendor-Specific it is, or {@code null}. */
     private static byte[] vendorValue(RadiusPacket request, int vendorType) {
-        org.agrona.DirectBuffer b = request.buffer();
-        for (int pos = request.attributesOffset(); pos + 2 <= request.attributesEnd(); ) {
-            int type = b.getByte(pos) & 0xFF;
-            int length = b.getByte(pos + 1) & 0xFF;
-            if (length < 2) {
-                return null;
-            }
-            if (type == 26 && length >= 8 && b.getInt(pos + 2, java.nio.ByteOrder.BIG_ENDIAN) == Microsoft.VENDOR_ID) {
-                int vType = b.getByte(pos + 6) & 0xFF;
-                int vLength = b.getByte(pos + 7) & 0xFF;
-                if (vType == vendorType && vLength >= 2 && 6 + vLength <= length) {
-                    byte[] value = new byte[vLength - 2];
-                    b.getBytes(pos + 8, value);
-                    return value;
-                }
-            }
-            pos += length;
+        AttributeCursor cursor = new AttributeCursor().wrap(request);
+        if (!cursor.find(Microsoft.VENDOR_ID, vendorType)) {
+            return null;
         }
-        return null;
+        byte[] value = new byte[cursor.valueLength()];
+        cursor.buffer().getBytes(cursor.valueOffset(), value);
+        return value;
     }
 }

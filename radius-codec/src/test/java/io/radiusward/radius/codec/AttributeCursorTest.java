@@ -47,6 +47,23 @@ class AttributeCursorTest {
     }
 
     @Test
+    void findLooksInsideVendorSpecificAttributesThatPackSeveral() {
+        // User-Name, then one Microsoft VSA with MS-CHAP-Challenge (11) and MS-CHAP2-Response (25)
+        RadiusPacket p = wrap(packet("01 05 616263 1a 0f 00000137 0b 04 aaaa 19 05 bbbbbb"));
+        AttributeCursor cursor = new AttributeCursor().wrap(p);
+        assertThat(cursor.find(311, 25)).as("the second sub-attribute").isTrue();
+        assertThat(AttributeValues.hex(cursor.buffer(), cursor.valueOffset(), cursor.valueLength()))
+                .isEqualTo("bbbbbb");
+        assertThat(cursor.find(311, 11)).as("searching goes on from there").isFalse();
+        assertThat(cursor.wrap(p).find(311, 11)).isTrue();
+        assertThat(cursor.wrap(p).find(0, 1)).as("top level").isTrue();
+        assertThat(cursor.wrap(p).find(9, 25)).as("another vendor").isFalse();
+        assertThat(cursor.wrap(p).find(0, 25))
+                .as("a sub-attribute is not top level")
+                .isFalse();
+    }
+
+    @Test
     void emptyValue() {
         RadiusPacket p = wrap(packet("2c 02"));
         assertThat(entries(p, VendorFormats.ALL_STANDARD)).containsExactly(new Entry(0, 44, ""));

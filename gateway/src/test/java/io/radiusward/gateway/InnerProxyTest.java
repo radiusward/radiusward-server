@@ -59,6 +59,48 @@ class InnerProxyTest {
     }
 
     @Test
+    void theHomeServersAcceptGivesItsSuccessAndKeysWhereverTheyAre() {
+        byte[] secret = "s3cret".getBytes(StandardCharsets.US_ASCII);
+        byte[] authenticator = new byte[16];
+        Arrays.fill(authenticator, (byte) 7);
+        byte[] send = new byte[16]; // MS-CHAPv2 keys (RFC 3079)
+        byte[] receive = new byte[16];
+        Arrays.fill(send, (byte) 1);
+        Arrays.fill(receive, (byte) 2);
+        byte[] sendValue = MsChap.encryptKey(send, secret, authenticator, new byte[] {(byte) 0x80, 2});
+        byte[] receiveValue = MsChap.encryptKey(receive, secret, authenticator, new byte[] {(byte) 0x80, 3});
+        byte[] success = "\u0007S=0123".getBytes(StandardCharsets.US_ASCII);
+        // MS-CHAP2-Success and both keys in one Vendor-Specific, as some home servers pack them
+        java.nio.ByteBuffer vsa =
+                java.nio.ByteBuffer.allocate(4 + 2 + success.length + 2 + sendValue.length + 2 + receiveValue.length);
+        vsa.putInt(311);
+        vsa.put((byte) 26).put((byte) (2 + success.length)).put(success);
+        vsa.put((byte) 16).put((byte) (2 + sendValue.length)).put(sendValue);
+        vsa.put((byte) 17).put((byte) (2 + receiveValue.length)).put(receiveValue);
+        org.agrona.concurrent.UnsafeBuffer buffer = new org.agrona.concurrent.UnsafeBuffer(new byte[512]);
+        int length = new io.radiusward.radius.codec.RadiusPacketEncoder()
+                .wrap(buffer, 0)
+                .header(io.radiusward.radius.codec.RadiusCode.ACCESS_ACCEPT, 1)
+                .authenticator(new byte[16])
+                .attribute(18, "welcome")
+                .attribute(33, "proxy-state")
+                .attribute(26, vsa.array())
+                .finish();
+        byte[] packet = Arrays.copyOf(buffer.byteArray(), length);
+        io.radiusward.radius.codec.RadiusPacket answer = new io.radiusward.radius.codec.RadiusPacket();
+        answer.wrap(new org.agrona.concurrent.UnsafeBuffer(packet), 0, length);
+
+        InnerProxy.Result result = InnerProxy.accepted(packet, answer, authenticator, secret);
+        assertThat(result.inner().code()).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(result.inner().success()).isEqualTo("S=0123");
+        assertThat(result.inner().sendKey()).isEqualTo(send);
+        assertThat(result.inner().receiveKey()).isEqualTo(receive);
+        assertThat(result.reply())
+                .as("Reply-Message passed on; Proxy-State and the taken Vendor-Specific not")
+                .containsExactly(18, 9, 'w', 'e', 'l', 'c', 'o', 'm', 'e');
+    }
+
+    @Test
     void anUnansweringHomeServerLeavesTheRequestUnanswered() throws Exception {
         int silent;
         try (DatagramSocket probe = new DatagramSocket(0)) {

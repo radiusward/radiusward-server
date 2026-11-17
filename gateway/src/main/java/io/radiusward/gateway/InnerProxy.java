@@ -13,6 +13,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.STATE;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
 
+import io.radiusward.radius.codec.AttributeCursor;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -291,40 +292,42 @@ final class InnerProxy {
     }
 
     /** The Accept's MS-CHAP2-Success and MPPE keys, and the reply attributes to pass on. */
-    private static Result accepted(byte[] packet, RadiusPacket answer, byte[] authenticator, byte[] secret) {
+    static Result accepted(byte[] packet, RadiusPacket answer, byte[] authenticator, byte[] secret) {
         String success = null;
         byte[] send = null;
         byte[] receive = null;
+        // MS-CHAP2-Success and the keys are taken wherever they are, also when one Vendor-Specific packs several
+        java.util.Set<Integer> taken = new java.util.HashSet<>();
+        AttributeCursor cursor = new AttributeCursor().wrap(answer);
+        while (cursor.next()) {
+            if (cursor.vendorId() != Microsoft.VENDOR_ID) {
+                continue;
+            }
+            int sub = cursor.type();
+            byte[] value =
+                    Arrays.copyOfRange(packet, cursor.valueOffset(), cursor.valueOffset() + cursor.valueLength());
+            if (sub == Microsoft.CHAP2_SUCCESS && value.length > 1) {
+                success = new String(value, 1, value.length - 1, StandardCharsets.US_ASCII);
+                taken.add(cursor.attributeOffset());
+            } else if (sub == Microsoft.MPPE_SEND_KEY) {
+                send = decryptKey(value, authenticator, secret);
+                taken.add(cursor.attributeOffset());
+            } else if (sub == Microsoft.MPPE_RECV_KEY) {
+                receive = decryptKey(value, authenticator, secret);
+                taken.add(cursor.attributeOffset());
+            }
+        }
         ByteArrayOutputStream reply = new ByteArrayOutputStream();
-        for (int at = answer.attributesOffset(); at < answer.attributesEnd(); ) {
+        for (int at = answer.attributesOffset(); at < answer.attributesEnd(); at += packet[at + 1] & 0xFF) {
             int type = packet[at] & 0xFF;
-            int length = packet[at + 1] & 0xFF;
-            boolean pass = type != MESSAGE_AUTHENTICATOR && type != PROXY_STATE && type != STATE && type != EAP_MESSAGE;
-            if (type == 26 && length >= 8) {
-                int vendor = ((packet[at + 2] & 0xFF) << 24)
-                        | ((packet[at + 3] & 0xFF) << 16)
-                        | ((packet[at + 4] & 0xFF) << 8)
-                        | (packet[at + 5] & 0xFF);
-                int sub = packet[at + 6] & 0xFF;
-                byte[] value = Arrays.copyOfRange(packet, at + 8, at + length);
-                if (vendor == Microsoft.VENDOR_ID && sub == Microsoft.CHAP2_SUCCESS && value.length > 1) {
-                    success = new String(value, 1, value.length - 1, StandardCharsets.US_ASCII);
-                    pass = false;
-                } else if (vendor == Microsoft.VENDOR_ID
-                        && (sub == Microsoft.MPPE_SEND_KEY || sub == Microsoft.MPPE_RECV_KEY)) {
-                    byte[] key = decryptKey(value, authenticator, secret);
-                    if (sub == Microsoft.MPPE_SEND_KEY) {
-                        send = key;
-                    } else {
-                        receive = key;
-                    }
-                    pass = false;
-                }
-            }
+            boolean pass = type != MESSAGE_AUTHENTICATOR
+                    && type != PROXY_STATE
+                    && type != STATE
+                    && type != EAP_MESSAGE
+                    && !taken.contains(at);
             if (pass) {
-                reply.write(packet, at, length);
+                reply.write(packet, at, packet[at + 1] & 0xFF);
             }
-            at += length;
         }
         EapMethod.Inner inner = success != null
                 ? EapMethod.Inner.proxied(success, send, receive)

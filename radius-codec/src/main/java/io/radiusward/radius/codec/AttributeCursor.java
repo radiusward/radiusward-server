@@ -156,6 +156,19 @@ public final class AttributeCursor {
         };
     }
 
+    /**
+     * Moves to the next attribute of {@code vendorId} ({@code 0}: a top-level attribute) and {@code type}, also inside
+     * a Vendor-Specific attribute that packs several sub-attributes. Returns {@code false} at the end. Allocation-free.
+     */
+    public boolean find(int vendorId, int type) {
+        while (next()) {
+            if (this.vendorId == vendorId && this.type == type) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** Attribute type; the vendor type for vendor sub-attributes. */
     public int type() {
         return type;

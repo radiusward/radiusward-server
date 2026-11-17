@@ -177,6 +177,13 @@ class AccessRequestsTest {
         assertThat(requests.method(Packets.wrap(msChap2))).isEqualTo(AccessRequests.METHOD_MS_CHAP2);
         byte[] msChap = request(attribute(26, msVsa(AccessRequests.MS_CHAP_RESPONSE, new byte[50])));
         assertThat(requests.method(Packets.wrap(msChap))).isEqualTo(AccessRequests.METHOD_MS_CHAP);
+        byte[] challenge = msVsa(11, new byte[16]);
+        byte[] response = msVsa(AccessRequests.MS_CHAP2_RESPONSE, new byte[50]);
+        byte[] packed = Arrays.copyOf(challenge, challenge.length + response.length - 4); // one vendor id
+        System.arraycopy(response, 4, packed, challenge.length, response.length - 4);
+        assertThat(requests.method(Packets.wrap(request(attribute(26, packed)))))
+                .as("the response after the challenge in one Vendor-Specific")
+                .isEqualTo(AccessRequests.METHOD_MS_CHAP2);
     }
 
     static byte[] msVsa(int vendorType, byte[] value) {
