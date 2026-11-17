@@ -947,7 +947,7 @@ class StoreAccessHandlerTest {
         return msChapRequest(user, challenge, 1, response);
     }
 
-    private static byte[] msChapRequest(String user, byte[] challenge, int responseType, byte[] response) {
+    static byte[] msChapRequest(String user, byte[] challenge, int responseType, byte[] response) {
         UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
         byte[] auth = new byte[16];
         ThreadLocalRandom.current().nextBytes(auth);

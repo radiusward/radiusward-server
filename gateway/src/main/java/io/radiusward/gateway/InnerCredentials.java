@@ -19,11 +19,18 @@ final class InnerCredentials {
 
     private final StoreAccessHandler handler;
     private final UserDirectory directory;
+    private final MsChapAuthenticator msChap;
     private final PasswordChecks passwords;
     private final OnceLogger once;
 
-    InnerCredentials(StoreAccessHandler handler, UserDirectory directory, PasswordChecks passwords, OnceLogger once) {
+    InnerCredentials(
+            StoreAccessHandler handler,
+            UserDirectory directory,
+            MsChapAuthenticator msChap,
+            PasswordChecks passwords,
+            OnceLogger once) {
         this.directory = directory;
+        this.msChap = msChap;
         this.handler = handler;
         this.passwords = passwords;
         this.once = once;
@@ -116,7 +123,7 @@ final class InnerCredentials {
                 return new EapMethod.Inner(AccessHandler.DROP, null);
             }
         }
-        byte[] ntHash = handler.localNtHash(a.found(), a.passwords());
+        byte[] ntHash = msChap.localNtHash(a.found(), a.passwords());
         if (ntHash == null
                 || !java.security.MessageDigest.isEqual(MsChap.challengeResponse(challenge, ntHash), ntResponse)) {
             return new EapMethod.Inner(AccessHandler.REJECT, null);

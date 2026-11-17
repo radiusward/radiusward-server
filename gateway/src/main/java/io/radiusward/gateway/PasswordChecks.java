@@ -27,12 +27,14 @@ import org.agrona.concurrent.UnsafeBuffer;
 final class PasswordChecks {
 
     private final StoreAccessHandler handler;
+    private final MsChapAuthenticator msChap;
     private final LongSupplier clockMillis;
     private final OnceLogger once;
     private final byte[] verifierSalt = new byte[16];
 
-    PasswordChecks(StoreAccessHandler handler, LongSupplier clockMillis, OnceLogger once) {
+    PasswordChecks(StoreAccessHandler handler, MsChapAuthenticator msChap, LongSupplier clockMillis, OnceLogger once) {
         this.handler = handler;
+        this.msChap = msChap;
         this.clockMillis = clockMillis;
         this.once = once;
         new SecureRandom().nextBytes(verifierSalt);
@@ -56,9 +58,9 @@ final class PasswordChecks {
         CredentialVerifier verifier = handler.stores().verifiers().get(name);
         try {
             CredentialVerifier.Result result;
-            StoreAccessHandler.MsChapRequest r = null;
-            if (StoreAccessHandler.isMsChap(method)) {
-                r = StoreAccessHandler.msChapRequest(context.request(), method);
+            MsChapAuthenticator.Request r = null;
+            if (MsChapAuthenticator.isMsChap(method)) {
+                r = MsChapAuthenticator.request(context.request(), method);
                 if (r == null) {
                     return AccessHandler.REJECT;
                 }
@@ -95,7 +97,7 @@ final class PasswordChecks {
                             name);
                     return AccessHandler.REJECT;
                 }
-                handler.succeeded(auth, r, result.ntHashHash());
+                MsChapAuthenticator.succeeded(auth, r, result.ntHashHash());
             }
             return AccessHandler.ACCEPT;
         } catch (StoreUnavailableException e) {
@@ -112,8 +114,8 @@ final class PasswordChecks {
             AuthRequest auth, int method, UserDirectory.Found found, String userName, List<AttributeItem> passwords) {
         AccessContext context = auth.context();
         Object2LongHashMap<String> verified = auth.caches().verified;
-        if (StoreAccessHandler.isMsChap(method)) {
-            return handler.msChap(auth, method, found, passwords);
+        if (MsChapAuthenticator.isMsChap(method)) {
+            return msChap.verify(auth, method, found, passwords);
         }
         if (method == AccessRequests.METHOD_CHAP) {
             if (!handler.stores().chap().getOrDefault(found.store(), false)) {
