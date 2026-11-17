@@ -278,10 +278,8 @@ public final class DynamicAuthorization implements Agent {
                 continue;
             }
             if ((code != r.code + 1 && code != r.code + 2)
-                    || !authenticator.verifyResponse(response, r.packet, RadiusPacket.AUTHENTICATOR_OFFSET, r.secret)
-                    || (response.hasMessageAuthenticator()
-                            && !authenticator.verifyResponseMessageAuthenticator(
-                                    response, r.packet, RadiusPacket.AUTHENTICATOR_OFFSET, r.secret))) {
+                    || !authenticator.verifyResponse(
+                            response, r.packet, RadiusPacket.AUTHENTICATOR_OFFSET, r.secret, false)) {
                 increment(Counter.INVALID_RESPONSES);
                 return;
             }

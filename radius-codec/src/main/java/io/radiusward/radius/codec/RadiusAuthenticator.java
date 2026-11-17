@@ -136,6 +136,24 @@ public final class RadiusAuthenticator {
         return constantTimeEquals(digest, response.buffer(), response.authenticatorOffset());
     }
 
+    /**
+     * Whether a response is authentic: its Response Authenticator verifies, and so does its Message-Authenticator when
+     * it carries one; without one it is authentic only unless {@code requireMessageAuthenticator}.
+     */
+    public boolean verifyResponse(
+            RadiusPacket response,
+            DirectBuffer requestAuthenticator,
+            int requestAuthenticatorOffset,
+            byte[] secret,
+            boolean requireMessageAuthenticator) {
+        if (!verifyResponse(response, requestAuthenticator, requestAuthenticatorOffset, secret)) {
+            return false;
+        }
+        return response.hasMessageAuthenticator()
+                ? verifyResponseMessageAuthenticator(response, requestAuthenticator, requestAuthenticatorOffset, secret)
+                : !requireMessageAuthenticator;
+    }
+
     /** Verifies the Message-Authenticator of a response; {@code false} if it has none. */
     public boolean verifyResponseMessageAuthenticator(
             RadiusPacket response, DirectBuffer requestAuthenticator, int requestAuthenticatorOffset, byte[] secret) {

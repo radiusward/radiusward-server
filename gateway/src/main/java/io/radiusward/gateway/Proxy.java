@@ -354,11 +354,8 @@ final class Proxy {
         if ((code != RadiusCode.ACCESS_ACCEPT
                         && code != RadiusCode.ACCESS_REJECT
                         && code != RadiusCode.ACCESS_CHALLENGE)
-                || !authenticator.verifyResponse(response, ourAuthenticators, slot * 16, h.config.secret())
-                || (response.hasMessageAuthenticator()
-                        ? !authenticator.verifyResponseMessageAuthenticator(
-                                response, ourAuthenticators, slot * 16, h.config.secret())
-                        : requireMessageAuthenticator)) {
+                || !authenticator.verifyResponse(
+                        response, ourAuthenticators, slot * 16, h.config.secret(), requireMessageAuthenticator)) {
             h.counts.incrementAndGet(Counter.INVALID.ordinal());
             return;
         }

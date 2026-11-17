@@ -285,9 +285,7 @@ public final class RadiusSink implements AccountingSink {
             return -1;
         }
         UnsafeBuffer request = new UnsafeBuffer(packets[i]);
-        if (!authenticator.verifyResponse(response, request, 4, secret)
-                || (response.hasMessageAuthenticator()
-                        && !authenticator.verifyResponseMessageAuthenticator(response, request, 4, secret))) {
+        if (!authenticator.verifyResponse(response, request, 4, secret, false)) {
             return -1;
         }
         return i;

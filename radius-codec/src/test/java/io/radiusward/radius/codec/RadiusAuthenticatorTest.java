@@ -129,6 +129,56 @@ class RadiusAuthenticatorTest {
     }
 
     @Test
+    void anAuthenticResponseHasBothAuthenticatorsRightOrNoMessageAuthenticatorWhereNoneIsRequired() {
+        byte[] request = Packets.accountingRequest(5, false);
+        RadiusPacket requestView = wrap(request);
+        UnsafeBuffer out = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
+        int signed = new AccountingResponses(authenticator).encode(requestView, out, 0, SECRET, true);
+        byte[] withMa = Arrays.copyOf(out.byteArray(), signed);
+        int plain = new AccountingResponses(authenticator).encode(requestView, out, 0, SECRET, false);
+        byte[] withoutMa = Arrays.copyOf(out.byteArray(), plain);
+        ResponsesTo r = new ResponsesTo(requestView);
+
+        assertThat(r.verify(withMa, false)).isTrue();
+        assertThat(r.verify(withMa, true)).isTrue();
+        assertThat(r.verify(withoutMa, false)).isTrue();
+        assertThat(r.verify(withoutMa, true))
+                .as("a Message-Authenticator required")
+                .isFalse();
+        byte[] tamperedMa = withMa.clone();
+        tamperedMa[tamperedMa.length - 1] ^= 1;
+        assertThat(r.verify(tamperedMa, false))
+                .as("a wrong Message-Authenticator")
+                .isFalse();
+        assertThat(authenticator.verifyResponse(
+                        wrap(withoutMa),
+                        requestView.buffer(),
+                        requestView.authenticatorOffset(),
+                        "other".getBytes(),
+                        false))
+                .as("another secret")
+                .isFalse();
+    }
+
+    /** The request a response answers. */
+    private final class ResponsesTo {
+        private final RadiusPacket request;
+
+        ResponsesTo(RadiusPacket request) {
+            this.request = request;
+        }
+
+        boolean verify(byte[] response, boolean requireMessageAuthenticator) {
+            return authenticator.verifyResponse(
+                    wrap(response),
+                    request.buffer(),
+                    request.authenticatorOffset(),
+                    SECRET,
+                    requireMessageAuthenticator);
+        }
+    }
+
+    @Test
     void rfc2104HmacVectors() {
         assertHmac(
                 repeat((byte) 0x0b, 16),

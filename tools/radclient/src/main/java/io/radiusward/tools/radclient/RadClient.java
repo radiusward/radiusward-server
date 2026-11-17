@@ -364,11 +364,8 @@ public final class RadClient {
         }
         out.print("Received " + printer.print(response));
         RadiusAuthenticator authenticator = new RadiusAuthenticator();
-        boolean authentic =
-                authenticator.verifyResponse(response, requestView.buffer(), requestView.authenticatorOffset(), secret)
-                        && (!response.hasMessageAuthenticator()
-                                || authenticator.verifyResponseMessageAuthenticator(
-                                        response, requestView.buffer(), requestView.authenticatorOffset(), secret));
+        boolean authentic = authenticator.verifyResponse(
+                response, requestView.buffer(), requestView.authenticatorOffset(), secret, false);
         out.printf(
                 "Response authenticator %s, attempt %d, %d ms%n",
                 authentic ? "OK" : "INVALID",

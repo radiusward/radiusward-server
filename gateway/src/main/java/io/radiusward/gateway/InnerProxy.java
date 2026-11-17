@@ -281,11 +281,12 @@ final class InnerProxy {
         RadiusPacket answer = new RadiusPacket();
         if (answer.wrap(new UnsafeBuffer(in), 0, length) != DecodeStatus.OK
                 || answer.identifier() != id
-                || !signer.verifyResponse(answer, buffer, RadiusPacket.AUTHENTICATOR_OFFSET, home.secret())
-                || (config.requireMessageAuthenticator() && !answer.hasMessageAuthenticator())
-                || (answer.hasMessageAuthenticator()
-                        && !signer.verifyResponseMessageAuthenticator(
-                                answer, buffer, RadiusPacket.AUTHENTICATOR_OFFSET, home.secret()))) {
+                || !signer.verifyResponse(
+                        answer,
+                        buffer,
+                        RadiusPacket.AUTHENTICATOR_OFFSET,
+                        home.secret(),
+                        config.requireMessageAuthenticator())) {
             return null; // not the answer to this request
         }
         if (answer.code() == RadiusCode.ACCESS_ACCEPT) {
