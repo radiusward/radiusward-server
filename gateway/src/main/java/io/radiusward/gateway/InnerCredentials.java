@@ -18,10 +18,12 @@ import java.nio.charset.StandardCharsets;
 final class InnerCredentials {
 
     private final StoreAccessHandler handler;
+    private final PasswordChecks passwords;
     private final OnceLogger once;
 
-    InnerCredentials(StoreAccessHandler handler, OnceLogger once) {
+    InnerCredentials(StoreAccessHandler handler, PasswordChecks passwords, OnceLogger once) {
         this.handler = handler;
+        this.passwords = passwords;
         this.once = once;
     }
 
@@ -91,7 +93,7 @@ final class InnerCredentials {
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }
-        String verifier = handler.verifierFor(a.authType(), a.found().store(), a.passwords());
+        String verifier = passwords.verifierFor(a.authType(), a.found().store(), a.passwords());
         if (verifier != null) {
             try {
                 CredentialVerifier.Result r =
@@ -129,7 +131,7 @@ final class InnerCredentials {
         if (a.authType().equalsIgnoreCase("Accept")) {
             return new EapMethod.Inner(AccessHandler.ACCEPT, null);
         }
-        String verifier = handler.verifierFor(a.authType(), a.found().store(), a.passwords());
+        String verifier = passwords.verifierFor(a.authType(), a.found().store(), a.passwords());
         if (verifier != null) {
             try {
                 return new EapMethod.Inner(
@@ -151,7 +153,7 @@ final class InnerCredentials {
             }
         }
         return new EapMethod.Inner(
-                handler.checkPassword(context, a.found(), user, a.passwords(), password)
+                passwords.checkPassword(context, a.found(), user, a.passwords(), password)
                         ? AccessHandler.ACCEPT
                         : AccessHandler.REJECT,
                 null);
