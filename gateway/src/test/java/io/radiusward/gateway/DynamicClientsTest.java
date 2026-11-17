@@ -71,7 +71,7 @@ class DynamicClientsTest {
         assertThat(c.name()).isEqualTo("dynamic:ap-10.1.0.5");
         assertThat(new String(c.secret(), StandardCharsets.US_ASCII)).isEqualTo("s3cret");
         assertThat(c.vendor()).isEqualTo("ruckus");
-        assertThat(c.id()).as("the same on every gateway").isEqualTo(NasRegistry.fnv1a("dynamic:10.1.0.5"));
+        assertThat(c.id()).as("the same on every gateway").isEqualTo(NasConfig.fnv1a("dynamic:10.1.0.5"));
         for (int i = 0; i < 10; i++) {
             clients.find(address, System.currentTimeMillis());
         }

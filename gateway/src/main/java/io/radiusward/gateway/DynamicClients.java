@@ -100,7 +100,7 @@ public final class DynamicClients implements AutoCloseable {
                 throw new ConfigException("nas.dynamic.networks: prefix 8 to 32, got " + n);
             }
             networks.add(new int[] {
-                NasRegistry.ipv4("nas.dynamic.networks", slash < 0 ? n : n.substring(0, slash)), prefix
+                NasConfig.ipv4("nas.dynamic.networks", slash < 0 ? n : n.substring(0, slash)), prefix
             });
         }
         if (networks.isEmpty()) {
@@ -231,7 +231,7 @@ public final class DynamicClients implements AutoCloseable {
         }
         String name = "dynamic:"
                 + (row.shortname() == null || row.shortname().isBlank() ? ip.getHostAddress() : row.shortname());
-        NasClient client = NasClient.builder(name, NasRegistry.fnv1a("dynamic:" + ip.getHostAddress()))
+        NasClient client = NasClient.builder(name, NasConfig.fnv1a("dynamic:" + ip.getHostAddress()))
                 .network( // the same on every gateway
                         address, 32)
                 .secret(row.secret())

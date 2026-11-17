@@ -32,7 +32,7 @@ class NasRegistryTest {
         assertThat(new String(core.secret())).isEqualTo("s3cret");
         assertThat(core.vendor()).isEqualTo("mikrotik");
         assertThat(core.messageAuthenticator()).isEqualTo(NasClient.MessageAuthenticatorPolicy.OPTIONAL);
-        assertThat(core.id()).isEqualTo(NasRegistry.fnv1a("core"));
+        assertThat(core.id()).isEqualTo(NasConfig.fnv1a("core"));
 
         NasClient ap = registry.lookup(InetAddress.getByName("10.20.7.9"));
         assertThat(ap.name()).isEqualTo("aps");
@@ -46,8 +46,8 @@ class NasRegistryTest {
 
     @Test
     void stableIdsAcrossGateways() {
-        assertThat(NasRegistry.fnv1a("core")).isEqualTo(NasRegistry.fnv1a("core"));
-        assertThat(NasRegistry.fnv1a("core")).isNotEqualTo(NasRegistry.fnv1a("edge"));
+        assertThat(NasConfig.fnv1a("core")).isEqualTo(NasConfig.fnv1a("core"));
+        assertThat(NasConfig.fnv1a("core")).isNotEqualTo(NasConfig.fnv1a("edge"));
     }
 
     @Test
