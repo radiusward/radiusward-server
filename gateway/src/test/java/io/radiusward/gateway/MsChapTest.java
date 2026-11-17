@@ -109,4 +109,29 @@ class MsChapTest {
         assertThat(recovered).isEqualTo(key);
         assertThat(java.util.Arrays.copyOfRange(p2, 1, 16)).as("zero padding").containsOnly(0);
     }
+
+    @Test
+    void mppeKeysDecryptAsTheyWereEncrypted() {
+        byte[] secret = "s3cret".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        byte[] authenticator = new byte[16];
+        java.util.Arrays.fill(authenticator, (byte) 9);
+        for (int length : new int[] {16, 32, 40}) { // MS-CHAPv2 keys, the halves of an EAP MSK, anything longer
+            byte[] key = new byte[length];
+            java.util.Arrays.fill(key, (byte) length);
+            byte[] value = MsChap.encryptKey(key, secret, authenticator, new byte[] {(byte) 0x80, 1});
+            assertThat(MsChap.decryptKey(value, secret, authenticator))
+                    .as("%d bytes", length)
+                    .isEqualTo(key);
+            assertThat(MsChap.decryptKey(
+                            value, "other".getBytes(java.nio.charset.StandardCharsets.US_ASCII), authenticator))
+                    .as("another secret")
+                    .isNotEqualTo(key);
+        }
+        assertThat(MsChap.decryptKey(new byte[10], secret, authenticator))
+                .as("shorter than a block")
+                .isNull();
+        assertThat(MsChap.decryptKey(new byte[2 + 20], secret, authenticator))
+                .as("not whole blocks")
+                .isNull();
+    }
 }

@@ -300,25 +300,8 @@ class ProxyIT {
     }
 
     /** RFC 2548 §2.4.2 in reverse, as a NAS does. */
-    static byte[] decryptKey(byte[] value, byte[] secret, byte[] requestAuthenticator) throws Exception {
-        MessageDigest md5 = MessageDigest.getInstance("MD5");
-        byte[] plain = new byte[value.length - 2];
-        byte[] previous = null;
-        for (int block = 0; block < plain.length; block += 16) {
-            md5.update(secret);
-            if (previous == null) {
-                md5.update(requestAuthenticator);
-                md5.update(value, 0, 2);
-            } else {
-                md5.update(previous);
-            }
-            byte[] d = md5.digest();
-            for (int i = 0; i < 16; i++) {
-                plain[block + i] = (byte) (value[2 + block + i] ^ d[i]);
-            }
-            previous = Arrays.copyOfRange(value, 2 + block, 2 + block + 16);
-        }
-        return Arrays.copyOfRange(plain, 1, 1 + plain[0]);
+    static byte[] decryptKey(byte[] value, byte[] secret, byte[] requestAuthenticator) {
+        return MsChap.decryptKey(value, secret, requestAuthenticator);
     }
 
     GatewayConfig gatewayConfig() {

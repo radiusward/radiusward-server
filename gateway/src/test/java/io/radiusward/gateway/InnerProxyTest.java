@@ -59,6 +59,16 @@ class InnerProxyTest {
     }
 
     @Test
+    void aPasswordNoUserPasswordHoldsIsRejectedWithoutAskingTheHomeServer() {
+        InnerProxy p = new InnerProxy(ProxyConfig.from(Config.of(ProxyConfigTest.base())));
+        InnerProxy.Result r = p.password("alice@partner.example", new byte[129]);
+        assertThat(r.inner().code()).isEqualTo(AccessHandler.REJECT);
+        assertThat(InnerProxy.encryptPassword(new byte[128], new byte[16], "s".getBytes(StandardCharsets.US_ASCII)))
+                .as("128 bytes still fit")
+                .hasSize(128);
+    }
+
+    @Test
     void theHomeServersAcceptGivesItsSuccessAndKeysWhereverTheyAre() {
         byte[] secret = "s3cret".getBytes(StandardCharsets.US_ASCII);
         byte[] authenticator = new byte[16];

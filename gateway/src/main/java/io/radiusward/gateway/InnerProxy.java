@@ -13,6 +13,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.STATE;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
 
+import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.AttributeCursor;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
@@ -26,8 +27,6 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
@@ -76,6 +75,10 @@ final class InnerProxy {
     }
 
     Result password(String user, byte[] password) {
+        if (password.length > AccessRequests.MAX_PASSWORD) {
+            return new Result(
+                    new EapMethod.Inner(AccessHandler.REJECT, null), new byte[0]); // no User-Password holds it
+        }
         ProxyConfig.Realm realm = realm(user);
         return send(
                 realm,
@@ -335,50 +338,26 @@ final class InnerProxy {
         return new Result(inner, reply.toByteArray());
     }
 
-    /** RFC 2865 §5.2: the password padded to 16-byte blocks, each XORed with MD5(secret + previous). */
+    /** User-Password (RFC 2865 §5.2) for a request with this authenticator; at most 128 bytes of password. */
     static byte[] encryptPassword(byte[] password, byte[] authenticator, byte[] secret) {
-        int blocks = Math.max(1, (password.length + 15) / 16);
-        byte[] out = Arrays.copyOf(password, blocks * 16);
-        byte[] previous = authenticator;
-        for (int b = 0; b < blocks; b++) {
-            byte[] digest = md5(secret, previous);
-            for (int i = 0; i < 16; i++) {
-                out[b * 16 + i] ^= digest[i];
-            }
-            previous = Arrays.copyOfRange(out, b * 16, b * 16 + 16);
-        }
-        return out;
+        UnsafeBuffer out = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
+        int length = new AccessRequests()
+                .encryptUserPassword(
+                        new UnsafeBuffer(password),
+                        0,
+                        password.length,
+                        new UnsafeBuffer(authenticator),
+                        0,
+                        secret,
+                        out,
+                        0);
+        return Arrays.copyOf(out.byteArray(), length);
     }
 
-    /** RFC 2548 §2.4.2: salt, then the encrypted length, key and padding; the 16-byte key, {@code null} if malformed. */
+    /** An MS-MPPE key of an MS-CHAPv2 acceptance: 16 bytes ({@link MsChap#decryptKey}), {@code null} otherwise. */
     static byte[] decryptKey(byte[] value, byte[] authenticator, byte[] secret) {
-        if (value.length < 2 + 16 || (value.length - 2) % 16 != 0) {
-            return null;
-        }
-        byte[] plain = new byte[value.length - 2];
-        byte[] previous = null;
-        for (int at = 0; at < plain.length; at += 16) {
-            byte[] digest =
-                    at == 0 ? md5(secret, authenticator, new byte[] {value[0], value[1]}) : md5(secret, previous);
-            for (int i = 0; i < 16; i++) {
-                plain[at + i] = (byte) (value[2 + at + i] ^ digest[i]);
-            }
-            previous = Arrays.copyOfRange(value, 2 + at, 2 + at + 16);
-        }
-        int length = plain[0] & 0xFF;
-        return length < 16 || length > plain.length - 1 ? null : Arrays.copyOfRange(plain, 1, 17);
-    }
-
-    private static byte[] md5(byte[]... parts) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            for (byte[] part : parts) {
-                md.update(part);
-            }
-            return md.digest();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
-        }
+        byte[] key = MsChap.decryptKey(value, secret, authenticator);
+        return key == null || key.length < 16 ? null : Arrays.copyOf(key, 16);
     }
 
     /** {@code user@realm} without the realm, {@code REALM}&#92;{@code user} without it either. */

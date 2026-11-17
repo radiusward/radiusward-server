@@ -142,6 +142,33 @@ final class MsChap {
     }
 
     /**
+     * {@link #encryptKey} in reverse, as the receiving side does it: the key, of the length its first byte gives;
+     * {@code null} if {@code value} is not a salt and whole blocks or that length does not fit.
+     */
+    static byte[] decryptKey(byte[] value, byte[] secret, byte[] requestAuthenticator) {
+        if (value.length < 2 + 16 || (value.length - 2) % 16 != 0) {
+            return null;
+        }
+        MessageDigest md5 = md5();
+        byte[] plain = new byte[value.length - 2];
+        for (int block = 0; block < plain.length; block += 16) {
+            md5.update(secret);
+            if (block == 0) {
+                md5.update(requestAuthenticator);
+                md5.update(value, 0, 2); // the salt
+            } else {
+                md5.update(value, block - 16 + 2, 16); // the previous cipher block
+            }
+            byte[] b = md5.digest();
+            for (int i = 0; i < 16; i++) {
+                plain[block + i] = (byte) (value[2 + block + i] ^ b[i]);
+            }
+        }
+        int length = plain[0] & 0xFF;
+        return length > plain.length - 1 ? null : java.util.Arrays.copyOfRange(plain, 1, 1 + length);
+    }
+
+    /**
      * RFC 2548 §2.4.1 (MS-CHAP-MPPE-Keys of MS-CHAPv1): the 8-byte LAN Manager key, the 16-byte NT key and 8 zero
      * bytes, hidden like User-Password (RFC 2865 §5.2) with the request authenticator.
      */
