@@ -23,10 +23,7 @@ import io.radiusward.protocol.MessageHeaderEncoder;
 import io.radiusward.protocol.Outcome;
 import io.radiusward.protocol.RejectReason;
 import io.radiusward.protocol.SessionQueryDecoder;
-import io.radiusward.protocol.SessionReportEncoder;
-import io.radiusward.protocol.SessionStatus;
 import io.radiusward.protocol.StateQueryDecoder;
-import io.radiusward.protocol.StateReportEncoder;
 import org.agrona.DirectBuffer;
 import org.agrona.concurrent.IdleStrategy;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -57,12 +54,8 @@ public final class AccountingService implements ClusteredService {
 
     private final MessageHeaderDecoder headerDecoder = new MessageHeaderDecoder();
     private final MessageHeaderEncoder headerEncoder = new MessageHeaderEncoder();
-    private final SessionQueryDecoder sessionQueryDecoder = new SessionQueryDecoder();
-    private final StateQueryDecoder stateQueryDecoder = new StateQueryDecoder();
     private final AccountingCommittedEncoder committedEncoder = new AccountingCommittedEncoder();
     private final AccountingRejectedEncoder rejectedEncoder = new AccountingRejectedEncoder();
-    private final SessionReportEncoder sessionReportEncoder = new SessionReportEncoder();
-    private final StateReportEncoder stateReportEncoder = new StateReportEncoder();
     private final io.radiusward.protocol.ActivateVersionResultEncoder activationEncoder =
             new io.radiusward.protocol.ActivateVersionResultEncoder();
     private final io.radiusward.protocol.SqnResultEncoder sqnEncoder = new io.radiusward.protocol.SqnResultEncoder();
@@ -76,20 +69,8 @@ public final class AccountingService implements ClusteredService {
             new io.radiusward.protocol.SinkReportEncoder();
     private final UnsafeBuffer sinkBuffer = new UnsafeBuffer(new byte[4096]);
     private final UnsafeBuffer egressBuffer = new UnsafeBuffer(new byte[512]);
-    /** Reports with lists of sessions (ADR 0036): at most {@link #MAX_LISTED} entries of up to 160 bytes. */
-    private final UnsafeBuffer listBuffer = new UnsafeBuffer(new byte[MAX_LISTED * 160 + 64]);
 
-    private final UnsafeBuffer identityScratch = new UnsafeBuffer(new byte[SessionStore.IDENTITY_SIZE]);
-    private final io.radiusward.protocol.UserSessionsQueryDecoder userSessionsQueryDecoder =
-            new io.radiusward.protocol.UserSessionsQueryDecoder();
-    private final io.radiusward.protocol.UserSessionsReportEncoder userSessionsReportEncoder =
-            new io.radiusward.protocol.UserSessionsReportEncoder();
-    private final io.radiusward.protocol.SessionPageQueryDecoder sessionPageQueryDecoder =
-            new io.radiusward.protocol.SessionPageQueryDecoder();
-    private final io.radiusward.protocol.SessionPageReportEncoder sessionPageReportEncoder =
-            new io.radiusward.protocol.SessionPageReportEncoder();
-    static final int MAX_LISTED = 64;
-
+    private final QueryResponder queries;
     private Cluster cluster;
     private IdleStrategy idleStrategy;
 
@@ -97,6 +78,7 @@ public final class AccountingService implements ClusteredService {
         this.machine = new AccountingStateMachine(settings);
         this.applier = new LogApplier(machine);
         this.sweepIntervalMs = sweepIntervalMs;
+        this.queries = new QueryResponder(machine, this::offer);
     }
 
     /** Counters published for the management server; safe to read from any thread. */
@@ -191,12 +173,12 @@ public final class AccountingService implements ClusteredService {
                 onAuthReservation(session, timestamp, buffer, offset, header);
             case io.radiusward.protocol.SqnNextDecoder.TEMPLATE_ID ->
                 onSqnNext(session, timestamp, buffer, offset, header);
-            case StateQueryDecoder.TEMPLATE_ID -> onStateQuery(session, buffer, offset);
-            case SessionQueryDecoder.TEMPLATE_ID -> onSessionQuery(session, buffer, offset);
+            case StateQueryDecoder.TEMPLATE_ID -> queries.state(session, buffer, offset, headerDecoder);
+            case SessionQueryDecoder.TEMPLATE_ID -> queries.session(session, buffer, offset, headerDecoder);
             case io.radiusward.protocol.UserSessionsQueryDecoder.TEMPLATE_ID ->
-                onUserSessionsQuery(session, buffer, offset);
+                queries.userSessions(session, buffer, offset, headerDecoder);
             case io.radiusward.protocol.SessionPageQueryDecoder.TEMPLATE_ID ->
-                onSessionPageQuery(session, buffer, offset);
+                queries.sessionPage(session, buffer, offset, headerDecoder);
             default -> {}
         }
     }
@@ -399,149 +381,18 @@ public final class AccountingService implements ClusteredService {
         stats.versions(v.active(), v.lowestSupported(), v.held());
     }
 
-    private void onStateQuery(ClientSession session, DirectBuffer buffer, int offset) {
-        stateQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-        stateReportEncoder
-                .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
-                .correlationId(stateQueryDecoder.correlationId())
-                .applied(machine.applied())
-                .duplicates(machine.duplicates())
-                .stale(machine.stale())
-                .rejected(machine.rejected())
-                .activeSessions(machine.store().activeCount())
-                .stoppedSessions(machine.store().stoppedCount())
-                .stateDigest(machine.digest())
-                .stateVersion(AccountingStateMachine.STATE_VERSION)
-                .activeVersion(machine.versions().active())
-                .lowestSupportedVersion(machine.versions().lowestSupported());
-        if (session != null) {
-            reply(session, MessageHeaderEncoder.ENCODED_LENGTH + stateReportEncoder.encodedLength());
-        }
-    }
-
-    private void onSessionQuery(ClientSession session, DirectBuffer buffer, int offset) {
-        sessionQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-        SessionStore store = machine.store();
-        int slot = store.find(sessionQueryDecoder.sessionKeyHi(), sessionQueryDecoder.sessionKeyLo());
-        sessionReportEncoder
-                .wrapAndApplyHeader(egressBuffer, 0, headerEncoder)
-                .correlationId(sessionQueryDecoder.correlationId());
-        if (slot < 0) {
-            sessionReportEncoder
-                    .status(SessionStatus.UNKNOWN)
-                    .nasId(0)
-                    .statusType(0)
-                    .sessionTime(0)
-                    .eventTimestamp(0)
-                    .inputOctets(0)
-                    .outputOctets(0);
-        } else {
-            sessionReportEncoder
-                    .status(store.state(slot) == SessionStore.ACTIVE ? SessionStatus.ACTIVE : SessionStatus.STOPPED)
-                    .nasId(store.nasId(slot))
-                    .statusType(store.statusType(slot))
-                    .sessionTime(store.sessionTime(slot))
-                    .eventTimestamp(store.eventTimestamp(slot))
-                    .inputOctets(store.inputOctets(slot))
-                    .outputOctets(store.outputOctets(slot));
-        }
-        int identity = slot < 0 ? 0 : store.identity(slot, identityScratch, 0);
-        sessionReportEncoder.putIdentity(identityScratch, 0, identity);
-        if (session != null) {
-            reply(session, MessageHeaderEncoder.ENCODED_LENGTH + sessionReportEncoder.encodedLength());
-        }
-    }
-
-    /**
-     * The active sessions of a user, at most {@link #MAX_LISTED} (ADR 0036). A scan of the store: an operator's or a
-     * Simultaneous-Use question, not one per accounting packet.
-     */
-    private void onUserSessionsQuery(ClientSession session, DirectBuffer buffer, int offset) {
-        userSessionsQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-        long user = userSessionsQueryDecoder.userKey();
-        SessionStore store = machine.store();
-        int count = 0;
-        for (int slot = 0, n = store.highWater(); slot < n && count < MAX_LISTED; slot++) {
-            if (user != 0 && store.state(slot) == SessionStore.ACTIVE && store.userKey(slot) == user) {
-                count++;
-            }
-        }
-        io.radiusward.protocol.UserSessionsReportEncoder.SessionsEncoder sessions = userSessionsReportEncoder
-                .wrapAndApplyHeader(listBuffer, 0, headerEncoder)
-                .correlationId(userSessionsQueryDecoder.correlationId())
-                .sessionsCount(count);
-        for (int slot = 0, n = store.highWater(), written = 0; slot < n && written < count; slot++) {
-            if (store.state(slot) == SessionStore.ACTIVE && store.userKey(slot) == user) {
-                int length = store.identity(slot, identityScratch, 0);
-                sessions.next()
-                        .keyHi(store.keyHi(slot))
-                        .keyLo(store.keyLo(slot))
-                        .nasId(store.nasId(slot))
-                        .firstSeen(store.firstSeen(slot))
-                        .lastSeen(store.lastSeen(slot))
-                        .putIdentity(identityScratch, 0, length);
-                written++;
-            }
-        }
-        if (session != null) {
-            replyList(session, MessageHeaderEncoder.ENCODED_LENGTH + userSessionsReportEncoder.encodedLength());
-        }
-    }
-
-    /** A page of active sessions with a user, from a slot on (the gateways' store sweep, ADR 0036). */
-    private void onSessionPageQuery(ClientSession session, DirectBuffer buffer, int offset) {
-        sessionPageQueryDecoder.wrapAndApplyHeader(buffer, offset, headerDecoder);
-        SessionStore store = machine.store();
-        int limit = Math.max(1, Math.min(MAX_LISTED, sessionPageQueryDecoder.maxSessions()));
-        int from = Math.max(0, sessionPageQueryDecoder.fromSlot());
-        int n = store.highWater();
-        int count = 0;
-        int slot = from;
-        for (; slot < n && count < limit; slot++) {
-            if (store.state(slot) == SessionStore.ACTIVE && store.userKey(slot) != 0) {
-                count++;
-            }
-        }
-        io.radiusward.protocol.SessionPageReportEncoder.SessionsEncoder sessions = sessionPageReportEncoder
-                .wrapAndApplyHeader(listBuffer, 0, headerEncoder)
-                .correlationId(sessionPageQueryDecoder.correlationId())
-                .nextSlot(slot >= n ? -1 : slot)
-                .sessionsCount(count);
-        for (int s = from, written = 0; written < count; s++) {
-            if (store.state(s) == SessionStore.ACTIVE && store.userKey(s) != 0) {
-                int length = store.identity(s, identityScratch, 0);
-                sessions.next()
-                        .keyHi(store.keyHi(s))
-                        .keyLo(store.keyLo(s))
-                        .nasId(store.nasId(s))
-                        .userKey(store.userKey(s))
-                        .putIdentity(identityScratch, 0, length);
-                written++;
-            }
-        }
-        if (session != null) {
-            replyList(session, MessageHeaderEncoder.ENCODED_LENGTH + sessionPageReportEncoder.encodedLength());
-        }
-    }
-
-    private void replyList(ClientSession session, int length) {
-        for (int attempt = 0; attempt < MAX_EGRESS_ATTEMPTS; attempt++) {
-            long result = session.offer(listBuffer, 0, length);
-            if (result > 0 || result == Publication.NOT_CONNECTED || result == Publication.CLOSED) {
-                return;
-            }
-            idleStrategy.idle();
-        }
-        stats.recordEgressDropped();
-    }
-
     /**
      * Sends a reply, retrying briefly on back pressure. Giving up only costs the NAS a retransmit, which is
      * then answered as a duplicate; it never affects replicated state.
      */
     private void reply(ClientSession session, int length) {
+        offer(session, egressBuffer, length);
+    }
+
+    /** Sends {@code length} bytes of {@code buffer}, retrying briefly on back pressure; see {@link #reply}. */
+    private void offer(ClientSession session, DirectBuffer buffer, int length) {
         for (int attempt = 0; attempt < MAX_EGRESS_ATTEMPTS; attempt++) {
-            long result = session.offer(egressBuffer, 0, length);
+            long result = session.offer(buffer, 0, length);
             if (result > 0 || result == Publication.NOT_CONNECTED || result == Publication.CLOSED) {
                 return;
             }
