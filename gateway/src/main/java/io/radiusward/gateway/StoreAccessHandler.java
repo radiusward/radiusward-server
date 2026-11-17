@@ -5,7 +5,6 @@
 package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
-import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.AccessRequests;
@@ -13,14 +12,10 @@ import io.radiusward.radius.codec.AttributeText;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.AttributeDef;
 import io.radiusward.radius.dictionary.Dictionary;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import java.util.function.LongSupplier;
 import org.agrona.collections.Object2LongHashMap;
 import org.agrona.collections.Object2ObjectHashMap;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -45,6 +40,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private final CheckItems checkItems;
     private final UserDirectory directory;
     private final MsChapAuthenticator msChap;
+    private final EapAuthenticator eap;
     private final ReplyEncoder replies;
     /** Raised by a reload: workers then drop their caches. */
     private volatile int generation;
@@ -86,7 +82,8 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 new UserDirectory(this::stores, dictionary, clockMillis, metrics, checkItems, restrictions, once);
         this.inner = new InnerCredentials(this::stores, this::innerProxy, directory, msChap, passwordChecks, once);
         this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
-        this.conversations = new EapConversations(stores.eap().conversations());
+        this.eap = new EapAuthenticator(
+                this::stores, this::innerProxy, clockMillis, metrics, directory, inner, msChap, once);
     }
 
     @Override
@@ -127,7 +124,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         }
         String userName;
         if (method == AccessRequests.METHOD_EAP) {
-            int begun = eapBegin(auth);
+            int begun = eap.begin(auth);
             if (begun != ACCEPT) {
                 return begun;
             }
@@ -139,37 +136,20 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
             return REJECT;
         }
         UserDirectory.Authorization a =
-                directory.authorize(auth, userName, method == AccessRequests.METHOD_EAP && outerOptional(auth));
+                directory.authorize(auth, userName, method == AccessRequests.METHOD_EAP && eap.outerOptional(auth));
         if (a.code() != ACCEPT) {
             return a.code();
         }
         UserDirectory.Found found = a.found();
-        String authType = a.authType();
-        List<AttributeItem> passwords = a.passwords();
         if (method == AccessRequests.METHOD_EAP) {
-            int round = eapRound(auth, found, authType, passwords);
-            if (round != ACCEPT) {
-                return round; // CHALLENGE (another round trip), REJECT or DROP
+            a = eap.authenticate(auth, a);
+            if (a == EapAuthenticator.ANSWERED) {
+                return ACCEPT; // the inner user's home server decided and authorized it (ADR 0044)
             }
-            EapConversations.Conversation c = auth.eap.conversation;
-            String inner = c.method == null ? null : c.method.innerIdentity();
-            InnerProxy p = innerProxy;
-            if (inner != null && p != null && p.realm(inner) != null) {
-                // the inner user's home server decided and authorized it (ADR 0044); its reply is ours
-                if (c.proxiedReply == null) {
-                    return REJECT; // no verdict from it in this conversation
-                }
-                writeEapSuccess(auth, method);
-                context.reply().rawAttributes(new UnsafeBuffer(c.proxiedReply), 0, c.proxiedReply.length);
-                return ACCEPT;
+            if (a.code() != ACCEPT) {
+                return a.code(); // CHALLENGE (another round trip), REJECT or DROP
             }
-            if (inner != null) { // a tunnel: the inner user is the one authorized (ADR 0029)
-                a = directory.authorize(auth, inner, c.method.innerOptional());
-                if (a.code() != ACCEPT) {
-                    return a.code();
-                }
-                found = a.found();
-            }
+            found = a.found();
         } else {
             int checked = passwordChecks.check(auth, method, userName, a);
             if (checked != ACCEPT) {
@@ -209,198 +189,19 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 nas,
                 stores.cacheMax());
         msChap.writeSuccess(auth, method); // method attributes: never filtered by vendor
-        writeEapSuccess(auth, method);
+        eap.writeSuccess(auth, method);
         return ACCEPT;
+    }
+
+    /** EAP conversations in the table (for {@code /state} and tests). */
+    int eapConversations() {
+        return eap.conversations();
     }
 
     /** Looks a user with active sessions up again (ADR 0036); see {@link UserDirectory#review}. */
     UserDirectory.Review review(NasClient nas, String userName, byte[] identity) {
         return directory.review(nas, userName, identity);
     }
-
-    // ---- EAP (RFC 3748, RFC 3579; ADR 0026) -----------------------------------------------------
-
-    private static final int STATE = 24;
-
-    /**
-     * Reads the EAP response and finds its conversation: a new one for an Identity response without State, the one
-     * the State names otherwise. {@link #ACCEPT} to go on; a malformed packet is discarded ({@link #DROP}), an
-     * unknown or used State is rejected.
-     */
-    private int eapBegin(AuthRequest auth) {
-        AccessContext context = auth.context();
-        RadiusPacket request = context.request();
-        EapPacket eap = EapPacket.from(request);
-        if (eap == null || eap.code() != EapPacket.CODE_RESPONSE) {
-            return DROP; // RFC 3579 §2.6.2: silently discard
-        }
-        AuthRequest.EapRound round = auth.eap;
-        round.packet = eap;
-        int at = request.findAttribute(STATE);
-        if (at < 0) {
-            if (eap.type() != EapPacket.TYPE_IDENTITY) {
-                return REJECT;
-            }
-            String identity = new String(eap.data(), StandardCharsets.UTF_8)
-                    .replace("\0", "")
-                    .trim();
-            if (identity.isEmpty()) {
-                return REJECT;
-            }
-            round.conversation = new EapConversations.Conversation(context.nas().name(), identity);
-            return ACCEPT;
-        }
-        byte[] state = new byte[(request.buffer().getByte(at + 1) & 0xFF) - 2];
-        request.buffer().getBytes(at + 2, state);
-        round.state = state;
-        round.conversation = conversations.take(state, context.nas().name(), clockMillis.getAsLong());
-        return round.conversation == null ? REJECT : ACCEPT;
-    }
-
-    /**
-     * One round of the conversation's method: starts it after the Identity response, follows a Nak, or gives the
-     * method the peer's response. Returns {@link #CHALLENGE} with the next request and a new State, {@link #ACCEPT}
-     * when the method succeeded, {@link #REJECT} when it failed, {@link #DROP} when the table is full or the response
-     * answers another request.
-     */
-    private int eapRound(AuthRequest auth, UserDirectory.Found found, String authType, List<AttributeItem> passwords) {
-        AccessContext context = auth.context();
-        AuthRequest.EapRound round = auth.eap;
-        EapPacket eap = round.packet;
-        EapConversations.Conversation c = round.conversation;
-        if (authType.equalsIgnoreCase("Accept")) {
-            return ACCEPT; // no credential to check: EAP-Success right away
-        }
-        EapMethod.Credentials credentials = new EapMethod.Credentials(
-                passwords, stores.chap().getOrDefault(found.store(), false), new EapMethod.InnerAuth() {
-                    @Override
-                    public EapMethod.Inner msChapV2(String user, EapMethod.MsChapV2 exchange) {
-                        return inner.msChapV2(auth, user, exchange);
-                    }
-
-                    @Override
-                    public EapMethod.Inner password(String user, byte[] password) {
-                        return inner.password(auth, user, password);
-                    }
-
-                    @Override
-                    public EapMethod.Inner chap(String user, int identifier, byte[] challenge, byte[] response) {
-                        return inner.chap(auth, user, identifier, challenge, response);
-                    }
-
-                    @Override
-                    public EapMethod.Inner msChapV1(String user, byte[] challenge, byte[] ntResponse) {
-                        return inner.msChap(auth, user, challenge, ntResponse, false);
-                    }
-
-                    @Override
-                    public EapMethod.Subscriber subscriber(String imsi) {
-                        return simSubscriber(auth, imsi);
-                    }
-
-                    @Override
-                    public long nextSqn(String imsi, long floor) {
-                        byte[] name = imsi.getBytes(StandardCharsets.US_ASCII);
-                        return context.sessionLimits()
-                                .nextSqn(UserKeys.user(new UnsafeBuffer(name), 0, name.length), floor);
-                    }
-                });
-        EapMethod.Step step;
-        if (c.method == null) {
-            c.method = stores.eap().create(EapConfig.type(stores.eap().methods().get(0)), c.identity);
-            if (c.method == null) {
-                return REJECT; // not reached: configuration refuses TLS methods without a certificate
-            }
-            step = c.method.start(eap.identifier() + 1, credentials);
-        } else if (eap.identifier() != c.identifier) {
-            return DROP; // a response to an earlier request
-        } else if (eap.type() == EapPacket.TYPE_NAK) {
-            EapMethod offered = null;
-            for (byte t : eap.data()) {
-                int type = t & 0xFF;
-                if (type != c.method.type()
-                        && stores.eap().methods().stream().anyMatch(m -> EapConfig.type(m) == type)) {
-                    offered = stores.eap().create(type, c.identity);
-                    break;
-                }
-            }
-            if (offered == null || c.rounds > 1) {
-                return REJECT; // nothing both sides support, or a Nak after the method began
-            }
-            c.method = offered;
-            step = c.method.start(eap.identifier() + 1, credentials);
-        } else if (eap.type() != c.method.type()) {
-            return REJECT;
-        } else {
-            step = c.method.process(eap.identifier(), eap.data(), credentials);
-        }
-        if (step.unavailable()) {
-            metrics.eapOutcome(c.method.type(), AuthMetrics.STORE_UNAVAILABLE);
-            // the inner credential cannot be checked now: keep the conversation for the peer's retransmission
-            if (round.state != null) {
-                conversations.putBack(round.state, c, clockMillis.getAsLong());
-            }
-            return DROP;
-        }
-        if (++c.rounds > stores.eap().maxRounds()) {
-            metrics.eapOutcome(c.method.type(), AuthMetrics.TOO_MANY_ROUNDS);
-            return REJECT;
-        }
-        if (step.done()) {
-            round.msk = step.msk();
-            metrics.eapOutcome(c.method.type(), step.success() ? AuthMetrics.SUCCEEDED : AuthMetrics.FAILED);
-            return step.success() ? ACCEPT : REJECT;
-        }
-        long now = clockMillis.getAsLong();
-        c.identifier = (eap.identifier() + 1) & 0xFF;
-        c.expires = now + stores.eap().timeout().toMillis();
-        byte[] state = conversations.put(c, now);
-        if (state == null) {
-            warnOnce("eap-full", "EAP conversations full (auth.eap.conversations): new rounds are not answered", null);
-            return DROP;
-        }
-        EapPacket.request(c.identifier, c.method.type(), step.request()).writeTo(context.reply());
-        context.reply().attribute(STATE, state);
-        return CHALLENGE;
-    }
-
-    /** Whether this conversation's method (or the one it will start, or a Nak asks for) needs no store entry. */
-    private boolean outerOptional(AuthRequest auth) {
-        AccessContext context = auth.context();
-        AuthRequest.EapRound round = auth.eap;
-        EapConversations.Conversation c = round.conversation;
-        if (c.method != null) {
-            if (round.packet.type() == EapPacket.TYPE_NAK) {
-                for (byte t : round.packet.data()) {
-                    if (stores.eap().outerOptional(t & 0xFF)) {
-                        return true;
-                    }
-                }
-            }
-            return stores.eap().outerOptional(c.method.type());
-        }
-        return stores.eap().outerOptional(EapConfig.type(stores.eap().methods().get(0)));
-    }
-
-    /** EAP-Success and, for methods that derive one, the MSK as MS-MPPE keys (RFC 3748 §7.10, RFC 2548). */
-    private void writeEapSuccess(AuthRequest auth, int method) {
-        AccessContext context = auth.context();
-        AuthRequest.EapRound round = auth.eap;
-        if (method != AccessRequests.METHOD_EAP || round.packet == null) {
-            return;
-        }
-        EapPacket.success(round.packet.identifier()).writeTo(context.reply());
-        if (round.msk != null && round.msk.length >= 64) {
-            msChap.writeMppeKeys(context, Arrays.copyOfRange(round.msk, 32, 64), Arrays.copyOfRange(round.msk, 0, 32));
-        }
-    }
-
-    /** Conversations in the table (for {@code /state} and tests). */
-    int eapConversations() {
-        return conversations.size();
-    }
-
-    private final EapConversations conversations;
 
     // ---- restrictions and IP pools (ADR 0049, ADR 0050) ------------------------------------------------------
 
@@ -429,41 +230,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
 
     void totp(Totp settings) {
         totp.settings(settings);
-    }
-
-    // ---- SIM subscribers (ADR 0061) ------------------------------------------------------------------------------
-
-    /** A SIM subscriber's check items by IMSI, from the stores of this NAS entry; keys are checked here once. */
-    private EapMethod.Subscriber simSubscriber(AuthRequest auth, String imsi) {
-        AccessContext context = auth.context();
-        UserDirectory.Found found;
-        try {
-            found = directory.find(auth.caches(), context.nas().name(), imsi);
-        } catch (StoreUnavailableException e) {
-            warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
-            because(context, "identity store unavailable: ", e.getMessage());
-            return new EapMethod.Subscriber(DROP, List.of());
-        }
-        if (found == null) {
-            because(context, "SIM subscriber not in any store: ", imsi);
-            return new EapMethod.Subscriber(REJECT, List.of());
-        }
-        try {
-            if (!SimSubscriber.of(found.user().check()).gsm()) {
-                warnOnce(
-                        "sim-keys:" + found.store(),
-                        "store {}: SIM subscribers need SIM-Ki and SIM-OPc (or "
-                                + "SIM-OP), or three stored triplets; COMP128 is not supported",
-                        found.store());
-                because(context, "no usable SIM keys for ", imsi);
-                return new EapMethod.Subscriber(REJECT, List.of());
-            }
-        } catch (IllegalArgumentException e) {
-            warnOnce("sim-keys-bad:" + found.store(), "store {}: {}", found.store(), e.getMessage()); // never the value
-            because(context, "SIM keys not understood for ", imsi);
-            return new EapMethod.Subscriber(REJECT, List.of());
-        }
-        return new EapMethod.Subscriber(ACCEPT, found.user().check());
     }
 
     // ---- traces (ADR 0052) ---------------------------------------------------------------------------------------
