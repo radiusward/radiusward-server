@@ -76,25 +76,26 @@ class StoreAccessHandlerTest {
     private EapConfig eapConfig = EapConfig.DEFAULT;
 
     private StoreAccessHandler handler(Map<String, Boolean> chap, Map<String, List<String>> perNas) {
+        return new StoreAccessHandler(stores(chap, perNas), DICTIONARY, () -> now[0]);
+    }
+
+    private AuthStores stores(Map<String, Boolean> chap, Map<String, List<String>> perNas) {
         Map<String, IdentityStore> stores = new java.util.LinkedHashMap<>();
         stores.put("main", main);
         stores.put("second", second);
-        return new StoreAccessHandler(
-                new AuthStores(
-                        stores,
-                        List.of("main", "second"),
-                        perNas,
-                        chap,
-                        Duration.ofSeconds(5),
-                        1000,
-                        12,
-                        replyVendors,
-                        mschap,
-                        verifiers,
-                        storeVerifiers,
-                        eapConfig),
-                DICTIONARY,
-                () -> now[0]);
+        return new AuthStores(
+                stores,
+                List.of("main", "second"),
+                perNas,
+                chap,
+                Duration.ofSeconds(5),
+                1000,
+                12,
+                replyVendors,
+                mschap,
+                verifiers,
+                storeVerifiers,
+                eapConfig);
     }
 
     private StoreAccessHandler handler() {
@@ -1194,6 +1195,39 @@ class StoreAccessHandlerTest {
         assertThat(handle(h, msChapRequest("User", new byte[8], 25, response)))
                 .as("an MS-CHAPv2 challenge of 8 bytes is malformed: not sent to the verifier")
                 .isEqualTo(AccessHandler.REJECT);
+    }
+
+    @Test
+    void theSweepReviewsUsersAsAtLoginAndForgetsThemOnAReload() throws Exception {
+        main.user("alice", List.of(), List.of(item("Session-Timeout", ":=", "600"), item("Cisco-AVPair", "+=", "a=b")));
+        second.user("bob", List.of(item("Auth-Type", ":=", "Reject")), List.of());
+        StoreAccessHandler h = handler();
+        NasClient nas = AuthAgentTest.registry(NasClient.MessageAuthenticatorPolicy.OFF)
+                .clients()
+                .iterator()
+                .next();
+        UserDirectory.Review alice = h.review(nas, "alice", new byte[0]);
+        assertThat(alice.code()).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(alice.found()).isTrue();
+        assertThat(alice.reply())
+                .extracting(AttributeItem::attribute)
+                .containsExactly("Session-Timeout", "Cisco-AVPair");
+        UserDirectory.Review bob = h.review(nas, "bob", new byte[0]);
+        assertThat(bob.code()).as("Auth-Type := Reject").isEqualTo(AccessHandler.REJECT);
+        assertThat(bob.found()).isTrue();
+        assertThat(h.review(nas, "carol", new byte[0]).found()).isFalse();
+
+        main.users.remove("alice");
+        assertThat(h.review(nas, "alice", new byte[0]).code())
+                .as("remembered for auth.cache.ttl")
+                .isEqualTo(AccessHandler.ACCEPT);
+        h.reload(stores(Map.of(), Map.of()), Duration.ZERO);
+        assertThat(h.review(nas, "alice", new byte[0]).code())
+                .as("a reload starts over: the user is gone")
+                .isEqualTo(AccessHandler.REJECT);
+
+        main.down = true;
+        assertThat(h.review(nas, "dave", new byte[0]).code()).isEqualTo(AccessHandler.DROP);
     }
 
     @Test

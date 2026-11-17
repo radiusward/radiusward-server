@@ -109,11 +109,7 @@ final class PasswordChecks {
     }
 
     boolean authenticate(
-            AuthRequest auth,
-            int method,
-            StoreAccessHandler.Found found,
-            String userName,
-            List<AttributeItem> passwords) {
+            AuthRequest auth, int method, UserDirectory.Found found, String userName, List<AttributeItem> passwords) {
         AccessContext context = auth.context();
         Object2LongHashMap<String> verified = auth.caches().verified;
         if (StoreAccessHandler.isMsChap(method)) {
@@ -154,7 +150,7 @@ final class PasswordChecks {
      */
     boolean checkPassword(
             AuthRequest auth,
-            StoreAccessHandler.Found found,
+            UserDirectory.Found found,
             String userName,
             List<AttributeItem> passwords,
             byte[] password) {
@@ -179,11 +175,12 @@ final class PasswordChecks {
                 return true;
             }
             if (PasswordCheck.verify(p.attribute(), p.value(), password)) {
-                if (key != null && handler.ttlMillis() > 0) {
+                long ttlMillis = handler.stores().cacheTtl().toMillis();
+                if (key != null && ttlMillis > 0) {
                     if (verified.size() >= handler.stores().cacheMax()) {
                         verified.clear();
                     }
-                    verified.put(key, now + handler.ttlMillis());
+                    verified.put(key, now + ttlMillis);
                 }
                 return true;
             }

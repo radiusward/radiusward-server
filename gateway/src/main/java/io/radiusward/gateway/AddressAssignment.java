@@ -32,7 +32,7 @@ final class AddressAssignment {
      * reply already has one. An empty pool rejects (or accepts without an address, per pool); a pool that cannot be
      * reached leaves the request unanswered.
      */
-    int assign(AccessContext context, RadiusPacket request, String user, StoreAccessHandler.Authorization a) {
+    int assign(AccessContext context, RadiusPacket request, String user, UserDirectory.Authorization a) {
         for (AttributeItem item : a.restrictions()) {
             if (!item.attribute().equalsIgnoreCase("Pool-Name")) {
                 continue;
@@ -48,7 +48,7 @@ final class AddressAssignment {
     }
 
     private int assign(
-            AccessContext context, RadiusPacket request, String user, StoreAccessHandler.Authorization a, String name) {
+            AccessContext context, RadiusPacket request, String user, UserDirectory.Authorization a, String name) {
         IpPools p = pools;
         IpPools.Pool pool = p == null ? null : p.pool(name);
         if (pool == null) {

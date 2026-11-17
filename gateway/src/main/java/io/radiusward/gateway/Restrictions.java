@@ -65,7 +65,7 @@ final class Restrictions {
      * reject; otherwise the Accept's Session-Timeout is cut to the earliest end (expiry, the window's end, the time
      * left on a time counter or its period). A counter that cannot be read leaves the request unanswered.
      */
-    int restrict(AccessContext context, String user, StoreAccessHandler.Authorization a) {
+    int restrict(AccessContext context, String user, UserDirectory.Authorization a) {
         if (a.restrictions().isEmpty()) {
             return AccessHandler.ACCEPT;
         }

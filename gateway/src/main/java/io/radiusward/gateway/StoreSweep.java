@@ -109,7 +109,7 @@ final class StoreSweep implements Runnable {
                     continue;
                 }
                 increment(Counter.USERS);
-                StoreAccessHandler.Review review = stores.review(nas, user, s.identity());
+                UserDirectory.Review review = stores.review(nas, user, s.identity());
                 if (review.code() == AccessHandler.DROP) {
                     increment(Counter.UNAVAILABLE);
                     List<AttributeItem> before = previous.get(user);

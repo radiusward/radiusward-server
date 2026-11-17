@@ -18,10 +18,12 @@ import java.nio.charset.StandardCharsets;
 final class InnerCredentials {
 
     private final StoreAccessHandler handler;
+    private final UserDirectory directory;
     private final PasswordChecks passwords;
     private final OnceLogger once;
 
-    InnerCredentials(StoreAccessHandler handler, PasswordChecks passwords, OnceLogger once) {
+    InnerCredentials(StoreAccessHandler handler, UserDirectory directory, PasswordChecks passwords, OnceLogger once) {
+        this.directory = directory;
         this.handler = handler;
         this.passwords = passwords;
         this.once = once;
@@ -65,7 +67,7 @@ final class InnerCredentials {
         if (home != null && home.realm(user) != null) {
             return proxied(auth, home.chap(user, identifier, challenge, response));
         }
-        StoreAccessHandler.Authorization a = handler.authorize(auth, user, false);
+        UserDirectory.Authorization a = directory.authorize(auth, user, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }
@@ -93,7 +95,7 @@ final class InnerCredentials {
     /** MS-CHAP inside a tunnel; {@code challenge} is the v2 challenge hash or the v1 challenge (both 8 bytes). */
     EapMethod.Inner msChap(AuthRequest auth, String user, byte[] challenge, byte[] ntResponse, boolean v2) {
         AccessContext context = auth.context();
-        StoreAccessHandler.Authorization a = handler.authorize(auth, user, false);
+        UserDirectory.Authorization a = directory.authorize(auth, user, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }
@@ -129,7 +131,7 @@ final class InnerCredentials {
         if (home != null && home.realm(user) != null) {
             return proxied(auth, home.password(user, password));
         }
-        StoreAccessHandler.Authorization a = handler.authorize(auth, user, false);
+        UserDirectory.Authorization a = directory.authorize(auth, user, false);
         if (a.code() != AccessHandler.ACCEPT) {
             return new EapMethod.Inner(a.code(), null);
         }

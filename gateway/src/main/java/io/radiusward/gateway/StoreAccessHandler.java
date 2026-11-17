@@ -5,7 +5,6 @@
 package io.radiusward.gateway;
 
 import io.radiusward.auth.AttributeItem;
-import io.radiusward.auth.IdentityStore;
 import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
@@ -22,9 +21,7 @@ import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.function.LongSupplier;
-import org.agrona.collections.IntHashSet;
 import org.agrona.collections.Object2LongHashMap;
 import org.agrona.collections.Object2ObjectHashMap;
 import org.agrona.concurrent.UnsafeBuffer;
@@ -48,16 +45,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     private final AuthMetrics metrics = new AuthMetrics();
     private final Dictionary dictionary;
     private final LongSupplier clockMillis;
-    private volatile long ttlMillis;
     private final OnceLogger once = new OnceLogger(LOG);
     private final CheckItems checkItems;
+    private final UserDirectory directory;
     private final ReplyEncoder replies;
     /** Raised by a reload: workers then drop their caches. */
     private volatile int generation;
-
-    private record Cached(Optional<UserRecord> user, long expires) {}
-
-    record Found(String store, UserRecord user) {}
 
     /**
      * The caches of one worker, kept in its {@link AccessContext#handlerState()}: only that worker's thread touches
@@ -65,7 +58,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * per worker and TTL); each map is bounded by {@code auth.cache.max}.
      */
     static final class WorkerCache {
-        final Object2ObjectHashMap<String, Cached> users = new Object2ObjectHashMap<>();
+        final Object2ObjectHashMap<String, UserDirectory.Cached> users = new Object2ObjectHashMap<>();
         final Object2LongHashMap<String> verified = new Object2LongHashMap<>(Long.MIN_VALUE);
         final Object2ObjectHashMap<AttributeItem, ReplyEncoder.Encoded> encoded = new Object2ObjectHashMap<>();
         /** The request this worker is deciding, reused for every request. */
@@ -91,8 +84,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         this.restrictions = new Restrictions(checkItems, clockMillis, once);
         this.totp = new TotpFactor(clockMillis, saltRandom, once);
         this.passwordChecks = new PasswordChecks(this, clockMillis, once);
-        this.inner = new InnerCredentials(this, passwordChecks, once);
-        this.ttlMillis = stores.cacheTtl().toMillis();
+        this.directory =
+                new UserDirectory(this::stores, dictionary, clockMillis, metrics, checkItems, restrictions, once);
+        this.inner = new InnerCredentials(this, directory, passwordChecks, once);
         this.replies = new ReplyEncoder(dictionary, once, stores.replyVendors().keySet());
         this.conversations = new EapConversations(stores.eap().conversations());
     }
@@ -150,11 +144,12 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         if (userName == null || userName.isEmpty()) {
             return REJECT;
         }
-        Authorization a = authorize(auth, userName, method == AccessRequests.METHOD_EAP && outerOptional(auth));
+        UserDirectory.Authorization a =
+                directory.authorize(auth, userName, method == AccessRequests.METHOD_EAP && outerOptional(auth));
         if (a.code() != ACCEPT) {
             return a.code();
         }
-        Found found = a.found();
+        UserDirectory.Found found = a.found();
         String authType = a.authType();
         List<AttributeItem> passwords = a.passwords();
         if (method == AccessRequests.METHOD_EAP) {
@@ -175,7 +170,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 return ACCEPT;
             }
             if (inner != null) { // a tunnel: the inner user is the one authorized (ADR 0029)
-                a = authorize(auth, inner, c.method.innerOptional());
+                a = directory.authorize(auth, inner, c.method.innerOptional());
                 if (a.code() != ACCEPT) {
                     return a.code();
                 }
@@ -246,187 +241,10 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
         return ACCEPT;
     }
 
-    /**
-     * The authorization of a user: its store entry, check items and the groups that apply. {@code code} is
-     * {@link #ACCEPT} to go on, {@link #REJECT} (unknown user, failed check, Auth-Type Reject) or {@link #DROP}.
-     */
-    record Authorization(
-            int code,
-            Found found,
-            String authType,
-            List<AttributeItem> passwords,
-            List<AttributeItem> reply,
-            String limit,
-            List<AttributeItem> restrictions) {
-
-        static Authorization of(int code) {
-            return new Authorization(code, null, null, null, null, null, List.of());
-        }
+    /** Looks a user with active sessions up again (ADR 0036); see {@link UserDirectory#review}. */
+    UserDirectory.Review review(NasClient nas, String userName, byte[] identity) {
+        return directory.review(nas, userName, identity);
     }
-
-    /**
-     * What the store sweep learns about a user with active sessions (ADR 0036).
-     *
-     * @param code {@link #ACCEPT} (still let in), {@link #REJECT} (rejected now: disabled, or {@code Auth-Type :=
-     *     Reject}), {@link #DROP} (no store answered); {@code found}: whether a store has the user
-     * @param reply the reply items the user would get now, for the NAS entry's vendors
-     */
-    record Review(int code, boolean found, List<AttributeItem> reply) {}
-
-    private final AccessContext sweepContext = new AccessContext();
-    private final UnsafeBuffer sweepRequest = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
-
-    /**
-     * Looks a user with active sessions up again, as at login: its checks and groups evaluated against a request
-     * made of the session's identifying attributes (conditions on other attributes do not match). One caller at a
-     * time: the sweep has its own context and caches.
-     */
-    synchronized Review review(NasClient nas, String userName, byte[] identity) {
-        int length = RadiusPacket.HEADER_LENGTH + identity.length;
-        sweepRequest.putByte(0, (byte) io.radiusward.radius.codec.RadiusCode.ACCESS_REQUEST);
-        sweepRequest.putByte(1, (byte) 0);
-        sweepRequest.putShort(2, (short) length, java.nio.ByteOrder.BIG_ENDIAN);
-        sweepRequest.setMemory(4, 16, (byte) 0);
-        sweepRequest.putBytes(RadiusPacket.HEADER_LENGTH, identity);
-        sweepContext.reset(sweepRequest, 0, length, nas);
-        Found found;
-        try {
-            found = find(cache(sweepContext), nas.name(), userName);
-        } catch (StoreUnavailableException e) {
-            return new Review(DROP, false, List.of());
-        }
-        if (found == null) {
-            return new Review(REJECT, false, List.of());
-        }
-        Authorization a = authorize(cache(sweepContext).request.begin(sweepContext), userName, false);
-        if (a.code() != ACCEPT) {
-            return new Review(a.code(), true, List.of());
-        }
-        IntHashSet vendors = stores.replyVendors().get(nas.name());
-        List<AttributeItem> reply = new ArrayList<>();
-        for (AttributeItem item : a.reply()) {
-            AttributeDef def = dictionary.find(item.attribute());
-            if (def != null && (def.vendorId() == 0 || vendors == null || vendors.contains(def.vendorId()))) {
-                reply.add(item);
-            }
-        }
-        return new Review(ACCEPT, true, reply);
-    }
-
-    /** Looks {@code userName} up and evaluates its checks and groups; {@code optional}: a missing user is empty. */
-    Authorization authorize(AuthRequest auth, String userName, boolean optional) {
-        AccessContext context = auth.context();
-        RadiusPacket request = context.request();
-        Found found;
-        try {
-            found = find(auth.caches(), context.nas().name(), userName);
-        } catch (StoreUnavailableException e) {
-            warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
-            because(context, "identity store unavailable: ", e.getMessage());
-            return Authorization.of(DROP);
-        }
-        if (found == null) {
-            if (!optional) {
-                because(context, "user not in any store: ", userName);
-                return Authorization.of(REJECT);
-            }
-            // EAP-TLS: the certificate is the credential; tunnels: the inner user is looked up (ADR 0028, 0029)
-            found = new Found("", new UserRecord(userName, List.of(), List.of(), List.of()));
-        }
-        List<AttributeItem> passwords = new ArrayList<>();
-        List<AttributeItem> reply = new ArrayList<>(found.user().reply());
-        note(
-                context,
-                "user found in store ",
-                found.store().isEmpty() ? "(none, certificate or tunnel)" : found.store());
-        String authType = checkItems.checks(found.user().check(), request, passwords);
-        if (authType == null) {
-            because(context, "a check item of the user does not hold (Expiration or a comparison)", "");
-            return Authorization.of(REJECT);
-        }
-        String limit = Restrictions.simultaneousUse(found.user().check());
-        for (UserRecord.Group group : found.user().groups()) {
-            List<AttributeItem> groupPasswords = new ArrayList<>();
-            String groupAuthType = checkItems.checks(group.check(), request, groupPasswords);
-            if (groupAuthType == null) {
-                note(context, "group does not apply: ", group.name());
-                continue; // the group's conditions do not hold: it does not apply
-            }
-            note(context, "group applies: ", group.name());
-            if (groupAuthType.equalsIgnoreCase("Reject")) {
-                because(context, "Auth-Type := Reject in group ", group.name());
-                return Authorization.of(REJECT);
-            }
-            if (authType.isEmpty()) {
-                authType = groupAuthType;
-            }
-            if (limit == null) {
-                limit = Restrictions.simultaneousUse(
-                        group.check()); // the user's own limit wins, then the first group's
-            }
-            passwords.addAll(groupPasswords);
-            ReplyEncoder.merge(reply, group.reply());
-        }
-        if (authType.equalsIgnoreCase("Reject")) {
-            because(context, "Auth-Type := Reject", "");
-            return Authorization.of(REJECT);
-        }
-        if (!authType.isEmpty()) {
-            note(context, "Auth-Type: ", authType);
-        }
-        List<AttributeItem> restrictions = new ArrayList<>();
-        this.restrictions.collect(found.user().check(), restrictions);
-        for (UserRecord.Group group : found.user().groups()) {
-            if (checkItems.checks(group.check(), request, new ArrayList<>()) != null) {
-                this.restrictions.collect(group.check(), restrictions);
-            }
-        }
-        return new Authorization(ACCEPT, found, authType, passwords, reply, limit, restrictions);
-    }
-
-    // ---- look-up -------------------------------------------------------------------------------
-
-    private Found find(WorkerCache cache, String nas, String userName) throws StoreUnavailableException {
-        Object2ObjectHashMap<String, Cached> users = cache.users;
-        StoreUnavailableException unavailable = null;
-        long now = clockMillis.getAsLong();
-        for (String name : stores.storesFor(nas)) {
-            String key = name + '\0' + userName;
-            Cached cached = users.get(key);
-            Optional<UserRecord> user;
-            if (cached != null && cached.expires() - now > 0) {
-                user = cached.user();
-            } else {
-                IdentityStore store = stores.stores().get(name);
-                StoreLookups measured = metrics.lookups(name);
-                long started = System.nanoTime();
-                try {
-                    user = store.lookup(userName);
-                } catch (StoreUnavailableException e) {
-                    measured.record(System.nanoTime() - started, StoreLookups.UNAVAILABLE);
-                    unavailable = e;
-                    continue;
-                }
-                measured.record(
-                        System.nanoTime() - started, user.isPresent() ? StoreLookups.FOUND : StoreLookups.NOT_FOUND);
-                if (ttlMillis > 0) {
-                    if (users.size() >= stores.cacheMax()) {
-                        users.clear(); // simple bound; a reconnect storm refills it within one TTL
-                    }
-                    users.put(key, new Cached(user, now + ttlMillis));
-                }
-            }
-            if (user.isPresent()) {
-                return new Found(name, user.get());
-            }
-        }
-        if (unavailable != null) {
-            throw unavailable; // a store that is down might know the user: do not reject on its behalf
-        }
-        return null;
-    }
-
-    // ---- check items -------------------------------------------------------------------------
 
     // ---- EAP (RFC 3748, RFC 3579; ADR 0026) -----------------------------------------------------
 
@@ -473,7 +291,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * when the method succeeded, {@link #REJECT} when it failed, {@link #DROP} when the table is full or the response
      * answers another request.
      */
-    private int eapRound(AuthRequest auth, Found found, String authType, List<AttributeItem> passwords) {
+    private int eapRound(AuthRequest auth, UserDirectory.Found found, String authType, List<AttributeItem> passwords) {
         AccessContext context = auth.context();
         AuthRequest.EapRound round = auth.eap;
         EapPacket eap = round.packet;
@@ -644,7 +462,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
      * Verifies MS-CHAPv1 or v2 from the user's NT hash: {@code NT-Password}, or the cleartext password where the
      * store allows it ({@code auth.store.<name>.mschap}). The first usable credential decides.
      */
-    boolean msChap(AuthRequest auth, int method, Found found, List<AttributeItem> passwords) {
+    boolean msChap(AuthRequest auth, int method, UserDirectory.Found found, List<AttributeItem> passwords) {
         AccessContext context = auth.context();
         byte[] ntHash = localNtHash(found, passwords);
         if (ntHash == null) {
@@ -661,7 +479,7 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     }
 
     /** The user's NT hash from its store: NT-Password, or the cleartext where the store allows it; {@code null}. */
-    byte[] localNtHash(Found found, List<AttributeItem> passwords) {
+    byte[] localNtHash(UserDirectory.Found found, List<AttributeItem> passwords) {
         for (AttributeItem p : passwords) {
             if (p.attribute().equalsIgnoreCase("NT-Password")) {
                 byte[] ntHash = MsChap.parseNtPassword(p.value());
@@ -738,9 +556,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     /** A SIM subscriber's check items by IMSI, from the stores of this NAS entry; keys are checked here once. */
     private EapMethod.Subscriber simSubscriber(AuthRequest auth, String imsi) {
         AccessContext context = auth.context();
-        Found found;
+        UserDirectory.Found found;
         try {
-            found = find(auth.caches(), context.nas().name(), imsi);
+            found = directory.find(auth.caches(), context.nas().name(), imsi);
         } catch (StoreUnavailableException e) {
             warnOnce("unavailable:" + e.getMessage(), "identity store unavailable, requests are not answered: {}", e);
             because(context, "identity store unavailable: ", e.getMessage());
@@ -1016,9 +834,9 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
     void reload(AuthStores next, java.time.Duration grace) {
         AuthStores previous = stores;
         replies.reload(next.replyVendors().keySet());
-        ttlMillis = next.cacheTtl().toMillis();
         stores = next;
         generation++;
+        directory.reload();
         Thread closer = new Thread(
                 () -> {
                     try {
@@ -1031,11 +849,6 @@ final class StoreAccessHandler implements AccessHandler, AutoCloseable {
                 "auth-stores-close");
         closer.setDaemon(true);
         closer.start();
-    }
-
-    /** How long looked-up users and verified passwords are remembered, in milliseconds. */
-    long ttlMillis() {
-        return ttlMillis;
     }
 
     AuthStores stores() {
