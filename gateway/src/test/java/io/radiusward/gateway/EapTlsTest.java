@@ -982,6 +982,42 @@ class EapTlsTest {
     }
 
     @Test
+    void ttlsMsChapV1WithTheImplicitChallengeAndAStoreOutage() throws Exception {
+        store.user(
+                "ivan",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Ivan-Pw")))),
+                List.of());
+        StoreAccessHandler h = ttls(Map.of(), Map.of(), Map.of());
+        TtlsPeer peer = new TtlsPeer("ivan", "Ivan-Pw", false, false);
+        peer.msChapV1 = true;
+        EapTlsClient client = ttlsClient("TLSv1.3", peer);
+        assertThat(converse(h, "anonymous", client, Ttls.TYPE))
+                .as("MS-CHAPv1 succeeds at once")
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertKeys(client, Ttls.TYPE);
+        TtlsPeer wrong = new TtlsPeer("ivan", "nope", false, false);
+        wrong.msChapV1 = true;
+        assertThat(converse(h, "anonymous", ttlsClient("TLSv1.2", wrong), Ttls.TYPE))
+                .isEqualTo(AccessHandler.REJECT);
+
+        // the outer identity is cached by now; the inner user is not
+        store.user(
+                "jade",
+                List.of(new AttributeItem("NT-Password", ":=", HexFormatHolder.hex(MsChap.ntHash("Jade-Pw")))),
+                List.of());
+        store.down = true;
+        TtlsPeer during = new TtlsPeer("jade", "Jade-Pw", false, false);
+        during.msChapV1 = true;
+        assertThat(converse(h, "anonymous", ttlsClient("TLSv1.2", during), Ttls.TYPE))
+                .as("the store cannot answer: no answer")
+                .isEqualTo(AccessHandler.DROP);
+        store.down = false;
+        assertThat(handle(h, lastResponse, lastState))
+                .as("the retransmission repeats the MS-CHAPv1 check")
+                .isEqualTo(AccessHandler.ACCEPT);
+    }
+
+    @Test
     void ttlsFailsOnAMandatoryAvpItDoesNotKnow() throws Exception {
         store.user("carol", List.of(new AttributeItem("Cleartext-Password", ":=", "Carol-Pw")), List.of());
         TtlsPeer peer = new TtlsPeer("carol", "Carol-Pw", false, false);

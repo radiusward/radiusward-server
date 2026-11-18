@@ -13,7 +13,7 @@ import java.util.Arrays;
 import java.util.function.UnaryOperator;
 
 /**
- * The inner side of an EAP-TTLS peer for tests: PAP, CHAP or MS-CHAPv2 AVPs, the server's MS-CHAP2-Success checked;
+ * The inner side of an EAP-TTLS peer for tests: PAP, CHAP, MS-CHAPv1 or MS-CHAPv2 AVPs, the server's MS-CHAP2-Success checked;
  * optionally one more AVP after the credentials.
  */
 final class TtlsPeer implements UnaryOperator<byte[]> {
@@ -28,6 +28,8 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
     boolean serverProved;
     /** CHAP with the tunnel's implicit challenge (RFC 5281 §11.2.2) instead of PAP. */
     boolean chap;
+    /** MS-CHAPv1 with the tunnel's implicit challenge (RFC 5281 §11.2.3) instead of PAP. */
+    boolean msChapV1;
     /** An AVP sent after the credentials, {@code null} for none. */
     byte[] extraAvp;
 
@@ -66,6 +68,19 @@ final class TtlsPeer implements UnaryOperator<byte[]> {
                     Ttls.avp(Ietf.USER_NAME, 0, name),
                     Ttls.avp(Ietf.CHAP_CHALLENGE, 0, challenge),
                     Ttls.avp(Ietf.CHAP_PASSWORD, 0, chapPassword));
+        }
+        if (msChapV1) {
+            // 9 bytes of its own (TLS 1.3 exports differ by length): the challenge, then the ident
+            byte[] implicit = client.export("ttls challenge", 9);
+            byte[] challenge = Arrays.copyOf(implicit, 8);
+            byte[] response = new byte[50]; // ident, flags (1: the NT response counts), LM response, NT response
+            response[0] = implicit[8];
+            response[1] = 1;
+            System.arraycopy(MsChap.challengeResponse(challenge, MsChap.ntHash(password)), 0, response, 26, 24);
+            return concat(
+                    Ttls.avp(Ietf.USER_NAME, 0, name),
+                    Ttls.avp(Microsoft.CHAP_CHALLENGE, Microsoft.VENDOR_ID, challenge),
+                    Ttls.avp(Microsoft.CHAP_RESPONSE, Microsoft.VENDOR_ID, response));
         }
         if (!msChapV2) {
             byte[] padded = Arrays.copyOf(
