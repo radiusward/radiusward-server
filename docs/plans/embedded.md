@@ -37,7 +37,7 @@ try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
 |---|---|
 | `radiusward-embedded` | `EmbeddedRadiusward` and its builder; depends on the server, a member and the users-file store |
 | `radiusward-junit` | `RadiuswardExtension` for JUnit 5: started per class or per test, ports and the client injected |
-| `radiusward-client` | a RADIUS client for tests: Access-Request with PAP, CHAP, MS-CHAPv2, Accounting-Request, Status-Server, CoA answers; retransmission and response verification; the packet builder that `TestPacket` is today |
+| `radiusward-client` | a RADIUS client for tests: Access-Request with PAP, CHAP, MS-CHAPv2, Accounting-Request, Status-Server, CoA answers; retransmission and response verification; the packet builder that `TestPacket` is today; an **EAP supplicant** that runs whole conversations (below) |
 | `radiusward-bom` | the versions of every published artifact, imported once |
 
 Every module these depend on is published too, so all production modules go to Maven Central under
@@ -75,6 +75,12 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
 - **Accounting callback.** An in-process sink of the exporter (export-api) given as an object, so the callback
   sees exactly what a sink sees after the commit: events and session snapshots. The exporter gets a way to take a
   sink instance besides the plug-ins it loads.
+- **EAP.** `eap("peap", "ttls", "tls", ...)` turns methods on (`auth.eap.methods`). The TLS-based methods need a
+  server certificate: unless the developer gives one, the embedded server creates a throwaway CA, a server
+  certificate and, on request, client certificates in its temporary directory, and exposes the CA
+  (`radius.ca()`, `radius.clientCertificate("alice")`) so the supplicant can trust the server and EAP-TLS can log in.
+  EAP-SIM/AKA subscribers are users with their SIM keys (`simUser(imsi, ki, opc)`); sequence numbers come from the
+  embedded member as in production.
 - **Settings.** `setting(key, value)` takes any key of [configuration.md](../configuration.md); the builder's own
   methods are shortcuts. Unknown keys fail as in a configuration file.
 - **Lifecycle.** `start()` returns once the member is leader and the RADIUS server connected; `close()` stops both
@@ -85,6 +91,37 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
 - **Requirements for the developer.** Java 25, and the JVM option `--add-exports
   java.base/jdk.internal.misc=ALL-UNNAMED` that Agrona and Aeron need: the page shows it for Surefire, Failsafe,
   Gradle and IDEs; the embedded server checks it at start and fails with a message naming the option.
+
+## Testing EAP
+
+A NAS only relays EAP; what a test needs is the device's side. `radiusward-client` carries an EAP supplicant grown
+from the peers the repository's tests already use (`PeapPeer`, `TtlsPeer`, `TeapPeer`, `EapTlsClient`, the EAP-pwd
+and EAP-SIM/AKA peers): it sends EAP-Message in Access-Requests, follows State and Access-Challenges to the end,
+and returns the outcome with what the test wants to check.
+
+```java
+EapResult result = radius.client().eap(EapLogin.peap("alice", "secret")       // PEAP with inner MS-CHAPv2
+        .trust(radius.ca())
+        .outerIdentity("anonymous@example.org"));
+assertThat(result.accepted()).isTrue();
+assertThat(result.reply().string("Class")).isEqualTo("gold");                 // reply items, VLAN, Session-Timeout
+assertThat(result.msk()).isEqualTo(result.serverMppeKeys());                  // the keys a Wi-Fi AP would get
+```
+
+| Method | Supplicant | What a test can check |
+|---|---|---|
+| EAP-MD5, EAP-GTC | yes | accept, reject, reply items |
+| PEAP (MS-CHAPv2, GTC, TLS inside), crypto-binding | yes | outer and inner identity, reply items, MPPE keys equal to the client's MSK, session resumption |
+| EAP-TTLS (PAP, CHAP, MS-CHAP, MS-CHAPv2, EAP inside) | yes | as PEAP |
+| EAP-TLS | yes, with a certificate from the embedded CA or the developer's | identity against the certificate, revocation (CRL), resumption |
+| TEAP (Basic-Password-Auth, inner EAP), EAP-pwd | yes | as above |
+| EAP-SIM, EAP-AKA, EAP-AKA′ | yes, a simulated SIM from Ki and OPc | pseudonyms, fast re-authentication, sequence numbers through the member |
+
+Authorization is tested the same way for every method: the users, groups, check and reply items, rules,
+Simultaneous-Use and IP pools of the embedded server decide, and the result carries the Access-Accept's attributes
+or the reject. A test can also drive single rounds (`EapConversation.next(...)`) to check malformed or unexpected
+answers, and the page shows how to run a real supplicant (`eapol_test` in its container image) against the
+embedded server for interoperability.
 
 ## Publishing on Maven Central
 
@@ -99,7 +136,9 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
 ## Documentation
 
 - README: a section "Use it as a library (development and tests)" with the dependency, the server example, the JUnit
-  example, the client example and the JVM option.
+  example, the client example, an EAP example and the JVM option.
+- The page has a section "Testing EAP": methods, the throwaway CA and client certificates, checking reply items and
+  keys, SIM subscribers, single rounds, and a real supplicant.
 - Website: a page `/docs/develop/embedded/` in the same shape as above, linked from the start pages.
 - `docs/operations/release.md`: how a release reaches Central.
 
@@ -109,8 +148,9 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
 |---|---|---|
 | E1 | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc, signing); javadoc builds for every published module | `./mvnw -Prelease verify` passes locally with a test key |
 | E2 | `radiusward-client` from `TestPacket` and `FakeNas`: client, packet builder, auth helpers | its tests; the repository's tests use it |
+| E2b | The EAP supplicant in `radiusward-client` from the test peers: every method above, results with reply items and keys, single rounds | each method against the embedded server; the repository's EAP tests use it |
 | E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |
-| E4 | `radiusward-embedded`: builder, single member, users, callback, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
+| E4 | `radiusward-embedded`: builder, single member, users, EAP with the throwaway CA, SIM users, callback, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
 | E6 | `radiusward-bom`; release workflow to Central; README, website page, release doc | `0.1.0` resolvable from Central in an empty project |
 
