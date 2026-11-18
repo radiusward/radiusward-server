@@ -39,6 +39,7 @@ Status: ✅ covered · 🔜 planned (phase).
 | Case | Expected behaviour | Test | Status |
 |---|---|---|---|
 | no majority (2 of 3 members down) | no ACK; after recovery the retransmit is acknowledged, applied once | e2e `AckAfterCommitIT` | ✅ |
+| no majority, authentication | logins decided on the RADIUS server as before (accept, reject); a user with Simultaneous-Use gets no answer until a majority is back, then the NAS's retry is accepted | e2e `AuthWithoutMajorityIT` | ✅ |
 | leader killed (-9) under load | every acknowledged event in the state; per-session state = last acked event; replicas equal | e2e `LeaderFailoverIT`, `LocalClusterIT.leaderLossDoesNotLoseAcknowledgedEvents` | ✅ |
 | commands lost with the failed leader | retransmit after > 1 s is resubmitted by the RADIUS server; late commits ignored | `UdpAgentTest.retransmitOfALongPendingRequestIsResubmitted`, e2e `LeaderFailoverIT` | ✅ |
 | RADIUS server killed after commit, before response | retry via other RADIUS server answered as duplicate, applied once | e2e `ServerFailoverIT` | ✅ |

@@ -23,6 +23,11 @@ final class Nas implements AutoCloseable {
         return nas.exchange(port, request, attempts, timeout);
     }
 
+    /** Sends any request and waits for its verified answer, whatever its code; {@code null} if none arrives. */
+    byte[] answer(int port, byte[] request, int attempts, Duration timeout) {
+        return nas.answer(port, request, attempts, timeout);
+    }
+
     /** Like {@link #exchange} with NAS-like defaults (3 s, 10 attempts), failing if there is no answer. */
     byte[] ack(int port, byte[] request) {
         byte[] response = exchange(port, request, 10, Duration.ofSeconds(3));

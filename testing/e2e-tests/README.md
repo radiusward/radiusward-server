@@ -15,6 +15,7 @@ logs in the message, since the temp directory is not kept in CI.
 | Test | Scenario |
 |---|---|
 | `AckAfterCommitIT` | no ACK without a majority; after recovery the retransmit is acknowledged and applied once |
+| `AuthWithoutMajorityIT` | without a majority logins go on (accept, reject) while accounting waits; a user with Simultaneous-Use is answered once a majority is back |
 | `LeaderFailoverIT` | `kill -9` of the leader under 2 RADIUS servers' load: every acked event is in the replicated state |
 | `RetransmitIT` | RADIUS server cache hit; new Identifier + Acct-Delay-Time via the other RADIUS server is a cluster duplicate |
 | `ServerFailoverIT` | RADIUS server dies after commit (debug response delay); retry via the other RADIUS server is a duplicate |

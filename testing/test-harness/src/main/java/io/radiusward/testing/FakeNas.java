@@ -56,6 +56,18 @@ public final class FakeNas implements AutoCloseable {
      * authenticator or another code fails at once.
      */
     public byte[] exchange(int port, byte[] request, int attempts, Duration timeout) {
+        byte[] response = answer(port, request, attempts, timeout);
+        if (response != null && (response[0] & 0xFF) != RadiusCode.ACCOUNTING_RESPONSE) {
+            throw new AssertionError("expected an Accounting-Response, got code " + (response[0] & 0xFF));
+        }
+        return response;
+    }
+
+    /**
+     * Sends a request of any kind (retransmitting it up to {@code attempts} times) and waits for its answer, whatever its
+     * code; {@code null} if none arrives within the attempts. An answer with a wrong authenticator fails at once.
+     */
+    public byte[] answer(int port, byte[] request, int attempts, Duration timeout) {
         byte[] response = reply(port, request, attempts, timeout);
         if (response == null) {
             return null;
@@ -64,9 +76,6 @@ public final class FakeNas implements AutoCloseable {
         view.wrap(new UnsafeBuffer(response), 0, response.length);
         if (!new RadiusAuthenticator().verifyResponse(view, new UnsafeBuffer(request), 4, sharedSecret)) {
             throw new AssertionError("Response Authenticator of the answer to request " + (request[1] & 0xFF));
-        }
-        if (view.code() != RadiusCode.ACCOUNTING_RESPONSE) {
-            throw new AssertionError("expected an Accounting-Response, got code " + view.code());
         }
         return response;
     }
