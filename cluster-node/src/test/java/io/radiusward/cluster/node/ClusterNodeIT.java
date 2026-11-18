@@ -92,7 +92,11 @@ class ClusterNodeIT {
         awaitLeader(first);
         assertThat(first.health().up()).isTrue();
         assertThat(first.health().detail()).isEqualTo("cluster node 0 running");
-        assertThat(first.electionState()).isEqualTo(io.aeron.cluster.ElectionState.CLOSED);
+        // the role turns LEADER before the election closes (LEADER_READY in between): wait for the end
+        Await.until(
+                Duration.ofSeconds(30),
+                "election closed",
+                () -> first.electionState() == io.aeron.cluster.ElectionState.CLOSED);
         Await.until(
                 Duration.ofSeconds(30),
                 "scheduled snapshots",
