@@ -23,6 +23,11 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
+            <artifactId>test-packets</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
             <artifactId>test-support</artifactId>
             <scope>test</scope>
         </dependency>

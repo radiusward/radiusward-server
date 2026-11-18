@@ -9,13 +9,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.export.SinkContext;
 import io.radiusward.radius.codec.RadiusAuthenticator;
+import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.DataInputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
 import java.net.InetAddress;
 import java.net.ServerSocket;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -177,12 +178,9 @@ class RadiusSinkTlsTest {
                             continue;
                         }
                         received.add(request);
-                        UnsafeBuffer reply = new UnsafeBuffer(new byte[20]);
-                        reply.putByte(0, (byte) 5);
-                        reply.putByte(1, request[1]);
-                        reply.putShort(2, (short) 20, ByteOrder.BIG_ENDIAN);
-                        a.signResponse(reply, 0, 20, -1, new UnsafeBuffer(request), 4, RADSEC);
-                        out.write(reply.byteArray(), 0, 20);
+                        out.write(TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
+                                .secret(RADSEC)
+                                .build());
                         out.flush();
                     }
                 } catch (Exception e) {

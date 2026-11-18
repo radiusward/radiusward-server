@@ -16,6 +16,7 @@ import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.radius.dictionary.Dictionary;
 import io.radiusward.radius.dictionary.DictionaryLoader;
+import io.radiusward.testing.packets.TestPacket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -229,18 +230,11 @@ abstract class HandlerFixture {
     }
 
     static byte[] msChapRequest(String user, byte[] challenge, int responseType, byte[] response) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        byte[] auth = new byte[16];
-        ThreadLocalRandom.current().nextBytes(auth);
-        int length = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.ACCESS_REQUEST, 1)
-                .authenticator(auth)
+        return TestPacket.accessRequest(1)
                 .attribute(1, user)
-                .vendorAttribute(311, 11, challenge)
-                .vendorAttribute(311, responseType, response)
-                .finish();
-        return Arrays.copyOf(buffer.byteArray(), length);
+                .vendor(311, 11, challenge)
+                .vendor(311, responseType, response)
+                .build();
     }
 
     /** The values of Microsoft attribute {@code type} in the reply. */
@@ -376,21 +370,18 @@ abstract class HandlerFixture {
         }
 
         static byte[] pap(String user, String password, byte[]... extra) {
-            byte[] request = AuthAgentTest.accessRequest(1, password, false, false);
-            return withUser(request, user, extra);
+            TestPacket request = TestPacket.accessRequest(1)
+                    .attribute(1, user)
+                    .password(password)
+                    .attribute(33, "proxy-1");
+            for (byte[] attribute : extra) {
+                request.raw(attribute);
+            }
+            return request.secret(SECRET).build();
         }
 
         static byte[] userOnly(String user) {
-            UnsafeBuffer buffer = new UnsafeBuffer(new byte[256]);
-            byte[] auth = new byte[16];
-            ThreadLocalRandom.current().nextBytes(auth);
-            int length = new RadiusPacketEncoder()
-                    .wrap(buffer, 0)
-                    .header(RadiusCode.ACCESS_REQUEST, 1)
-                    .authenticator(auth)
-                    .attribute(1, user)
-                    .finish();
-            return Arrays.copyOf(buffer.byteArray(), length);
+            return TestPacket.accessRequest(1).attribute(1, user).build();
         }
 
         static byte[] chapSafe(String user, String password) {
@@ -411,40 +402,12 @@ abstract class HandlerFixture {
             byte[] response = new byte[17];
             response[0] = 7;
             System.arraycopy(md5.digest(), 0, response, 1, 16);
-            UnsafeBuffer buffer = new UnsafeBuffer(new byte[256]);
-            int length = new RadiusPacketEncoder()
-                    .wrap(buffer, 0)
-                    .header(RadiusCode.ACCESS_REQUEST, 1)
+            return TestPacket.accessRequest(1)
                     .authenticator(new byte[16])
                     .attribute(1, user)
                     .attribute(3, response)
                     .attribute(60, challenge)
-                    .finish();
-            return Arrays.copyOf(buffer.byteArray(), length);
-        }
-
-        /** Replaces the User-Name ("nemo") of a request built by the agent test and appends attributes. */
-        private static byte[] withUser(byte[] request, String user, byte[]... extra) {
-            UnsafeBuffer in = new UnsafeBuffer(request);
-            RadiusPacket p = new RadiusPacket();
-            p.wrap(in, 0, request.length);
-            UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-            RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                    .wrap(buffer, 0)
-                    .header(RadiusCode.ACCESS_REQUEST, 1)
-                    .authenticator(in, 4);
-            enc.attribute(1, user);
-            for (int pos = p.attributesOffset(); pos < p.attributesEnd(); ) {
-                int len = in.getByte(pos + 1) & 0xFF;
-                if ((in.getByte(pos) & 0xFF) != 1) {
-                    enc.rawAttribute(in, pos);
-                }
-                pos += len;
-            }
-            for (byte[] attribute : extra) {
-                enc.rawAttribute(new UnsafeBuffer(attribute), 0);
-            }
-            return Arrays.copyOf(buffer.byteArray(), enc.finish());
+                    .build();
         }
     }
 }

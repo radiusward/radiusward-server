@@ -13,12 +13,12 @@ import io.radiusward.auth.Md4;
 import io.radiusward.common.Profile;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.NasClient;
 import io.radiusward.server.NasRegistry;
 import io.radiusward.server.RadiusServer;
 import io.radiusward.server.ServerConfig;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -35,7 +35,6 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -168,16 +167,11 @@ class ServerNetlogonIT {
         System.arraycopy(peerChallenge, 0, response, 2, 16);
         byte[] nt = NtResponse.of(challengeHash(user, authChallenge, peerChallenge), NetlogonCrypto.ntHash(password));
         System.arraycopy(nt, 0, response, 26, 24);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        int length = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.ACCESS_REQUEST, (int) (System.nanoTime() & 0xFF))
-                .authenticator(random(16))
+        return TestPacket.accessRequest((int) System.nanoTime())
                 .attribute(1, user)
-                .vendorAttribute(311, 11, authChallenge)
-                .vendorAttribute(311, 25, response)
-                .finish();
-        return Arrays.copyOf(buffer.byteArray(), length);
+                .vendor(311, 11, authChallenge)
+                .vendor(311, 25, response)
+                .build();
     }
 
     /** What a client expects in MS-CHAP2-Success (RFC 2759 GenerateAuthenticatorResponse). */

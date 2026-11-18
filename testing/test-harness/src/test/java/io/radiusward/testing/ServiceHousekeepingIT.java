@@ -11,15 +11,11 @@ import io.qameta.allure.Feature;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
-import io.radiusward.radius.codec.RadiusAuthenticator;
-import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.NasClient;
+import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -117,16 +113,13 @@ class ServiceHousekeepingIT {
 
     /** An Accounting-Request Start from an access point that names itself both ways. */
     private static byte[] start(int id, String sessionId) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id)
+        return TestPacket.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, sessionId)
                 .attribute(32, "ap-1")
-                .uint32(4, 0x7F000001)
-                .uint32(55, System.currentTimeMillis() / 1000);
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, FakeNas.SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+                .ipv4(4, "127.0.0.1")
+                .uint32(55, System.currentTimeMillis() / 1000)
+                .secret(FakeNas.SECRET)
+                .build();
     }
 }

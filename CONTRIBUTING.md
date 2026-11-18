@@ -91,6 +91,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `distribution` | `radiusward.jar`: `cluster-node`, `server`, `cluster-backup`, `cluster-restore`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster` (and its builder), `DevCluster`; `FakeNas` and `AccountingRequest` for tests that send accounting |
 | `testing/test-support` | `Reports` (steps for the published reports), `Await`, `Ports`: for every module's integration tests, without dependencies on radiusward |
+| `testing/test-packets` | `TestPacket`: signed RADIUS requests and replies for every module's tests ([strategy](docs/testing/strategy.md#packets-in-tests)) |
 | `testing/test-images` | `TestImages`: the prebuilt test images from GHCR, built locally when not published |
 | `testing/interop-debs` | the interop tests' server packages as `.deb` files for CI, installed without a package mirror |
 | `testing/e2e-tests` | Process-based end-to-end tests (`-Pe2e`) |

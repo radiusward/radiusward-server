@@ -13,19 +13,17 @@ import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.DtlsClient;
 import io.radiusward.server.RadiusServer;
 import io.radiusward.server.RadsecClient;
 import io.radiusward.server.RadsecConfig;
 import io.radiusward.server.TestPki;
+import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -195,16 +193,6 @@ class RadsecAccountingIT {
     }
 
     static byte[] statusServer(int id, byte[] secret) {
-        byte[] authenticator = new byte[16];
-        ThreadLocalRandom.current().nextBytes(authenticator);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[64]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.STATUS_SERVER, id)
-                .authenticator(authenticator);
-        int ma = enc.messageAuthenticator();
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, secret);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return TestPacket.statusServer(id).messageAuthenticator().secret(secret).build();
     }
 }

@@ -4,13 +4,10 @@
  */
 package io.radiusward.testing;
 
-import io.radiusward.radius.codec.RadiusAuthenticator;
-import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.EventKeys;
+import io.radiusward.testing.packets.TestPacket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import org.agrona.concurrent.UnsafeBuffer;
 
@@ -113,28 +110,24 @@ public final class AccountingRequest {
     }
 
     public byte[] build() {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[4096]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id).uint32(40, status);
+        TestPacket request = TestPacket.accountingRequest(id).uint32(40, status);
         if (nasIdentifier != null) {
-            enc.attribute(32, nasIdentifier);
+            request.attribute(32, nasIdentifier);
         }
         if (sessionId != null) {
-            enc.attribute(44, sessionId);
+            request.attribute(44, sessionId);
         }
-        enc.uint32(55, eventTimestamp);
+        request.uint32(55, eventTimestamp);
         if (status == STOP || status == INTERIM) {
-            enc.uint32(46, sessionTime).uint32(42, sessionTime * 1000);
+            request.uint32(46, sessionTime).uint32(42, sessionTime * 1000);
         }
         if (delay > 0) {
-            enc.uint32(41, delay);
+            request.uint32(41, delay);
         }
-        for (byte[] a : extra) {
-            enc.attribute(a[0] & 0xFF, new UnsafeBuffer(a), 2, a.length - 2);
+        for (byte[] attribute : extra) {
+            request.raw(attribute);
         }
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, secret);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return request.secret(secret).build();
     }
 
     /** The cluster's key of a session of {@link LocalCluster}'s NAS entry. */

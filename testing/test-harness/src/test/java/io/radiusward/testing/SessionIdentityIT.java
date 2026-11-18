@@ -9,15 +9,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
-import io.radiusward.radius.codec.RadiusAuthenticator;
-import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.UserKeys;
+import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
@@ -117,17 +114,14 @@ class SessionIdentityIT {
     }
 
     static byte[] start(int id, String sessionId, String user, String mac) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id)
+        return TestPacket.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, sessionId)
                 .attribute(1, user)
                 .attribute(31, mac)
-                .attribute(8, new byte[] {10, 9, 0, (byte) id})
-                .uint32(55, 1_780_000_000L);
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+                .ipv4(8, "10.9.0." + (id & 0xFF))
+                .uint32(55, AccountingRequest.EVENT_TIMESTAMP)
+                .secret(SECRET)
+                .build();
     }
 }

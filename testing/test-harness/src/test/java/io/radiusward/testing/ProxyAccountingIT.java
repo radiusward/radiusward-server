@@ -12,11 +12,12 @@ import io.qameta.allure.Link;
 import io.radiusward.exporter.ExportConfig;
 import io.radiusward.exporter.SinkConfig;
 import io.radiusward.radius.codec.RadiusAuthenticator;
+import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.testing.packets.TestPacket;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -117,12 +118,10 @@ class ProxyAccountingIT {
                 if (forwarded.stream().noneMatch(r -> Arrays.equals(r, request))) {
                     forwarded.add(request);
                 }
-                UnsafeBuffer out = new UnsafeBuffer(new byte[20]);
-                out.putByte(0, (byte) 5);
-                out.putByte(1, request[1]);
-                out.putShort(2, (short) 20, ByteOrder.BIG_ENDIAN);
-                a.signResponse(out, 0, 20, -1, new UnsafeBuffer(request), 4, HOME_SECRET);
-                home.send(new DatagramPacket(out.byteArray(), 20, in.getSocketAddress()));
+                byte[] out = TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
+                        .secret(HOME_SECRET)
+                        .build();
+                home.send(new DatagramPacket(out, out.length, in.getSocketAddress()));
             } catch (Exception e) {
                 return;
             }

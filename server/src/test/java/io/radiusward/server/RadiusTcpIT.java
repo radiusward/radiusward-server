@@ -10,9 +10,8 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -26,7 +25,6 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -199,11 +197,10 @@ class RadiusTcpIT {
     }
 
     static byte[] accounting(int id) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[256]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id).uint32(40, 1).attribute(44, "tcp-1");
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, AuthAgentTest.SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return TestPacket.accountingRequest(id)
+                .uint32(40, 1)
+                .attribute(44, "tcp-1")
+                .secret(AuthAgentTest.SECRET)
+                .build();
     }
 }

@@ -10,11 +10,10 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -102,26 +101,16 @@ class ProxyIT {
 
     /** A PAP Access-Request as a NAS sends it: Message-Authenticator, a Proxy-State of its own, a device. */
     byte[] pap(String user, String password, String device, byte[]... extra) {
-        byte[] auth = new byte[16];
-        ThreadLocalRandom.current().nextBytes(auth);
-        byte[] plain = password.getBytes(StandardCharsets.US_ASCII);
-        UnsafeBuffer cipher = new UnsafeBuffer(new byte[128]);
-        int n = new AccessRequests()
-                .encryptUserPassword(
-                        new UnsafeBuffer(plain), 0, plain.length, new UnsafeBuffer(auth), 0, NAS_SECRET, cipher, 0);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[1024]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.ACCESS_REQUEST, ++identifier & 0xFF)
-                .authenticator(auth);
-        int ma = enc.messageAuthenticator();
-        enc.attribute(1, user).attribute(2, cipher, 0, n).attribute(31, device).attribute(33, "nas-state");
+        TestPacket request = TestPacket.accessRequest(++identifier)
+                .messageAuthenticator()
+                .attribute(1, user)
+                .password(password)
+                .attribute(31, device)
+                .attribute(33, "nas-state");
         for (byte[] e : extra) {
-            enc.rawAttribute(new UnsafeBuffer(e), 0);
+            request.raw(e);
         }
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, NAS_SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return request.secret(NAS_SECRET).build();
     }
 
     /** CHAP with the Request Authenticator as the challenge (no CHAP-Challenge). */
@@ -135,16 +124,13 @@ class ProxyIT {
         byte[] response = new byte[17];
         response[0] = 7;
         System.arraycopy(md5.digest(), 0, response, 1, 16);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.ACCESS_REQUEST, ++identifier & 0xFF)
-                .authenticator(auth);
-        int ma = enc.messageAuthenticator();
-        enc.attribute(1, user).attribute(3, response);
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, NAS_SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return TestPacket.accessRequest(++identifier)
+                .authenticator(auth)
+                .messageAuthenticator()
+                .attribute(1, user)
+                .attribute(3, response)
+                .secret(NAS_SECRET)
+                .build();
     }
 
     /** Sends once and waits up to {@code wait} for the answer to this identifier; {@code null} if none. */

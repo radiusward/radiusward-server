@@ -10,10 +10,8 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.protocol.SessionStatus;
-import io.radiusward.radius.codec.RadiusAuthenticator;
-import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.NasRegistry;
+import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import io.radiusward.tools.radclient.LoadGenerator;
 import java.io.IOException;
@@ -22,11 +20,9 @@ import java.net.InetSocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.stream.Stream;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -282,15 +278,12 @@ class LocalClusterIT {
     }
 
     static byte[] accountingOn(int id, String nasIdentifier) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id).uint32(40, 7).uint32(55, System.currentTimeMillis() / 1000);
+        TestPacket request =
+                TestPacket.accountingRequest(id).uint32(40, 7).uint32(55, System.currentTimeMillis() / 1000);
         if (nasIdentifier != null) {
-            enc.attribute(32, nasIdentifier);
+            request.attribute(32, nasIdentifier);
         }
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return request.secret(SECRET).build();
     }
 
     @Test

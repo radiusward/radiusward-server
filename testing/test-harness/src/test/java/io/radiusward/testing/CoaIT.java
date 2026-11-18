@@ -15,7 +15,6 @@ import io.radiusward.common.management.ManagementServer;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.CoaConfig;
 import io.radiusward.server.DtlsClient;
@@ -24,6 +23,7 @@ import io.radiusward.server.RadiusServer;
 import io.radiusward.server.RadsecClient;
 import io.radiusward.server.RadsecConfig;
 import io.radiusward.server.TestPki;
+import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminMain;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -179,12 +179,7 @@ class CoaIT {
     }
 
     static byte[] ack(byte[] request, byte[] secret) {
-        UnsafeBuffer out = new UnsafeBuffer(new byte[20]);
-        out.putByte(0, (byte) (request[0] + 1));
-        out.putByte(1, request[1]);
-        out.putShort(2, (short) 20, java.nio.ByteOrder.BIG_ENDIAN);
-        new RadiusAuthenticator().signResponse(out, 0, 20, -1, new UnsafeBuffer(request), 4, secret);
-        return out.byteArray();
+        return TestPacket.reply(request[0] + 1, request).secret(secret).build();
     }
 
     private HttpResponse<String> post(String path, String body, String token) throws Exception {
@@ -441,13 +436,13 @@ class CoaIT {
 
     /** A CoA or Disconnect-Request from a home server: user, session, its Proxy-State, Message-Authenticator. */
     static byte[] homeRequest(int id, int code, String user, String sessionId, byte[] secret) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(code, id).attribute(1, user).attribute(44, sessionId).attribute(33, "home-state");
-        int ma = enc.messageAuthenticator();
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, ma, secret);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return TestPacket.request(code, id)
+                .attribute(1, user)
+                .attribute(44, sessionId)
+                .attribute(33, "home-state")
+                .messageAuthenticator()
+                .secret(secret)
+                .build();
     }
 
     private static byte[] receive(DatagramChannel channel) throws Exception {
@@ -464,15 +459,12 @@ class CoaIT {
     }
 
     static byte[] accounting(int id, String sessionId, String user, byte[] secret) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, id)
+        return TestPacket.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, sessionId)
                 .attribute(1, user)
-                .uint32(55, 1_780_000_000L);
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, secret);
-        return Arrays.copyOf(buffer.byteArray(), length);
+                .uint32(55, AccountingRequest.EVENT_TIMESTAMP)
+                .secret(secret)
+                .build();
     }
 }

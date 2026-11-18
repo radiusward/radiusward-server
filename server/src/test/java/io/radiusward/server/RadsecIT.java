@@ -11,20 +11,16 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.ThreadLocalRandom;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -302,17 +298,10 @@ class RadsecIT {
     }
 
     static byte[] statusServer(int identifier) {
-        byte[] authenticator = new byte[16];
-        ThreadLocalRandom.current().nextBytes(authenticator);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[64]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.STATUS_SERVER, identifier)
-                .authenticator(authenticator);
-        int ma = enc.messageAuthenticator();
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, RADSEC);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return TestPacket.statusServer(identifier)
+                .messageAuthenticator()
+                .secret(RADSEC)
+                .build();
     }
 
     /** Polls a condition for up to five seconds. */

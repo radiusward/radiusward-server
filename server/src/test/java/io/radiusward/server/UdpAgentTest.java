@@ -17,9 +17,9 @@ import io.radiusward.protocol.RejectReason;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.radius.codec.VendorFormats;
 import io.radiusward.radius.dictionary.DictionaryLoader;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -241,17 +241,15 @@ class UdpAgentTest {
     }
 
     static byte[] request(int identifier, boolean withMa, String sessionId, int status) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, identifier)
+        TestPacket request = TestPacket.accountingRequest(identifier)
                 .uint32(40, status)
                 .attribute(44, sessionId)
                 .attribute(33, "proxy-a")
                 .attribute(33, "proxy-b");
-        int ma = withMa ? enc.messageAuthenticator() : -1;
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, ma, SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        if (withMa) {
+            request.messageAuthenticator();
+        }
+        return request.secret(SECRET).build();
     }
 
     // ---- tests -----------------------------------------------------------------------------------
@@ -473,14 +471,7 @@ class UdpAgentTest {
     @Test
     void sessionEventsWithoutSessionIdAreDropped() throws Exception {
         start();
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[64]);
-        int length = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(4, 5)
-                .uint32(40, 3)
-                .finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
-        send(Arrays.copyOf(buffer.byteArray(), length));
+        send(TestPacket.accountingRequest(5).uint32(40, 3).secret(SECRET).build());
         assertThat(stats.get(ServerStats.Counter.MISSING_SESSION_ID)).isEqualTo(1);
     }
 
@@ -506,21 +497,17 @@ class UdpAgentTest {
 
     /** An Accounting-Request from a device: {@code null} leaves an attribute out. */
     static byte[] deviceRequest(int identifier, int status, String sessionId, String nasIdentifier, String called) {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, identifier).uint32(40, status);
+        TestPacket request = TestPacket.accountingRequest(identifier).uint32(40, status);
         if (sessionId != null) {
-            enc.attribute(44, sessionId);
+            request.attribute(44, sessionId);
         }
         if (nasIdentifier != null) {
-            enc.attribute(32, nasIdentifier);
+            request.attribute(32, nasIdentifier);
         }
         if (called != null) {
-            enc.attribute(30, called);
+            request.attribute(30, called);
         }
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return request.secret(SECRET).build();
     }
 
     @Test
@@ -620,13 +607,13 @@ class UdpAgentTest {
     @Test
     void commandsCarryTheUserAndDeviceForSimultaneousUse() throws Exception {
         start();
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, 1).uint32(40, 1).attribute(44, "s-1");
-        enc.attribute(1, "Alice").attribute(31, "aa-bb-cc-dd-ee-ff");
-        int length = enc.finish();
-        new RadiusAuthenticator().signAccountingRequest(buffer, 0, length, -1, SECRET);
-        send(java.util.Arrays.copyOf(buffer.byteArray(), length));
+        send(TestPacket.accountingRequest(1)
+                .uint32(40, 1)
+                .attribute(44, "s-1")
+                .attribute(1, "Alice")
+                .attribute(31, "aa-bb-cc-dd-ee-ff")
+                .secret(SECRET)
+                .build());
         send(deviceRequest(2, 1, "s-2", null, null));
         List<Command> commands = commands();
         assertThat(commands.get(0).userKey()).isEqualTo(UserKeysTest.user("alice"));

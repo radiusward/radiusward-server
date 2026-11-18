@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.attributes.Ietf;
+import io.radiusward.testing.packets.TestPacket;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -77,19 +78,11 @@ class DynamicAuthorizationTest {
 
     /** Answers like a NAS: code, optional Error-Cause, signed with the request's authenticator. */
     private void answer(Received r, int code, int errorCause, byte[] secret) throws Exception {
-        UnsafeBuffer out = new UnsafeBuffer(new byte[64]);
-        out.putByte(0, (byte) code);
-        out.putByte(1, r.bytes()[1]);
-        int length = 20;
+        TestPacket reply = TestPacket.reply(code, r.bytes());
         if (errorCause != 0) {
-            out.putByte(20, (byte) Ietf.ERROR_CAUSE);
-            out.putByte(21, (byte) 6);
-            out.putInt(22, errorCause, java.nio.ByteOrder.BIG_ENDIAN);
-            length = 26;
+            reply.uint32(Ietf.ERROR_CAUSE, errorCause);
         }
-        out.putShort(2, (short) length, java.nio.ByteOrder.BIG_ENDIAN);
-        authenticator.signResponse(out, 0, length, -1, new UnsafeBuffer(r.bytes()), 4, secret);
-        nas.send(ByteBuffer.wrap(out.byteArray(), 0, length), r.from());
+        nas.send(ByteBuffer.wrap(reply.secret(secret).build()), r.from());
     }
 
     private DynamicAuthorization.Result await(CompletableFuture<DynamicAuthorization.Result> f) throws Exception {
@@ -198,15 +191,13 @@ class DynamicAuthorizationTest {
         CompletableFuture<DynamicAuthorization.Result> f =
                 sender.send(DynamicAuthorization.COA_REQUEST, IDENTITY, nasAddress, SECRET);
         Received r = receive();
-        UnsafeBuffer out = new UnsafeBuffer(new byte[64]);
-        out.putByte(0, (byte) DynamicAuthorization.COA_NAK);
-        out.putByte(1, r.bytes()[1]);
-        out.putByte(20, (byte) Ietf.ERROR_CAUSE);
-        out.putByte(21, (byte) 4);
-        out.putShort(22, (short) 503, java.nio.ByteOrder.BIG_ENDIAN);
-        out.putShort(2, (short) 24, java.nio.ByteOrder.BIG_ENDIAN);
-        authenticator.signResponse(out, 0, 24, -1, new UnsafeBuffer(r.bytes()), 4, SECRET);
-        nas.send(ByteBuffer.wrap(out.byteArray(), 0, 24), r.from());
+        byte[] shortErrorCause = {(byte) Ietf.ERROR_CAUSE, 4, 503 >> 8, (byte) 503}; // two octets, not four
+        nas.send(
+                ByteBuffer.wrap(TestPacket.reply(DynamicAuthorization.COA_NAK, r.bytes())
+                        .raw(shortErrorCause)
+                        .secret(SECRET)
+                        .build()),
+                r.from());
         assertThat(await(f)).isEqualTo(new DynamicAuthorization.Result(DynamicAuthorization.Outcome.NAK, 0));
     }
 
@@ -236,14 +227,13 @@ class DynamicAuthorizationTest {
         assertThat(nasIndex[0]).isZero();
         assertThat(request[0][0]).isEqualTo((byte) DynamicAuthorization.DISCONNECT_REQUEST);
 
-        UnsafeBuffer reply = new UnsafeBuffer(new byte[4 + 20]);
-        reply.putInt(0, 0);
-        reply.putByte(4, (byte) DynamicAuthorization.DISCONNECT_ACK);
-        reply.putByte(5, request[0][1]);
-        reply.putShort(6, (short) 20, java.nio.ByteOrder.BIG_ENDIAN);
-        UnsafeBuffer packet = new UnsafeBuffer(reply.byteArray(), 4, 20);
-        authenticator.signResponse(packet, 0, 20, -1, new UnsafeBuffer(request[0]), 4, SECRET);
-        assertThat(link.fromNas.write(RadsecLink.PACKET_MSG, reply, 0, 24)).isTrue();
+        byte[] ack = TestPacket.reply(DynamicAuthorization.DISCONNECT_ACK, request[0])
+                .secret(SECRET)
+                .build();
+        UnsafeBuffer reply = new UnsafeBuffer(new byte[4 + ack.length]); // the link's index, then the packet
+        reply.putBytes(4, ack);
+        assertThat(link.fromNas.write(RadsecLink.PACKET_MSG, reply, 0, reply.capacity()))
+                .isTrue();
         assertThat(await(f).outcome()).isEqualTo(DynamicAuthorization.Outcome.ACK);
     }
 

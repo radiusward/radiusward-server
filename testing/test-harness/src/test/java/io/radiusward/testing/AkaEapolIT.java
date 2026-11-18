@@ -10,9 +10,6 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.radius.codec.RadiusAuthenticator;
-import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.CoaConfig;
 import io.radiusward.server.NasClient;
@@ -21,6 +18,7 @@ import io.radiusward.server.ProxyConfig;
 import io.radiusward.server.RadiusServer;
 import io.radiusward.server.RadsecConfig;
 import io.radiusward.testing.images.TestImages;
+import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -31,7 +29,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.Map;
-import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -298,22 +295,19 @@ class AkaEapolIT {
 
     /** One Accounting-Request, so the log has a recording and members report their state versions. */
     static void warmUp(int port) throws Exception {
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[256]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(buffer, 0);
-        enc.header(RadiusCode.ACCOUNTING_REQUEST, 1)
+        byte[] request = TestPacket.accountingRequest(1)
                 .uint32(40, 1)
                 .attribute(44, "warm-up")
                 .attribute(1, "nobody")
-                .uint32(55, 1_780_000_000L);
-        int length = enc.finish();
-        new RadiusAuthenticator()
-                .signAccountingRequest(buffer, 0, length, -1, SECRET.getBytes(StandardCharsets.US_ASCII));
+                .uint32(55, AccountingRequest.EVENT_TIMESTAMP)
+                .secret(SECRET)
+                .build();
         try (DatagramChannel nas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0))) {
             nas.configureBlocking(false);
             InetSocketAddress target = new InetSocketAddress("127.0.0.1", port);
             ByteBuffer in = ByteBuffer.allocate(4096);
             for (int attempt = 0; attempt < 8; attempt++) {
-                nas.send(ByteBuffer.wrap(Arrays.copyOf(buffer.byteArray(), length)), target);
+                nas.send(ByteBuffer.wrap(request), target);
                 long deadline = System.nanoTime() + Duration.ofSeconds(3).toNanos();
                 while (System.nanoTime() < deadline) {
                     in.clear();

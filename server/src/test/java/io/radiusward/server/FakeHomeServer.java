@@ -8,7 +8,7 @@ import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.testing.packets.TestPacket;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -109,28 +109,27 @@ final class FakeHomeServer implements AutoCloseable {
     }
 
     private byte[] answer(RadiusPacket request, byte[] bytes, int code, boolean withMa) {
-        UnsafeBuffer out = new UnsafeBuffer(new byte[4096]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder().wrap(out, 0).header(code, request.identifier());
-        int ma = withMa ? enc.messageAuthenticator() : -1;
+        TestPacket answer = TestPacket.reply(code, bytes);
+        if (withMa) {
+            answer.messageAuthenticator();
+        }
         if (code == RadiusCode.ACCESS_ACCEPT && request.code() == RadiusCode.ACCESS_REQUEST) {
-            enc.attribute(18, "home says hello");
+            answer.attribute(18, "home says hello");
             byte[] salt = {(byte) 0x80, 0x01};
             byte[] key = MsChap.encryptKey(MPPE_KEY, secret, Arrays.copyOfRange(bytes, 4, 20), salt);
-            enc.vendorAttribute(311, 17, key); // MS-MPPE-Recv-Key
+            answer.vendor(311, 17, key); // MS-MPPE-Recv-Key
         }
         if (code == RadiusCode.ACCESS_CHALLENGE) {
-            enc.attribute(24, "home-state");
+            answer.attribute(24, "home-state");
         }
         for (int at = request.attributesOffset(); at < request.attributesEnd(); ) {
             int l = bytes[at + 1] & 0xFF;
             if ((bytes[at] & 0xFF) == 33) {
-                enc.rawAttribute(new UnsafeBuffer(bytes), at); // every Proxy-State, in order
+                answer.raw(Arrays.copyOfRange(bytes, at, at + l)); // every Proxy-State, in order
             }
             at += l;
         }
-        int length = enc.finish();
-        new RadiusAuthenticator().signResponse(out, 0, length, ma, new UnsafeBuffer(bytes), 4, secret);
-        return Arrays.copyOf(out.byteArray(), length);
+        return answer.secret(secret).build();
     }
 
     @Override

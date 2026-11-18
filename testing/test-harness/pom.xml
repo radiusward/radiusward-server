@@ -22,6 +22,11 @@
 
     <dependencies>
         <dependency>
+            <!-- TestPacket: signed requests under AccountingRequest -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>test-packets</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>test-images</artifactId>
             <scope>test</scope>

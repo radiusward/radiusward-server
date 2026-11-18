@@ -12,11 +12,11 @@ import io.radiusward.auth.AttributeItem;
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.testing.packets.TestPacket;
 import java.io.ByteArrayOutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.channels.DatagramChannel;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -179,12 +179,8 @@ class CoaServiceTest {
     }
 
     private void answer(Received r, int code) throws Exception {
-        UnsafeBuffer out = new UnsafeBuffer(new byte[20]);
-        out.putByte(0, (byte) code);
-        out.putByte(1, r.bytes()[1]);
-        out.putShort(2, (short) 20, ByteOrder.BIG_ENDIAN);
-        authenticator.signResponse(out, 0, 20, -1, new UnsafeBuffer(r.bytes()), 4, SECRET);
-        nas.send(ByteBuffer.wrap(out.byteArray()), r.from());
+        nas.send(
+                ByteBuffer.wrap(TestPacket.reply(code, r.bytes()).secret(SECRET).build()), r.from());
     }
 
     private DynamicAuthorization.Result await(CompletableFuture<DynamicAuthorization.Result> f) throws Exception {

@@ -10,7 +10,7 @@ import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.testing.packets.TestPacket;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -18,7 +18,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
@@ -101,37 +100,17 @@ class AuthAgentTest {
     }
 
     static byte[] accessRequest(int identifier, String password, boolean withMa, boolean withEap, byte[] secret) {
-        byte[] authenticator = new byte[16];
-        ThreadLocalRandom.current().nextBytes(authenticator);
-        UnsafeBuffer cipher = new UnsafeBuffer(new byte[128]);
-        byte[] plain = password.getBytes(StandardCharsets.US_ASCII);
-        int n = new AccessRequests()
-                .encryptUserPassword(
-                        new UnsafeBuffer(plain),
-                        0,
-                        plain.length,
-                        new UnsafeBuffer(authenticator),
-                        0,
-                        secret,
-                        cipher,
-                        0);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[512]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.ACCESS_REQUEST, identifier)
-                .authenticator(authenticator)
+        TestPacket request = TestPacket.accessRequest(identifier)
                 .attribute(1, "nemo")
-                .attribute(2, cipher, 0, n)
+                .password(password)
                 .attribute(33, "proxy-1");
         if (withEap) {
-            enc.attribute(79, new byte[] {2, 1, 0, 5, 1});
+            request.attribute(79, new byte[] {2, 1, 0, 5, 1});
         }
-        int ma = withMa ? enc.messageAuthenticator() : -1;
-        int length = enc.finish();
-        if (ma >= 0) {
-            new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, secret);
+        if (withMa) {
+            request.messageAuthenticator();
         }
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return request.secret(secret).build();
     }
 
     void send(byte[] packet) throws Exception {
@@ -278,20 +257,11 @@ class AuthAgentTest {
 
     /** A Status-Server (RFC 5997): random authenticator, Message-Authenticator computed as for an Access-Request. */
     static byte[] statusServer(int identifier, boolean withMa, byte[] secret) {
-        byte[] authenticator = new byte[16];
-        ThreadLocalRandom.current().nextBytes(authenticator);
-        UnsafeBuffer buffer = new UnsafeBuffer(new byte[128]);
-        RadiusPacketEncoder enc = new RadiusPacketEncoder()
-                .wrap(buffer, 0)
-                .header(RadiusCode.STATUS_SERVER, identifier)
-                .authenticator(authenticator);
-        int ma = withMa ? enc.messageAuthenticator() : -1;
-        enc.attribute(33, "proxy-1");
-        int length = enc.finish();
-        if (ma >= 0) {
-            new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, secret);
+        TestPacket request = TestPacket.statusServer(identifier);
+        if (withMa) {
+            request.messageAuthenticator();
         }
-        return Arrays.copyOf(buffer.byteArray(), length);
+        return request.attribute(33, "proxy-1").secret(secret).build();
     }
 
     @Test
