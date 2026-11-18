@@ -173,11 +173,13 @@ reached by the integration tests, so a second, honest measurement covers both:
   measured value; `check-floors.sh` fails the build below any of them. Raise a floor when a module gains
   tests; never lower one to let a change pass.
 
-Measured 2026-11-14 (lines / branches): total 91.6 / 80.2 %; store-file 98.8 / 96.9, common 97.8 / 91.8,
-radius-codec 96.4 / 92.6, cluster-service 96.0 / 84.2, radius-codegen 95.3 / 82.8, sink-radius 95.0 / 74.5,
-auth-api 94.8 / 83.3, sink-file 94.5 / 76.4, sink-postgres 93.8 / 80.6, exporter 92.8 / 81.3, store-sql 92.5 / 78.3,
-admin-cli 92.2 / 77.8, RADIUS server 91.8 / 80.4, radclient 90.1 / 77.0, export-api 88.9 / 75.2, verifier-netlogon
-87.4 / 70.4, radius-dictionary 87.0 / 75.4, store-ldap 86.9 / 81.2, cluster-node 85.4 / 70.9.
+Measured 2026-11-18 (lines / branches): total 93.6 / 83.8 %; units 100 / 95.5, common 99.0 / 92.1,
+store-file 98.8 / 96.9, admin-cli 98.0 / 88.5, auth-api 97.4 / 87.8, radius-codec 96.6 / 93.3, cluster-service
+96.3 / 84.8, sink-radius 96.2 / 79.4, sink-file 96.2 / 87.5, radius-codegen 95.4 / 82.8, server 94.5 / 84.7,
+radius-dictionary 94.5 / 84.8, exporter 93.9 / 80.9, sink-postgres 93.6 / 79.4, store-sql 92.5 / 78.3, radclient
+92.5 / 79.4, export-api 90.6 / 77.3, cluster-node 89.7 / 78.6, verifier-netlogon 86.5 / 68.4, store-ldap 86.4 / 81.2.
+`ServerMain` is covered in-process by `ServerMainIT` (configuration, management API, SIGHUP reload, drain); what is
+left uncovered needs fault injection (a TLS exporter or a DNS lookup failing, a JDK engine's task timing).
 
 The first measurement (2026-11-08, total 87 %) found untested configuration validation (`ServerConfig`,
 `ClusterNodeConfig`), admin command paths and exporter decisions, now tested (`ServerConfigTest`,

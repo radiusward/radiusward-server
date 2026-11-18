@@ -141,5 +141,29 @@ class ExportVerifierTest {
             AckVerifier.Report withCluster = ExportVerifier.verify(acks, NAS, c, cluster);
             assertThat(withCluster.lost()).hasSize(4).anyMatch(l -> l.startsWith("differs: database"));
         }
+
+        // the same through the command line: what is lost is listed, and the exit code says so
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        assertThat(AdminMain.run(
+                        new String[] {
+                            "verify-export",
+                            "--jdbc-url",
+                            postgres.getJdbcUrl(),
+                            "--jdbc-user",
+                            postgres.getUsername(),
+                            "--jdbc-password",
+                            postgres.getPassword(),
+                            "--ack-log",
+                            acks.toString(),
+                            "--nas-id",
+                            Integer.toString(NAS)
+                        },
+                        new java.io.PrintStream(out, true, StandardCharsets.UTF_8),
+                        System.err))
+                .isEqualTo(AdminMain.EXIT_FAILED);
+        assertThat(out.toString(StandardCharsets.UTF_8))
+                .contains("lost missing: not in accounting_session")
+                .contains("sessions=5")
+                .contains("lost=3");
     }
 }

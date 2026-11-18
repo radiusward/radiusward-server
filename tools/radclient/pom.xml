@@ -35,6 +35,11 @@
             <groupId>io.radiusward</groupId>
             <artifactId>auth-api</artifactId>
         </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>test-packets</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

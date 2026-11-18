@@ -155,5 +155,21 @@ class DynamicClientsIT {
         assertThat(radiusServer.metrics())
                 .contains("radiusward_server_nas_dynamic_total{server=\"1\",result=\"found\"} 1")
                 .contains("radiusward_server_nas_dynamic_entries{server=\"1\"} 1");
+
+        java.util.Properties login = new java.util.Properties();
+        login.setProperty("user", postgres.getUsername());
+        login.setProperty("password", postgres.getPassword());
+        DynamicClients.Source table = DynamicClients.sql(
+                postgres.getJdbcUrl(), login, "SELECT nasname, shortname, secret, type FROM nas WHERE nasname = ?");
+        assertThat(table.lookup(InetAddress.getByName("10.9.9.9"))).as("no row").isNull();
+        DynamicClients.Row row = table.lookup(InetAddress.getLoopbackAddress());
+        assertThat(row.shortname()).isEqualTo("lab-ap");
+        assertThat(row.secret()).isEqualTo(SECRET);
+        DynamicClients.Row noSecret = DynamicClients.sql(
+                        postgres.getJdbcUrl(),
+                        login,
+                        "SELECT nasname, shortname, NULL::text, type FROM nas WHERE nasname = ?")
+                .lookup(InetAddress.getLoopbackAddress());
+        assertThat(noSecret.secret()).as("a query may return no secret").isNull();
     }
 }

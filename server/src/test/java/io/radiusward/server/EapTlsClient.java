@@ -47,6 +47,11 @@ final class EapTlsClient {
         return ((ExtendedSSLSession) engine.getSession()).exportKeyingMaterialData(label, null, length);
     }
 
+    /** The negotiated cipher suite (TEAP's key hierarchy follows its hash). */
+    String cipherSuite() {
+        return engine.getSession().getCipherSuite();
+    }
+
     /** The type data answering the server's EAP-TLS request type data. */
     byte[] answer(byte[] request) throws Exception {
         int flags = request[0] & 0xFF;

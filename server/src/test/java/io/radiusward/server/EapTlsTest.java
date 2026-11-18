@@ -103,7 +103,11 @@ class EapTlsTest {
                         peapInner,
                         binding,
                         peapCertificate,
-                        EapConfig.DEFAULT_TTLS_INNER));
+                        EapConfig.DEFAULT_TTLS_INNER,
+                        teapInner,
+                        EapConfig.DEFAULT_AUTHORITY_ID,
+                        List.of(),
+                        EapConfig.DEFAULT_AUTHORITY_ID));
         return new StoreAccessHandler(auth, HandlerFixture.DICTIONARY, System::currentTimeMillis);
     }
 
@@ -116,6 +120,9 @@ class EapTlsTest {
 
     private byte[] lastRequest;
     private Peap.Binding binding = Peap.Binding.OPTIONAL;
+    /** {@code auth.eap.teap.inner} for the handlers made next. */
+    private List<Integer> teapInner = EapConfig.DEFAULT_TEAP_INNER;
+
     private EapTlsConfig tlsConfig;
     private Duration cacheTtl = Duration.ofSeconds(5);
     /** Stores whose cleartext passwords may answer CHAP (auth.store.<name>.chap). */
@@ -154,7 +161,11 @@ class EapTlsTest {
     private boolean peapCertificate;
 
     private int converse(StoreAccessHandler h, String identity, EapTlsClient client, int type) throws Exception {
-        int code = handle(h, HandlerFixture.identity(1, identity), null);
+        return proceed(h, client, type, handle(h, HandlerFixture.identity(1, identity), null));
+    }
+
+    /** Goes on with a conversation whose last request had {@code code}, up to its final code. */
+    private int proceed(StoreAccessHandler h, EapTlsClient client, int type, int code) throws Exception {
         int rounds = 0;
         while (code == AccessHandler.CHALLENGE && rounds++ < 300) {
             EapPacket request = EapPacket.from(reply());
@@ -880,6 +891,55 @@ class EapTlsTest {
         assertThat(handle(h, lastResponse, lastState))
                 .as("the retransmission repeats the GTC check, which goes on to the tunnel's result")
                 .isEqualTo(AccessHandler.CHALLENGE);
+    }
+
+    private EapTlsClient teapClient(String protocol, TeapPeer peer) throws Exception {
+        EapTlsClient client = new EapTlsClient(TestPki.clientContext(null, pki.ca), protocol, 1024, peer);
+        peer.client = client;
+        return client;
+    }
+
+    /** MS-MPPE-Recv-Key and MS-MPPE-Send-Key from TEAP's MSK, as the peer derived it from the last S-IMCK. */
+    private void assertTeapKeys(TeapPeer peer) throws Exception {
+        assertThat(peer.serverBindingValid).as("the server's Compound MAC").isTrue();
+        assertThat(mppe(17)).isEqualTo(Arrays.copyOfRange(peer.msk, 0, 32));
+        assertThat(mppe(16)).isEqualTo(Arrays.copyOfRange(peer.msk, 32, 64));
+    }
+
+    @Test
+    void teapBasicPasswordAuthDuringAStoreOutage() throws Exception {
+        teapInner = List.of(Teap.BASIC);
+        store.user("frank", List.of(new AttributeItem("Cleartext-Password", ":=", "Frank-Pw")), List.of());
+        StoreAccessHandler h = handler(1024, false, 65_536, List.of("teap"), Map.of(), Map.of(), Map.of());
+        TeapPeer first = new TeapPeer("frank", "Frank-Pw");
+        assertThat(converse(h, "anonymous", teapClient("TLSv1.3", first), Teap.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+        assertTeapKeys(first);
+
+        // the outer identity is cached by now; the inner user is not
+        store.user("gail", List.of(new AttributeItem("Cleartext-Password", ":=", "Gail-Pw")), List.of());
+        store.down = true;
+        TeapPeer peer = new TeapPeer("gail", "Gail-Pw");
+        EapTlsClient client = teapClient("TLSv1.2", peer);
+        assertThat(converse(h, "anonymous", client, Teap.TYPE))
+                .as("the store cannot answer: no answer")
+                .isEqualTo(AccessHandler.DROP);
+        assertThat(peer.basicAnswers)
+                .as("dropped at the Basic-Password-Auth check, not before")
+                .isEqualTo(1);
+        assertThat(handle(h, lastResponse, lastState))
+                .as("still down: the retransmission waits too")
+                .isEqualTo(AccessHandler.DROP);
+        assertThat(peer.bindings).isZero();
+        store.down = false;
+        int code = handle(h, lastResponse, lastState);
+        assertThat(code)
+                .as("the retransmission repeats the Basic-Password-Auth check, which goes on to the crypto-binding")
+                .isEqualTo(AccessHandler.CHALLENGE);
+        assertThat(proceed(h, client, Teap.TYPE, code)).isEqualTo(AccessHandler.ACCEPT);
+        assertThat(peer.bindings).isEqualTo(1);
+        assertThat(peer.basicAnswers).as("the peer was not asked again").isEqualTo(1);
+        assertTeapKeys(peer);
     }
 
     @Test

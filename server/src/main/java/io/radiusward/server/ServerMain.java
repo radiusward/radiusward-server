@@ -63,6 +63,14 @@ public final class ServerMain {
     }
 
     public static void main(String[] args) {
+        run(args, ShutdownSignalBarrier::new, LogManager::shutdown);
+    }
+
+    /**
+     * Runs the RADIUS server until the barrier from {@code barriers} is signalled, then drains and stops it.
+     * {@code atExit} runs after the stop, once the configuration has loaded: {@link #main} shuts logging down there.
+     */
+    static void run(String[] args, java.util.function.Supplier<ShutdownSignalBarrier> barriers, Runnable atExit) {
         io.radiusward.common.net.DnsCache.shortLived(); // members are found by name; pods change address (ADR 0062)
         TlsCredentials.statefulSessions(); // before anything loads the JDK's TLS classes
         java.util.List<java.nio.file.Path> files =
@@ -72,7 +80,7 @@ public final class ServerMain {
         ServerConfig serverConfig = ServerConfig.from(config);
         NasRegistry registry = NasRegistry.from(config);
         AuthConfig auth = AuthConfig.from(config);
-        try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
+        try (ShutdownSignalBarrier barrier = barriers.get();
                 RadiusServer radiusServer = RadiusServer.builder(serverConfig, registry)
                         .auth(auth)
                         .handlerFactory(RadiusServer.storeHandler(config, auth))
@@ -106,7 +114,7 @@ public final class ServerMain {
             barrier.await();
             drain(radiusServer, config.duration("server.shutdown.drain", java.time.Duration.ZERO));
         } finally {
-            LogManager.shutdown();
+            atExit.run();
         }
     }
 

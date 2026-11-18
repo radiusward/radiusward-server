@@ -219,6 +219,27 @@ class PostgresExportIT {
                                 "--nas-id",
                                 Integer.toString(LocalCluster.NAS_ID)))
                         .contains("lost=0");
+                assertThat(admin(
+                                "verify-export",
+                                "--jdbc-url",
+                                postgres.getJdbcUrl(),
+                                "--jdbc-user",
+                                postgres.getUsername(),
+                                "--jdbc-password",
+                                postgres.getPassword(),
+                                "--ack-log",
+                                ackLog.toString(),
+                                "--nas-id",
+                                Integer.toString(LocalCluster.NAS_ID),
+                                "--identity",
+                                "source-ip",
+                                "--members",
+                                members,
+                                "--base-port",
+                                port))
+                        .as("the database against the cluster too")
+                        .contains("sessions=3000")
+                        .contains("lost=0");
                 assertThat(admin("export-schema")).contains("CREATE TABLE accounting_session");
 
                 AdminClient.SinkInfo before = admin.sinks().sinks().get(0);
@@ -227,7 +248,11 @@ class PostgresExportIT {
                 assertThat(before.owner()).isBetween(0, 2);
                 assertThat(before.epoch()).isGreaterThanOrEqualTo(epoch);
 
-                admin.resync("pg", 0); // export everything again: idempotent, nothing may change
+                // export everything again: idempotent, nothing may change
+                assertThat(admin(
+                                "resync", "--members", members, "--base-port", port, "--sink", "pg", "--position", "0"))
+                        .startsWith("resync of pg from log position 0 requested")
+                        .contains("pg ");
                 LocalCluster.await(Duration.ofSeconds(60), "resync re-exported", () -> {
                     AdminClient.SinkInfo s = admin.sinks().sinks().get(0);
                     return !s.resyncPending() && s.checkpoint() >= node.stats().lastPosition();

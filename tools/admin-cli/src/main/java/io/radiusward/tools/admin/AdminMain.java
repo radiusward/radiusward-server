@@ -60,8 +60,14 @@ public final class AdminMain {
                 case "activate-version" -> need(o, "members", "version");
                 case "verify-export" -> need(o, "jdbc-url", "ack-log", "nas-id");
                 case "export-schema" -> {}
-                case "disconnect" -> need(o, "server");
-                case "coa" -> need(o, "server", "attributes");
+                case "disconnect", "coa" -> {
+                    need(o, "server");
+                    if (command.equals("coa")) {
+                        need(o, "attributes");
+                    }
+                    coaTarget(o);
+                    coaToken(o);
+                }
                 default -> throw new IllegalArgumentException("unknown command " + command);
             }
             byDevice(o);
@@ -88,20 +94,8 @@ public final class AdminMain {
      * the requests to their NAS. The token is {@code --token} or {@code RADIUSWARD_COA_API_TOKEN}.
      */
     private static int coa(String command, Map<String, String> o, PrintStream out) throws Exception {
-        String target;
-        if (o.containsKey("user")) {
-            target = "user=" + java.net.URLEncoder.encode(o.get("user"), java.nio.charset.StandardCharsets.UTF_8);
-        } else if (o.containsKey("nas") && o.containsKey("session")) {
-            target = "nas=" + java.net.URLEncoder.encode(o.get("nas"), java.nio.charset.StandardCharsets.UTF_8)
-                    + "&session="
-                    + java.net.URLEncoder.encode(o.get("session"), java.nio.charset.StandardCharsets.UTF_8);
-        } else {
-            throw new IllegalArgumentException("--user <name>, or --nas <entry> --session <Acct-Session-Id>");
-        }
-        String token = o.getOrDefault("token", System.getenv("RADIUSWARD_COA_API_TOKEN"));
-        if (token == null || token.isBlank()) {
-            throw new IllegalArgumentException("--token or RADIUSWARD_COA_API_TOKEN");
-        }
+        String target = coaTarget(o);
+        String token = coaToken(o);
         String radiusServer = o.get("server");
         int end = radiusServer.length();
         while (end > 0 && radiusServer.charAt(end - 1) == '/') { // trailing slashes, without a backtracking regex
@@ -122,6 +116,27 @@ public final class AdminMain {
         boolean allAcknowledged = response.statusCode() == 200
                 && !response.body().matches("(?s).*\"result\":\"(nak|timeout|unreachable)\".*");
         return allAcknowledged ? EXIT_OK : EXIT_FAILED;
+    }
+
+    /** The sessions a CoA or Disconnect is for, as the API's query; a usage error if neither form is given. */
+    private static String coaTarget(Map<String, String> o) {
+        if (o.containsKey("user")) {
+            return "user=" + java.net.URLEncoder.encode(o.get("user"), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        if (o.containsKey("nas") && o.containsKey("session")) {
+            return "nas=" + java.net.URLEncoder.encode(o.get("nas"), java.nio.charset.StandardCharsets.UTF_8)
+                    + "&session="
+                    + java.net.URLEncoder.encode(o.get("session"), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        throw new IllegalArgumentException("--user <name>, or --nas <entry> --session <Acct-Session-Id>");
+    }
+
+    private static String coaToken(Map<String, String> o) {
+        String token = o.getOrDefault("token", System.getenv("RADIUSWARD_COA_API_TOKEN"));
+        if (token == null || token.isBlank()) {
+            throw new IllegalArgumentException("--token or RADIUSWARD_COA_API_TOKEN");
+        }
+        return token;
     }
 
     private static AdminClient cluster(Map<String, String> o) {

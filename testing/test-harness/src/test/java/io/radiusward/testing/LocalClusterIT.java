@@ -318,6 +318,37 @@ class LocalClusterIT {
                     .isEqualTo(io.radiusward.protocol.ActivationResult.MEMBERS_NOT_READY);
             assertThat(future.lowestSupportedVersion()).isEqualTo(supported);
         }
+        // the same through the command line, which fails unless the version was activated
+        String members = String.join(",", cluster.members());
+        String port = Integer.toString(cluster.basePort());
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        assertThat(io.radiusward.tools.admin.AdminMain.run(
+                        new String[] {
+                            "activate-version",
+                            "--members",
+                            members,
+                            "--base-port",
+                            port,
+                            "--version",
+                            Integer.toString(supported)
+                        },
+                        new PrintStream(out, true),
+                        System.err))
+                .isEqualTo(1);
+        assertThat(out.toString())
+                .contains("result=NOT_NEWER")
+                .contains("activeVersion=" + supported)
+                .contains("lowestSupportedVersion=" + supported);
+        out.reset();
+        assertThat(io.radiusward.tools.admin.AdminMain.run(
+                        new String[] {
+                            "resync", "--members", members, "--base-port", port, "--sink", "pg", "--position", "0"
+                        },
+                        new PrintStream(out, true),
+                        System.err))
+                .as("no sink is configured")
+                .isEqualTo(1);
+        assertThat(out.toString()).isEqualTo("unknown sink pg" + System.lineSeparator());
         String metrics = cluster.awaitLeader().metrics();
         io.radiusward.common.management.PrometheusWriter.validate(metrics);
         assertThat(metrics)

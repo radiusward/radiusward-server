@@ -5,8 +5,10 @@
 package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.common.config.Config;
+import io.radiusward.common.config.ConfigException;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -125,5 +127,24 @@ class HomeServersTest {
                 .as("RadSec, not by UDP address")
                 .isNull();
         homes.close();
+    }
+
+    @Test
+    void homeTlsMaterialThatCannotBeReadIsAConfigurationError(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        TestPki pki = new TestPki(dir, "home");
+        java.nio.file.Path traditional = java.nio.file.Files.writeString(
+                dir.resolve("traditional.key"), "-----BEGIN EC PRIVATE KEY-----\nAAAA\n-----END EC PRIVATE KEY-----\n");
+        assertThatThrownBy(() -> TlsClient.context(pki.serverPem, traditional, pki.caPem))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageStartingWith("home.tls.key: ")
+                .hasMessageContaining("openssl pkcs8");
+        assertThatThrownBy(() -> TlsClient.context(pki.serverPem, pki.serverKey, dir.resolve("missing-ca.pem"), "DTLS"))
+                .as("a CA file that is not there")
+                .isInstanceOf(ConfigException.class)
+                .hasMessageStartingWith("home TLS: ");
+        assertThat(TlsClient.context(null, null, pki.caPem).getProtocol())
+                .as("without a client certificate")
+                .isEqualTo("TLS");
     }
 }
