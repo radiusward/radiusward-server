@@ -4,16 +4,13 @@
  */
 package io.radiusward.sink.radius;
 
-import static io.radiusward.radius.codec.attributes.Ietf.ACCT_DELAY_TIME;
 import static io.radiusward.radius.codec.attributes.Ietf.MESSAGE_AUTHENTICATOR;
-import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
 import io.radiusward.export.AccountingSink;
 import io.radiusward.export.Batch;
 import io.radiusward.export.ExportEvent;
 import io.radiusward.export.SinkContext;
 import io.radiusward.export.StorageMode;
-import io.radiusward.radius.codec.AttributeValues;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -60,7 +57,7 @@ public final class RadiusSink implements AccountingSink {
     static final int ACCOUNTING_RESPONSE = 5;
     private static final int WINDOW = 256;
 
-    private List<String> realms;
+    private ForwardedRequest forwarding;
     private List<InetSocketAddress> servers;
     private byte[] secret;
     private boolean tls;
@@ -68,7 +65,6 @@ public final class RadiusSink implements AccountingSink {
     private String tlsName;
     private Duration timeout;
     private int retries;
-    private boolean strip;
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
     private final SecureRandom random = new SecureRandom();
     private DatagramSocket socket;
@@ -82,7 +78,7 @@ public final class RadiusSink implements AccountingSink {
             throw new IllegalArgumentException(
                     "sink." + context.name() + ".mode: sessions+events (the radius sink forwards events)");
         }
-        realms = Arrays.stream(context.required("realms").split(","))
+        List<String> realms = Arrays.stream(context.required("realms").split(","))
                 .map(r -> r.trim().toLowerCase(Locale.ROOT))
                 .filter(r -> !r.isEmpty())
                 .toList();
@@ -111,7 +107,8 @@ public final class RadiusSink implements AccountingSink {
         secret = secretText.getBytes(StandardCharsets.UTF_8);
         timeout = context.duration("timeout", "3s", java.time.temporal.ChronoUnit.SECONDS); // a bare number: seconds
         retries = Integer.parseInt(context.setting("retries", "2"));
-        strip = Boolean.parseBoolean(context.setting("strip", "false"));
+        forwarding = new ForwardedRequest(
+                realms, Boolean.parseBoolean(context.setting("strip", "false")), System::currentTimeMillis);
         if (tls) {
             tlsContext = Pem.clientContext(
                     "TLS",
@@ -139,8 +136,8 @@ public final class RadiusSink implements AccountingSink {
     public void write(Batch batch) throws Exception {
         List<byte[]> requests = new ArrayList<>();
         for (ExportEvent e : batch.events()) {
-            if (forwarded(e)) {
-                requests.add(attributes(e));
+            if (forwarding.forwarded(e)) {
+                requests.add(forwarding.attributes(e));
             }
         }
         for (int from = 0; from < requests.size(); from += WINDOW) {
@@ -164,57 +161,6 @@ public final class RadiusSink implements AccountingSink {
 
     long forwardedCount() {
         return forwarded;
-    }
-
-    /** Whether the event's User-Name has one of the forwarded realms. */
-    boolean forwarded(ExportEvent e) {
-        String user = AttributeValues.string(e.rawAttributes(), USER_NAME);
-        if (user == null) {
-            return false;
-        }
-        int at = user.lastIndexOf('@');
-        int slash = user.indexOf('\\');
-        String realm = at >= 0 ? user.substring(at + 1) : slash > 0 ? user.substring(0, slash) : "";
-        if (realm.isEmpty()) {
-            return false;
-        }
-        return realms.contains("*") || realms.contains(realm.toLowerCase(Locale.ROOT));
-    }
-
-    /** The request's attributes: the original ones, Acct-Delay-Time raised, the realm stripped if configured. */
-    byte[] attributes(ExportEvent e) {
-        byte[] raw = e.rawAttributes();
-        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
-        long delay = Math.max(0, (System.currentTimeMillis() - e.commitTime()) / 1000);
-        for (int at = 0; at + 2 <= raw.length; ) {
-            int type = raw[at] & 0xFF;
-            int l = raw[at + 1] & 0xFF;
-            if (l < 2 || at + l > raw.length) {
-                break;
-            }
-            if (type == ACCT_DELAY_TIME && l == 6) {
-                delay += ((raw[at + 2] & 0xFFL) << 24)
-                        | ((raw[at + 3] & 0xFF) << 16)
-                        | ((raw[at + 4] & 0xFF) << 8)
-                        | (raw[at + 5] & 0xFF);
-            } else if (type == USER_NAME && strip) {
-                String user = new String(raw, at + 2, l - 2, StandardCharsets.UTF_8);
-                int a = user.lastIndexOf('@');
-                int s = user.indexOf('\\');
-                String bare = a >= 0 ? user.substring(0, a) : s > 0 ? user.substring(s + 1) : user;
-                byte[] b = bare.getBytes(StandardCharsets.UTF_8);
-                out.write(USER_NAME);
-                out.write(2 + b.length);
-                out.writeBytes(b);
-            } else if (type != MESSAGE_AUTHENTICATOR) {
-                out.write(raw, at, l);
-            }
-            at += l;
-        }
-        long d = Math.min(delay, 0xFFFF_FFFFL);
-        out.writeBytes(
-                new byte[] {ACCT_DELAY_TIME, 6, (byte) (d >>> 24), (byte) (d >>> 16), (byte) (d >>> 8), (byte) d});
-        return out.toByteArray();
     }
 
     /** An Accounting-Request with these attributes, identifier and a Message-Authenticator, signed. */
