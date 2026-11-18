@@ -40,7 +40,8 @@ class SnapshotAndReplayTest {
         Random random = new Random(7);
         List<DuplicatesPropertyTest.Event> events = DuplicatesPropertyTest.cleanStream(random, 2_000);
         AccountingStateMachine original = DuplicatesPropertyTest.run(events);
-        original.apply(0, 0, 11, 12, 1, AccountingStateMachine.STATUS_ACCOUNTING_ON, 0, 0, 0, 0, 0, 5_000_000);
+        MachineEvents.apply(
+                original, 0, 0, 11, 12, 1, AccountingStateMachine.STATUS_ACCOUNTING_ON, 0, 0, 0, 0, 0, 5_000_000);
         original.timerScheduled(true);
 
         List<byte[]> messages = snapshot(original);
@@ -57,7 +58,8 @@ class SnapshotAndReplayTest {
 
         // every event replayed after restore is a duplicate or stale on both
         for (DuplicatesPropertyTest.Event e : events.subList(events.size() - 200, events.size())) {
-            int a = original.apply(
+            int a = MachineEvents.apply(
+                    original,
                     e.session(),
                     e.session() * 7,
                     e.session() * 31 + e.status(),
@@ -70,7 +72,8 @@ class SnapshotAndReplayTest {
                     e.octets(),
                     0,
                     6_000_000);
-            int b = restored.apply(
+            int b = MachineEvents.apply(
+                    restored,
                     e.session(),
                     e.session() * 7,
                     e.session() * 31 + e.status(),
@@ -86,11 +89,35 @@ class SnapshotAndReplayTest {
             assertThat(b).isEqualTo(a).isNotEqualTo(Outcomes.APPLIED);
         }
         assertThat(restored.applied()).isEqualTo(original.applied());
-        assertThat(original.apply(
-                        0, 0, 11, 12, 1, AccountingStateMachine.STATUS_ACCOUNTING_ON, 0, 0, 0, 0, 0, 5_100_000))
+        assertThat(MachineEvents.apply(
+                        original,
+                        0,
+                        0,
+                        11,
+                        12,
+                        1,
+                        AccountingStateMachine.STATUS_ACCOUNTING_ON,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        5_100_000))
                 .isEqualTo(Outcomes.DUPLICATE);
-        assertThat(restored.apply(
-                        0, 0, 11, 12, 1, AccountingStateMachine.STATUS_ACCOUNTING_ON, 0, 0, 0, 0, 0, 5_100_000))
+        assertThat(MachineEvents.apply(
+                        restored,
+                        0,
+                        0,
+                        11,
+                        12,
+                        1,
+                        AccountingStateMachine.STATUS_ACCOUNTING_ON,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        5_100_000))
                 .isEqualTo(Outcomes.DUPLICATE);
     }
 
@@ -105,7 +132,8 @@ class SnapshotAndReplayTest {
         long now = 1_000 + half * 10L;
         for (DuplicatesPropertyTest.Event e : events.subList(half, events.size())) {
             now += 10;
-            resumed.apply(
+            MachineEvents.apply(
+                    resumed,
                     e.session(),
                     e.session() * 7,
                     e.session() * 31 + e.status(),
@@ -128,8 +156,8 @@ class SnapshotAndReplayTest {
     @Test
     void idleTimeoutPerNasEntrySurvivesASnapshot() {
         AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000));
-        sm.apply(1, 1, 11, 0, 5, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 15, 1_000);
-        sm.apply(2, 2, 21, 0, 5, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 0, 1_000);
+        MachineEvents.apply(sm, 1, 1, 11, 0, 5, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 15, 1_000);
+        MachineEvents.apply(sm, 2, 2, 21, 0, 5, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 0, 1_000);
         AccountingStateMachine restored = restore(snapshot(sm));
         assertThat(restored.store().idleMinutes(restored.store().find(1, 1))).isEqualTo(15);
         assertThat(restored.store().idleMinutes(restored.store().find(2, 2))).isZero();

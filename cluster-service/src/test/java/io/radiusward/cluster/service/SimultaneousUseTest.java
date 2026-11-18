@@ -45,7 +45,8 @@ class SimultaneousUseTest {
     }
 
     static int event(AccountingStateMachine sm, long session, int status, long user, long device, long now) {
-        return sm.apply(
+        return MachineEvents.apply(
+                sm,
                 session,
                 ~session,
                 session * 31 + status + now,
@@ -177,7 +178,7 @@ class SimultaneousUseTest {
         event(sm, 1, STATUS_START, USER, A, 1_000);
         event(sm, 2, STATUS_START, USER, B, 1_000);
         assertThat(sm.store().devicesOnline(USER)).isEqualTo(2);
-        sm.apply(0, 0, 77, 78, NAS, STATUS_ACCOUNTING_ON, 0, 0, 0, 0, 0, 0, 0, 0, 2_000);
+        MachineEvents.apply(sm, 0, 0, 77, 78, NAS, STATUS_ACCOUNTING_ON, 0, 0, 0, 0, 0, 0, 0, 0, 2_000);
         assertThat(sm.store().devicesOnline(USER)).isZero();
 
         event(sm, 3, STATUS_INTERIM, USER, C, 3_000); // created by an Interim

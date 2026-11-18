@@ -49,7 +49,8 @@ class StateFootprintIT {
                 int n = SessionIdentity.extract(raw, 0, length, identity, 0);
                 long user = 0x9E37_79B9_7F4A_7C15L * (s + 1);
                 for (AccountingStateMachine sm : new AccountingStateMachine[] {member, replica}) {
-                    sm.apply(
+                    MachineEvents.apply(
+                            sm,
                             s * 0x9E37_79B9_7F4A_7C15L + 1,
                             s,
                             s * 31L + status,

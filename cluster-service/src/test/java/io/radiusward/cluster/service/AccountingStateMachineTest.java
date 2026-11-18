@@ -28,7 +28,8 @@ class AccountingStateMachineTest {
 
     /** A session event; the exact key is derived from session, status and time like the gateway does. */
     int event(long session, int status, long sessionTime, long octets, long now) {
-        return sm.apply(
+        return MachineEvents.apply(
+                sm,
                 session,
                 ~session,
                 session * 31 + status,
@@ -76,7 +77,7 @@ class AccountingStateMachineTest {
         event(1, STATUS_START, 0, 0, 1000);
         event(1, STATUS_STOP, 100, 50, 2000);
         // same session id, different start (event timestamp) → new instance
-        assertThat(sm.apply(1, ~1L, 999, 999, NAS, STATUS_START, BOTH, 0, 1_790_000_000L, 0, 0, 3000))
+        assertThat(MachineEvents.apply(sm, 1, ~1L, 999, 999, NAS, STATUS_START, BOTH, 0, 1_790_000_000L, 0, 0, 3000))
                 .isEqualTo(APPLIED);
         assertThat(sm.store().state(session(1))).isEqualTo(SessionStore.ACTIVE);
         assertThat(sm.store().tombstoneUntil(session(1))).isZero();
@@ -96,26 +97,26 @@ class AccountingStateMachineTest {
     @Test
     void firstInterimAfterStartIsProgressEvenWithSameTimestampAndNoTraffic() {
         // Start: event timestamp only (as most NAS send it); Interim in the same second, 60 s session time
-        sm.apply(6, 6, 61, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_000L, 0, 0, 1000);
-        assertThat(sm.apply(6, 6, 62, 60, NAS, STATUS_INTERIM, BOTH, 60, 1_780_000_000L, 0, 0, 2000))
+        MachineEvents.apply(sm, 6, 6, 61, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_000L, 0, 0, 1000);
+        assertThat(MachineEvents.apply(sm, 6, 6, 62, 60, NAS, STATUS_INTERIM, BOTH, 60, 1_780_000_000L, 0, 0, 2000))
                 .isEqualTo(APPLIED);
-        assertThat(sm.apply(6, 6, 62, 60, NAS, STATUS_INTERIM, BOTH, 60, 1_780_000_000L, 0, 0, 3000))
+        assertThat(MachineEvents.apply(sm, 6, 6, 62, 60, NAS, STATUS_INTERIM, BOTH, 60, 1_780_000_000L, 0, 0, 3000))
                 .isEqualTo(DUPLICATE);
     }
 
     @Test
     void interimWithoutTimeComparesOctets() {
-        sm.apply(2, 2, 2, 2, NAS, STATUS_START, 0, 0, 0, 0, 0, 1000);
-        assertThat(sm.apply(2, 2, 3, 3, NAS, STATUS_INTERIM, 0, 0, 0, 100, 0, 2000))
+        MachineEvents.apply(sm, 2, 2, 2, 2, NAS, STATUS_START, 0, 0, 0, 0, 0, 1000);
+        assertThat(MachineEvents.apply(sm, 2, 2, 3, 3, NAS, STATUS_INTERIM, 0, 0, 0, 100, 0, 2000))
                 .isEqualTo(APPLIED);
-        assertThat(sm.apply(2, 2, 3, 3, NAS, STATUS_INTERIM, 0, 0, 0, 100, 0, 3000))
+        assertThat(MachineEvents.apply(sm, 2, 2, 3, 3, NAS, STATUS_INTERIM, 0, 0, 0, 100, 0, 3000))
                 .isEqualTo(DUPLICATE);
-        assertThat(sm.apply(2, 2, 4, 4, NAS, STATUS_INTERIM, 0, 0, 0, 50, 0, 4000))
+        assertThat(MachineEvents.apply(sm, 2, 2, 4, 4, NAS, STATUS_INTERIM, 0, 0, 0, 50, 0, 4000))
                 .isEqualTo(STALE);
-        assertThat(sm.apply(2, 2, 5, 5, NAS, STATUS_INTERIM, FLAG_EVENT_TIMESTAMP, 0, 10, 50, 0, 5000))
+        assertThat(MachineEvents.apply(sm, 2, 2, 5, 5, NAS, STATUS_INTERIM, FLAG_EVENT_TIMESTAMP, 0, 10, 50, 0, 5000))
                 .as("stored session has no event timestamp: fall back to octets")
                 .isEqualTo(STALE);
-        assertThat(sm.apply(2, 2, 6, 6, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 30, 0, 50, 0, 6000))
+        assertThat(MachineEvents.apply(sm, 2, 2, 6, 6, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 30, 0, 50, 0, 6000))
                 .as("stored session has no session time: it counts as 0")
                 .isEqualTo(APPLIED);
     }
@@ -175,24 +176,25 @@ class AccountingStateMachineTest {
 
     @Test
     void lateStartInTheSameSecondAsTheInterimIsMerged() {
-        sm.apply(8, 8, 81, 0, NAS, STATUS_INTERIM, BOTH, 0, 1_780_000_000L, 5, 5, 1000);
-        assertThat(sm.apply(8, 8, 82, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_000L, 0, 0, 2000))
+        MachineEvents.apply(sm, 8, 8, 81, 0, NAS, STATUS_INTERIM, BOTH, 0, 1_780_000_000L, 5, 5, 1000);
+        assertThat(MachineEvents.apply(
+                        sm, 8, 8, 82, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_000L, 0, 0, 2000))
                 .isEqualTo(MERGED);
         assertThat(sm.store().inputOctets(sm.store().find(8, 8))).isEqualTo(5);
     }
 
     @Test
     void lateStartWithoutEventTimestampsIsMergedIntoASessionThatNeverSawAStart() {
-        sm.apply(7, 7, 71, 0, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 120, 0, 500, 0, 1000);
-        assertThat(sm.apply(7, 7, 72, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 2000))
+        MachineEvents.apply(sm, 7, 7, 71, 0, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 120, 0, 500, 0, 1000);
+        assertThat(MachineEvents.apply(sm, 7, 7, 72, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 2000))
                 .isEqualTo(MERGED);
         int slot = sm.store().find(7, 7);
         assertThat(sm.store().sessionTime(slot)).isEqualTo(120);
         assertThat(sm.store().inputOctets(slot)).isEqualTo(500);
-        assertThat(sm.apply(7, 7, 72, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 3000))
+        assertThat(MachineEvents.apply(sm, 7, 7, 72, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 3000))
                 .isEqualTo(DUPLICATE);
         // a further, different Start: without timestamps it can only be a new instance of the session id
-        assertThat(sm.apply(7, 7, 73, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 4000))
+        assertThat(MachineEvents.apply(sm, 7, 7, 73, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 4000))
                 .isEqualTo(APPLIED);
         assertThat(sm.store().sessionTime(slot)).isZero();
     }
@@ -215,7 +217,8 @@ class AccountingStateMachineTest {
     void newerStartForAnActiveSessionStartsANewInstance() {
         event(3, STATUS_INTERIM, 300, 1000, 1000);
         // same Acct-Session-Id, Start newer than the session's last event: the NAS reused the id
-        assertThat(sm.apply(3, ~3L, 999, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_900L, 0, 0, 2000))
+        assertThat(MachineEvents.apply(
+                        sm, 3, ~3L, 999, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, 1_780_000_900L, 0, 0, 2000))
                 .isEqualTo(APPLIED);
         int slot = session(3);
         assertThat(sm.store().statusType(slot)).isEqualTo(STATUS_START);
@@ -228,7 +231,8 @@ class AccountingStateMachineTest {
     }
 
     int interim(long session, long sessionTime, long eventTimestamp, long now) {
-        return sm.apply(
+        return MachineEvents.apply(
+                sm,
                 session,
                 ~session,
                 session * 31 + sessionTime,
@@ -246,9 +250,9 @@ class AccountingStateMachineTest {
     @Test
     void interimAfterTheStoppedSessionWasForgottenIsStaleAndDoesNotReopenIt() {
         long t = 1_780_000_000L;
-        sm.apply(9, ~9L, 1, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, t, 0, 0, at(t));
+        MachineEvents.apply(sm, 9, ~9L, 1, 0, NAS, STATUS_START, FLAG_EVENT_TIMESTAMP, 0, t, 0, 0, at(t));
         assertThat(interim(9, 300, t + 300, at(t + 300))).isEqualTo(APPLIED);
-        sm.apply(9, ~9L, 3, 0, NAS, STATUS_STOP, BOTH, 600, t + 600, 6000, 0, at(t + 600));
+        MachineEvents.apply(sm, 9, ~9L, 3, 0, NAS, STATUS_STOP, BOTH, 600, t + 600, 6000, 0, at(t + 600));
         assertThat(interim(9, 300, t + 300, at(t + 601)))
                 .as("while the tombstone exists")
                 .isEqualTo(STALE);
@@ -271,10 +275,10 @@ class AccountingStateMachineTest {
                 .isEqualTo(APPLIED);
         assertThat(interim(12, 60, t - 1, now)).as("one second older").isEqualTo(STALE);
         assertThat(session(12)).isEqualTo(-1);
-        assertThat(sm.apply(13, ~13L, 1, 0, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 10, 0, now))
+        assertThat(MachineEvents.apply(sm, 13, ~13L, 1, 0, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 10, 0, now))
                 .as("without an Event-Timestamp nothing is known: created as before")
                 .isEqualTo(APPLIED);
-        assertThat(sm.apply(14, ~14L, 1, 0, NAS, STATUS_STOP, BOTH, 60, t - 7_200, 10, 0, now))
+        assertThat(MachineEvents.apply(sm, 14, ~14L, 1, 0, NAS, STATUS_STOP, BOTH, 60, t - 7_200, 10, 0, now))
                 .as("an old Stop still records the session's final values")
                 .isEqualTo(APPLIED);
         assertThat(sm.store().state(sm.store().find(14, ~14L))).isEqualTo(SessionStore.STOPPED);
@@ -301,16 +305,19 @@ class AccountingStateMachineTest {
     void accountingOnStopsAllSessionsOfTheNasOnce() {
         event(1, STATUS_START, 0, 0, 1000);
         event(2, STATUS_START, 0, 0, 1000);
-        sm.apply(9, ~9L, 9, 9, NAS + 1, STATUS_START, BOTH, 0, 1, 0, 0, 1000); // other NAS
-        assertThat(sm.apply(0, 0, 77, 1, NAS, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000))
+        MachineEvents.apply(sm, 9, ~9L, 9, 9, NAS + 1, STATUS_START, BOTH, 0, 1, 0, 0, 1000); // other NAS
+        assertThat(MachineEvents.apply(
+                        sm, 0, 0, 77, 1, NAS, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000))
                 .isEqualTo(APPLIED);
         assertThat(sm.store().state(session(1))).isEqualTo(SessionStore.STOPPED);
         assertThat(sm.store().state(session(2))).isEqualTo(SessionStore.STOPPED);
         assertThat(sm.store().state(sm.store().find(9, ~9L))).isEqualTo(SessionStore.ACTIVE);
-        assertThat(sm.apply(0, 0, 77, 1, NAS, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 3000))
+        assertThat(MachineEvents.apply(
+                        sm, 0, 0, 77, 1, NAS, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 3000))
                 .isEqualTo(DUPLICATE);
         // after the window the same key is a new event
-        assertThat(sm.apply(0, 0, 77, 1, NAS, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000 + 900_000))
+        assertThat(MachineEvents.apply(
+                        sm, 0, 0, 77, 1, NAS, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000 + 900_000))
                 .isEqualTo(APPLIED);
     }
 
@@ -318,9 +325,10 @@ class AccountingStateMachineTest {
     void accountingOnOfOneDeviceBehindNatLeavesTheOthersAlone() {
         int apA = 0x1111; // device scopes of two APs behind one NAS entry (ADR 0019)
         int apB = 0x2222;
-        sm.apply(1, 1, 11, 0, apA, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
-        sm.apply(2, 2, 21, 0, apB, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
-        assertThat(sm.apply(0, 0, 77, 1, apA, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000))
+        MachineEvents.apply(sm, 1, 1, 11, 0, apA, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
+        MachineEvents.apply(sm, 2, 2, 21, 0, apB, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
+        assertThat(MachineEvents.apply(
+                        sm, 0, 0, 77, 1, apA, STATUS_ACCOUNTING_ON, FLAG_EVENT_TIMESTAMP, 0, 5, 0, 0, 2000))
                 .isEqualTo(APPLIED);
         assertThat(sm.store().state(sm.store().find(1, 1))).isEqualTo(SessionStore.STOPPED);
         assertThat(sm.store().state(sm.store().find(2, 2))).isEqualTo(SessionStore.ACTIVE);
@@ -329,17 +337,18 @@ class AccountingStateMachineTest {
     @Test
     void accountingOnWithoutDeviceIdentityStopsNothing() {
         int entry = 1001; // the device could not be identified: its scope falls back to the whole entry
-        sm.apply(1, 1, 11, 0, entry, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
+        MachineEvents.apply(sm, 1, 1, 11, 0, entry, STATUS_START, BOTH, 0, 1_780_000_000L, 0, 0, 1000);
         int flags = FLAG_EVENT_TIMESTAMP | AccountingStateMachine.FLAG_DEVICE_UNKNOWN;
-        assertThat(sm.apply(0, 0, 78, 1, entry, STATUS_ACCOUNTING_ON, flags, 0, 5, 0, 0, 2000))
+        assertThat(MachineEvents.apply(sm, 0, 0, 78, 1, entry, STATUS_ACCOUNTING_ON, flags, 0, 5, 0, 0, 2000))
                 .as("acknowledged")
                 .isEqualTo(APPLIED);
         assertThat(sm.store().state(sm.store().find(1, 1))).isEqualTo(SessionStore.ACTIVE);
-        assertThat(sm.apply(0, 0, 78, 1, entry, STATUS_ACCOUNTING_ON, flags, 0, 5, 0, 0, 3000))
+        assertThat(MachineEvents.apply(sm, 0, 0, 78, 1, entry, STATUS_ACCOUNTING_ON, flags, 0, 5, 0, 0, 3000))
                 .as("retransmission")
                 .isEqualTo(DUPLICATE);
         // the flag is not kept with sessions
-        sm.apply(
+        MachineEvents.apply(
+                sm,
                 1,
                 1,
                 12,
@@ -357,8 +366,10 @@ class AccountingStateMachineTest {
 
     @Test
     void otherStatusTypesUseTheExactWindow() {
-        assertThat(sm.apply(0, 0, 1, 2, NAS, 15, 0, 0, 0, 0, 0, 1000)).isEqualTo(APPLIED);
-        assertThat(sm.apply(0, 0, 1, 2, NAS, 15, 0, 0, 0, 0, 0, 2000)).isEqualTo(DUPLICATE);
+        assertThat(MachineEvents.apply(sm, 0, 0, 1, 2, NAS, 15, 0, 0, 0, 0, 0, 1000))
+                .isEqualTo(APPLIED);
+        assertThat(MachineEvents.apply(sm, 0, 0, 1, 2, NAS, 15, 0, 0, 0, 0, 0, 2000))
+                .isEqualTo(DUPLICATE);
     }
 
     @Test
@@ -382,7 +393,7 @@ class AccountingStateMachineTest {
         event(1, STATUS_START, 0, 0, 0);
         event(2, STATUS_START, 0, 0, 0);
         event(2, STATUS_STOP, 10, 0, 10_000);
-        sm.apply(0, 0, 5, 5, NAS, 15, 0, 0, 0, 0, 0, 0);
+        MachineEvents.apply(sm, 0, 0, 5, 5, NAS, 15, 0, 0, 0, 0, 0, 0);
         assertThat(sm.sweep(60_000)).isZero();
         assertThat(sm.sweep(10_000 + 3_600_000))
                 .as("tombstone of session 2 expired")
@@ -398,9 +409,9 @@ class AccountingStateMachineTest {
     void idleTimeoutOfTheNasEntryClosesLostStopsSooner() {
         long t = 1_000_000;
         // a 15-minute entry (interim every 5 min) and one with the cluster default of 2 h
-        sm.apply(1, 1, 11, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, t);
-        sm.apply(2, 2, 21, 0, NAS + 1, STATUS_START, 0, 0, 0, 0, 0, 0, t);
-        sm.apply(1, 1, 12, 300, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 300, 0, 9, 0, 15, t + 300_000);
+        MachineEvents.apply(sm, 1, 1, 11, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, t);
+        MachineEvents.apply(sm, 2, 2, 21, 0, NAS + 1, STATUS_START, 0, 0, 0, 0, 0, 0, t);
+        MachineEvents.apply(sm, 1, 1, 12, 300, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 300, 0, 9, 0, 15, t + 300_000);
         assertThat(sm.sweep(t + 300_000 + 15 * 60_000 - 1_000)).as("not yet").isZero();
         assertThat(sm.sweep(t + 300_000 + 15 * 60_000)).isEqualTo(1);
         assertThat(sm.store().find(1, 1))
@@ -413,12 +424,12 @@ class AccountingStateMachineTest {
 
     @Test
     void theLatestEventSetsTheIdleTimeout() {
-        sm.apply(3, 3, 31, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, 0);
+        MachineEvents.apply(sm, 3, 3, 31, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, 0);
         // the gateways were reconfigured to 60 minutes; a stale event does not change it
-        sm.apply(3, 3, 32, 60, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 1, 0, 60, 60_000);
-        sm.apply(3, 3, 33, 30, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 30, 0, 1, 0, 5, 61_000);
+        MachineEvents.apply(sm, 3, 3, 32, 60, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 1, 0, 60, 60_000);
+        MachineEvents.apply(sm, 3, 3, 33, 30, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 30, 0, 1, 0, 5, 61_000);
         assertThat(sm.store().idleMinutes(sm.store().find(3, 3))).isEqualTo(60);
-        sm.apply(3, 3, 34, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 30, 62_000);
+        MachineEvents.apply(sm, 3, 3, 34, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 30, 62_000);
         assertThat(sm.store().idleMinutes(sm.store().find(3, 3)))
                 .as("a merged late Start sets it too")
                 .isEqualTo(30);

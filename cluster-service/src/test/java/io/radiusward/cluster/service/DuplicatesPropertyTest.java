@@ -52,7 +52,8 @@ class DuplicatesPropertyTest {
         long now = 1_000;
         for (Event e : events) {
             now += 10;
-            sm.apply(
+            MachineEvents.apply(
+                    sm,
                     e.session(),
                     e.session() * 7,
                     e.session() * 31 + e.status(),
@@ -75,7 +76,8 @@ class DuplicatesPropertyTest {
         long now = 1_000;
         for (Event e : events) {
             now += 10;
-            int outcome = sm.apply(
+            int outcome = MachineEvents.apply(
+                    sm,
                     e.session(),
                     e.session() * 7,
                     e.session() * 31 + e.status(),

@@ -190,7 +190,7 @@ class ExportStateTest {
     @Test
     void version1SnapshotWithoutSinksStillLoads() {
         AccountingStateMachine original = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(100));
-        original.apply(1, 2, 3, 4, 1, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 1_000);
+        MachineEvents.apply(original, 1, 2, 3, 4, 1, AccountingStateMachine.STATUS_START, 0, 0, 0, 0, 0, 1_000);
         List<byte[]> messages = new ArrayList<>();
         new SnapshotCodec().write(original, (buffer, offset, length) -> {
             byte[] copy = new byte[length];

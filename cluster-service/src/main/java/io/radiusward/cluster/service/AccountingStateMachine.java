@@ -234,126 +234,19 @@ public final class AccountingStateMachine {
     }
 
     /**
-     * Applies one accounting event.
+     * Applies one accounting event: its session, the exact key of the event, its NAS entry and kind, what it reports,
+     * and what later protocol versions added (each kept only from the state version that introduced it, {@link
+     * #atLeast(int)}).
      *
      * @param flags {@link #FLAG_SESSION_TIME} and/or {@link #FLAG_EVENT_TIMESTAMP}
-     * @param now cluster time of the log entry in milliseconds
-     * @return one of {@link Outcomes}
-     */
-    public int apply(
-            long sessionHi,
-            long sessionLo,
-            long exactHi,
-            long exactLo,
-            int nasId,
-            int statusType,
-            int flags,
-            long sessionTime,
-            long eventTimestamp,
-            long inputOctets,
-            long outputOctets,
-            long now) {
-        return apply(
-                sessionHi,
-                sessionLo,
-                exactHi,
-                exactLo,
-                nasId,
-                statusType,
-                flags,
-                sessionTime,
-                eventTimestamp,
-                inputOctets,
-                outputOctets,
-                0,
-                now);
-    }
-
-    /**
-     * As above, with the idle timeout of the event's NAS entry.
-     *
      * @param idleMinutes remove the session after this many minutes without an event ({@code nas.<name>.idle.timeout});
      *     0 = {@link Settings#idleTimeoutMs()}. The latest applied event of the session sets it.
-     */
-    public int apply(
-            long sessionHi,
-            long sessionLo,
-            long exactHi,
-            long exactLo,
-            int nasId,
-            int statusType,
-            int flags,
-            long sessionTime,
-            long eventTimestamp,
-            long inputOctets,
-            long outputOctets,
-            int idleMinutes,
-            long now) {
-        return apply(
-                sessionHi,
-                sessionLo,
-                exactHi,
-                exactLo,
-                nasId,
-                statusType,
-                flags,
-                sessionTime,
-                eventTimestamp,
-                inputOctets,
-                outputOctets,
-                idleMinutes,
-                0,
-                0,
-                now);
-    }
-
-    /**
-     * As above, with the user and device of the event (protocol version 6). They are recorded only from state version
-     * 6 on ({@link #atLeast(int)}); before that they are ignored, as by older code.
-     *
-     * @param userKey hash of the User-Name, 0 = none
-     * @param deviceKey the Calling-Station-Id as a key, 0 = none
-     */
-    public int apply(
-            long sessionHi,
-            long sessionLo,
-            long exactHi,
-            long exactLo,
-            int nasId,
-            int statusType,
-            int flags,
-            long sessionTime,
-            long eventTimestamp,
-            long inputOctets,
-            long outputOctets,
-            int idleMinutes,
-            long userKey,
-            long deviceKey,
-            long now) {
-        return apply(
-                sessionHi,
-                sessionLo,
-                exactHi,
-                exactLo,
-                nasId,
-                statusType,
-                flags,
-                sessionTime,
-                eventTimestamp,
-                inputOctets,
-                outputOctets,
-                idleMinutes,
-                userKey,
-                deviceKey,
-                null,
-                0,
-                0,
-                now);
-    }
-
-    /**
-     * As above, with the attributes that name the session to its NAS ({@link SessionIdentity}); kept from state
-     * version 7 on ({@link #atLeast(int)}), replaced by every applied event of the session.
+     * @param userKey hash of the User-Name, 0 = none (state version 6)
+     * @param deviceKey the Calling-Station-Id as a key, 0 = none (state version 6)
+     * @param identity the attributes that name the session to its NAS ({@link SessionIdentity}), {@code null} for none;
+     *     kept from state version 7, replaced by every applied event of the session
+     * @param now cluster time of the log entry in milliseconds
+     * @return one of {@link Outcomes}
      */
     public int apply(
             long sessionHi,

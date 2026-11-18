@@ -24,7 +24,7 @@ class StateMachineAllocationIT {
         int sessions = 100_000;
         AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(1_000_000));
         for (int s = 0; s < sessions; s++) {
-            sm.apply(s, s, s, 1, s % 100, AccountingStateMachine.STATUS_START, 1, 0, 0, 0, 0, 1000);
+            MachineEvents.apply(sm, s, s, s, 1, s % 100, AccountingStateMachine.STATUS_START, 1, 0, 0, 0, 0, 1000);
         }
         long time = 0;
         for (int round = 0; round < 5; round++) { // warm-up
@@ -42,7 +42,8 @@ class StateMachineAllocationIT {
     private static long drive(AccountingStateMachine sm, int sessions, long time) {
         time += 60;
         for (int s = 0; s < sessions; s++) {
-            sm.apply(
+            MachineEvents.apply(
+                    sm,
                     s,
                     s,
                     s,
@@ -55,7 +56,8 @@ class StateMachineAllocationIT {
                     time * 10,
                     0,
                     time * 1000);
-            sm.apply(
+            MachineEvents.apply(
+                    sm,
                     s,
                     s,
                     s,

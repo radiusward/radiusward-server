@@ -33,7 +33,8 @@ class SessionIdentityStateTest {
     static int event(AccountingStateMachine sm, long session, int status, String sessionId, String user, long now) {
         byte[] identity =
                 SessionIdentityTest.attrs(SessionIdentityTest.attr(44, sessionId), SessionIdentityTest.attr(1, user));
-        return sm.apply(
+        return MachineEvents.apply(
+                sm,
                 session,
                 ~session,
                 session * 31 + status + now,
