@@ -44,7 +44,7 @@ Resources:
       Tags: [{Key: Name, Value: !Ref AWS::StackName}]
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-  GatewayAttachment:
+  ServerAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
     Properties: {VpcId: !Ref Vpc, InternetGatewayId: !Ref InternetGateway}
   PublicRoutes:
@@ -52,14 +52,14 @@ Resources:
     Properties: {VpcId: !Ref Vpc}
   PublicDefault:
     Type: AWS::EC2::Route
-    DependsOn: GatewayAttachment
+    DependsOn: ServerAttachment
     Properties: {RouteTableId: !Ref PublicRoutes, DestinationCidrBlock: 0.0.0.0/0, GatewayId: !Ref InternetGateway}
   PrivateRoutes:
     Type: AWS::EC2::RouteTable
     Properties: {VpcId: !Ref Vpc}
   NatAddress:
     Type: AWS::EC2::EIP
-    DependsOn: GatewayAttachment
+    DependsOn: ServerAttachment
     Properties: {Domain: vpc}
   Nat:
     Type: AWS::EC2::NatGateway
@@ -228,7 +228,7 @@ Outputs:
   VpcCidr:
     Value: !Ref VpcCidr
   PrivateSubnetIds:
-    Description: for the radiusward stack's members and gateways, in zone order
+    Description: for the radiusward stack's members and RADIUS servers, in zone order
     Value: !Join [',', [!Ref Private0, !Ref Private1, !Ref Private2]]
   AvailabilityZones:
     Value: !Join [',', [!GetAtt Private0.AvailabilityZone, !GetAtt Private1.AvailabilityZone, !GetAtt Private2.AvailabilityZone]]

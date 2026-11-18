@@ -50,7 +50,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * CoA and Disconnect (RFC 5176, ADR 0036) with 3 members: sessions found in the replicated state by user or by
- * Acct-Session-Id, requests to a fake NAS over UDP — through the gateway's HTTP API and {@code admin} — and to a NAS
+ * Acct-Session-Id, requests to a fake NAS over UDP — through the RADIUS server's HTTP API and {@code admin} — and to a NAS
  * on its RadSec connection.
  */
 @Epic("Authentication")
@@ -252,20 +252,14 @@ class CoaIT {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         int exit = AdminMain.run(
                 new String[] {
-                    "disconnect",
-                    "--gateway",
-                    "http://127.0.0.1:" + management.port(),
-                    "--token",
-                    TOKEN,
-                    "--user",
-                    "bob"
+                    "disconnect", "--server", "http://127.0.0.1:" + management.port(), "--token", TOKEN, "--user", "bob"
                 },
                 new PrintStream(out),
                 new PrintStream(new ByteArrayOutputStream()));
         assertThat(exit).as(out.toString()).isZero();
         assertThat(out.toString()).contains("\"result\":\"ack\"");
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_coa_requests_total{gateway=\"1\",result=\"ack\"} 6");
+                .contains("radiusward_server_coa_requests_total{server=\"1\",result=\"ack\"} 6");
     }
 
     @Test
@@ -437,12 +431,12 @@ class CoaIT {
                     () -> radiusServer
                             .metrics()
                             .contains(
-                                    "radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"bad_authenticator\"} 1"));
+                                    "radiusward_server_coa_relay_total{server=\"1\",result=\"bad_authenticator\"} 1"));
         }
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"ack\"} 1")
-                .contains("radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"duplicate\"} 1")
-                .contains("radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"no_session\"} 1");
+                .contains("radiusward_server_coa_relay_total{server=\"1\",result=\"ack\"} 1")
+                .contains("radiusward_server_coa_relay_total{server=\"1\",result=\"duplicate\"} 1")
+                .contains("radiusward_server_coa_relay_total{server=\"1\",result=\"no_session\"} 1");
     }
 
     /** A CoA or Disconnect-Request from a home server: user, session, its Proxy-State, Message-Authenticator. */

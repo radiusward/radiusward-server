@@ -4,7 +4,7 @@
 #
 # The benchmark on Amazon ECS (docs/plans/benchmarks.md, B4; docs/testing/benchmarks.md): deploys the generator stack
 # (deploy/aws/bench/generators.yaml: VPC, NAT, results bucket, generator instances) and the radiusward ECS stack
-# (deploy/aws/cloudformation/radiusward-ecs.yaml) into its private subnets, configures the gateways for the
+# (deploy/aws/cloudformation/radiusward-ecs.yaml) into its private subnets, configures the RADIUS servers for the
 # benchmark, runs scripts/bench.py on the first generator instance through SSM, copies the result here and deletes
 # both stacks again — also after a failure or Ctrl-C, unless --keep.
 #
@@ -104,23 +104,23 @@ log "radiusward stack $name (profile $profile, $image)"
 aws cloudformation deploy --stack-name "$name" --template-file "$root/deploy/aws/cloudformation/radiusward-ecs.yaml" \
     --capabilities CAPABILITY_IAM CAPABILITY_AUTO_EXPAND --no-fail-on-empty-changeset \
     --parameter-overrides VpcId="$vpc" VpcCidr="$cidr" MemberSubnetIds="$subnets" MemberAvailabilityZones="$zones" \
-        GatewaySubnetIds="$subnets" LoadBalancerScheme=internal NasCidr="$cidr" Image="$image" Profile="$profile" \
+        ServerSubnetIds="$subnets" LoadBalancerScheme=internal NasCidr="$cidr" Image="$image" Profile="$profile" \
         Namespace="$name.local"
 cluster=$(output "$name" ClusterName)
-gateways="$(output "$name" Gateway0Address),$(output "$name" Gateway1Address)"
+servers="$(output "$name" Server0Address),$(output "$name" Server1Address)"
 
-log "configuring the gateways for the benchmark"
+log "configuring the RADIUS servers for the benchmark"
 secret=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
 aws secretsmanager put-secret-value --secret-id "$(output "$name" NasSecretArn)" --secret-string "$secret" >/dev/null
-aws secretsmanager put-secret-value --secret-id "$(output "$name" GatewayUsersSecretArn)" \
+aws secretsmanager put-secret-value --secret-id "$(output "$name" ServerUsersSecretArn)" \
     --secret-string 'load Cleartext-Password := "load"' >/dev/null
-aws ssm put-parameter --overwrite --name "$(output "$name" GatewayConfigParameter)" --type String --value "$(cat <<EOF
+aws ssm put-parameter --overwrite --name "$(output "$name" ServerConfigParameter)" --type String --value "$(cat <<EOF
 # benchmark (scripts/bench-aws.sh): NAS entry for the generator subnets, the load user of radclient
 nas.bench.address=$cidr
 nas.bench.secret=\${env:NAS_SECRET}
 nas.bench.id=1001
-gateway.auth.enabled=true
-gateway.auth.port=1812
+server.auth.enabled=true
+server.auth.port=1812
 auth.stores=bench
 auth.store.bench.type=file
 auth.store.bench.path=/tmp/users
@@ -129,10 +129,10 @@ auth.store.bench.mschap=true
 EOF
 )" >/dev/null
 for id in 0 1; do
-  aws ecs update-service --cluster "$cluster" --service "gateway-$id" --force-new-deployment >/dev/null
+  aws ecs update-service --cluster "$cluster" --service "server-$id" --force-new-deployment >/dev/null
 done
 for attempt in 1 2 3; do  # each wait gives up after 10 minutes
-  aws ecs wait services-stable --cluster "$cluster" --services node-0 node-1 node-2 gateway-0 gateway-1 && break
+  aws ecs wait services-stable --cluster "$cluster" --services node-0 node-1 node-2 server-0 server-1 && break
   [[ $attempt == 3 ]] && { log "the services did not become stable"; exit 1; }
 done
 
@@ -153,7 +153,7 @@ until [ -f /var/lib/radiusward-bench-ready ]; do sleep 5; done
 rm -rf /opt/radiusward && git init -q /opt/radiusward && cd /opt/radiusward
 git fetch -q --depth 1 https://github.com/radiusward/radiusward-server.git $commit && git checkout -q FETCH_HEAD
 export AWS_DEFAULT_REGION=$region RADIUSWARD_PROFILE=$profile
-python3 scripts/bench.py --target $gateways --ecs-cluster $cluster --generator-hosts $remote_hosts \
+python3 scripts/bench.py --target $servers --ecs-cluster $cluster --generator-hosts $remote_hosts \
     --secret $secret --image $image --where aws-$profile --steps $steps --duration $duration \
     --label region=$region --label member_instance=$member_type --label generator_instance=$generator_type \
     --label generators=$generators --out /tmp/bench > /tmp/bench.log 2>&1

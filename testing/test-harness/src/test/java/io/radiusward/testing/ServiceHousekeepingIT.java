@@ -26,7 +26,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * What the cluster service does besides applying commands: the housekeeping timer ({@code service.sweep.interval})
- * removes idle sessions and expired tombstones on every member alike, and the service counts gateways that disagree
+ * removes idle sessions and expired tombstones on every member alike, and the service counts RADIUS servers that disagree
  * on a NAS entry's device identity.
  */
 @Epic("Accounting")
@@ -109,7 +109,7 @@ class ServiceHousekeepingIT {
         ClusterNode leader = cluster.awaitLeader();
         LocalCluster.await(
                 Duration.ofSeconds(10),
-                "the leader counted the second gateway's commands",
+                "the leader counted the second RADIUS server's commands",
                 () -> leader.stats().identityMismatches() == 2);
         assertThat(leader.metrics()).containsPattern("radiusward_nas_identity_mismatches_total\\{member=\"\\d\"\\} 2");
         assertThat(leader.stateJson()).contains("\"identityMismatches\":2");

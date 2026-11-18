@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
-/** Every vendor fixture through a gateway: acknowledged and in the replicated state. */
+/** Every vendor fixture through a RADIUS server: acknowledged and in the replicated state. */
 @Epic("Accounting")
 @Feature("Vendor fixtures")
 class VendorFixturesIT extends E2eTestBase {
@@ -38,7 +38,7 @@ class VendorFixturesIT extends E2eTestBase {
             for (String line : Files.readAllLines(fixture)) {
                 if (line.startsWith("packet:")) {
                     nas.ack(
-                            cluster.radiusPort("gateway-b"),
+                            cluster.radiusPort("server-b"),
                             HexFormat.of().parseHex(line.substring(7).trim()));
                 }
             }

@@ -9,7 +9,7 @@ customer routers, keep their NAS in a database instead, and other servers read t
 
 ## Decision
 - **`nas.dynamic.*`**: a packet from an address that no configured entry covers, inside `nas.dynamic.networks`
-  (CIDR, prefix 8 to 32), makes the gateway look the address up.
+  (CIDR, prefix 8 to 32), makes the RADIUS server look the address up.
   - The source is SQL over JDBC: `nas.dynamic.sql.url`, `.user`, `.password`. The query (`nas.dynamic.sql.query`,
     default `SELECT nasname, shortname, secret, type FROM nas WHERE nasname = ?`) gets the address as text.
   - The driver comes from the class path, as for the `sql` identity store; the distribution ships PostgreSQL's.
@@ -28,14 +28,14 @@ customer routers, keep their NAS in a database instead, and other servers read t
   - at most `nas.dynamic.max` (10,000) entries are held.
 - **The entry**:
   - name `dynamic:<shortname>`;
-  - id the FNV-1a hash of `dynamic:<address>`, the same on every gateway, so its events deduplicate across
-    gateways;
+  - id the FNV-1a hash of `dynamic:<address>`, the same on every RADIUS server, so its events deduplicate across
+    RADIUS servers;
   - the row's secret; vendor from `type`, lower-cased;
   - Message-Authenticator optional on accounting and required on Access-Requests, as for configured entries;
   - no device identity, no RadSec, DTLS or TCP, CoA to its address.
 - **No configured entry is needed** when `nas.dynamic.enabled`.
-- **Metrics**: `radiusward_gateway_nas_dynamic_total{result}` (lookups, found, not_found, failed, queue_full,
-  expired) and `radiusward_gateway_nas_dynamic_entries`.
+- **Metrics**: `radiusward_server_nas_dynamic_total{result}` (lookups, found, not_found, failed, queue_full,
+  expired) and `radiusward_server_nas_dynamic_entries`.
 
 ## Tests
 - `DynamicClientsTest`, with a fake source:
@@ -45,5 +45,5 @@ customer routers, keep their NAS in a database instead, and other servers read t
   - a failing source retried;
   - the bound;
   - configuration and a registry without configured entries.
-- `DynamicClientsIT`: through a gateway with no configured NAS and PostgreSQL holding a `nas` table, the first
+- `DynamicClientsIT`: through a RADIUS server with no configured NAS and PostgreSQL holding a `nas` table, the first
   Access-Request is dropped and the retransmission answered, signed with the table's secret.

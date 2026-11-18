@@ -1,10 +1,10 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# A gateway (docs/operations/bare-metal.md). Settings: /etc/radiusward/gateway.properties, NAS entries in
-# /etc/radiusward/nas-clients.properties and /etc/radiusward/radiusward.env (RADIUSWARD_GATEWAY_ID, secrets).
+# A RADIUS server (docs/operations/bare-metal.md). Settings: /etc/radiusward/server.properties, NAS entries in
+# /etc/radiusward/nas-clients.properties and /etc/radiusward/radiusward.env (RADIUSWARD_SERVER_ID, secrets).
 [Unit]
-Description=radiusward gateway
+Description=radiusward RADIUS server
 Documentation=https://github.com/radiusward/radiusward-server/blob/main/docs/operations/bare-metal.md
 After=network-online.target
 Wants=network-online.target
@@ -16,8 +16,8 @@ Group=radiusward
 EnvironmentFile=/etc/radiusward/radiusward.env
 Environment=RADIUSWARD_MANAGEMENT_HTTP_HOST=0.0.0.0
 # not ready, still answering, for 5 s after SIGTERM: a load balancer or keepalived health check moves away first
-Environment=RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN=5s
-ExecStart=/usr/local/bin/radiusward gateway --config /etc/radiusward/gateway.properties --config /etc/radiusward/nas-clients.properties
+Environment=RADIUSWARD_SERVER_SHUTDOWN_DRAIN=5s
+ExecStart=/usr/local/bin/radiusward server --config /etc/radiusward/server.properties --config /etc/radiusward/nas-clients.properties
 WorkingDirectory=/var/lib/radiusward
 ExecReload=/bin/kill -HUP $MAINPID
 KillSignal=SIGTERM

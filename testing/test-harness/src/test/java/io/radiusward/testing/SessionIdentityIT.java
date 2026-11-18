@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Session identification in the replicated state (state version 7, ADR 0036): with 3 members and a gateway, an
+ * Session identification in the replicated state (state version 7, ADR 0036): with 3 members and a RADIUS server, an
  * accounting Start with a user names its session in the admin reports — by key, by user, by page — and survives a
  * member that restarts from a snapshot.
  */

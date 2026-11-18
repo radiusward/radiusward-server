@@ -34,7 +34,7 @@ import org.agrona.concurrent.UnsafeBuffer;
  * Every event's outcome goes to the ack log, so tests can check that each acknowledged event is in the
  * cluster state.
  *
- * <p>All simulated NAS share this machine's address, so the gateway sees one NAS entry, like access points behind
+ * <p>All simulated NAS share this machine's address, so the RADIUS server sees one NAS entry, like access points behind
  * NAT; each simulated NAS is reported in {@code NAS-Identifier} ({@code nas<n>}). Session ids are unique
  * ({@code nas<n>-<s>}), or with {@code sharedSessionIds} repeat across the simulated NAS ({@code %08X} of the
  * session's number on its NAS), as devices numbering sessions from boot do — only an entry that identifies devices

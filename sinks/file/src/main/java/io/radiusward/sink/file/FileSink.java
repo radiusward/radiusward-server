@@ -141,7 +141,7 @@ public final class FileSink implements AccountingSink {
         field(out, "committed_at", Instant.ofEpochMilli(e.commitTime()).toString());
         field(out, "nas_id", e.nasId());
         field(out, "nas_device", e.nasDevice());
-        field(out, "gateway_id", e.serverId());
+        field(out, "server_id", e.serverId());
         field(out, "session_key", e.sessionKey() == null ? null : e.sessionKey().toString());
         field(out, "acct_session_id", e.acctSessionId());
         field(out, "status_type", e.statusType());

@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * {@code kill -9} of the leader container at ~2k requests/s: the cluster is writable again well within the
- * 3 s client timeout, so no NAS has to retransmit (ADR 0011: gateways resubmit pending commands to the new
+ * 3 s client timeout, so no NAS has to retransmit (ADR 0011: RADIUS servers resubmit pending commands to the new
  * leader).
  */
 @Epic("Fault injection")

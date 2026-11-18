@@ -381,7 +381,7 @@ final class InnerProxy {
 
     void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String radiusServer) {
         w.counter(
-                "radiusward_gateway_inner_proxy_total",
+                "radiusward_server_inner_proxy_total",
                 "Inner tunnel credentials checked by the home servers of their realms");
         counts.write(w, radiusServer);
     }

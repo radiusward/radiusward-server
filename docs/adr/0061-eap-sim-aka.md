@@ -17,11 +17,11 @@ pseudonyms kept by site policy. The radio attach to the LTE/5G core is not RADIU
   compression) checked against the FIPS example; AKA′'s CK′/IK′ (TS 33.402 Annex A) and PRF′. COMP128 v1–3 is not
   implemented (broken, 2G being switched off, only GPL implementations exist); such SIMs can use stored triplets.
 - **SQN in the cluster** (5.38): one sequence number per subscriber, advanced by a replicated command so that every
-  gateway and every failover sees the same value; resynchronisation from AUTS updates it.
+  RADIUS server and every failover sees the same value; resynchronisation from AUTS updates it.
 - **Pseudonyms** are the IMSI encrypted with AES-GCM under the current key of `auth.eap.sim.pseudonym.keys` (any
-  gateway with the keys decrypts them, nothing stored; listed older keys still decrypt). **Fast re-authentication**
-  keeps the keys of a full authentication per gateway for `auth.eap.sim.reauth.lifetime`, at most
-  `auth.eap.sim.reauth.max` times in a row; each identity is used once. On another gateway it is unknown and the
+  RADIUS server with the keys decrypts them, nothing stored; listed older keys still decrypt). **Fast re-authentication**
+  keeps the keys of a full authentication per RADIUS server for `auth.eap.sim.reauth.lifetime`, at most
+  `auth.eap.sim.reauth.max` times in a row; each identity is used once. On another RADIUS server it is unknown and the
   peer authenticates in full (5.41).
 
 ## Consequences

@@ -62,14 +62,14 @@ final class StoreLookups {
         if (stores.isEmpty()) {
             return;
         }
-        w.counter("radiusward_gateway_store_lookups_total", "Identity store look-ups by result (cache hits excluded)");
+        w.counter("radiusward_server_store_lookups_total", "Identity store look-ups by result (cache hits excluded)");
         stores.forEach((name, s) -> {
             for (int r = 0; r < RESULTS.length; r++) {
-                w.sample(s.result(r), "gateway", radiusServer, "store", name, "result", RESULTS[r]);
+                w.sample(s.result(r), "server", radiusServer, "store", name, "result", RESULTS[r]);
             }
         });
-        w.family("radiusward_gateway_store_lookup_seconds", "histogram", "How long identity store look-ups took");
+        w.family("radiusward_server_store_lookup_seconds", "histogram", "How long identity store look-ups took");
         stores.forEach(
-                (name, s) -> w.histogram(BOUNDS, s.cumulative(), s.seconds(), "gateway", radiusServer, "store", name));
+                (name, s) -> w.histogram(BOUNDS, s.cumulative(), s.seconds(), "server", radiusServer, "store", name));
     }
 }

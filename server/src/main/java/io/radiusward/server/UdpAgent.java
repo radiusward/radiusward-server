@@ -458,7 +458,7 @@ final class UdpAgent implements Agent {
 
     /**
      * Status-Server on the accounting port (RFC 5997): answered with an Accounting-Response only when a valid
-     * Message-Authenticator proves the NAS and the gateway is connected to the cluster — a NAS that sees no answer
+     * Message-Authenticator proves the NAS and the RADIUS server is connected to the cluster — a NAS that sees no answer
      * fails over, exactly when it should. Never cached, never sent to the cluster.
      */
     private void statusServer(NasClient nas, InetSocketAddress from, long route) {

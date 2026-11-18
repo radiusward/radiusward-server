@@ -26,7 +26,7 @@ class AccountingStateMachineTest {
 
     private final AccountingStateMachine sm = new AccountingStateMachine(AccountingStateMachine.Settings.defaults(10));
 
-    /** A session event; the exact key is derived from session, status and time like the gateway does. */
+    /** A session event; the exact key is derived from session, status and time like the RADIUS server does. */
     int event(long session, int status, long sessionTime, long octets, long now) {
         return MachineEvents.apply(
                 sm,
@@ -425,7 +425,7 @@ class AccountingStateMachineTest {
     @Test
     void theLatestEventSetsTheIdleTimeout() {
         MachineEvents.apply(sm, 3, 3, 31, 0, NAS, STATUS_START, 0, 0, 0, 0, 0, 15, 0);
-        // the gateways were reconfigured to 60 minutes; a stale event does not change it
+        // the RADIUS servers were reconfigured to 60 minutes; a stale event does not change it
         MachineEvents.apply(sm, 3, 3, 32, 60, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 60, 0, 1, 0, 60, 60_000);
         MachineEvents.apply(sm, 3, 3, 33, 30, NAS, STATUS_INTERIM, FLAG_SESSION_TIME, 30, 0, 1, 0, 5, 61_000);
         assertThat(sm.store().idleMinutes(sm.store().find(3, 3))).isEqualTo(60);

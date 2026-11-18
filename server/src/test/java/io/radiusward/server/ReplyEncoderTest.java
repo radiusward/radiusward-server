@@ -161,10 +161,10 @@ class ReplyEncoderTest extends HandlerFixture {
         var metrics = new io.radiusward.common.management.PrometheusWriter();
         h.writeMetrics(metrics, "1");
         assertThat(metrics.finish())
-                .contains("radiusward_gateway_access_reply_items_filtered_total{gateway=\"1\",nas=\"local\"} 6")
-                .contains("radiusward_gateway_store_lookups_total{gateway=\"1\",store=\"main\",result=\"found\"} ")
-                .contains("radiusward_gateway_store_lookup_seconds_count{gateway=\"1\",store=\"main\"} ")
-                .contains("radiusward_gateway_eap_total{gateway=\"1\",method=\"md5\",outcome=\"succeeded\"} 0");
+                .contains("radiusward_server_access_reply_items_filtered_total{server=\"1\",nas=\"local\"} 6")
+                .contains("radiusward_server_store_lookups_total{server=\"1\",store=\"main\",result=\"found\"} ")
+                .contains("radiusward_server_store_lookup_seconds_count{server=\"1\",store=\"main\"} ")
+                .contains("radiusward_server_eap_total{server=\"1\",method=\"md5\",outcome=\"succeeded\"} 0");
         io.radiusward.common.management.PrometheusWriter.validate(metrics.finish());
 
         replyVendors.clear(); // no vendor set for the entry: everything that can be encoded

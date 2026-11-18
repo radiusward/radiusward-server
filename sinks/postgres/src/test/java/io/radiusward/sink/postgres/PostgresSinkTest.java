@@ -382,6 +382,9 @@ class PostgresSinkTest {
         assertThat(value("SELECT nasidentifier FROM radacct")).isEqualTo("ap-17");
         assertThat(count("SELECT count(*) FROM accounting_event WHERE nas_device IS NULL"))
                 .isEqualTo(1);
+        assertThat(count("SELECT count(*) FROM accounting_event WHERE server_id IS NOT NULL"))
+                .as("version 4 renamed gateway_id")
+                .isEqualTo(1);
     }
 
     @Test

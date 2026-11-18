@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The gateway proxying to an external RADIUS server over UDP (ADR 0037, milestone 7): an implementation we did not
+ * The RADIUS server proxying to an external RADIUS server over UDP (ADR 0037, milestone 7): an implementation we did not
  * write decrypts the User-Password we re-encrypted, checks our Message-Authenticator, and its answers — Accept with a
  * Reply-Message, Reject — must pass our checks and reach the NAS signed for it; it also answers our Status-Server.
  * Runs only with {@code -Pinterop} and an installed {@code radiusd}.
@@ -127,8 +127,7 @@ class ExternalHomeServerIT {
 
         Thread.sleep(1500); // a Status-Server round
         assertThat(Files.readString(serverDir.resolve("server.log"))).contains("Status-Server");
-        assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_proxy_home_alive{gateway=\"1\",home=\"ext\"} 1");
+        assertThat(radiusServer.metrics()).contains("radiusward_server_proxy_home_alive{server=\"1\",home=\"ext\"} 1");
     }
 
     private ServerConfig config() {

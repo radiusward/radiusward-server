@@ -15,7 +15,7 @@ import org.agrona.CloseHelper;
 import org.agrona.concurrent.ShutdownSignalBarrier;
 
 /**
- * Dev mode: three cluster members and two gateways in one JVM, on the same ports as
+ * Dev mode: three cluster members and two RADIUS servers in one JVM, on the same ports as
  * {@code scripts/run-local.sh} (RADIUS 1813/1814, management 9090-9092 and 9190/9191). Run from the IDE
  * (VM option {@code --add-exports java.base/jdk.internal.misc=ALL-UNNAMED}); state lives in .local/dev.
  */

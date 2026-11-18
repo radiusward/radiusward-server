@@ -84,7 +84,7 @@ class IpPoolsIT {
                 "auth.pool.sql.user", postgres.getUsername(),
                 "auth.pool.sql.password", postgres.getPassword());
         IpPools pools = IpPools.from(Config.of(values));
-        IpPools.from(Config.of(values)); // a second gateway: the rows stay
+        IpPools.from(Config.of(values)); // a second RADIUS server: the rows stay
         IpPools.Pool small = pools.pool("small");
 
         String a = pools.allocate(small, "alice", "aa-aa");

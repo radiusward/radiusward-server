@@ -15,7 +15,7 @@ interface EapMethod {
 
     /**
      * What a method may use: the outer user's check items (passwords), whether its store allows cleartext use, and —
-     * for tunneled methods — the gateway's checks of an inner user's credential.
+     * for tunneled methods — the RADIUS server's checks of an inner user's credential.
      */
     record Credentials(List<AttributeItem> passwords, boolean cleartextAllowed, InnerAuth inner) {
 
@@ -24,7 +24,7 @@ interface EapMethod {
         }
     }
 
-    /** The gateway's credential checks for the inner user of a tunnel (PEAP, TTLS). */
+    /** The RADIUS server's credential checks for the inner user of a tunnel (PEAP, TTLS). */
     interface InnerAuth {
 
         /**

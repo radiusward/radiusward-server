@@ -31,7 +31,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** The whole stack in one JVM: 3 cluster members (real Aeron, fsync) and 2 gateways (real UDP). */
+/** The whole stack in one JVM: 3 cluster members (real Aeron, fsync) and 2 RADIUS servers (real UDP). */
 @Epic("Accounting")
 @Feature("Whole stack in one JVM")
 class LocalClusterIT {
@@ -102,7 +102,7 @@ class LocalClusterIT {
         byte[] start = AccountingRequest.request(1, 1, "s-1", 0);
         nas.ack(cluster.radiusServer(0).radiusPort(), start);
         nas.ack(cluster.radiusServer(1).radiusPort(), start);
-        nas.ack(cluster.radiusServer(0).radiusPort(), start); // gateway A answers from its cache
+        nas.ack(cluster.radiusServer(0).radiusPort(), start); // RADIUS server A answers from its cache
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();
@@ -113,7 +113,7 @@ class LocalClusterIT {
                 .isEqualTo(1);
 
         assertThat(cluster.radiusServer(1).ready().up()).isTrue();
-        cluster.radiusServer(1).drain(); // SIGTERM with gateway.shutdown.drain: not ready, still answering
+        cluster.radiusServer(1).drain(); // SIGTERM with server.shutdown.drain: not ready, still answering
         assertThat(cluster.radiusServer(1).ready().detail()).isEqualTo("draining before shutdown");
         nas.ack(cluster.radiusServer(1).radiusPort(), AccountingRequest.request(1, 2, "s-2", 0));
     }
@@ -124,7 +124,7 @@ class LocalClusterIT {
         long started = System.currentTimeMillis() / 1000 - 1_800; // sessions that began half an hour ago
         // the Start is lost on the way (or delayed): the first interim creates the session
         nas.ack(cluster.radiusServer(0).radiusPort(), AccountingRequest.request(1, 3, "s-4", 300, started + 300));
-        // the delayed Start arrives after the interim, through the other gateway: acknowledged, merged
+        // the delayed Start arrives after the interim, through the other RADIUS server: acknowledged, merged
         byte[] lateStart = AccountingRequest.request(2, 1, "s-4", 0, started);
         nas.ack(cluster.radiusServer(1).radiusPort(), lateStart);
         nas.ack(cluster.radiusServer(0).radiusPort(), lateStart); // its retransmission is a duplicate
@@ -167,7 +167,7 @@ class LocalClusterIT {
         long started = System.currentTimeMillis() / 1000 - 1_800;
         int a = cluster.radiusServer(0).radiusPort();
         int b = cluster.radiusServer(1).radiusPort();
-        // the NAS sent Start, 300, 600, 900, 1200, Stop at 1500; they arrive in this order, through both gateways
+        // the NAS sent Start, 300, 600, 900, 1200, Stop at 1500; they arrive in this order, through both RADIUS servers
         nas.ack(a, AccountingRequest.request(1, 3, "s-6", 900, started + 900)); // creates the session
         nas.ack(b, AccountingRequest.request(2, 3, "s-6", 600, started + 600)); // older: stale
         nas.ack(a, AccountingRequest.request(3, 3, "s-6", 300, started + 300)); // older: stale
@@ -394,14 +394,14 @@ class LocalClusterIT {
         cluster.awaitConverged();
         assertThat(cluster.node(0).stats().digest()).isEqualTo(digest);
 
-        // the gateway's cache does not know these (new identifiers), the cluster must
+        // the RADIUS server's cache does not know these (new identifiers), the cluster must
         nas.ack(port, AccountingRequest.request(9, 1, "s-3", 0));
         nas.ack(port, AccountingRequest.request(10, 3, "s-3", 300));
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();
             assertThat(state.applied()).as("nothing applied twice").isEqualTo(2);
-            // at least the two replays; a retransmit while the gateway reconnected may add a resubmission
+            // at least the two replays; a retransmit while the RADIUS server reconnected may add a resubmission
             assertThat(state.duplicates()).isGreaterThanOrEqualTo(2);
             AdminClient.Session session =
                     admin.session(AccountingRequest.sessionKey("s-3")[0], AccountingRequest.sessionKey("s-3")[1]);
@@ -445,8 +445,8 @@ class LocalClusterIT {
         String serverMetrics = cluster.radiusServer(0).metrics();
         io.radiusward.common.management.PrometheusWriter.validate(serverMetrics);
         assertThat(serverMetrics)
-                .contains("radiusward_gateway_packets_total{gateway=\"1\",result=\"committed\"}")
-                .contains("radiusward_gateway_cluster_connected{gateway=\"1\"} 1");
+                .contains("radiusward_server_packets_total{server=\"1\",result=\"committed\"}")
+                .contains("radiusward_server_cluster_connected{server=\"1\"} 1");
         String nodeMetrics = cluster.awaitLeader().metrics();
         io.radiusward.common.management.PrometheusWriter.validate(nodeMetrics);
         assertThat(nodeMetrics).contains("radiusward_sessions{member=").contains("radiusward_cluster_leader{");

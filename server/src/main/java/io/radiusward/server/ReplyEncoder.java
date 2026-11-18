@@ -158,8 +158,8 @@ final class ReplyEncoder {
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
         w.counter(
-                "radiusward_gateway_access_reply_items_filtered_total",
+                "radiusward_server_access_reply_items_filtered_total",
                 "Vendor attributes left out of Access-Accepts because the NAS entry is of another vendor");
-        new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "gateway", radiusServer, "nas", nas));
+        new TreeMap<>(filtered).forEach((nas, count) -> w.sample(count.get(), "server", radiusServer, "nas", nas));
     }
 }

@@ -43,4 +43,4 @@ fail.
   `autheap=MSCHAPV2`, `autheap=MD5` and `autheap=GTC`, accepted with matching MPPE keys; each rejected with a wrong
   password.
 - `ExternalEapComparisonIT`: the same profiles, with a wrong password for CHAP and EAP-MD5, end the same way on an
-  external RADIUS server and on the gateway.
+  external RADIUS server and on the RADIUS server.

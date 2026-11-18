@@ -28,11 +28,11 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.MountableFile;
 
 /**
- * radsecproxy ({@code testing/radsec-client}) as an independent RadSec and DTLS client of the real gateway (ADR 0034,
+ * radsecproxy ({@code testing/radsec-client}) as an independent RadSec and DTLS client of the real RADIUS server (ADR 0034,
  * ADR 0038): one instance forwards over TLS, a second over DTLS 1.2 with the secret {@code radius/dtls}.
  * FreeRADIUS's {@code radclient} and wpa_supplicant's {@code eapol_test} send over UDP to radsecproxy in the container,
  * which forwards over TLS. PAP, Status-Server, and PEAP and TTLS whose MS-MPPE keys must survive both secrets (the
- * gateway encrypts them with the RadSec secret, radsecproxy re-encrypts them for its UDP client). Skipped where Docker
+ * RADIUS server encrypts them with the RadSec secret, radsecproxy re-encrypts them for its UDP client). Skipped where Docker
  * is missing, a failure where it is required.
  */
 @Epic("Transports")
@@ -133,7 +133,7 @@ class RadsecproxyIT {
                     type udp
                     secret %s
                 }
-                server radiusServer {
+                server radiusward {
                     host GATEWAY
                     port %d
                     type tls
@@ -142,7 +142,7 @@ class RadsecproxyIT {
                     StatusServer on
                 }
                 realm * {
-                    server radiusServer
+                    server radiusward
                 }
                 """.formatted(UDP_SECRET, radiusServer.radsecPort()));
         Files.writeString(dir.resolve("radsecproxy-dtls.conf"), """
@@ -158,7 +158,7 @@ class RadsecproxyIT {
                     type udp
                     secret %s
                 }
-                server radiusServer {
+                server radiusward {
                     host GATEWAY
                     port %d
                     type dtls
@@ -167,7 +167,7 @@ class RadsecproxyIT {
                     StatusServer on
                 }
                 realm * {
-                    server radiusServer
+                    server radiusward
                 }
                 """.formatted(
                         DTLS_PROXY_PORT, UDP_SECRET, radiusServer.dtlsPort()));
@@ -210,7 +210,7 @@ class RadsecproxyIT {
         assertThat(radiusServer.radsecAgent().openConnections()).isEqualTo(1);
     }
 
-    /** RADIUS over plain TCP (RFC 6613, ADR 0045): radclient straight to the gateway's TCP port, the NAS's secret. */
+    /** RADIUS over plain TCP (RFC 6613, ADR 0045): radclient straight to the RADIUS server's TCP port, the NAS's secret. */
     @Test
     void papOverPlainTcp() throws Exception {
         String to = "$(getent hosts host.docker.internal | cut -d' ' -f1):" + radiusServer.tcpPort(true);

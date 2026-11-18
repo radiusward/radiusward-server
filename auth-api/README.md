@@ -11,7 +11,7 @@ The identity store plug-in API ([ADR 0021](../docs/adr/0021-identity-stores.md))
 | `IdentityStore` | `lookup(userName)`: the user, empty if unknown, `StoreUnavailableException` if it cannot tell; called from several worker threads at once; must return within its own timeout |
 | `UserRecord`, `AttributeItem` | check items, reply items and groups as attribute name, operator and text value |
 
-Stores contain no RADIUS logic: the gateway verifies passwords, evaluates check items and encodes reply items.
+Stores contain no RADIUS logic: the RADIUS server verifies passwords, evaluates check items and encodes reply items.
 
 **Credential verifiers** (`CredentialVerifierProvider`, `CredentialVerifier`, ADR 0025) check a password or an MS-CHAP
 response elsewhere — a directory, a domain controller — for users whose store holds no password; registered in

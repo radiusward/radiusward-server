@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Proxying over RadSec (ADR 0037, milestone 4): gateway A proxies a realm to gateway B, its home server, over TLS
+ * Proxying over RadSec (ADR 0037, milestone 4): RADIUS server A proxies a realm to RADIUS server B, its home server, over TLS
  * with a client certificate; B decides from its own store. The NAS talks UDP to A and gets B's answer, signed for it.
  * A home server whose certificate does not carry the expected name gets nothing.
  */
@@ -122,8 +122,8 @@ class ProxyRadsecIT {
         byte[] wrong = nas.pap("alice@partner.example", "wrong", "aa-bb-cc-00-01-02");
         ProxyIT.assertForTheNas(nas.send(port, wrong, Duration.ofSeconds(5)), wrong, RadiusCode.ACCESS_REJECT);
         assertThat(proxy.metrics())
-                .contains("radiusward_gateway_proxy_requests_total{gateway=\"1\",home=\"b\",result=\"accepted\"} 1")
-                .contains("radiusward_gateway_proxy_requests_total{gateway=\"1\",home=\"b\",result=\"rejected\"} 1");
+                .contains("radiusward_server_proxy_requests_total{server=\"1\",home=\"b\",result=\"accepted\"} 1")
+                .contains("radiusward_server_proxy_requests_total{server=\"1\",home=\"b\",result=\"rejected\"} 1");
     }
 
     @Test

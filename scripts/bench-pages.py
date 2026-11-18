@@ -18,7 +18,7 @@ import json
 import os
 import sys
 
-WORKLOADS = [("accounting", "Accounting", "Start and Interim records of fresh sessions through both gateways"),
+WORKLOADS = [("accounting", "Accounting", "Start and Interim records of fresh sessions through both RADIUS servers"),
              ("access", "Authentication", "Access-Requests with PAP, CHAP and MS-CHAPv2"),
              ("mix", "Mix", "70 % accounting, 30 % authentication")]
 COLORS = ["#2f6fdb", "#d9822b", "#1a7f37", "#8250df", "#cf222e", "#0a7ea4", "#9a6700"]
@@ -165,7 +165,7 @@ JMH = {"validate": "structure check of the packet and its attributes",
        "verifyAuthenticator": "the Request Authenticator (MD5 over the packet and the shared secret)",
        "extract": "the attributes accounting needs, read without allocating",
        "encodeResponse": "the Accounting-Response, signed",
-       "fullReceivePath": "all of the above: what a gateway does per accounting packet before the cluster commit"}
+       "fullReceivePath": "all of the above: what a RADIUS server does per accounting packet before the cluster commit"}
 
 
 def at_ceiling(w):
@@ -185,7 +185,7 @@ def kpi(value, title, lines, tone=""):
 def kpis(run):
     cards = []
     texts = {"accounting": ("Accounting", "committed on two of three members with fsync before each Accounting-Response"),
-             "access": ("Authentication", "Access-Requests with PAP, CHAP and MS-CHAPv2, decided by the gateways"),
+             "access": ("Authentication", "Access-Requests with PAP, CHAP and MS-CHAPv2, decided by the RADIUS servers"),
              "mix": ("Mixed load", "70 % accounting, 30 % authentication")}
     for key, (title, what) in texts.items():
         w = run.get("workloads", {}).get(key)
@@ -223,26 +223,26 @@ def machine_note(run):
     labels = env.get("labels") or {}
     if env.get("shared_host"):
         cpus = (env.get("docker") or {}).get("cpus", "?")
-        return (f'<p class="note"><b>One shared machine, {esc(cpus)} vCPU:</b> three cluster members, two gateways, '
+        return (f'<p class="note"><b>One shared machine, {esc(cpus)} vCPU:</b> three cluster members, two RADIUS servers, '
                 f'PostgreSQL with the exporter and {generators or "the"} load generators all ran on it, each member and '
-                f'gateway limited to one CPU. The numbers are a lower bound and a trend from week to week; separate '
+                f'RADIUS server limited to one CPU. The numbers are a lower bound and a trend from week to week; separate '
                 f'machines carry more.</p>')
     parts = [f"{k.replace('_', ' ')} {v}" for k, v in labels.items()]
-    return (f'<p class="note good"><b>Dedicated machines:</b> members, gateways and load generators on their own '
+    return (f'<p class="note good"><b>Dedicated machines:</b> members, RADIUS servers and load generators on their own '
             f'instances{": " + esc(", ".join(parts)) if parts else ""}.</p>')
 
 
 def memory_note(run):
-    peak = {"gateway": 0, "node": 0}
+    peak = {"server": 0, "node": 0}
     for w in run.get("workloads", {}).values():
         for s in w["steps"]:
             for name, c in s.get("containers", {}).items():
-                for role in peak:
-                    if name.startswith(role):
-                        peak[role] = max(peak[role], c.get("mem_max_bytes", 0))
+                role = "server" if name.startswith("gateway") else name.split("-")[0]  # runs before the rename
+                if role in peak:
+                    peak[role] = max(peak[role], c.get("mem_max_bytes", 0))
     if not any(peak.values()):
         return ""
-    return (f'<p><b>Memory at the highest load:</b> each gateway at most {fmt(peak["gateway"] / 2**20)} MiB, each '
+    return (f'<p><b>Memory at the highest load:</b> each RADIUS server at most {fmt(peak["server"] / 2**20)} MiB, each '
             f'cluster member at most {fmt(peak["node"] / 2**20)} MiB (profile {esc(run["environment"].get("profile", ""))}, '
             f'which fits a member in 1 GiB).</p>')
 
@@ -284,7 +284,7 @@ def steps_table(w, limit):
 
 def jmh_table(jmh):
     rows = []
-    order = list(JMH)  # the packet's way through the gateway, the whole path first
+    order = list(JMH)  # the packet's way through the RADIUS server, the whole path first
     order.insert(0, order.pop())
     for b in sorted(jmh, key=lambda b: order.index(b["benchmark"].split(".")[-1])
                     if b["benchmark"].split(".")[-1] in order else len(order)):
@@ -298,7 +298,7 @@ def jmh_table(jmh):
                     f"<td class='num'>± {100 * b.get('error', 0) / score:.0f} %{' (noisy)' if noisy else ''}</td></tr>")
     if not rows:
         return ""
-    return ("<h3>The gateway's packet path on one core (JMH)</h3><p class='muted small'>Per accounting packet of about "
+    return ("<h3>The RADIUS server's packet path on one core (JMH)</h3><p class='muted small'>Per accounting packet of about "
             "200 bytes, on one core of this machine, without the network and without the cluster commit. Short runs on "
             "a shared machine are noisy; the trend below shows them over time.</p><table><tr><th>Step</th><th>What it "
             "does</th><th class='num'>Per packet</th><th class='num'>Per second, one core</th><th class='num'>Error</th></tr>" + "".join(rows) + "</table>")
@@ -368,7 +368,7 @@ def trend_section(runs):
             jseries = [(n, [(i, next((b["score"] for b in (r.get("jmh") or []) if b["benchmark"].endswith("." + n)),
                                      None)) for i, r in zip(idx, rs)]) for n in names]
             parts.append(f'<figure>{chart(jseries, "run", "packets per µs, one core")}'
-                         f'<figcaption>The gateway\'s packet path (JMH) per run.</figcaption></figure>')
+                         f'<figcaption>The server\'s packet path (JMH) per run.</figcaption></figure>')
         parts.append(f'</div><p class="muted small">runs {esc(dates)}</p>')
     parts.append("</section>")
     return "".join(parts)

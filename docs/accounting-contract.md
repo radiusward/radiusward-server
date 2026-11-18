@@ -24,7 +24,7 @@ RADIUS has no Accounting-Reject. radiusward stays **silent** and the NAS retrans
 
 - the packet is malformed, the source is not a configured NAS, or an authenticator does not verify
   (silently discarded, RFC 2865 §3 / RFC 2866 §4.1);
-- a gateway queue is full (bounded admission control);
+- a RADIUS server queue is full (bounded admission control);
 - no cluster majority is reachable, or a leader election is in progress;
 - storage synchronisation fails;
 - a sink marked `required: true` has exceeded its `maxLag` (`onMaxLag: block`).
@@ -35,11 +35,11 @@ must retry or buffer it, which NAS devices do.
 ## Duplicates and retries
 
 A missing response does not tell the NAS whether the original was committed, so retries are normal —
-also after a leader failover and through a different gateway.
+also after a leader failover and through a different RADIUS server.
 
 | Layer | Recognises | Key |
 |---|---|---|
-| Gateway response cache (RFC 5080 §2.2.2) | identical retransmits arriving at the same gateway | source IP:port, Identifier, Request Authenticator |
+| RADIUS server response cache (RFC 5080 §2.2.2) | identical retransmits arriving at the same RADIUS server | source IP:port, Identifier, Request Authenticator |
 | Cluster dedup | the same accounting event however it arrives | logical event key per NAS and session (below) |
 
 A duplicate is answered with an Accounting-Response — the original outcome — and is **not** applied
@@ -101,7 +101,7 @@ Sinks are fed asynchronously from the committed log ([ADR 0017](adr/0017-exporte
 ## Failure model
 
 Tolerated without losing acknowledged records: one cluster node lost (crash, power loss, disk loss),
-any number of gateways lost, network partitions that leave a majority connected, sink outages up to
+any number of RADIUS servers lost, network partitions that leave a majority connected, sink outages up to
 `maxLag`.
 
 Not tolerated: losing two of three nodes at once (no majority — the cluster stops ACKing; data on the

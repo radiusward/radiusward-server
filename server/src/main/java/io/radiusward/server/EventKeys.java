@@ -14,7 +14,7 @@ import org.agrona.concurrent.UnsafeBuffer;
  *
  * <ul>
  *   <li><b>session key</b> = Murmur3-128 of (nasId, Acct-Session-Id): identifies the session on every
- *       gateway;
+ *       RADIUS server;
  *   <li><b>exact key</b> = Murmur3-128 of (nasId, Acct-Status-Type, Acct-Session-Time, Event-Timestamp,
  *       64 bit octet counters, presence bits, Acct-Session-Id): identifies one event. It deliberately leaves
  *       out Acct-Delay-Time and the RADIUS Identifier, which change on retransmission.

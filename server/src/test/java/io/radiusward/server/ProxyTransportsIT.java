@@ -23,7 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Proxying over plain TCP and DTLS (ADR 0055): gateway A proxies one realm over TCP and another over DTLS to gateway
+ * Proxying over plain TCP and DTLS (ADR 0055): RADIUS server A proxies one realm over TCP and another over DTLS to RADIUS server
  * B, which decides from its users file. The TCP realm is rewritten on the way: Calling-Station-Id removed and an
  * Operator-Name added before B sees it (B's check items require both), Class removed from B's answer.
  */
@@ -150,9 +150,9 @@ class ProxyTransportsIT {
         byte[] wrong = nas.pap("carol@dtls.example", "nope", "aa-bb-cc-00-02-03");
         ProxyIT.assertForTheNas(nas.send(port, wrong, Duration.ofSeconds(5)), wrong, RadiusCode.ACCESS_REJECT);
         assertThat(proxy.metrics())
-                .contains("radiusward_gateway_proxy_requests_total{gateway=\"1\",home=\"t\",result=\"accepted\"} 1")
-                .contains("radiusward_gateway_proxy_requests_total{gateway=\"1\",home=\"d\",result=\"accepted\"} 1")
-                .contains("radiusward_gateway_proxy_requests_total{gateway=\"1\",home=\"d\",result=\"rejected\"} 1");
+                .contains("radiusward_server_proxy_requests_total{server=\"1\",home=\"t\",result=\"accepted\"} 1")
+                .contains("radiusward_server_proxy_requests_total{server=\"1\",home=\"d\",result=\"accepted\"} 1")
+                .contains("radiusward_server_proxy_requests_total{server=\"1\",home=\"d\",result=\"rejected\"} 1");
     }
 
     private ServerConfig config(String name, int id) {

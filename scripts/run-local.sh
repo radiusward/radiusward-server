@@ -3,11 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Runs a local radiusward cluster as separate JVMs on loopback (Phase 1, no Docker):
-# three cluster nodes (ports 9000/9100/9200, management 9090-9092) and two gateways
+# three cluster nodes (ports 9000/9100/9200, management 9090-9092) and two RADIUS servers
 # (RADIUS UDP 1813 and 1814, management 9190/9191). State and logs live in .local/.
 #
 #   scripts/run-local.sh build                 build radiusward.jar and radclient.jar
-#   scripts/run-local.sh start [name...]       start everything, or node-0 node-1 node-2 gateway-a gateway-b
+#   scripts/run-local.sh start [name...]       start everything, or node-0 node-1 node-2 server-a server-b
 #   scripts/run-local.sh stop [name...]        graceful stop (SIGTERM)
 #   scripts/run-local.sh kill <name>           kill -9, e.g. to simulate a crashed leader
 #   scripts/run-local.sh restart <name>
@@ -27,8 +27,8 @@ RADCLIENT="$ROOT/tools/radclient/target/radclient.jar"
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 # small profile memory budget (ADR 0004)
 NODE_OPTS="-Xms256m -Xmx256m -XX:MaxDirectMemorySize=576m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k -XX:+UseG1GC"
-GATEWAY_OPTS="-Xms192m -Xmx192m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k -XX:+UseG1GC"
-ALL=(node-0 node-1 node-2 gateway-a gateway-b)
+SERVER_OPTS="-Xms192m -Xmx192m -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k -XX:+UseG1GC"
+ALL=(node-0 node-1 node-2 server-a server-b)
 
 mkdir -p "$LOCAL/logs" "$LOCAL/pids"
 
@@ -37,7 +37,7 @@ die() { echo "run-local: $*" >&2; exit 1; }
 port_of() {
     case "$1" in
         node-0) echo 9090 ;; node-1) echo 9091 ;; node-2) echo 9092 ;;
-        gateway-a) echo 9190 ;; gateway-b) echo 9191 ;;
+        server-a) echo 9190 ;; server-b) echo 9191 ;;
         *) die "unknown component $1 (one of ${ALL[*]})" ;;
     esac
 }
@@ -64,9 +64,9 @@ start_one() {
         node-*)
             args=(cluster-node --config "$CONFIG/cluster.properties" --config "$CONFIG/$name.properties")
             opts="$NODE_OPTS" ;;
-        gateway-*)
-            args=(gateway --config "$CONFIG/$name.properties" --config "$CONFIG/nas-clients.properties")
-            opts="$GATEWAY_OPTS" ;;
+        server-*)
+            args=(server --config "$CONFIG/$name.properties" --config "$CONFIG/nas-clients.properties")
+            opts="$SERVER_OPTS" ;;
     esac
     # shellcheck disable=SC2086
     nohup "$JAVA" $opts -jar "$JAR" "${args[@]}" >>"$LOCAL/logs/$name.log" 2>&1 &
@@ -111,7 +111,7 @@ status() {
             printf "%-10s %-8s %-10s %-9s %-11s %s\n" "$name" "${pid:--}" "$(field "$s" role)" \
                 "$(field "$s" applied)" "$(field "$s" duplicates)" "$(field "$s" stateDigest)"
         else
-            printf "%-10s %-8s %-10s %-9s %-11s %s\n" "$name" "${pid:--}" "gateway" \
+            printf "%-10s %-8s %-10s %-9s %-11s %s\n" "$name" "${pid:--}" "server" \
                 "$(field "$s" committed)" "$(field "$s" duplicates)" "connected=$(field "$s" connected)"
         fi
     done
@@ -139,7 +139,7 @@ demo_failover() {
     for name in "${ALL[@]}"; do wait_ready "$name"; done
     echo; echo "== cluster ready"; status
     local acks="$LOCAL/demo-acks.csv"
-    echo; echo "== load: 20 NAS x 50 sessions, 1000 req/s for 30s through both gateways (ack log: .local/demo-acks.csv)"
+    echo; echo "== load: 20 NAS x 50 sessions, 1000 req/s for 30s through both RADIUS servers (ack log: .local/demo-acks.csv)"
     "$JAVA" -jar "$RADCLIENT" load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 \
         --nas 20 --sessions 1000 --rate 1000 --duration 30s --interim 5s --ack-log "$acks" &
     local load=$!
@@ -162,7 +162,7 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
     build) build ;;
     start) ensure_built; [[ $# -eq 0 ]] && set -- "${ALL[@]}"; for n in "$@"; do port_of "$n" >/dev/null; start_one "$n"; done ;;
-    stop) [[ $# -eq 0 ]] && set -- gateway-a gateway-b node-0 node-1 node-2; for n in "$@"; do stop_one "$n"; done ;;
+    stop) [[ $# -eq 0 ]] && set -- server-a server-b node-0 node-1 node-2; for n in "$@"; do stop_one "$n"; done ;;
     kill) [[ $# -eq 1 ]] || die "usage: kill <name>"; kill_one "$1" ;;
     restart) [[ $# -eq 1 ]] || die "usage: restart <name>"; stop_one "$1"; start_one "$1" ;;
     status) status ;;
@@ -170,6 +170,6 @@ case "$cmd" in
     leader) leader || die "no leader" ;;
     wait-ready) for n in "${@:-${ALL[@]}}"; do wait_ready "$n"; done ;;
     demo-failover) demo_failover ;;
-    clean) for n in gateway-a gateway-b node-0 node-1 node-2; do stop_one "$n"; done; rm -rf "$LOCAL"; echo "removed .local/" ;;
+    clean) for n in server-a server-b node-0 node-1 node-2; do stop_one "$n"; done; rm -rf "$LOCAL"; echo "removed .local/" ;;
     *) sed -n '4,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 64 ;;
 esac

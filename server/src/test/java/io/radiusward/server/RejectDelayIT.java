@@ -30,7 +30,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Access-Rejects held back (ADR 0057) and the authentication log (ADR 0058) on a running gateway: a reject arrives
+ * Access-Rejects held back (ADR 0057) and the authentication log (ADR 0058) on a running RADIUS server: a reject arrives
  * after the delay, an accept at once, a retransmission during the delay gets no second answer; both decisions are
  * logged with the reject's cause.
  */

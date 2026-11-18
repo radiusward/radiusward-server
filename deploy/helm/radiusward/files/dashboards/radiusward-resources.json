@@ -86,18 +86,18 @@
         "hide": 0
       },
       {
-        "name": "gateway",
-        "label": "Gateway",
+        "name": "server",
+        "label": "Server",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
-          "refId": "gateway"
+          "query": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
+          "refId": "server"
         },
-        "definition": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
+        "definition": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
         "refresh": 2,
         "includeAll": true,
         "allValue": ".*",
@@ -468,7 +468,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "max by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\",container=~\"radiusward.*|node|gateway\"})",
+          "expr": "max by (pod) (container_memory_working_set_bytes{namespace=~\"$namespace\",container=~\"radiusward.*|node|server\"})",
           "legendFormat": "used {{pod}}",
           "datasource": {
             "type": "prometheus",
@@ -477,7 +477,7 @@
         },
         {
           "refId": "B",
-          "expr": "max by (pod) (kube_pod_container_resource_limits{namespace=~\"$namespace\",resource=\"memory\",container=~\"radiusward.*|node|gateway\"})",
+          "expr": "max by (pod) (kube_pod_container_resource_limits{namespace=~\"$namespace\",resource=\"memory\",container=~\"radiusward.*|node|server\"})",
           "legendFormat": "limit {{pod}}",
           "datasource": {
             "type": "prometheus",
@@ -520,7 +520,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=~\"$namespace\",container=~\"radiusward.*|node|gateway\"}[5m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{namespace=~\"$namespace\",container=~\"radiusward.*|node|gateway\"}[5m]))",
+          "expr": "sum by (pod) (rate(container_cpu_cfs_throttled_periods_total{namespace=~\"$namespace\",container=~\"radiusward.*|node|server\"}[5m])) / sum by (pod) (rate(container_cpu_cfs_periods_total{namespace=~\"$namespace\",container=~\"radiusward.*|node|server\"}[5m]))",
           "legendFormat": "{{pod}}",
           "datasource": {
             "type": "prometheus",

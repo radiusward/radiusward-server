@@ -20,8 +20,8 @@ data "aws_subnet" "member" {
 locals {
   # task sizes per profile: heap + direct memory + /dev/shm of deploy/docker/entrypoint.sh plus about 15 % (ADR 0004)
   sizes = {
-    small    = { member_cpu = 1024, member_memory = 1536, member_shm = 512, member_instance = "c7g.large", gateway_cpu = 1024, gateway_memory = 2048 }
-    standard = { member_cpu = 2048, member_memory = 4096, member_shm = 1024, member_instance = "m7g.large", gateway_cpu = 2048, gateway_memory = 4096 }
+    small    = { member_cpu = 1024, member_memory = 1536, member_shm = 512, member_instance = "c7g.large", server_cpu = 1024, server_memory = 2048 }
+    standard = { member_cpu = 2048, member_memory = 4096, member_shm = 1024, member_instance = "m7g.large", server_cpu = 2048, server_memory = 4096 }
   }
   size         = local.sizes[var.profile]
   member_zones = { for i, s in data.aws_subnet.member : i => s.availability_zone }
@@ -30,7 +30,7 @@ locals {
 
 locals {
   members      = ["0", "1", "2"]
-  gateways     = ["0", "1"]
+  servers      = ["0", "1"]
   member_names = join(",", [for id in local.members : "node-${id}.${var.namespace}"])
   log_options = {
     "awslogs-group"  = aws_cloudwatch_log_group.radiusward.name
@@ -45,7 +45,7 @@ locals {
   }
 }
 
-# ---------------------------------------------------------------- logs, secrets, gateway configuration
+# ---------------------------------------------------------------- logs, secrets, RADIUS server configuration
 
 resource "aws_cloudwatch_log_group" "radiusward" {
   name              = "/radiusward/${var.name}"
@@ -54,24 +54,24 @@ resource "aws_cloudwatch_log_group" "radiusward" {
 
 resource "aws_secretsmanager_secret" "nas" {
   name_prefix = "${var.name}-nas-"
-  description = "the RADIUS shared secret of the NAS devices (NAS_SECRET in the gateway properties)"
+  description = "the RADIUS shared secret of the NAS devices (NAS_SECRET in the RADIUS server properties)"
 }
 
-# a users file for the gateways, written to /tmp/users in each gateway task (identity store type file)
+# a users file for the RADIUS servers, written to /tmp/users in each RADIUS server task (identity store type file)
 resource "aws_secretsmanager_secret" "users" {
   name_prefix = "${var.name}-users-"
-  description = "the gateways' users file (/tmp/users; identity store type file)"
+  description = "the RADIUS servers' users file (/tmp/users; identity store type file)"
 }
 
 resource "aws_secretsmanager_secret_version" "users" {
   secret_id     = aws_secretsmanager_secret.users.id
-  secret_string = var.gateway_users
+  secret_string = var.server_users
 }
 
-resource "aws_ssm_parameter" "gateway_properties" {
-  name  = "/${var.name}/gateway.properties"
+resource "aws_ssm_parameter" "server_properties" {
+  name  = "/${var.name}/server.properties"
   type  = "String"
-  value = var.gateway_properties
+  value = var.server_properties
 }
 
 # ---------------------------------------------------------------- security groups
@@ -82,9 +82,9 @@ resource "aws_security_group" "member" {
   vpc_id      = var.vpc_id
 }
 
-resource "aws_security_group" "gateway" {
-  name_prefix = "${var.name}-gateway-"
-  description = "radiusward gateways"
+resource "aws_security_group" "server" {
+  name_prefix = "${var.name}-server-"
+  description = "radiusward RADIUS servers"
   vpc_id      = var.vpc_id
 }
 
@@ -101,21 +101,21 @@ resource "aws_security_group" "efs" {
 }
 
 resource "aws_vpc_security_group_egress_rule" "all" {
-  for_each          = { member = aws_security_group.member.id, gateway = aws_security_group.gateway.id, backup = aws_security_group.backup.id }
+  for_each          = { member = aws_security_group.member.id, server = aws_security_group.server.id, backup = aws_security_group.backup.id }
   security_group_id = each.value
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-# Aeron between members, gateways and the backup: fixed ports (cluster.base.port + 100 x id + 0..5, backup.port
+# Aeron between members, RADIUS servers and the backup: fixed ports (cluster.base.port + 100 x id + 0..5, backup.port
 # + 0..3) and ephemeral ones (replies, replication), so all UDP among the three groups
 locals {
   aeron_rules = {
-    member_from_member  = [aws_security_group.member.id, aws_security_group.member.id]
-    member_from_gateway = [aws_security_group.member.id, aws_security_group.gateway.id]
-    member_from_backup  = [aws_security_group.member.id, aws_security_group.backup.id]
-    gateway_from_member = [aws_security_group.gateway.id, aws_security_group.member.id]
-    backup_from_member  = [aws_security_group.backup.id, aws_security_group.member.id]
+    member_from_member = [aws_security_group.member.id, aws_security_group.member.id]
+    member_from_server = [aws_security_group.member.id, aws_security_group.server.id]
+    member_from_backup = [aws_security_group.member.id, aws_security_group.backup.id]
+    server_from_member = [aws_security_group.server.id, aws_security_group.member.id]
+    backup_from_member = [aws_security_group.backup.id, aws_security_group.member.id]
   }
 }
 
@@ -129,7 +129,7 @@ resource "aws_vpc_security_group_ingress_rule" "aeron" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "management" {
-  for_each          = { member = aws_security_group.member.id, gateway = aws_security_group.gateway.id, backup = aws_security_group.backup.id }
+  for_each          = { member = aws_security_group.member.id, server = aws_security_group.server.id, backup = aws_security_group.backup.id }
   security_group_id = each.value
   description       = "management, metrics and load balancer health checks"
   ip_protocol       = "tcp"
@@ -140,7 +140,7 @@ resource "aws_vpc_security_group_ingress_rule" "management" {
 
 resource "aws_vpc_security_group_ingress_rule" "radius" {
   for_each          = toset(var.nas_cidrs)
-  security_group_id = aws_security_group.gateway.id
+  security_group_id = aws_security_group.server.id
   description       = "RADIUS from NAS devices"
   ip_protocol       = "udp"
   from_port         = 1812
@@ -185,7 +185,7 @@ resource "aws_iam_role_policy" "execution_configuration" {
     Version = "2012-10-17"
     Statement = [
       { Effect = "Allow", Action = "secretsmanager:GetSecretValue", Resource = [aws_secretsmanager_secret.nas.arn, aws_secretsmanager_secret.users.arn] },
-      { Effect = "Allow", Action = "ssm:GetParameters", Resource = aws_ssm_parameter.gateway_properties.arn },
+      { Effect = "Allow", Action = "ssm:GetParameters", Resource = aws_ssm_parameter.server_properties.arn },
     ]
   })
 }
@@ -477,22 +477,22 @@ resource "aws_ecs_service" "node" {
   depends_on = [aws_ecs_cluster_capacity_providers.radiusward, aws_efs_mount_target.backup]
 }
 
-# ---------------------------------------------------------------- gateways, one load balancer each
+# ---------------------------------------------------------------- RADIUS servers, one load balancer each
 
-resource "aws_ecs_task_definition" "gateway" {
-  for_each                 = toset(local.gateways)
-  family                   = "${var.name}-gateway-${each.key}"
+resource "aws_ecs_task_definition" "server" {
+  for_each                 = toset(local.servers)
+  family                   = "${var.name}-server-${each.key}"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = tostring(local.size.gateway_cpu)
-  memory                   = tostring(local.size.gateway_memory)
+  cpu                      = tostring(local.size.server_cpu)
+  memory                   = tostring(local.size.server_memory)
   execution_role_arn       = aws_iam_role.execution.arn
   runtime_platform {
     cpu_architecture        = local.arm64.cpu_architecture
     operating_system_family = local.arm64.operating_system_family
   }
   container_definitions = jsonencode([{
-    name        = "gateway"
+    name        = "server"
     image       = var.image
     essential   = true
     stopTimeout = 30
@@ -500,24 +500,24 @@ resource "aws_ecs_task_definition" "gateway" {
     # the properties come from SSM, the users file from Secrets Manager; the members send replies to the task's
     # own address
     command = [join(" && ", [
-      "printf '%s\\n' \"$GATEWAY_PROPERTIES\" > /tmp/gateway.properties",
-      "printf '%s\\n' \"$GATEWAY_USERS\" > /tmp/users",
+      "printf '%s\\n' \"$SERVER_PROPERTIES\" > /tmp/server.properties",
+      "printf '%s\\n' \"$SERVER_USERS\" > /tmp/users",
       "ip=$(hostname -i)",
-      "export RADIUSWARD_GATEWAY_EGRESS_HOST=$${ip%% *}",
-      "exec /usr/local/bin/radiusward gateway --config /tmp/gateway.properties",
+      "export RADIUSWARD_SERVER_EGRESS_HOST=$${ip%% *}",
+      "exec /usr/local/bin/radiusward server --config /tmp/server.properties",
     ])]
     environment = [
       { name = "RADIUSWARD_PROFILE", value = var.profile },
-      { name = "RADIUSWARD_GATEWAY_ID", value = each.key },
+      { name = "RADIUSWARD_SERVER_ID", value = each.key },
       { name = "RADIUSWARD_CLUSTER_MEMBERS", value = local.member_names },
-      { name = "RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN", value = "5s" },
-      { name = "RADIUSWARD_GATEWAY_AERON_DIR", value = "/tmp/aeron-gateway" },
+      { name = "RADIUSWARD_SERVER_SHUTDOWN_DRAIN", value = "5s" },
+      { name = "RADIUSWARD_SERVER_AERON_DIR", value = "/tmp/aeron-server" },
       { name = "RADIUSWARD_MANAGEMENT_HTTP_HOST", value = "0.0.0.0" },
     ]
     secrets = [
       { name = "NAS_SECRET", valueFrom = aws_secretsmanager_secret.nas.arn },
-      { name = "GATEWAY_PROPERTIES", valueFrom = aws_ssm_parameter.gateway_properties.arn },
-      { name = "GATEWAY_USERS", valueFrom = aws_secretsmanager_secret_version.users.secret_arn },
+      { name = "SERVER_PROPERTIES", valueFrom = aws_ssm_parameter.server_properties.arn },
+      { name = "SERVER_USERS", valueFrom = aws_secretsmanager_secret_version.users.secret_arn },
     ]
     portMappings = [
       { containerPort = 1812, protocol = "udp" },
@@ -525,33 +525,33 @@ resource "aws_ecs_task_definition" "gateway" {
       { containerPort = 9090, protocol = "tcp" },
     ]
     healthCheck      = merge(local.health, { startPeriod = 60 })
-    logConfiguration = { logDriver = "awslogs", options = merge(local.log_options, { "awslogs-stream-prefix" = "gateway-${each.key}" }) }
+    logConfiguration = { logDriver = "awslogs", options = merge(local.log_options, { "awslogs-stream-prefix" = "server-${each.key}" }) }
   }])
 }
 
-resource "aws_lb" "gateway" {
-  for_each                         = toset(local.gateways)
-  name                             = "${var.name}-gw-${each.key}"
+resource "aws_lb" "server" {
+  for_each                         = toset(local.servers)
+  name                             = "${var.name}-server-${each.key}"
   load_balancer_type               = "network"
   internal                         = var.internal
-  subnets                          = var.gateway_subnet_ids
+  subnets                          = var.server_subnet_ids
   enable_cross_zone_load_balancing = true
 }
 
 locals {
-  # gateway id x RADIUS port
-  gateway_ports = { for pair in setproduct(local.gateways, ["1812", "1813"]) : "${pair[0]}-${pair[1]}" => { id = pair[0], port = tonumber(pair[1]) } }
+  # RADIUS server id x RADIUS port
+  server_ports = { for pair in setproduct(local.servers, ["1812", "1813"]) : "${pair[0]}-${pair[1]}" => { id = pair[0], port = tonumber(pair[1]) } }
 }
 
-resource "aws_lb_target_group" "gateway" {
-  for_each             = local.gateway_ports
-  name                 = "${var.name}-gw-${each.key}"
+resource "aws_lb_target_group" "server" {
+  for_each             = local.server_ports
+  name                 = "${var.name}-server-${each.key}"
   vpc_id               = var.vpc_id
   protocol             = "UDP"
   port                 = each.value.port
   target_type          = "ip"
   deregistration_delay = 10
-  # NAS entries are found by the source address: it must reach the gateway unchanged
+  # NAS entries are found by the source address: it must reach the RADIUS server unchanged
   preserve_client_ip = "true"
   health_check {
     protocol = "HTTP"
@@ -560,22 +560,22 @@ resource "aws_lb_target_group" "gateway" {
   }
 }
 
-resource "aws_lb_listener" "gateway" {
-  for_each          = local.gateway_ports
-  load_balancer_arn = aws_lb.gateway[each.value.id].arn
+resource "aws_lb_listener" "server" {
+  for_each          = local.server_ports
+  load_balancer_arn = aws_lb.server[each.value.id].arn
   protocol          = "UDP"
   port              = each.value.port
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.gateway[each.key].arn
+    target_group_arn = aws_lb_target_group.server[each.key].arn
   }
 }
 
-resource "aws_ecs_service" "gateway" {
-  for_each                           = toset(local.gateways)
-  name                               = "gateway-${each.key}"
+resource "aws_ecs_service" "server" {
+  for_each                           = toset(local.servers)
+  name                               = "server-${each.key}"
   cluster                            = aws_ecs_cluster.radiusward.id
-  task_definition                    = aws_ecs_task_definition.gateway[each.key].arn
+  task_definition                    = aws_ecs_task_definition.server[each.key].arn
   desired_count                      = 1
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100
@@ -585,18 +585,18 @@ resource "aws_ecs_service" "gateway" {
     weight            = 1
   }
   network_configuration {
-    subnets         = var.gateway_subnet_ids
-    security_groups = [aws_security_group.gateway.id]
+    subnets         = var.server_subnet_ids
+    security_groups = [aws_security_group.server.id]
   }
   dynamic "load_balancer" {
     for_each = ["1812", "1813"]
     content {
-      container_name   = "gateway"
+      container_name   = "server"
       container_port   = tonumber(load_balancer.value)
-      target_group_arn = aws_lb_target_group.gateway["${each.key}-${load_balancer.value}"].arn
+      target_group_arn = aws_lb_target_group.server["${each.key}-${load_balancer.value}"].arn
     }
   }
-  depends_on = [aws_ecs_cluster_capacity_providers.radiusward, aws_lb_listener.gateway]
+  depends_on = [aws_ecs_cluster_capacity_providers.radiusward, aws_lb_listener.server]
 }
 
 # ---------------------------------------------------------------- the continuous backup (ADR 0065)

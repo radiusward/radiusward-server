@@ -18,7 +18,7 @@ class AccountingOnOffIT extends E2eTestBase {
 
     @Test
     void accountingOnStopsSessions() throws Exception {
-        int port = cluster.radiusPort("gateway-a");
+        int port = cluster.radiusPort("server-a");
         for (int i = 0; i < 3; i++) {
             nas.ack(port, Nas.request(i, 1, "on-" + i, 0));
         }

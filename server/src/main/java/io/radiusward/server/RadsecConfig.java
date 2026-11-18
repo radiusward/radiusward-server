@@ -19,7 +19,7 @@ import java.util.TreeMap;
  * {@code radius.tcp.*} and {@code nas.<name>.tcp}.
  *
  * @param enabled whether the RadSec agent runs: over TCP ({@code radsec.enabled}), DTLS, or both
- * @param host the listen address ({@code gateway.listen.host})
+ * @param host the listen address ({@code server.listen.host})
  * @param port {@code radsec.port}, 2083 (0 = any free port, for tests)
  * @param credentials the server's certificate and key, the CAs of client certificates, revocation, reload
  * @param versions enabled TLS versions ({@code radsec.versions})

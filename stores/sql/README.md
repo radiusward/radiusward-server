@@ -34,7 +34,7 @@ CREATE INDEX ON radusergroup (username);
 
 - Four queries per look-up (items ordered by `id`, groups by `priority`), all parameterised; table names may
   contain only letters, digits, `_` and `.` (`schema.table`).
-- Connections: a bounded pool of up to `pool` connections (default `gateway.auth.workers`), opened on demand,
+- Connections: a bounded pool of up to `pool` connections (default `server.auth.workers`), opened on demand,
   validated after 30 s idle. Waiting longer than `timeout` for a connection or a query, or any SQL error, makes the
   store unavailable for that request — the request is not answered.
 - radiusward only reads these tables.

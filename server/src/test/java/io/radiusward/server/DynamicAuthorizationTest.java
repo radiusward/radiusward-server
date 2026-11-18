@@ -270,8 +270,8 @@ class DynamicAuthorizationTest {
         String text = w.finish();
         io.radiusward.common.management.PrometheusWriter.validate(text);
         assertThat(text)
-                .contains("radiusward_gateway_coa_requests_total{gateway=\"g1\",result=\"sent\"} 1")
-                .contains("radiusward_gateway_coa_requests_total{gateway=\"g1\",result=\"ack\"} 1")
-                .contains("radiusward_gateway_coa_requests_total{gateway=\"g1\",result=\"timeout\"} 0");
+                .contains("radiusward_server_coa_requests_total{server=\"g1\",result=\"sent\"} 1")
+                .contains("radiusward_server_coa_requests_total{server=\"g1\",result=\"ack\"} 1")
+                .contains("radiusward_server_coa_requests_total{server=\"g1\",result=\"timeout\"} 0");
     }
 }

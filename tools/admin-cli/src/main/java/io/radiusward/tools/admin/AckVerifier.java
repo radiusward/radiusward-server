@@ -120,7 +120,7 @@ public final class AckVerifier {
         return new Report(expected.size(), lost);
     }
 
-    /** The session key the gateway computed for the session of {@code e}. */
+    /** The session key the RADIUS server computed for the session of {@code e}. */
     static void sessionKey(EventKeys keys, int nasId, boolean byDevice, Expected e) {
         UnsafeBuffer id = new UnsafeBuffer(e.sessionId().getBytes(StandardCharsets.US_ASCII));
         UnsafeBuffer device = new UnsafeBuffer(e.device().getBytes(StandardCharsets.US_ASCII));

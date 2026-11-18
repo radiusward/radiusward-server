@@ -30,7 +30,7 @@ import org.agrona.concurrent.ringbuffer.RingBuffer;
 import org.agrona.concurrent.ringbuffer.RingBufferDescriptor;
 
 /**
- * Questions from the gateway to the replicated state (ADR 0036): one session, a user's sessions, a page of sessions.
+ * Questions from the RADIUS server to the replicated state (ADR 0036): one session, a user's sessions, a page of sessions.
  * Any thread asks; the {@link ClusterClientAgent} sends the query and hands the report back. Operator and CoA work,
  * never per packet: replies are copied and decoded on the asking thread.
  */

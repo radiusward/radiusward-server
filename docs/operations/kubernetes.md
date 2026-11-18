@@ -1,7 +1,7 @@
 # Kubernetes
 
 The Helm chart in [`deploy/helm/radiusward`](../../deploy/helm/radiusward) runs three cluster members and RADIUS
-gateways. Its design and the measurements behind it: [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md),
+RADIUS servers. Its design and the measurements behind it: [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md),
 [Phase 4 plan](../plans/phase-4.md).
 
 ## Install
@@ -24,7 +24,7 @@ node:
   persistence: {size: 100Gi, storageClass: local-ssd}
   export:
     postgres: {enabled: true, url: "jdbc:postgresql://postgres:5432/radius", existingSecret: radius-db}
-gateway:
+server:
   nas:
     - {name: branch-routers, address: 10.20.0.0/16, existingSecret: nas-secrets, existingSecretKey: branch, vendor: cisco}
   auth:
@@ -42,47 +42,47 @@ gateway:
 |---|---|
 | StatefulSet `<release>-node` (3 pods) | the members; `cluster.node.id` is the pod index, members find each other by DNS name; one volume each |
 | Service `<release>-node` (headless) | the members' DNS names, published before they are ready (none is ready without a quorum) |
-| StatefulSet `<release>-gateway` (default 2) | the gateways; `gateway.id` is the pod index, `gateway.egress.host` the pod IP; no volumes |
-| Service `<release>-gateway-<n>` per gateway | each gateway's RADIUS address (LoadBalancer, `externalTrafficPolicy: Local`) |
-| Service `<release>-gateways` (optional) | one address for all gateways, `sessionAffinity: ClientIP` |
-| PodDisruptionBudgets | members `maxUnavailable: 1`, gateways `minAvailable: 1` |
-| ConfigMaps, Secret | `cluster.properties` and `gateway.properties`; passwords and users files given in values |
-| NetworkPolicies (optional) | Aeron only between members and gateways; RADIUS from `networkPolicy.radiusClientCIDRs` |
+| StatefulSet `<release>-server` (default 2) | the RADIUS servers; `server.id` is the pod index, `server.egress.host` the pod IP; no volumes |
+| Service `<release>-server-<n>` per RADIUS server | its address for the NAS devices (LoadBalancer, `externalTrafficPolicy: Local`) |
+| Service `<release>-servers` (optional) | one address for all RADIUS servers, `sessionAffinity: ClientIP` |
+| PodDisruptionBudgets | members `maxUnavailable: 1`, RADIUS servers `minAvailable: 1` |
+| ConfigMaps, Secret | `cluster.properties` and `server.properties`; passwords and users files given in values |
+| NetworkPolicies (optional) | Aeron only between members and RADIUS servers; RADIUS from `networkPolicy.radiusClientCIDRs` |
 | PodMonitor, PrometheusRule, dashboard ConfigMaps (optional) | the alerts and Grafana dashboards of [monitoring.md](monitoring.md) |
 
-Every key of [configuration.md](../configuration.md) is reachable through `node.config` and `gateway.config` (added
+Every key of [configuration.md](../configuration.md) is reachable through `node.config` and `server.config` (added
 to the properties files last, so they win). Secrets never go into the ConfigMaps: NAS secrets and store passwords
 are passed as environment variables from Secrets and referenced as `${env:...}`; users files and certificates are
-mounted from Secrets. A change of the gateways' configuration or Secret restarts them one at a time; a change of the
+mounted from Secrets. A change of the RADIUS servers' configuration or Secret restarts them one at a time; a change of the
 members' configuration rolls the members.
 
 | Value | Default | Meaning |
 |---|---|---|
-| `profile` | `small` | JVM sizes and resources: members 1 CPU / 1.5 Gi (`small`), 2 / 4 Gi, 4 / 11 Gi; gateways 1 / 768 Mi, 2 / 1.25 Gi, 4 / 2.25 Gi. Requests equal limits |
+| `profile` | `small` | JVM sizes and resources: members 1 CPU / 1.5 Gi (`small`), 2 / 4 Gi, 4 / 11 Gi; RADIUS servers 1 / 768 Mi, 2 / 1.25 Gi, 4 / 2.25 Gi. Requests equal limits |
 | `node.persistence.size` / `.storageClass` | `100Gi` / default | one volume per member |
 | `node.leaderHeartbeatTimeout` | `1500ms` | measured on Kubernetes without NAS retransmissions (ADR 0062) |
-| `node.antiAffinity`, `gateway.antiAffinity` | `hard` | one member (gateway) per node; `soft` or `none` for small test clusters |
+| `node.antiAffinity`, `server.antiAffinity` | `hard` | one member (server) per node; `soft` or `none` for small test clusters |
 | `node.zoneSpread` | `false` | also spread members over zones |
 | `node.export.postgres.*` | off | the PostgreSQL sink; password from `existingSecret` or `password` |
-| `gateway.nas[]` | — | `name`, `address` (address or CIDR), `secret` or `existingSecret`/`existingSecretKey`, `vendor`, `id` |
-| `gateway.auth.stores[]` | — | `file` (`users` or a Secret with the users file), `sql` (`url`, `user`, password Secret); `chap`, `mschap` |
-| `gateway.auth.eap.methods`, `.tls.existingSecret` | — | EAP methods and the server certificate Secret (`tls.crt`, `tls.key`, `ca.crt`) |
-| `gateway.radsec.enabled`, `.existingSecret` | off | RadSec on 2083/tcp with that certificate Secret |
-| `gateway.coa.enabled` | off | CoA and Disconnect (3799/udp) |
-| `gateway.service.type` / `.perGateway` | `LoadBalancer` / — | per-gateway Service type; fixed addresses per pod index (`loadBalancerIP`, annotations) |
-| `gateway.minReadySeconds` | `10` | a restarted gateway serves this long before the next one restarts |
+| `server.nas[]` | — | `name`, `address` (address or CIDR), `secret` or `existingSecret`/`existingSecretKey`, `vendor`, `id` |
+| `server.auth.stores[]` | — | `file` (`users` or a Secret with the users file), `sql` (`url`, `user`, password Secret); `chap`, `mschap` |
+| `server.auth.eap.methods`, `.tls.existingSecret` | — | EAP methods and the server certificate Secret (`tls.crt`, `tls.key`, `ca.crt`) |
+| `server.radsec.enabled`, `.existingSecret` | off | RadSec on 2083/tcp with that certificate Secret |
+| `server.coa.enabled` | off | CoA and Disconnect (3799/udp) |
+| `server.service.type` / `.perServer` | `LoadBalancer` / — | per-server Service type; fixed addresses per pod index (`loadBalancerIP`, annotations) |
+| `server.minReadySeconds` | `10` | a restarted RADIUS server serves this long before the next one restarts |
 | `metrics.*` | annotations on | `prometheus.io/*` annotations; PodMonitor, PrometheusRule and dashboards for the Prometheus Operator and Grafana sidecar |
 
-## NAS configuration: two gateways
+## NAS configuration: two RADIUS servers
 
-Configure every NAS with two gateways as its primary and secondary RADIUS server (authentication and accounting).
-When a node fails, the NAS retries through the other gateway and the cluster recognises the retry as the same
-request. With a single shared address, Kubernetes keeps sending part of the traffic to the failed node's gateway
+Configure every NAS with two radiusward RADIUS servers as its primary and secondary server (authentication and accounting).
+When a node fails, the NAS retries through the other RADIUS server and the cluster recognises the retry as the same
+request. With a single shared address, Kubernetes keeps sending part of the traffic to the failed node's RADIUS server
 until it marks the node NotReady (about 40–50 s); in the spike that lost 7.6 % of the accounting, two addresses lost
 nothing.
 
-NAS entries are matched by the packets' source address, so the gateways must see it: `externalTrafficPolicy: Local`
-(the chart's default) on cloud load balancers and MetalLB, or gateways on edge nodes with host networking. CoA,
+NAS entries are matched by the packets' source address, so the RADIUS servers must see it: `externalTrafficPolicy: Local`
+(the chart's default) on cloud load balancers and MetalLB, or RADIUS servers on edge nodes with host networking. CoA,
 Disconnect and proxied requests leave with the node's address; NAS devices and home servers must accept those.
 
 ## Nodes
@@ -120,11 +120,11 @@ restores all three members from it; see [backup.md](backup.md).
 `helm upgrade` rolls the members one at a time: a restarted member counts as ready only once its election is
 closed, so the next one waits until it has caught up, and the cluster keeps its quorum. Each member restart may
 cost one leader election (~2 s with the default timeouts, within a NAS's retransmission time). On kind, rolling all
-members under accounting and authentication load lost nothing and caused no retransmission. Rolling the gateways
-lost nothing either, but each gateway's own Service has no other pod behind it: requests a NAS sends to a gateway
-while it restarts (a few seconds) are answered only after the NAS's timeout, through its secondary gateway (on kind
-about 200 of 5500 requests, max 3 s). `gateway.shutdownDrain` (5 s) keeps a stopping gateway answering after it
-reports not ready, which helps the shared Service and load balancers with health checks; restart gateways in quiet
+members under accounting and authentication load lost nothing and caused no retransmission. Rolling the RADIUS servers
+lost nothing either, but each RADIUS server's own Service has no other pod behind it: requests a NAS sends to a RADIUS server
+while it restarts (a few seconds) are answered only after the NAS's timeout, through its secondary RADIUS server (on kind
+about 200 of 5500 requests, max 3 s). `server.shutdownDrain` (5 s) keeps a stopping RADIUS server answering after it
+reports not ready, which helps the shared Service and load balancers with health checks; restart RADIUS servers in quiet
 hours if NAS timeouts matter.
 
 State-machine changes activate on their own once every member runs the new version
@@ -134,13 +134,13 @@ state version is refused.
 ## Tests
 
 `scripts/k8s-tests.sh` builds the image, creates a kind cluster with three workers, installs the chart and runs
-accounting and Access-Request load from a pod through both gateways while it kills the leader, rolls the members,
-rolls the gateways, replaces a member's volume after a purge and restores the whole cluster from the backup after
-deleting every member's volume; a lost request fails the run. The gateways get LoadBalancer addresses from MetalLB
+accounting and Access-Request load from a pod through both RADIUS servers while it kills the leader, rolls the members,
+rolls the RADIUS servers, replaces a member's volume after a purge and restores the whole cluster from the backup after
+deleting every member's volume; a lost request fails the run. The RADIUS servers get LoadBalancer addresses from MetalLB
 (L2, `externalTrafficPolicy: Local`), and a NAS outside the cluster — a container on kind's network, known to
 radiusward only by its own /32 address — sends accounting and Access-Requests through them, so a load balancer
 that rewrote the source address would fail the run. It runs nightly in CI (`k8s-tests.yml`, pod logs as an
 artifact) and takes about 25 minutes; `KEEP=1` keeps the cluster, and scenario names (`baseline loadbalancer
-leader-kill member-roll gateway-roll replace-volume restore-quorum`) run a subset. `scripts/k8s-tests.sh scale` (opt-in, ~10 min)
-puts 500k sessions and Access-Requests through both gateways while it kills the leader, cuts a member off with a
+leader-kill member-roll server-roll replace-volume restore-quorum`) run a subset. `scripts/k8s-tests.sh scale` (opt-in, ~10 min)
+puts 500k sessions and Access-Requests through both RADIUS servers while it kills the leader, cuts a member off with a
 NetworkPolicy and drains a node to completion once every member is ready ([Phase 4 report](../plans/phase-4.md#phase-4-report)).

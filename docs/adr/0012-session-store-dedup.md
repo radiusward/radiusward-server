@@ -26,7 +26,7 @@ Start has no session time, so the first Interim is progress) — found by the lo
 reset it. An Interim or Stop for an unknown session creates it. A Start with a new start key for an existing session
 is *late* when it is not newer than the session's last event (both carry an Event-Timestamp), or — without
 timestamps — when the session is active and never saw a Start. A late Start is acknowledged like any committed event
-(the gateway sees APPLIED) but only records its start key (its retransmissions are duplicates) and the
+(the RADIUS server sees APPLIED) but only records its start key (its retransmissions are duplicates) and the
 last-seen time; progress, counters and status stay as the Interim left them. For a stopped session it is STALE and
 does not reopen it. A Start newer than the session's last event is still a new instance of the session id (NAS
 rebooted without Accounting-On). Without Event-Timestamps a Start for a *stopped* session cannot be told from a new
@@ -46,7 +46,7 @@ session removed by the idle timeout (alive all along) brings it back.
 
 **Housekeeping** every 60 s (cluster timer): expired tombstones, idle sessions and expired exact keys are removed,
 iterating slots in order. **Idle timeout** (state version 5, 2026-11-09): per session, set by its latest applied event
-from `nas.<name>.idle.timeout` (minutes, about 3 interim intervals; the gateway sends it in the command), else
+from `nas.<name>.idle.timeout` (minutes, about 3 interim intervals; the RADIUS server sends it in the command), else
 `service.idle.timeout` (2 h). Acct-Interim-Interval itself is in the Access-Accept, which accounting never sees, so
 the operator configures it per NAS entry. A removed idle session is exported as stopped at its **last event**, not
 at the sweep — a fixed 2 h timeout used to stretch every session with a lost Stop by up to 2 h. **Capacity**: new sessions beyond `maxSessions` are

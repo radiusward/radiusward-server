@@ -16,7 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /**
  * A small bounded JDBC pool: at most {@code size} connections, opened on demand; a borrower waits at most
  * {@code timeout} for a free one. A connection that failed is closed instead of returned, and one that sat idle is
- * checked with {@link Connection#isValid} before use. No dependency: the gateway's worker count bounds it anyway.
+ * checked with {@link Connection#isValid} before use. No dependency: the RADIUS server's worker count bounds it anyway.
  */
 final class ConnectionPool implements AutoCloseable {
 

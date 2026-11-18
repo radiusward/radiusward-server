@@ -7,7 +7,7 @@ package io.radiusward.server;
 import java.nio.ByteBuffer;
 import javax.net.ssl.SSLEngine;
 
-/** What every {@link SSLEngine} driver in the gateway does the same way: TLS and DTLS, server and client. */
+/** What every {@link SSLEngine} driver in the RADIUS server does the same way: TLS and DTLS, server and client. */
 final class SslEngines {
 
     private SslEngines() {}

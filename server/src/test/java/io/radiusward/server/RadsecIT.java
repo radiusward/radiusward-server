@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * RadSec (RFC 6614) through the real gateway: Access-Requests and Status-Server over TLS 1.3 and 1.2, many requests in
+ * RadSec (RFC 6614) through the real RADIUS server: Access-Requests and Status-Server over TLS 1.3 and 1.2, many requests in
  * flight on one connection, client certificates required and checked, NAS entries that do not allow RadSec,
  * malformed packets closing the connection. Accounting over RadSec with a cluster: {@code RadsecAccountingIT}.
  */
@@ -126,7 +126,7 @@ class RadsecIT {
         RadsecAgent agent = radiusServer.radsecAgent();
         assertThat(agent.get(RadsecAgent.Counter.REPLIES)).isEqualTo(6);
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_radsec_total{gateway=\"1\",result=\"connections_accepted\"} 2");
+                .contains("radiusward_server_radsec_total{server=\"1\",result=\"connections_accepted\"} 2");
     }
 
     @Test
@@ -294,7 +294,7 @@ class RadsecIT {
         int port = start(Map.of("radsec.handshake.timeout", "200ms"));
         try (java.net.Socket silent = new java.net.Socket("127.0.0.1", port)) {
             silent.setSoTimeout(3_000);
-            byte[] rest = silent.getInputStream().readAllBytes(); // until the gateway closes it
+            byte[] rest = silent.getInputStream().readAllBytes(); // until the RADIUS server closes it
             assertThat(rest.length).as("at most a TLS alert before the end").isLessThan(64);
         }
         assertThat(radiusServer.radsecAgent().get(RadsecAgent.Counter.TIMED_OUT))

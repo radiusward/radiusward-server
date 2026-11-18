@@ -41,7 +41,7 @@
         }
       }
     },
-    "gateway": {
+    "server": {
       "type": "object",
       "properties": {
         "replicas": {"type": "integer", "minimum": 1},

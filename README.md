@@ -18,10 +18,10 @@ A replicated RADIUS server for Java — accounting and authentication — built 
 radiusward answers an Accounting-Request only after the record is **durably committed on a majority
 of a three-node cluster** (fsync on), so an acknowledged accounting record survives the loss of any
 single node. Duplicate and retransmitted requests — including retries that arrive through another
-gateway after a failover — are recognised and answered without being counted twice.
+RADIUS server after a failover — are recognised and answered without being counted twice.
 
-Access-Requests are decided by the gateways from identity stores (users file, SQL, LDAP/Active Directory,
-Netlogon); what must be shared between gateways — simultaneous-use counts, SIM sequence numbers — lives in the
+Access-Requests are decided by the RADIUS servers from identity stores (users file, SQL, LDAP/Active Directory,
+Netlogon); what must be shared between RADIUS servers — simultaneous-use counts, SIM sequence numbers — lives in the
 same replicated state.
 
 > **Status:** Phase 5 complete — authentication with PAP, CHAP, MS-CHAP and the EAP methods below, RadSec, DTLS and
@@ -37,7 +37,7 @@ same replicated state.
 
 ## What it does
 
-- **Accounting**: acknowledged only after the commit; deduplication of retransmissions across gateways;
+- **Accounting**: acknowledged only after the commit; deduplication of retransmissions across RADIUS servers;
   Accounting-On/Off; idle sessions closed; export to PostgreSQL, JSON-lines files, or forwarded to other RADIUS
   servers ([docs/accounting-contract.md](docs/accounting-contract.md)).
 - **Authentication methods**: PAP, CHAP, MS-CHAPv1/v2, EAP-MD5, EAP-TLS, PEAP (MS-CHAPv2, GTC, TLS inside, crypto
@@ -48,7 +48,7 @@ same replicated state.
   (pure Java); plug-in API for more.
 - **Transports**: UDP over IPv4 and IPv6, RadSec (RADIUS over TLS), RADIUS over DTLS and over TCP; NAS entries by
   address, network or client certificate, or looked up in SQL on demand.
-- **Policy**: check and reply items, groups, Simultaneous-Use across all gateways, login times, expiry, usage
+- **Policy**: check and reply items, groups, Simultaneous-Use across all RADIUS servers, login times, expiry, usage
   counters, IPv4 and IPv6 address pools, Chargeable-User-Identity, a small rule layer.
 - **Proxying**: realms to pools of home servers over UDP, TLS, TCP or DTLS with failover and load balancing, RFC 7585
   discovery, per-realm rewriting, inner-tunnel proxying, CoA relay.
@@ -64,8 +64,8 @@ same replicated state.
 ## Architecture in short
 
 ```text
- NAS ──UDP/TLS/DTLS/TCP──▶ gateway A ─┐                       ┌──▶ sink: PostgreSQL
-                           gateway B ─┼─▶ Aeron Cluster ──────┼──▶ sink: JSON files
+ NAS ──UDP/TLS/DTLS/TCP──▶ server A  ─┐                       ┌──▶ sink: PostgreSQL
+                           server B  ─┼─▶ Aeron Cluster ──────┼──▶ sink: JSON files
                               │       │   (3 nodes, Raft,     └──▶ sink: RADIUS forwarding
                               │       │    fsync, dedup,
                               │       │    shared auth state)
@@ -73,7 +73,7 @@ same replicated state.
  Access-Accept/Reject ◀── identity stores (file, SQL, LDAP/AD, Netlogon) · home servers (proxying)
 ```
 
-- **Gateways** (stateless, NIO): own the sockets, validate and authenticate packets, extract the hot attributes
+- **RADIUS servers** (stateless, NIO): own the sockets, validate and authenticate packets, extract the hot attributes
   without allocating, forward accounting to the cluster and reply after commit; decide Access-Requests on worker
   threads from the identity stores.
 - **Cluster** (Aeron Cluster, 3 nodes): replicated, fsynced log; per-session deduplication; snapshots; the shared
@@ -90,7 +90,7 @@ Test reports of the integration, end-to-end, fault-injection and Kubernetes suit
 accounting, authentication and a mix, kills the leader under load and runs the JMH suite
 ([docs/testing/benchmarks.md](docs/testing/benchmarks.md), [ADR 0066](docs/adr/0066-benchmarks.md)). It runs weekly
 on a GitHub runner and the results are [published](https://radiusward.github.io/radiusward-server/benchmarks/). On a
-shared 4-vCPU runner, where three members, two gateways and the load generators share the CPUs — a lower bound — it
+shared 4-vCPU runner, where three members, two RADIUS servers and the load generators share the CPUs — a lower bound — it
 carried **3,731 accounting requests/s** (each replicated to three members with fsync), **at least 15,053
 Access-Requests/s** (every step up to 16,000/s passed) and **6,821/s mixed**, and a leader killed under load lost
 nothing. The hot path alone handles about 1.3 million packets/s on one core (JMH). The ceilings per profile on AWS,
@@ -104,8 +104,8 @@ Details: [docs/architecture.md](docs/architecture.md) · what an ACK guarantees:
 
 ```bash
 ./mvnw -q install -DskipTests && docker build -f deploy/docker/Dockerfile -t radiusward:dev .
-docker compose -f deploy/compose/compose.yaml up -d --wait   # 3 members + 2 gateways, fsync on
-docker compose -f deploy/compose/compose.yaml run --rm tools acct --server gateway-a:1813 \
+docker compose -f deploy/compose/compose.yaml up -d --wait   # 3 members + 2 servers, fsync on
+docker compose -f deploy/compose/compose.yaml run --rm tools acct --server server-a:1813 \
      --secret testing123 --status start --session-id abc123
 deploy/compose/demo-failover.sh                              # kill -9 the leader under load, nothing lost
 ```
@@ -119,10 +119,10 @@ Released images (public, amd64 and arm64): `ghcr.io/radiusward/radiusward-server
 helm install radiusward deploy/helm/radiusward -n radius --create-namespace -f my-values.yaml
 ```
 
-Three members and two gateways, each gateway with its own address for the NAS's primary and secondary server —
+Three members and two RADIUS servers, each RADIUS server with its own address for the NAS's primary and secondary server —
 [docs/operations/kubernetes.md](docs/operations/kubernetes.md).
 The chart also runs the continuous backup and ships the dashboards and alert rules; it is tested nightly on kind
-under load (leader killed, members and gateways rolled, a volume replaced, a lost quorum restored).
+under load (leader killed, members and RADIUS servers rolled, a volume replaced, a lost quorum restored).
 On Amazon ECS: [docs/operations/aws-ecs.md](docs/operations/aws-ecs.md) with example CloudFormation and Terraform
 templates for Graviton in [deploy/aws](deploy/aws). On plain hosts with systemd:
 [docs/operations/bare-metal.md](docs/operations/bare-metal.md). Restoring after a lost quorum:
@@ -134,13 +134,13 @@ Requirements: JDK 25+.
 
 ```bash
 ./mvnw -Pquick -T1C verify             # build + unit tests (~1 min; ./mvnw verify adds the integration tests, ~10 min)
-scripts/run-local.sh start             # 3 cluster members + 2 gateways as separate JVMs
+scripts/run-local.sh start             # 3 cluster members + 2 servers as separate JVMs
 scripts/run-local.sh wait-ready && scripts/run-local.sh status
 
 java -jar tools/radclient/target/radclient.jar acct --server 127.0.0.1:1813 --secret testing123 \
      --status start --session-id abc123 --user alice --vendor cisco
 
-scripts/run-local.sh demo-failover     # load through both gateways, kill -9 the leader, nothing lost
+scripts/run-local.sh demo-failover     # load through both servers, kill -9 the leader, nothing lost
 ./mvnw -Pe2e verify                    # end-to-end tests against real processes
 scripts/linux-tests.sh                 # fault injection in containers (needs Docker; nightly in CI)
 ```
@@ -151,7 +151,7 @@ More in [docs/operations/local-cluster.md](docs/operations/local-cluster.md) and
 ### Authentication in a few lines
 
 ```properties
-gateway.auth.enabled = true
+server.auth.enabled = true
 auth.stores = local
 auth.store.local.type = file
 auth.store.local.path = /etc/radiusward/users       # alice  Cleartext-Password := "secret"
@@ -168,11 +168,11 @@ Stores, methods, RadSec, proxying and policies: [docs/configuration.md](docs/con
 
 | Module | What it is |
 |---|---|
-| [`protocol`](protocol/README.md) | SBE messages between gateways, cluster and tools |
+| [`protocol`](protocol/README.md) | SBE messages between RADIUS servers, cluster and tools |
 | [`common`](common/README.md) | configuration, profiles, management HTTP server, non-blocking logging |
 | [`cluster-service`](cluster-service/README.md) | deterministic accounting state machine (dedup, sessions, snapshots) |
 | [`cluster-node`](cluster-node/README.md) | launches a cluster member; seeding, continuous backup and restore |
-| [`gateway`](gateway/README.md) | RADIUS gateway: accounting, authentication, EAP, RadSec/DTLS/TCP, proxying, CoA |
+| [`server`](server/README.md) | RADIUS server: accounting, authentication, EAP, RadSec/DTLS/TCP, proxying, CoA |
 | [`export-api`](export-api/README.md) | sink plug-in API, canonical attribute encoding, migration runner |
 | [`exporter`](exporter/README.md) | exports the committed log to sinks (lease, state-machine reducer) |
 | [`sinks/postgres`](sinks/postgres/README.md) | PostgreSQL sink |

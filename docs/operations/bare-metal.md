@@ -1,6 +1,6 @@
 # Bare metal and VMs with systemd
 
-Three cluster members on three machines (or VMs) and two or more gateways, run by systemd. The units in
+Three cluster members on three machines (or VMs) and two or more RADIUS servers, run by systemd. The units in
 [`deploy/systemd`](../../deploy/systemd) start the same `radiusward.jar` with the same JVM settings per profile as the
 container image ([ADR 0004](../adr/0004-memory-budget.md)). Kubernetes: [kubernetes.md](kubernetes.md).
 
@@ -27,44 +27,44 @@ sudo systemctl daemon-reload && sudo systemctl enable --now radiusward-node
 radiusward probe http://127.0.0.1:9090/ready
 ```
 
-Gateways:
+Servers:
 
 ```bash
-sudo install -m 0644 deploy/compose/config/gateway.properties deploy/compose/config/nas-clients.properties /etc/radiusward/
-sudo install -m 0644 deploy/systemd/radiusward-gateway.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now radiusward-gateway
+sudo install -m 0644 deploy/compose/config/server.properties deploy/compose/config/nas-clients.properties /etc/radiusward/
+sudo install -m 0644 deploy/systemd/radiusward-server.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now radiusward-server
 ```
 
 ## Configuration
 
-- `cluster.members` lists the three member hosts in member-id order, the same on every member and gateway. Use IP
-  addresses or names that always resolve to the same host; members and gateways cache names for 1 s
+- `cluster.members` lists the three member hosts in member-id order, the same on every member and RADIUS server. Use IP
+  addresses or names that always resolve to the same host; members and RADIUS servers cache names for 1 s
   ([ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md)).
-- `/etc/radiusward/radiusward.env` sets `RADIUSWARD_CLUSTER_NODE_ID` (members) or `RADIUSWARD_GATEWAY_ID` and
-  `RADIUSWARD_GATEWAY_EGRESS_HOST` (gateways), `RADIUSWARD_PROFILE`, and the secrets the properties files reference as
+- `/etc/radiusward/radiusward.env` sets `RADIUSWARD_CLUSTER_NODE_ID` (members) or `RADIUSWARD_SERVER_ID` and
+  `RADIUSWARD_SERVER_EGRESS_HOST` (servers), `RADIUSWARD_PROFILE`, and the secrets the properties files reference as
   `${env:...}`. Every key of [configuration.md](../configuration.md) can be set there as `RADIUSWARD_<KEY>`.
 - `cluster.seed.timeout=20s` on members lets a member whose disk was replaced copy the latest snapshot from the others
   before it starts ([ADR 0063](../adr/0063-seeding-a-replaced-member.md)).
 - Memory: a `small` member needs about 1 GiB for the JVM plus `/dev/shm` for Aeron (512 MiB); `standard` and `large`
   scale as in [docker.md](docker.md). `/dev/shm` is a tmpfs of half the RAM by default, which is enough.
 - Disks: the member's data directory needs a file system that honours fsync; local SSDs are recommended.
-- Firewall: members talk to each other on `cluster.base.port + 100 × id + 0…5` (UDP); gateways reach the members'
-  ingress ports; NAS devices reach the gateways on 1812/1813 UDP (and 2083 TCP for RadSec).
+- Firewall: members talk to each other on `cluster.base.port + 100 × id + 0…5` (UDP); RADIUS servers reach the members'
+  ingress ports; NAS devices reach the RADIUS servers on 1812/1813 UDP (and 2083 TCP for RadSec).
 
 ## Backup
 
 `radiusward-backup.service` (in `deploy/systemd`) runs the continuous backup outside the cluster with
 `/etc/radiusward/backup.properties` ([ADR 0065](../adr/0065-cluster-backup.md)); put it on a fourth machine or a
-gateway host, never on a member. Restoring after a lost quorum: [backup.md](backup.md).
+RADIUS server host, never on a member. Restoring after a lost quorum: [backup.md](backup.md).
 
 ## Operations
 
 - `systemctl stop radiusward-node` closes the member cleanly; stopping one member at a time keeps the quorum. Restart a
   member only once the previous one reports ready (`/ready`).
-- `systemctl reload radiusward-gateway` reloads NAS entries, stores and policies (SIGHUP, [ADR 0054](../adr/0054-config-reload.md)).
-- Gateways report not ready for 5 s after SIGTERM while still answering (`RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN`), so a
-  keepalived or load-balancer health check on `/ready` moves the address first. Configure NAS devices with two
-  gateways as primary and secondary servers.
+- `systemctl reload radiusward-server` reloads NAS entries, stores and policies (SIGHUP, [ADR 0054](../adr/0054-config-reload.md)).
+- RADIUS servers report not ready for 5 s after SIGTERM while still answering (`RADIUSWARD_SERVER_SHUTDOWN_DRAIN`), so a
+  keepalived or load-balancer health check on `/ready` moves the address first. Configure NAS devices with both
+  RADIUS servers as primary and secondary.
 - Logs go to the journal (`journalctl -u radiusward-node`); metrics on the management port (`/metrics`,
   [monitoring.md](monitoring.md)).
 
@@ -72,4 +72,4 @@ The units are hardened (`ProtectSystem=strict`, no capabilities, only the data d
 `systemd-analyze security` rates the member unit 4.5 ("OK"). `SystemdFailoverIT` (nightly `linux-tests`) runs the
 units unchanged with systemd as PID 1 in containers: a killed member is restarted by `Restart=on-failure`, a stopped
 one ends `inactive` (the JVM's exit status 143 after SIGTERM counts as success, `SuccessExitStatus=143`), reload and
-the gateway's drain work, and no acknowledged event is lost.
+the RADIUS server's drain work, and no acknowledged event is lost.

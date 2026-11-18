@@ -7,7 +7,7 @@ package io.radiusward.common.net;
 import java.security.Security;
 
 /**
- * How long the JVM keeps name lookups (ADR 0062). Members and gateways reach each other by name; on Kubernetes a
+ * How long the JVM keeps name lookups (ADR 0062). Members and RADIUS servers reach each other by name; on Kubernetes a
  * pod comes back with a new address under the same name, and the JVM's default of 30 s kept the old one long enough
  * for an election to fail for ~20 s during a rolling restart. One second is plenty for the few names they resolve.
  */

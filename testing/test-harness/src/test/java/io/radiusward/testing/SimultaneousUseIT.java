@@ -33,7 +33,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Simultaneous use across two gateways and a three-member cluster (ADR 0023): the limit holds whichever gateway a
+ * Simultaneous use across two RADIUS servers and a three-member cluster (ADR 0023): the limit holds whichever RADIUS server a
  * device uses, a reservation keeps the place between Accept and Accounting-Start, and a Stop frees it.
  */
 @Epic("Authentication")
@@ -197,7 +197,7 @@ class SimultaneousUseIT {
             nasThread.get(10, java.util.concurrent.TimeUnit.SECONDS);
             assertThat(disconnected).containsExactly("s-alice-a");
             assertThat(g0.metrics())
-                    .contains("radiusward_gateway_simultaneous_use_disconnects_total{gateway=\"1\","
+                    .contains("radiusward_server_simultaneous_use_disconnects_total{server=\"1\","
                             + "result=\"acknowledged\"} 1");
         } finally {
             coaNas.close();

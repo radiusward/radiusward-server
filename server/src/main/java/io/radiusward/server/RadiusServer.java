@@ -17,7 +17,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * A running gateway: embedded Aeron media driver, the UDP agent and the cluster client agent connected by two
+ * A running RADIUS server: embedded Aeron media driver, the UDP agent and the cluster client agent connected by two
  * ring buffers, on one thread ({@code shared}) or two ({@code dedicated}).
  */
 public final class RadiusServer implements AutoCloseable {
@@ -37,7 +37,7 @@ public final class RadiusServer implements AutoCloseable {
 
     /**
      * Reports not ready from now on while still answering, so a load balancer stops sending new requests before the
-     * gateway closes (ADR 0062); requests in flight finish instead of costing the NAS a retransmission.
+     * RADIUS server closes (ADR 0062); requests in flight finish instead of costing the NAS a retransmission.
      */
     public void drain() {
         draining = true;
@@ -99,13 +99,13 @@ public final class RadiusServer implements AutoCloseable {
         this.coaRelay = p.coaRelay();
     }
 
-    /** An accounting-only gateway. */
+    /** An accounting-only RADIUS server. */
     public static RadiusServer launch(ServerConfig config, NasRegistry registry) {
         return builder(config, registry).start();
     }
 
     /**
-     * A gateway with more than accounting: {@code RadiusServer.builder(config, registry).auth(auth).handler(handler)
+     * A RADIUS server with more than accounting: {@code RadiusServer.builder(config, registry).auth(auth).handler(handler)
      * .radsec(..).coa(..).proxy(..).start()}; every part is off unless given.
      */
     public static Builder builder(ServerConfig config, NasRegistry registry) {
@@ -139,8 +139,8 @@ public final class RadiusServer implements AutoCloseable {
         }
 
         /**
-         * Decides Access-Requests with a handler made from the gateway's dictionary (reply attributes are encoded with
-         * it); closed with the gateway when it is {@link AutoCloseable}.
+         * Decides Access-Requests with a handler made from the RADIUS server's dictionary (reply attributes are encoded with
+         * it); closed with the RADIUS server when it is {@link AutoCloseable}.
          */
         public Builder handlerFactory(java.util.function.Function<Dictionary, AccessHandler> handlerFactory) {
             this.handlerFactory = handlerFactory;
@@ -171,8 +171,8 @@ public final class RadiusServer implements AutoCloseable {
     }
 
     /**
-     * The access handler of a gateway with identity stores ({@code auth.stores}, ADR 0021): what {@code gateway} runs
-     * with {@code gateway.auth.enabled=true}.
+     * The access handler of a RADIUS server with identity stores ({@code auth.stores}, ADR 0021): what {@code server} runs
+     * with {@code server.auth.enabled=true}.
      */
     public static java.util.function.Function<Dictionary, AccessHandler> storeHandler(
             io.radiusward.common.config.Config config, AuthConfig auth) {
@@ -368,7 +368,7 @@ public final class RadiusServer implements AutoCloseable {
                 return Health.down("agent stopped");
             }
         }
-        return Health.up("gateway " + config.serverId() + " running");
+        return Health.up("RADIUS server " + config.serverId() + " running");
     }
 
     /** Ready when the UDP socket is bound and the cluster session is up. */
@@ -393,7 +393,7 @@ public final class RadiusServer implements AutoCloseable {
 
     public String stateJson() {
         JsonWriter json = new JsonWriter()
-                .field("component", "gateway")
+                .field("component", "server")
                 .field("serverId", config.serverId())
                 .field("connected", stats.connected())
                 .field("pending", stats.pending())
@@ -420,27 +420,27 @@ public final class RadiusServer implements AutoCloseable {
     public String metrics() {
         String id = Integer.toString(config.serverId());
         PrometheusWriter w = new PrometheusWriter();
-        w.counter("radiusward_gateway_packets_total", "RADIUS packets and requests by what happened to them");
+        w.counter("radiusward_server_packets_total", "RADIUS packets and requests by what happened to them");
         for (ServerStats.Counter c : ServerStats.counters()) {
-            w.sample(stats.get(c), "gateway", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
+            w.sample(stats.get(c), "server", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
         }
-        w.gauge("radiusward_gateway_pending_requests", "Requests waiting for a commit")
-                .sample(stats.pending(), "gateway", id);
-        w.gauge("radiusward_gateway_response_cache_entries", "Entries in the RFC 5080 response cache")
-                .sample(stats.cacheSize(), "gateway", id);
-        w.gauge("radiusward_gateway_cluster_connected", "1 when connected to the cluster")
-                .sample(stats.connected() ? 1 : 0, "gateway", id);
+        w.gauge("radiusward_server_pending_requests", "Requests waiting for a commit")
+                .sample(stats.pending(), "server", id);
+        w.gauge("radiusward_server_response_cache_entries", "Entries in the RFC 5080 response cache")
+                .sample(stats.cacheSize(), "server", id);
+        w.gauge("radiusward_server_cluster_connected", "1 when connected to the cluster")
+                .sample(stats.connected() ? 1 : 0, "server", id);
         if (authAgent != null) {
-            w.counter("radiusward_gateway_access_requests_total", "Access-Requests by what happened to them");
+            w.counter("radiusward_server_access_requests_total", "Access-Requests by what happened to them");
             for (AuthStats.Counter c : AuthStats.counters()) {
-                w.sample(authStats.get(c), "gateway", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
+                w.sample(authStats.get(c), "server", id, "result", c.name().toLowerCase(java.util.Locale.ROOT));
             }
-            w.counter("radiusward_gateway_access_rejects_total", "Access-Rejects by the cause the handler recorded");
-            authStats.rejectsByCause().forEach((cause, n) -> w.sample(n, "gateway", id, "cause", cause));
-            w.gauge("radiusward_gateway_access_in_flight", "Access-Requests handed to the workers, not answered yet")
-                    .sample(authStats.inFlight(), "gateway", id);
-            w.gauge("radiusward_gateway_access_reply_cache_entries", "Replies kept for retransmissions")
-                    .sample(authStats.cached(), "gateway", id);
+            w.counter("radiusward_server_access_rejects_total", "Access-Rejects by the cause the handler recorded");
+            authStats.rejectsByCause().forEach((cause, n) -> w.sample(n, "server", id, "cause", cause));
+            w.gauge("radiusward_server_access_in_flight", "Access-Requests handed to the workers, not answered yet")
+                    .sample(authStats.inFlight(), "server", id);
+            w.gauge("radiusward_server_access_reply_cache_entries", "Replies kept for retransmissions")
+                    .sample(authStats.cached(), "server", id);
             if (handler != null) {
                 handler.writeMetrics(w, id);
             }
@@ -495,7 +495,7 @@ public final class RadiusServer implements AutoCloseable {
         w.gauge(
                 "radiusward_tls_certificate_expiry_timestamp_seconds",
                 "When the server certificate in use expires (Unix time), by what it serves");
-        credentials.forEach((use, c) -> w.sample(c.notAfterMillis() / 1000.0, "gateway", id, "use", use));
+        credentials.forEach((use, c) -> w.sample(c.notAfterMillis() / 1000.0, "server", id, "use", use));
     }
 
     @Override
@@ -520,6 +520,6 @@ public final class RadiusServer implements AutoCloseable {
             CloseHelper.quietClose(closeable); // identity stores: connections, files
         }
         CloseHelper.close(driver);
-        LOG.info("gateway {} stopped", config.serverId());
+        LOG.info("RADIUS server {} stopped", config.serverId());
     }
 }

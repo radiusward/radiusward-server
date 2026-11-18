@@ -51,7 +51,7 @@ final class PeapCryptoBinding {
         return new PeapCryptoBinding(Arrays.copyOf(tunnelKey, 60));
     }
 
-    /** The ISK of an inner MS-CHAPv2 the gateway or a home server accepted: receive key, then send key. */
+    /** The ISK of an inner MS-CHAPv2 the RADIUS server or a home server accepted: receive key, then send key. */
     static byte[] msChapV2Isk(EapMethod.Inner checked, byte[] ntResponse) {
         byte[] isk = new byte[32];
         System.arraycopy(checked.serverKey(ntResponse, false), 0, isk, 0, 16);

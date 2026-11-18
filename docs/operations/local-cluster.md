@@ -13,20 +13,20 @@ Three ways to run it:
 
 ```bash
 scripts/run-local.sh build            # radiusward.jar + radclient.jar
-scripts/run-local.sh start            # node-0..2 (cluster ports 9000/9100/9200) + gateway-a (1813) + gateway-b (1814)
+scripts/run-local.sh start            # node-0..2 (cluster ports 9000/9100/9200) + server-a (1813) + server-b (1814)
 scripts/run-local.sh wait-ready
 scripts/run-local.sh status           # roles, applied, duplicates, digests
 scripts/run-local.sh leader
 scripts/run-local.sh kill node-1      # kill -9
 scripts/run-local.sh start node-1     # restarts (waits up to 20 s for the dead process's mark file to expire)
-scripts/run-local.sh restart gateway-a   # stop and start one process
-scripts/run-local.sh logs gateway-a
-scripts/run-local.sh demo-failover    # load through both gateways, kill -9 the leader at t=10 s
+scripts/run-local.sh restart server-a    # stop and start one process
+scripts/run-local.sh logs server-a
+scripts/run-local.sh demo-failover    # load through both servers, kill -9 the leader at t=10 s
 scripts/run-local.sh stop | clean     # clean also deletes .local/
 ```
 
 Configuration: [config/local](../../config/local) (`cluster.properties` + `node-<i>.properties`,
-`gateway-<a|b>.properties` + `nas-clients.properties`; NAS `127.0.0.1`, secret `testing123`). Nodes run with
+`server-<a|b>.properties` + `nas-clients.properties`; NAS `127.0.0.1`, secret `testing123`). Nodes run with
 `-Xmx256m -XX:MaxDirectMemorySize=576m` (small profile; sessions are off-heap). State, logs and pid files are in `.local/`.
 
 Send traffic:
@@ -40,9 +40,9 @@ curl -s 127.0.0.1:9090/state
 
 ## Failover demo
 
-`demo-failover` starts everything, runs 1,000 sessions at up to 1,000 req/s through both gateways for 30 s,
+`demo-failover` starts everything, runs 1,000 sessions at up to 1,000 req/s through both RADIUS servers for 30 s,
 and `kill -9`s the leader after 10 s. Expected result (measured on an M4 Pro): every event acknowledged
-(`failed 0`), the gateways resubmit the commands lost with the old leader, the outage shows as p99 latency
+(`failed 0`), the RADIUS servers resubmit the commands lost with the old leader, the outage shows as p99 latency
 of ~6 s (3 s leader heartbeat timeout + election + reconnect), and the surviving members report the same
 digest. Restart the killed member and it catches up to the same digest.
 

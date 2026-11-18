@@ -138,7 +138,8 @@ class LogPurgeIT {
                     .run();
             Reports.attach("radclient load", result.toString());
             if (result.failed() > 0) {
-                cluster.radiusServers().forEach(g -> System.out.println("gateway after failed load: " + g.stateJson()));
+                cluster.radiusServers()
+                        .forEach(g -> System.out.println("RADIUS server after failed load: " + g.stateJson()));
             }
             assertThat(result.failed()).isZero();
         } catch (IOException e) {

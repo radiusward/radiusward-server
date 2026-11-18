@@ -93,15 +93,15 @@ class ReplyCacheTest {
         assertThat(c.pending()).isEqualTo(256);
         assertThat(c.replyCacheTtl()).isEqualTo(Duration.ofSeconds(10));
         AuthConfig on = AuthConfig.from(Config.of(
-                Map.of("gateway.auth.enabled", "true", "gateway.auth.workers", "16", "gateway.auth.pending", "1024")));
+                Map.of("server.auth.enabled", "true", "server.auth.workers", "16", "server.auth.pending", "1024")));
         assertThat(on.enabled()).isTrue();
         assertThat(on.workers()).isEqualTo(16);
         for (Map<String, String> bad : java.util.List.of(
-                Map.of("gateway.auth.workers", "0"),
-                Map.of("gateway.auth.pending", "100"),
-                Map.of("gateway.auth.reply.cache.entries", "8"),
-                Map.of("gateway.auth.reply.cache.ttl", "0s"),
-                Map.of("gateway.auth.port", "70000"))) {
+                Map.of("server.auth.workers", "0"),
+                Map.of("server.auth.pending", "100"),
+                Map.of("server.auth.reply.cache.entries", "8"),
+                Map.of("server.auth.reply.cache.ttl", "0s"),
+                Map.of("server.auth.port", "70000"))) {
             assertThatThrownBy(() -> AuthConfig.from(Config.of(bad))).isInstanceOf(ConfigException.class);
         }
     }

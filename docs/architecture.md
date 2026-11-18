@@ -10,7 +10,7 @@ This is the **target architecture**. What exists today is marked per section; th
         │                                                                             │
   NAS (BNG, router,      RADIUS accounting (UDP 1813)        radiusward                Downstream
   WLAN controller, AP) ─────────────────────────────────▶  ┌──────────────┐  export  ┌────────────┐
-  ~1,000 devices,         Accounting-Response              │  gateways    │ ───────▶ │ Postgres   │
+  ~1,000 devices,         Accounting-Response              │  servers     │ ───────▶ │ Postgres   │
   ~500k concurrent    ◀───────────────────────────────────  │  cluster     │          │ Kafka, ... │
   sessions                                                  │  exporter    │          └────────────┘
                                                             └──────────────┘
@@ -18,7 +18,7 @@ This is the **target architecture**. What exists today is marked per section; th
 ```
 
 This document describes the replicated accounting path, which everything else builds on. Authentication and
-authorization (Phase 5) run on the gateways' worker threads and keep only their shared state — simultaneous use,
+authorization (Phase 5) run on the RADIUS servers' worker threads and keep only their shared state — simultaneous use,
 SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path.md) (the path),
 [ADR 0021](adr/0021-identity-stores.md) (identity stores), [ADR 0026](adr/0026-eap-framework.md) (EAP).
 
@@ -31,7 +31,7 @@ SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path
             ┌─────────────┴─────────────┐
             ▼                           ▼
    ┌─────────────────┐         ┌─────────────────┐
-   │   gateway A     │         │   gateway B     │      stateless, N replicas
+   │   server A      │         │   server B      │      stateless, N replicas
    │ ─────────────── │         │                 │
    │ UdpAgent        │         │                 │
    │  NIO socket     │         │                 │
@@ -60,7 +60,7 @@ SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path
  └───────────┘   ExportCheckpoint(sinkId, position) → cluster
 ```
 
-### Gateway (implemented in Phase 1, failover hardened in Phase 2) — built on `radius-codec`
+### RADIUS server (implemented in Phase 1, failover hardened in Phase 2) — built on `radius-codec`
 
 - **UdpAgent** owns a NIO `DatagramChannel`: receive, validate (`RadiusPacket.wrap`), look up the NAS by
   source IP (and the device behind it by `identity`, [ADR 0019](adr/0019-nas-device-identity.md)), verify the Request Authenticator (and Message-Authenticator if present), extract the hot
@@ -73,7 +73,7 @@ SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path
   drop (the NAS retries); never answer without a commit. A retransmit of a request pending for over 1 s
   is resubmitted, and when a new leader is elected every pending command is resubmitted at once, which
   recovers commands lost with a failed leader before the NAS times out ([ADR 0011](adr/0011-gateway-pipeline.md)).
-- Scale-out: more gateway pods, or `SO_REUSEPORT` with several UdpAgents per pod.
+- Scale-out: more RADIUS server pods, or `SO_REUSEPORT` with several UdpAgents per pod.
 - Everything per packet is allocation-free (`HotPathAllocationIT`).
 
 ### Cluster (implemented in Phase 1)
@@ -118,7 +118,7 @@ SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path
 | Cluster service | session table, dedup state | I/O, wall clock, randomness |
 | Exporter sink threads (one per sink, plus a lease thread) | one sink, its replica and log reader | write to the cluster except checkpoints and leases |
 
-Idle strategies: backoff parking at most 100 µs in the small and standard profiles (gateway; Aeron's backoff
+Idle strategies: backoff parking at most 100 µs in the small and standard profiles (RADIUS server; Aeron's backoff
 in the members), busy-spin only in the large profile ([measurements](testing/strategy.md#latency-in-containers-phase-2)).
 
 ## Sizing (reference load)
@@ -140,7 +140,7 @@ member.
 
 ## Memory profiles (ADR 0004)
 
-| Profile | Cluster node | Gateway | Aeron terms | Threading |
+| Profile | Cluster node | RADIUS server | Aeron terms | Threading |
 |---|---|---|---|---|
 | small (default) | 1 GiB (heap 256 MB + 576 MB direct for sessions; measured ≤ 883 MiB at 2M sessions with CoA identities, the exporter's member highest) | 384 MiB (measured ≤ 320 MiB) | 2 MB | SHARED, backoff idle |
 | standard | 2 GiB | 768 MiB | 8 MB | SHARED_NETWORK |
@@ -150,7 +150,7 @@ member.
 
 - **Phase 0–1 (done):** local, no Docker: in-JVM test harness, single-process dev mode, `scripts/run-local.sh`.
 - **Phase 2 (done):** one container image `ghcr.io/radiusward/radiusward-server` (public) with subcommands
-  `cluster-node | gateway | radclient | admin | probe` (since Phase 4 also `cluster-backup | cluster-restore`),
+  `cluster-node | server | radclient | admin | probe` (since Phase 4 also `cluster-backup | cluster-restore`),
   non-root, multi-arch; compose stack with static
   addresses ([ADR 0015](adr/0015-container-image.md), [docker.md](operations/docker.md)); fault-injection
   tests in containers ([ADR 0016](adr/0016-fault-injection-tests.md)).
@@ -159,7 +159,7 @@ member.
 - **Phase 4 (done):** Helm chart ([kubernetes.md](operations/kubernetes.md),
   [ADR 0062](adr/0062-members-and-gateways-on-kubernetes.md)) — members as a StatefulSet found by DNS name, with a
   headless Service and one PVC (~100 GB) each, `/dev/shm` as `emptyDir: Memory`, anti-affinity,
-  `PodDisruptionBudget maxUnavailable: 1`; gateways as a StatefulSet with one UDP LoadBalancer Service each
+  `PodDisruptionBudget maxUnavailable: 1`; RADIUS servers as a StatefulSet with one UDP LoadBalancer Service each
   (`externalTrafficPolicy: Local`, so the NAS source IP is kept), NAS devices configured with two of them.
   A member with a replaced volume seeds itself from the others ([ADR 0063](adr/0063-seeding-a-replaced-member.md));
   a continuous backup outside the cluster restores a lost quorum ([ADR 0065](adr/0065-cluster-backup.md),

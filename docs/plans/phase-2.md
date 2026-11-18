@@ -10,7 +10,7 @@ never needs to retransmit.
 
 ## Exit criteria
 
-1. **Compose:** `docker compose up` brings 3 nodes + 2 gateways to ready; a radclient container gets ACKs;
+1. **Compose:** `docker compose up` brings 3 nodes + 2 RADIUS servers to ready; a radclient container gets ACKs;
    the failover demo runs in compose.
 2. **Release:** a `v*` tag publishes a multi-arch image (amd64 + arm64) to
    `ghcr.io/radiusward/radiusward-server`, plus release jars, an SBOM and build provenance.
@@ -49,7 +49,7 @@ plugin) and `docker buildx` is not installed; multi-arch builds happen in CI, lo
 ```text
 deploy/docker/Dockerfile          # image built from radiusward.jar
 deploy/docker/entrypoint.sh       # profile → JVM flags, exec radiusward
-deploy/compose/compose.yaml       # 3 nodes + 2 gateways (+ "tools" profile with radclient)
+deploy/compose/compose.yaml       # 3 nodes + 2 servers (+ "tools" profile with radclient)
 deploy/compose/compose.{standard,large}.yaml, deploy/compose/config/
 testing/linux-tests/              # -Plinux: Testcontainers fault-injection tests
 .github/workflows/ci.yml          # + e2e job
@@ -69,16 +69,16 @@ distribution: new subcommands `radclient` and `probe`
 - New subcommands: `radiusward radclient …` (the same image is the test client) and `radiusward probe <url>`
   (tiny JDK HTTP check for the container health check; the JRE image has no curl).
 - Exposes 1813/udp and the management port; OCI labels.
-- ✅ **Done when:** `docker run … version` works, a node and a gateway start from the image, image ≤ ~250 MB.
+- ✅ **Done when:** `docker run … version` works, a node and a RADIUS server start from the image, image ≤ ~250 MB.
 
 ### P2.2: Docker Compose (size M)
 
 - `node-0..2`: `shm_size: 512m`, `mem_limit: 1g`, `cpus: 1`, one volume each, health check on `/ready`.
-  `gateway-a/b`: `mem_limit: 384m`. Fixed subnet `172.28.0.0/24`.
-- Config files mounted; `cluster.members=node-0,node-1,node-2`; `gateway.egress.host` = the container's own
+  `server-a/b`: `mem_limit: 384m`. Fixed subnet `172.28.0.0/24`.
+- Config files mounted; `cluster.members=node-0,node-1,node-2`; `server.egress.host` = the container's own
   name; NAS client = the compose network's CIDR, secret from an environment variable.
 - `tools` profile with a radclient container on the same network. Test clients run **inside** the network:
-  on macOS Docker rewrites the source IP of UDP traffic through published ports, so the gateway would not
+  on macOS Docker rewrites the source IP of UDP traffic through published ports, so the RADIUS server would not
   recognise the NAS (on Linux published ports keep it — documented as a deployment caveat).
 - `compose.standard.yaml` / `compose.large.yaml` profile overrides; failover demo with
   `docker kill -s KILL` on the leader container.
@@ -93,7 +93,7 @@ distribution: new subcommands `radclient` and `probe`
 |---|---|
 | detection (leader heartbeat timeout, configured 3 s) | 3.0 s |
 | election | 1.1 s |
-| gateways redirected to the new leader | 0.1 s |
+| RADIUS servers redirected to the new leader | 0.1 s |
 | **cluster writable again** | **≈ 4.2 s** |
 
 Clients saw p99 ≈ 6.0 s: a request sent just after the kill is lost with the dead leader, the NAS-like
@@ -105,19 +105,19 @@ give-up times (3–5 s × 3 attempts).
 |---|---|---|
 | 1 | Default `cluster.leader.heartbeat.timeout` **1.5 s** (compose, dedicated hosts); **2.5 s** in the Kubernetes Helm values (Phase 4; withdrawn by [ADR 0062](../adr/0062-members-and-gateways-on-kubernetes.md): 1.5 s measured without retransmissions on Kubernetes). Configurable. Heartbeat interval stays at Aeron's 200 ms (5–7 missed heartbeats before an election) | detection 3 s → 1.5 s |
 | 2 | **`cluster.election.timeout` = 0.5 s** (new key → Aeron `electionTimeoutNs`) | election 1.1 s → ~0.5–0.6 s |
-| 3 | Gateway **resubmits all pending requests on `onNewLeader`**; each pending slot keeps its encoded command (~1 KiB slots, ~16 MiB per gateway in the small profile; larger commands fall back to NAS retransmission). Resubmit-on-retransmit (ADR 0011) stays as fallback | removes up to one NAS retry interval (3–5 s) |
+| 3 | RADIUS server **resubmits all pending requests on `onNewLeader`**; each pending slot keeps its encoded command (~1 KiB slots, ~16 MiB per RADIUS server in the small profile; larger commands fall back to NAS retransmission). Resubmit-on-retransmit (ADR 0011) stays as fallback | removes up to one NAS retry interval (3–5 s) |
 | 4 | Assertion in local e2e and Linux tests: during a leader `kill -9` under load **no request needs more than one attempt** with a 3 s client timeout | guards the target |
 
 **Target:** writable again ~2–2.5 s after a leader crash, below a typical 3 s NAS timeout — the NAS sees one
 slower answer and never retransmits. Risks: false elections from GC pauses, slow disks or network jitter at
-the shorter timeouts (tested in P2.4), and the gateway memory for stored commands.
+the shorter timeouts (tested in P2.4), and the RADIUS server memory for stored commands.
 
 - ✅ **Done when:** the failover e2e test shows `retransmissions == 0` with a 3 s client timeout; the
   breakdown is measured on Linux; ADR 0011 amended.
 
 ### P2.4: Linux fault tests, `testing/linux-tests` with `-Plinux` (size L) — the core of Phase 2
 
-- Testcontainers harness `ContainerCluster`: network, 3 nodes, 2 gateways, client container; helpers
+- Testcontainers harness `ContainerCluster`: network, 3 nodes, 2 RADIUS servers, client container; helpers
   `kill`, `pause`, `isolate` (iptables, NET_ADMIN), `powerLoss`, `stats` (memory, OOM flag).
 - **Power loss with LazyFS** (FUSE filesystem used by Jepsen for exactly this): writes not fsynced live only in
   its memory; "clear cache" discards them — what a power cut does. Archive directories on LazyFS mounts in
@@ -126,9 +126,9 @@ the shorter timeouts (tested in P2.4), and the gateway memory for stored command
 | Test | Scenario | Checks |
 |---|---|---|
 | `PowerLossIT` | load → stop all 3 nodes at once and clear the LazyFS caches → restart | fsync level 2: **every acknowledged event is in the state**. Control run with fsync level 0 must show losses |
-| `PartitionIT` | cut the leader off from both followers (iptables) | minority side never ACKs; majority elects a new leader, gateways reconnect; after healing the old leader rejoins as follower, digests equal, no acknowledged event lost |
+| `PartitionIT` | cut the leader off from both followers (iptables) | minority side never ACKs; majority elects a new leader, RADIUS servers reconnect; after healing the old leader rejoins as follower, digests equal, no acknowledged event lost |
 | `DiskFullIT` | archive on a size-limited tmpfs, fill it | **spike first**; expected: no ACK without a durable write, clear error in log and `/state`, recovery after space is freed or the node replaced |
-| `OverloadIT` | nodes `mem_limit=1g`, gateways 384 MiB; 2M sessions; ~3× sustainable rate for 2 min | not OOM-killed (`State.OOMKilled=false`), memory + `/dev/shm` under the limit, gateways count drops, consistent afterwards |
+| `OverloadIT` | nodes `mem_limit=1g`, RADIUS servers 384 MiB; 2M sessions; ~3× sustainable rate for 2 min | not OOM-killed (`State.OOMKilled=false`), memory + `/dev/shm` under the limit, RADIUS servers count drops, consistent afterwards |
 | `FailoverTimingIT` | leader `kill -9` at ~2k req/s in containers | writable again ≤ 2.5 s, 0 retransmissions |
 | `ComposeSmokeIT` | starts `deploy/compose` itself | the shipped compose file works |
 
@@ -208,11 +208,11 @@ Container results come from that VM; absolute latencies are not bare-metal numbe
 | Step | Result |
 |---|---|
 | P2.1 image | ✅ `eclipse-temurin:25-jre-noble`, uid 10001, all subcommands; ~100 MB compressed (340 MB unpacked, mostly the JRE — kept for a maintained glibc base) |
-| P2.2 compose | ✅ 3 members + 2 gateways healthy, ACK from the tools container, `demo-failover.sh`, `ComposeSmokeIT` |
+| P2.2 compose | ✅ 3 members + 2 RADIUS servers healthy, ACK from the tools container, `demo-failover.sh`, `ComposeSmokeIT` |
 | P2.3 failover | ✅ heartbeat 1.5 s + election 0.5 s + resubmit on new leader: **0 retransmissions**, worst ACK 2.2–2.3 s (local, e2e, containers) |
 | P2.4 linux tests | ✅ 7 tests green locally (`PowerLossIT` ×2 incl. control, `PartitionIT`, `DiskFullIT`, `OverloadIT`, `FailoverTimingIT`, `ComposeSmokeIT`); nightly job prepared, runs after the push |
-| P2.5 latency | ✅ table in [strategy.md](../testing/strategy.md#latency-in-containers-phase-2); gateway default now `backoff-100us` |
-| P2.6 memory | ✅ 2M sessions under overload: member ≤ 448 MiB unreclaimable of 1 GiB, gateway ≤ 321 MiB of 384 MiB, no OOM kill |
+| P2.5 latency | ✅ table in [strategy.md](../testing/strategy.md#latency-in-containers-phase-2); RADIUS server default now `backoff-100us` |
+| P2.6 memory | ✅ 2M sessions under overload: member ≤ 448 MiB unreclaimable of 1 GiB, RADIUS server ≤ 321 MiB of 384 MiB, no OOM kill |
 | P2.7 CI and releases | 🟡 `ci.yml` e2e job, `linux-tests.yml`, `release.yml` written; first release candidate `v0.1.0-rc.1` (2026-11-11) |
 | P2.8 vendor captures | 🟡 `radclient decode --fixture --anonymise` + [guide](../testing/vendor-captures.md); captures need real devices |
 | P2.9 docs | ✅ ADR 0015, 0016; ADR 0004/0009/0011 amended; docker.md, release.md, vendor-captures.md; configuration, failure matrix, architecture, READMEs |
@@ -221,12 +221,12 @@ Container results come from that VM; absolute latencies are not bare-metal numbe
 
 | What | Result |
 |---|---|
-| failover, leader `kill -9` at 2k req/s | 59,913 events, 0 failed, 0 retransmissions, worst ACK 2.29 s; each gateway resubmits ~2,200 pending commands |
+| failover, leader `kill -9` at 2k req/s | 59,913 events, 0 failed, 0 retransmissions, worst ACK 2.29 s; each RADIUS server resubmits ~2,200 pending commands |
 | partition, leader cut off from followers | 34,924 events, 0 retransmissions; old leader back as follower; `lost=0` |
 | power loss of all 3 members, fsync 2 | cluster recovers, every acknowledged event present (`lost=0`) |
 | power loss, fsync 0 (control) | archive catalog zeroed, no member starts: acknowledged data gone |
 | full disk on the leader | not ready with reason below `cluster.disk.min.free`; full → member stops, new leader, replaced member catches up; 22,443 events, 0 failed, `lost=0` |
-| throughput, small profile, 1 CPU per member | ~32k req/s served (8 generators, 48k offered); gateways shed ~140k requests, the NAS side retried, 4.0M events all acknowledged |
+| throughput, small profile, 1 CPU per member | ~32k req/s served (8 generators, 48k offered); RADIUS servers shed ~140k requests, the NAS side retried, 4.0M events all acknowledged |
 | latency at 2k req/s, fsync 2 | p50 1.6 ms, p99 47 ms (`backoff-100us`); 2.7 / 58 ms with the old 1 ms sleep |
 
 ### Deviations from the plan
@@ -236,9 +236,9 @@ Container results come from that VM; absolute latencies are not bare-metal numbe
 | LazyFS as published | Built from source with a `statfs` patch, spdlog fetched by git | Upstream reports 0 bytes free, so Aeron Archive refuses to record; GitHub archive downloads failed intermittently during the build |
 | Power loss "clears the LazyFS cache" via its fault FIFO | `docker kill` of all three members (LazyFS dies with the container) | Same effect, no FIFO protocol, and it is a real crash of the JVM as well |
 | `PowerLossIT` control "must show losses" | Control passes if acknowledged events are missing **or** the cluster cannot start | Without fsync the catalog comes back zeroed and no member starts — the stronger form of loss |
-| `OverloadIT` at ~3× sustainable rate | 48k req/s offered ≈ 1.5× the measured ~32k/s | Capacity was 4× higher than the estimate; one tools container cannot generate more. The gateways still had to shed load |
+| `OverloadIT` at ~3× sustainable rate | 48k req/s offered ≈ 1.5× the measured ~32k/s | Capacity was 4× higher than the estimate; one tools container cannot generate more. The RADIUS servers still had to shed load |
 | `AdminClient` in the test harness | New module `tools/admin-cli`, `radiusward admin state|verify-acks` | Verification runs inside the Docker network, from the image |
-| — | `radclient load --first-session`, `gateway.idle.strategy`, `cluster.disk.min.free` | Needed for parallel generators, the latency comparison and the full-disk warning |
+| — | `radclient load --first-session`, `server.idle.strategy`, `cluster.disk.min.free` | Needed for parallel generators, the latency comparison and the full-disk warning |
 
 ### Findings worth knowing
 
@@ -260,6 +260,6 @@ Container results come from that VM; absolute latencies are not bare-metal numbe
 - Push, then let the first nightly `linux-tests` run on GitHub; tag the first RC when the maintainer decides
   (done: `v0.1.0-rc.1`, 2026-11-11).
 - Replace synthetic fixtures with anonymised captures (needs devices).
-- Measure fsync-bound commit latency on real SSDs; the gateway at 384 MiB has ~16 % headroom.
+- Measure fsync-bound commit latency on real SSDs; the RADIUS server at 384 MiB has ~16 % headroom.
 - Phase 3: exporter tailing the log, sink SPI, Postgres sink, lag policy, Prometheus metrics (`/metrics`
   from the stats counters), log purge as designed in ADR 0014.

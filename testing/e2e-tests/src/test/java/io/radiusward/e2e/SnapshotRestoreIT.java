@@ -20,7 +20,7 @@ class SnapshotRestoreIT extends E2eTestBase {
 
     @Test
     void dedupSurvivesFullRestart() throws Exception {
-        int port = cluster.radiusPort("gateway-a");
+        int port = cluster.radiusPort("server-a");
         for (int i = 0; i < 20; i++) {
             nas.ack(port, Nas.request(i, 1, "sr-" + i, 0));
         }
@@ -52,7 +52,9 @@ class SnapshotRestoreIT extends E2eTestBase {
         }
         cluster.awaitConverged();
         for (int i = 0; i < 20; i++) {
-            nas.ack(port, Nas.request(100 + i, 1, "sr-" + i, 0)); // new identifiers: the gateway cache cannot help
+            nas.ack(
+                    port,
+                    Nas.request(100 + i, 1, "sr-" + i, 0)); // new identifiers: the RADIUS server cache cannot help
         }
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();

@@ -86,18 +86,18 @@
         "hide": 0
       },
       {
-        "name": "gateway",
-        "label": "Gateway",
+        "name": "server",
+        "label": "Server",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
-          "refId": "gateway"
+          "query": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
+          "refId": "server"
         },
-        "definition": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
+        "definition": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
         "refresh": 2,
         "includeAll": true,
         "allValue": ".*",
@@ -165,7 +165,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",gateway=~\"$gateway\",result=~\"received|accepted|rejected|challenged|proxied|status_server|cache_hits\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",server=~\"$server\",result=~\"received|accepted|rejected|challenged|proxied|status_server|cache_hits\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -207,7 +207,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",gateway=~\"$gateway\",result=~\"busy|dropped|handler_errors|retransmit_in_flight|unknown_nas|malformed|message_authenticator_missing|message_authenticator_failed|send_failed\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",server=~\"$server\",result=~\"busy|dropped|handler_errors|retransmit_in_flight|unknown_nas|malformed|message_authenticator_missing|message_authenticator_failed|send_failed\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -215,7 +215,7 @@
           }
         }
       ],
-      "description": "busy: no free slot (more workers or gateways); dropped: a store or the cluster did not answer.",
+      "description": "busy: no free slot (more workers or RADIUS servers); dropped: a store or the cluster did not answer.",
       "options": {
         "legend": {
           "displayMode": "list",
@@ -256,7 +256,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (cause) (rate(radiusward_gateway_access_rejects_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (cause) (rate(radiusward_server_access_rejects_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{cause}}",
           "datasource": {
             "type": "prometheus",
@@ -298,8 +298,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "radiusward_gateway_access_in_flight{namespace=~\"$namespace\",gateway=~\"$gateway\"}",
-          "legendFormat": "in flight gw {{gateway}}",
+          "expr": "radiusward_server_access_in_flight{namespace=~\"$namespace\",server=~\"$server\"}",
+          "legendFormat": "in flight server {{server}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -307,8 +307,8 @@
         },
         {
           "refId": "B",
-          "expr": "radiusward_gateway_access_reply_cache_entries{namespace=~\"$namespace\",gateway=~\"$gateway\"}",
-          "legendFormat": "reply cache gw {{gateway}}",
+          "expr": "radiusward_server_access_reply_cache_entries{namespace=~\"$namespace\",server=~\"$server\"}",
+          "legendFormat": "reply cache server {{server}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -316,7 +316,7 @@
         },
         {
           "refId": "C",
-          "expr": "sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",gateway=~\"$gateway\",result=\"rejects_delayed\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",server=~\"$server\",result=\"rejects_delayed\"}[5m]))",
           "legendFormat": "rejects delayed / s",
           "datasource": {
             "type": "prometheus",
@@ -324,7 +324,7 @@
           }
         }
       ],
-      "description": "In flight near gateway.auth.pending means the workers are saturated.",
+      "description": "In flight near server.auth.pending means the workers are saturated.",
       "options": {
         "legend": {
           "displayMode": "list",
@@ -372,7 +372,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (method, outcome) (rate(radiusward_gateway_eap_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m])) > 0",
+          "expr": "sum by (method, outcome) (rate(radiusward_server_eap_total{namespace=~\"$namespace\",server=~\"$server\"}[5m])) > 0",
           "legendFormat": "{{method}} {{outcome}}",
           "datasource": {
             "type": "prometheus",
@@ -414,7 +414,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (method) (rate(radiusward_gateway_eap_total{namespace=~\"$namespace\",gateway=~\"$gateway\",outcome=\"succeeded\"}[5m])) / (sum by (method) (rate(radiusward_gateway_eap_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m])) > 0)",
+          "expr": "sum by (method) (rate(radiusward_server_eap_total{namespace=~\"$namespace\",server=~\"$server\",outcome=\"succeeded\"}[5m])) / (sum by (method) (rate(radiusward_server_eap_total{namespace=~\"$namespace\",server=~\"$server\"}[5m])) > 0)",
           "legendFormat": "{{method}}",
           "datasource": {
             "type": "prometheus",
@@ -456,7 +456,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(radiusward_gateway_eap_tls_resumptions_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_eap_tls_resumptions_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "resumptions / s",
           "datasource": {
             "type": "prometheus",
@@ -465,7 +465,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (result) (increase(radiusward_gateway_eap_tls_reloads_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[1h]))",
+          "expr": "sum by (result) (increase(radiusward_server_eap_tls_reloads_total{namespace=~\"$namespace\",server=~\"$server\"}[1h]))",
           "legendFormat": "reloads {{result}} / h",
           "datasource": {
             "type": "prometheus",
@@ -507,7 +507,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "min by (use) (radiusward_tls_certificate_expiry_timestamp_seconds{namespace=~\"$namespace\",gateway=~\"$gateway\"}) - time()",
+          "expr": "min by (use) (radiusward_tls_certificate_expiry_timestamp_seconds{namespace=~\"$namespace\",server=~\"$server\"}) - time()",
           "legendFormat": "{{use}}",
           "datasource": {
             "type": "prometheus",
@@ -563,7 +563,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (store, result) (rate(radiusward_gateway_store_lookups_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (store, result) (rate(radiusward_server_store_lookups_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{store}} {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -605,7 +605,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.5, sum by (store, le) (rate(radiusward_gateway_store_lookup_seconds_bucket{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m])))",
+          "expr": "histogram_quantile(0.5, sum by (store, le) (rate(radiusward_server_store_lookup_seconds_bucket{namespace=~\"$namespace\",server=~\"$server\"}[5m])))",
           "legendFormat": "p50 {{store}}",
           "datasource": {
             "type": "prometheus",
@@ -614,7 +614,7 @@
         },
         {
           "refId": "B",
-          "expr": "histogram_quantile(0.95, sum by (store, le) (rate(radiusward_gateway_store_lookup_seconds_bucket{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (store, le) (rate(radiusward_server_store_lookup_seconds_bucket{namespace=~\"$namespace\",server=~\"$server\"}[5m])))",
           "legendFormat": "p95 {{store}}",
           "datasource": {
             "type": "prometheus",
@@ -623,7 +623,7 @@
         },
         {
           "refId": "C",
-          "expr": "histogram_quantile(0.99, sum by (store, le) (rate(radiusward_gateway_store_lookup_seconds_bucket{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m])))",
+          "expr": "histogram_quantile(0.99, sum by (store, le) (rate(radiusward_server_store_lookup_seconds_bucket{namespace=~\"$namespace\",server=~\"$server\"}[5m])))",
           "legendFormat": "p99 {{store}}",
           "datasource": {
             "type": "prometheus",
@@ -665,7 +665,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (verifier, event) (rate(radiusward_gateway_verifier_events_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (verifier, event) (rate(radiusward_server_verifier_events_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{verifier}} {{event}}",
           "datasource": {
             "type": "prometheus",
@@ -707,7 +707,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (increase(radiusward_gateway_store_sweep_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[1h]))",
+          "expr": "sum by (result) (increase(radiusward_server_store_sweep_total{namespace=~\"$namespace\",server=~\"$server\"}[1h]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -762,7 +762,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_simultaneous_use_disconnects_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_simultaneous_use_disconnects_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -804,7 +804,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (outcome) (rate(radiusward_gateway_sim_sqn_requests_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (outcome) (rate(radiusward_server_sim_sqn_requests_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{outcome}}",
           "datasource": {
             "type": "prometheus",
@@ -847,7 +847,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_coa_requests_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_coa_requests_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -889,7 +889,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_auth_log_entries_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_auth_log_entries_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",

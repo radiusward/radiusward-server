@@ -32,7 +32,7 @@ import org.apache.logging.log4j.Logger;
 
 /**
  * The clustered service: decodes commands from the replicated log, applies them to the
- * {@link AccountingStateMachine} and answers the gateway over egress. Only the leader's replies leave the
+ * {@link AccountingStateMachine} and answers the RADIUS server over egress. Only the leader's replies leave the
  * node (Aeron mocks egress on followers). Uses cluster time only; every state change happens in
  * {@link #onSessionMessage} or {@link #onTimerEvent}, so all replicas stay identical.
  */
@@ -282,7 +282,7 @@ public final class AccountingService implements ClusteredService {
         publishStats(header.position());
     }
 
-    /** Counts commands of a NAS entry whose gateway has another identity setting than the first one seen. */
+    /** Counts commands of a NAS entry whose RADIUS server has another identity setting than the first one seen. */
     private void checkIdentity(io.radiusward.protocol.AccountingCommandDecoder command) {
         if (command.actingVersion() < 3) {
             return; // written before device identities existed
@@ -296,8 +296,8 @@ public final class AccountingService implements ClusteredService {
             stats.recordIdentityMismatch();
             if (stats.identityMismatches() == 1) {
                 LOG.warn(
-                        "NAS entry {}: gateways disagree on nas.<name>.identity (gateway {}); sessions of its devices"
-                                + " are split between them — configure every gateway alike",
+                        "NAS entry {}: RADIUS servers disagree on nas.<name>.identity (RADIUS server {}); sessions of its devices"
+                                + " are split between them — configure every RADIUS server alike",
                         nas,
                         command.serverId());
             }

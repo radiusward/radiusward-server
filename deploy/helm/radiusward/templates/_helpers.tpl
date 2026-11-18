@@ -19,7 +19,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- end -}}
 
-{{/* selector labels of a component: node or gateway */}}
+{{/* selector labels of a component: node or server */}}
 {{- define "radiusward.selector" -}}
 app.kubernetes.io/name: {{ .root.Chart.Name }}
 app.kubernetes.io/instance: {{ .root.Release.Name }}
@@ -43,9 +43,9 @@ app.kubernetes.io/component: {{ .component }}
 {{/* sizes per profile: heap + direct (deploy/docker/entrypoint.sh) + shm + ~15 % */}}
 {{- define "radiusward.preset" -}}
 {{- $p := dict
-  "small"    (dict "nodeMemory" "1536Mi" "nodeCpu" "1" "nodeShm" "512Mi" "gatewayMemory" "768Mi"  "gatewayCpu" "1" "gatewayShm" "128Mi")
-  "standard" (dict "nodeMemory" "4Gi"    "nodeCpu" "2" "nodeShm" "1Gi"   "gatewayMemory" "1280Mi" "gatewayCpu" "2" "gatewayShm" "256Mi")
-  "large"    (dict "nodeMemory" "11Gi"   "nodeCpu" "4" "nodeShm" "2Gi"   "gatewayMemory" "2304Mi" "gatewayCpu" "4" "gatewayShm" "256Mi") -}}
+  "small"    (dict "nodeMemory" "1536Mi" "nodeCpu" "1" "nodeShm" "512Mi" "serverMemory" "768Mi"  "serverCpu" "1" "serverShm" "128Mi")
+  "standard" (dict "nodeMemory" "4Gi"    "nodeCpu" "2" "nodeShm" "1Gi"   "serverMemory" "1280Mi" "serverCpu" "2" "serverShm" "256Mi")
+  "large"    (dict "nodeMemory" "11Gi"   "nodeCpu" "4" "nodeShm" "2Gi"   "serverMemory" "2304Mi" "serverCpu" "4" "serverShm" "256Mi") -}}
 {{- toYaml (get $p .Values.profile) -}}
 {{- end -}}
 
@@ -59,13 +59,13 @@ limits: {cpu: {{ $p.nodeCpu | quote }}, memory: {{ $p.nodeMemory }}}
 {{- end -}}
 {{- end -}}
 
-{{- define "radiusward.gatewayResources" -}}
-{{- if .Values.gateway.resources -}}
-{{ toYaml .Values.gateway.resources }}
+{{- define "radiusward.serverResources" -}}
+{{- if .Values.server.resources -}}
+{{ toYaml .Values.server.resources }}
 {{- else -}}
 {{- $p := include "radiusward.preset" . | fromYaml -}}
-requests: {cpu: {{ $p.gatewayCpu | quote }}, memory: {{ $p.gatewayMemory }}}
-limits: {cpu: {{ $p.gatewayCpu | quote }}, memory: {{ $p.gatewayMemory }}}
+requests: {cpu: {{ $p.serverCpu | quote }}, memory: {{ $p.serverMemory }}}
+limits: {cpu: {{ $p.serverCpu | quote }}, memory: {{ $p.serverMemory }}}
 {{- end -}}
 {{- end -}}
 
@@ -73,8 +73,8 @@ limits: {cpu: {{ $p.gatewayCpu | quote }}, memory: {{ $p.gatewayMemory }}}
 {{- .Values.node.shmSize | default (include "radiusward.preset" . | fromYaml).nodeShm -}}
 {{- end -}}
 
-{{- define "radiusward.gatewayShm" -}}
-{{- .Values.gateway.shmSize | default (include "radiusward.preset" . | fromYaml).gatewayShm -}}
+{{- define "radiusward.serverShm" -}}
+{{- .Values.server.shmSize | default (include "radiusward.preset" . | fromYaml).serverShm -}}
 {{- end -}}
 
 {{/* pod-level security context */}}
@@ -123,8 +123,8 @@ prometheus.io/path: /metrics
 {{ include "radiusward.fullname" . }}-secrets
 {{- end -}}
 
-{{/* RADIUS ports of a gateway Service */}}
-{{- define "radiusward.gatewayPorts" -}}
+{{/* RADIUS ports of a server Service */}}
+{{- define "radiusward.serverPorts" -}}
 - {name: auth, port: {{ .ports.auth }}, targetPort: auth, protocol: UDP}
 - {name: acct, port: {{ .ports.acct }}, targetPort: acct, protocol: UDP}
 {{- if .coa.enabled }}

@@ -1,6 +1,6 @@
 name: k8s-tests
 
-# The Helm chart on a kind cluster under load: leader killed, members and gateways rolled, a volume replaced
+# The Helm chart on a kind cluster under load: leader killed, members and RADIUS servers rolled, a volume replaced
 # (scripts/k8s-tests.sh, docs/operations/kubernetes.md). Too slow for every push: nightly, on demand and for release
 # tags.
 on:

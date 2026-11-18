@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 /**
  * The systemd units of {@code deploy/systemd}, unchanged, with systemd as PID 1 in every container
  * ({@code docs/operations/bare-metal.md}): under load the leader's member is killed and {@code Restart=on-failure}
- * brings it back, a follower is stopped and started, a gateway is reloaded (SIGHUP) and another one drains before it
+ * brings it back, a follower is stopped and started, a RADIUS server is reloaded (SIGHUP) and another one drains before it
  * stops. No acknowledged event is lost and every unit ends {@code active}.
  */
 @Epic("Fault injection")
@@ -70,19 +70,19 @@ class SystemdFailoverIT {
             });
             cluster.awaitReady(java.util.List.of(follower), Duration.ofSeconds(60));
 
-            // 3. configuration reload of a gateway: SIGHUP, the gateway keeps answering
+            // 3. configuration reload of a RADIUS server: SIGHUP, the RADIUS server keeps answering
             ContainerCluster.Member reloaded = cluster.radiusServers().get(0);
-            Reports.step("systemctl reload radiusward-gateway on " + reloaded.name(), () -> {
-                assertThat(cluster.systemctl(reloaded, "reload", ContainerCluster.GATEWAY_UNIT)
+            Reports.step("systemctl reload radiusward-server on " + reloaded.name(), () -> {
+                assertThat(cluster.systemctl(reloaded, "reload", ContainerCluster.SERVER_UNIT)
                                 .getExitCode())
                         .isZero();
                 assertThat(cluster.unitState(reloaded)).isEqualTo("active");
             });
 
-            // 4. a gateway stopped: not ready while it drains (5 s), then inactive; started again
+            // 4. a RADIUS server stopped: not ready while it drains (5 s), then inactive; started again
             ContainerCluster.Member stopped = cluster.radiusServers().get(1);
-            Reports.step("systemctl stop radiusward-gateway on " + stopped.name() + " (drain), then start", () -> {
-                assertThat(cluster.systemctl(stopped, "stop", "--no-block", ContainerCluster.GATEWAY_UNIT)
+            Reports.step("systemctl stop radiusward-server on " + stopped.name() + " (drain), then start", () -> {
+                assertThat(cluster.systemctl(stopped, "stop", "--no-block", ContainerCluster.SERVER_UNIT)
                                 .getExitCode())
                         .isZero();
                 ContainerCluster.sleep(1_000);
@@ -93,11 +93,11 @@ class SystemdFailoverIT {
                 long deadline = System.nanoTime() + Duration.ofSeconds(30).toNanos();
                 while (!cluster.unitState(stopped).equals("inactive")) {
                     assertThat(System.nanoTime())
-                            .as("gateway stopped within 30 s")
+                            .as("RADIUS server stopped within 30 s")
                             .isLessThan(deadline);
                     ContainerCluster.sleep(500);
                 }
-                assertThat(cluster.systemctl(stopped, "start", ContainerCluster.GATEWAY_UNIT)
+                assertThat(cluster.systemctl(stopped, "start", ContainerCluster.SERVER_UNIT)
                                 .getExitCode())
                         .isZero();
             });

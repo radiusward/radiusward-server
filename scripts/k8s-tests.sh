@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Kubernetes tests (Phase 4, ADR 0062/0063): a kind cluster with three workers, the Helm chart, and accounting plus
-# Access-Request load from a pod while members and gateways are killed, rolled and replaced. A scenario fails when a
+# Access-Request load from a pod while members and RADIUS servers are killed, rolled and replaced. A scenario fails when a
 # request is lost (radclient's "failed" or Access-Request timeouts). Nightly in CI (k8s-tests.yml); needs Docker, kind,
 # kubectl and helm.
 #
 #   scripts/k8s-tests.sh                 # build, create the cluster, run every scenario, delete the cluster
 #   KEEP=1 scripts/k8s-tests.sh          # keep the cluster afterwards (kubectl --context kind-rw-k8s-test)
 #   SKIP_BUILD=1 scripts/k8s-tests.sh    # use an image radiusward:k8s-test that is already built
-#   scripts/k8s-tests.sh leader-kill     # only the named scenarios (baseline leader-kill member-roll gateway-roll
+#   scripts/k8s-tests.sh leader-kill     # only the named scenarios (baseline leader-kill member-roll server-roll
 #                                        # replace-volume restore-quorum loadbalancer; opt-in: scale)
 set -euo pipefail
 
@@ -20,7 +20,7 @@ ns=radiusward
 release=rw
 image=radiusward:k8s-test
 out="$root/testing/k8s-tests/target"
-scenarios=("${@:-baseline loadbalancer leader-kill member-roll gateway-roll replace-volume restore-quorum}")
+scenarios=("${@:-baseline loadbalancer leader-kill member-roll server-roll replace-volume restore-quorum}")
 read -r -a scenarios <<<"${scenarios[*]}"
 failures=0
 # per scenario, for the JUnit XML the published test report reads (docs/plans/test-reports.md)
@@ -115,7 +115,7 @@ EOF
   install_metallb
 }
 
-# MetalLB in L2 mode with addresses from kind's Docker network, so the gateways' LoadBalancer Services get addresses a
+# MetalLB in L2 mode with addresses from kind's Docker network, so the RADIUS servers' LoadBalancer Services get addresses a
 # container outside the cluster reaches, as a NAS reaches a real load balancer
 metallb_version=v0.16.2
 install_metallb() {
@@ -169,7 +169,7 @@ node:
 backup:
   persistence: {size: 2Gi, storageClass: standard}
   interval: 20s
-gateway:
+server:
   service: {type: LoadBalancer, externalTrafficPolicy: Local}
   nas:
     - {name: pods, address: 10.244.0.0/16, secret: testing123, id: 1001}
@@ -187,19 +187,19 @@ gateway:
 EOF
 }
 
-gateway_ip() { k get svc "$release-radiusward-gateway-$1" -o jsonpath='{.spec.clusterIP}'; }
+server_ip() { k get svc "$release-radiusward-server-$1" -o jsonpath='{.spec.clusterIP}'; }
 member_ready() { k exec "$release-radiusward-node-$1" -- radiusward probe http://127.0.0.1:9090/ready 2>/dev/null; }
 leader() { for i in 0 1 2; do member_ready "$i" | grep -q '"LEADER' && { echo "$i"; return; }; done; echo -1; }
 follower() { local l; l=$(leader); echo $(((l + 1) % 3)); }
 
-# start_load <seconds> [radclient load options]: accounting through both gateways, Access-Requests on top
+# start_load <seconds> [radclient load options]: accounting through both RADIUS servers, Access-Requests on top
 start_load() {
   local seconds=$1
   shift
   k delete pod load --ignore-not-found --wait >/dev/null 2>&1
   k run load --image="$image" --image-pull-policy=Never --restart=Never \
     --overrides='{"spec":{"securityContext":{"runAsUser":10001}}}' -- radclient load \
-    --server "$(gateway_ip 0):1813,$(gateway_ip 1):1813" --retry-other-server --secret testing123 --nas 5 \
+    --server "$(server_ip 0):1813,$(server_ip 1):1813" --retry-other-server --secret testing123 --nas 5 \
     --duration "${seconds}s" --timeout 3s --retries 3 "$@" >/dev/null
   until [[ "$(k get pod load -o jsonpath='{.status.phase}')" == Running ]]; do sleep 1; done
 }
@@ -231,7 +231,7 @@ fail() {
 
 await_members_ready() {
   k rollout status statefulset/"$release-radiusward-node" --timeout=300s >/dev/null
-  k rollout status statefulset/"$release-radiusward-gateway" --timeout=300s >/dev/null
+  k rollout status statefulset/"$release-radiusward-server" --timeout=300s >/dev/null
 }
 
 scenario_baseline() {
@@ -261,13 +261,13 @@ scenario_member-roll() {
   finish_load member-roll
 }
 
-scenario_gateway-roll() {
-  log "gateway-roll: both gateways restarted in turn under load (NAS retry through the other)"
+scenario_server-roll() {
+  log "server-roll: both RADIUS servers restarted in turn under load (NAS retry through the other)"
   start_load 120 --sessions 500 --rate 200 --interim 10s --access-rate 20
   sleep 10
-  k rollout restart statefulset/"$release-radiusward-gateway" >/dev/null
-  k rollout status statefulset/"$release-radiusward-gateway" --timeout=400s >/dev/null
-  finish_load gateway-roll
+  k rollout restart statefulset/"$release-radiusward-server" >/dev/null
+  k rollout status statefulset/"$release-radiusward-server" --timeout=400s >/dev/null
+  finish_load server-roll
 }
 
 snapshot() {
@@ -369,19 +369,19 @@ scenario_restore-quorum() {
   finish_load restore-quorum
 }
 
-# loadbalancer: a NAS outside the cluster (a container on kind's network) reaches both gateways through their
+# loadbalancer: a NAS outside the cluster (a container on kind's network) reaches both RADIUS servers through their
 # LoadBalancer Services (MetalLB, externalTrafficPolicy: Local); its NAS entry is its own /32 address, so the
 # source address must arrive unchanged. Accounting and Access-Requests, nothing lost, no unknown NAS.
 scenario_loadbalancer() {
-  log "loadbalancer: a NAS outside the cluster through the gateways' LoadBalancer addresses"
+  log "loadbalancer: a NAS outside the cluster through the RADIUS servers' LoadBalancer addresses"
   local lb0="" lb1="" deadline=$((SECONDS + 120))
   until [[ -n "$lb0" && -n "$lb1" ]]; do
-    lb0=$(k get svc "$release-radiusward-gateway-0" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-    lb1=$(k get svc "$release-radiusward-gateway-1" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    lb0=$(k get svc "$release-radiusward-server-0" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    lb1=$(k get svc "$release-radiusward-server-1" -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
     ((SECONDS < deadline)) || { fail "loadbalancer: no LoadBalancer addresses"; return; }
     sleep 3
   done
-  log "  gateways at $lb0 and $lb1; the NAS at $outside_ip"
+  log "  RADIUS servers at $lb0 and $lb1; the NAS at $outside_ip"
   local before after out summary
   before=$(unknown_nas)
   out=$(docker exec "$cluster-nas" radiusward radclient auth --server "$lb0:1812" \
@@ -403,24 +403,24 @@ scenario_loadbalancer() {
   [[ -n "$current_failure" ]] || log "PASS loadbalancer: the source address arrived unchanged"
 }
 
-# packets of both gateways dropped as from an unknown NAS (accounting and authentication)
+# packets of both RADIUS servers dropped as from an unknown NAS (accounting and authentication)
 unknown_nas() {
   local g total=0 n
   for g in 0 1; do
-    n=$(k exec "$release-radiusward-gateway-$g" -- radiusward probe http://127.0.0.1:9090/metrics 2>/dev/null |
+    n=$(k exec "$release-radiusward-server-$g" -- radiusward probe http://127.0.0.1:9090/metrics 2>/dev/null |
       awk '/result="unknown_nas"/ {sum += $NF} END {print sum + 0}')
     total=$((total + n))
   done
   echo "$total"
 }
 
-# scale (4.9, opt-in: scripts/k8s-tests.sh scale): 500k sessions through both gateways from two load pods, with the
+# scale (4.9, opt-in: scripts/k8s-tests.sh scale): 500k sessions through both RADIUS servers from two load pods, with the
 # Access-Request mix, while the leader is killed, a follower is cut off by a NetworkPolicy and a worker node is
 # drained. Nothing may be lost; every session must be in the replicated state; no container may run out of memory.
 scenario_scale() {
   log "scale: 500k sessions and Access-Requests while the leader is killed, a member cut off and a node drained"
   local g0 g1 seconds=${SCALE_SECONDS:-420} per=${SCALE_SESSIONS:-250000} rate=${SCALE_RATE:-1000}
-  g0=$(gateway_ip 0) g1=$(gateway_ip 1)
+  g0=$(server_ip 0) g1=$(server_ip 1)
   for p in a b; do k delete pod "load-$p" --ignore-not-found --wait >/dev/null 2>&1; done
   k run load-a --image="$image" --image-pull-policy=Never --restart=Never \
     --overrides='{"spec":{"securityContext":{"runAsUser":10001}}}' -- radclient load --server "$g0:1813,$g1:1813" \
@@ -471,7 +471,7 @@ scenario_scale() {
     fail "scale: the drain of $node did not complete within 300 s"
     log "  $(tail -3 <<<"$drained" | tr '\n' ' ')"
   fi
-  sleep 20 # the member waits for its node (node-local volume); the gateway's NAS use the other one meanwhile
+  sleep 20 # the member waits for its node (node-local volume); the RADIUS server's NAS use the other one meanwhile
   kubectl --context "kind-$cluster" uncordon "$node" >/dev/null
   log "  +$((SECONDS - start)) s: $node uncordoned"
   local deadline=$((SECONDS + 180))

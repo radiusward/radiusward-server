@@ -31,10 +31,10 @@ class DevicesBehindNatIT extends E2eTestBase {
 
     @Test
     void accountingOnStopsOnlyTheRebootedDevicesSessions() throws Exception {
-        int a = cluster.radiusPort("gateway-a");
-        int b = cluster.radiusPort("gateway-b");
+        int a = cluster.radiusPort("server-a");
+        int b = cluster.radiusPort("server-b");
         nas.ack(a, Nas.request(1, 1, "00000001", 0, 0, "ap-1"));
-        nas.ack(b, Nas.request(2, 1, "00000001", 0, 0, "ap-2")); // same id, other device, other gateway
+        nas.ack(b, Nas.request(2, 1, "00000001", 0, 0, "ap-2")); // same id, other device, other RADIUS server
         nas.ack(a, Nas.request(3, 1, "00000002", 0, 0, "ap-1"));
         nas.ack(b, Nas.request(4, 7, null, 0, 0, "ap-1")); // ap-1 reboots
         cluster.awaitConverged();

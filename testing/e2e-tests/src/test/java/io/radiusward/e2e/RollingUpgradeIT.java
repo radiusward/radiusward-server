@@ -44,7 +44,7 @@ class RollingUpgradeIT extends E2eTestBase {
 
     @Test
     void theLastUpgradedMemberActivatesTheNewVersionEverywhere() throws Exception {
-        int port = cluster.radiusPort("gateway-a");
+        int port = cluster.radiusPort("server-a");
         nas.ack(port, Nas.request(1, 1, "up-1", 0));
         // a fresh cluster first activates what all members run (above the first release's baseline)
         LocalCluster.await(Duration.ofSeconds(30), "the current version active", () -> activeVersion() == OLD);

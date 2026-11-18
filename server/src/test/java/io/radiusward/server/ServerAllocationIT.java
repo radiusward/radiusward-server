@@ -28,7 +28,7 @@ import org.agrona.concurrent.ringbuffer.OneToOneRingBuffer;
 import org.junit.jupiter.api.Test;
 
 /**
- * The gateway's per-packet path — receive, validate, authenticate, cache, extract, keys, submit, commit,
+ * The RADIUS server's per-packet path — receive, validate, authenticate, cache, extract, keys, submit, commit,
  * build and send the response — must not allocate. One sender, so the JDK reuses its cached sender address
  * (with many NAS the JDK allocates ~80 bytes per sender change; documented in ADR 0011).
  */

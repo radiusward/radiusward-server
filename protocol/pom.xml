@@ -13,7 +13,7 @@
 
     <artifactId>protocol</artifactId>
     <name>radiusward :: protocol</name>
-    <description>SBE messages between gateways, cluster and tools</description>
+    <description>SBE messages between RADIUS servers, cluster and tools</description>
 
     <dependencies>
         <dependency>

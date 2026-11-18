@@ -24,7 +24,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Three cluster members and two gateways as separate {@code java -jar radiusward.jar} processes on loopback,
+ * Three cluster members and two RADIUS servers as separate {@code java -jar radiusward.jar} processes on loopback,
  * each with its own configuration written to a temp directory and free ports. {@link #kill(String)} is a real
  * {@code kill -9}. Logs stay in the temp directory for failed runs.
  */
@@ -54,17 +54,17 @@ final class ProcessCluster implements AutoCloseable {
         }
         this.basePort = LocalCluster.freePortBase(3);
         // fixed ports below the ephemeral range: an ephemeral one checked free here can be reused by another
-        // process's client socket before the member or gateway binds it
+        // process's client socket before the member or RADIUS server binds it
         java.util.Set<Integer> used = new java.util.HashSet<>();
-        for (String name : List.of("node-0", "node-1", "node-2", "gateway-a", "gateway-b")) {
+        for (String name : List.of("node-0", "node-1", "node-2", "server-a", "server-b")) {
             managementPorts.put(name, freePort(used));
         }
-        radiusPorts.put("gateway-a", freePort(used));
-        radiusPorts.put("gateway-b", freePort(used));
+        radiusPorts.put("server-a", freePort(used));
+        radiusPorts.put("server-b", freePort(used));
         writeConfig();
     }
 
-    /** Extra properties for one gateway (e.g. debug settings); call before starting it. */
+    /** Extra properties for one RADIUS server (e.g. debug settings); call before starting it. */
     ProcessCluster serverConfig(String radiusServer, String properties) throws IOException {
         extraServerConfig.put(radiusServer, properties);
         writeConfig();
@@ -85,7 +85,7 @@ final class ProcessCluster implements AutoCloseable {
         return this;
     }
 
-    /** Extra properties for the NAS entry {@code nas.local.*} on every gateway; call before starting them. */
+    /** Extra properties for the NAS entry {@code nas.local.*} on every RADIUS server; call before starting them. */
     ProcessCluster nasConfig(String properties) throws IOException {
         extraNasConfig = properties;
         writeConfig();
@@ -114,13 +114,13 @@ final class ProcessCluster implements AutoCloseable {
                             + extraNodeConfig.getOrDefault("node-" + i, "") + "\n");
         }
         int id = 1;
-        for (String g : List.of("gateway-a", "gateway-b")) {
+        for (String g : List.of("server-a", "server-b")) {
             Files.writeString(dir.resolve(g + ".properties"), """
                     profile=small
-                    radiusServer.id=%d
-                    radiusServer.listen.host=127.0.0.1
-                    radiusServer.listen.port=%d
-                    radiusServer.aeron.dir=%s
+                    server.id=%d
+                    server.listen.host=127.0.0.1
+                    server.listen.port=%d
+                    server.aeron.dir=%s
                     cluster.members=localhost,localhost,localhost
                     cluster.base.port=%d
                     management.http.host=127.0.0.1
@@ -154,7 +154,7 @@ final class ProcessCluster implements AutoCloseable {
         });
     }
 
-    /** Names of the processes: node-0..2 and the gateways. */
+    /** Names of the processes: node-0..2 and the RADIUS servers. */
     java.util.Set<String> names() {
         return managementPorts.keySet();
     }
@@ -183,7 +183,7 @@ final class ProcessCluster implements AutoCloseable {
                     dir.resolve(name + ".properties").toString()));
         } else {
             command.addAll(List.of(
-                    "gateway",
+                    "server",
                     "--config",
                     dir.resolve(name + ".properties").toString(),
                     "--config",
@@ -197,7 +197,7 @@ final class ProcessCluster implements AutoCloseable {
         processes.put(name, process);
     }
 
-    /** {@code kill -HUP}: a gateway reloads its configuration files (ADR 0054). */
+    /** {@code kill -HUP}: a RADIUS server reloads its configuration files (ADR 0054). */
     void hangUp(String name) throws IOException, InterruptedException {
         Reports.step("SIGHUP " + name, () -> hangUpProcess(name));
     }

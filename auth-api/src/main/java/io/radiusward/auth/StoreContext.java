@@ -12,7 +12,7 @@ import java.util.function.Function;
  *
  * @param name the store's name ({@code auth.store.<name>.*})
  * @param settings its settings without the prefix
- * @param workers the gateway's worker threads ({@code gateway.auth.workers}): a store's connection pool rarely needs
+ * @param workers the RADIUS server's worker threads ({@code server.auth.workers}): a store's connection pool rarely needs
  *     more
  * @param replyCheck what is wrong with a reply item (unknown attribute, value that cannot be encoded), or
  *     {@code null} if it can be sent; a store that reads all users up front (a file) reports problems at load time

@@ -33,7 +33,7 @@ wpa_supplicant and other RADIUS servers support it.
 - **Arithmetic**: `P256`, affine and Jacobian points on `BigInteger`, because the JDK has no public point arithmetic.
   - Hunting and pecking always runs all 40 rounds, and multiplication is a fixed ladder over all 256 bits, so the
     sequence of operations does not depend on the password or the secret values.
-  - `BigInteger` is not constant-time. A local attacker able to time the gateway's CPU precisely could learn more
+  - `BigInteger` is not constant-time. A local attacker able to time the RADIUS server's CPU precisely could learn more
     than from the protocol. Where that matters, prefer EAP-TLS, PEAP or TEAP; their private-key work runs in the
     JDK's constant-time implementations.
 - **Not covered**: other groups (Brainpool, P-384/521), salted password preparations (SSHA*), EAP-pwd fast
@@ -48,4 +48,4 @@ wpa_supplicant and other RADIUS servers support it.
   - the ID request's fields;
   - P-256 identities (n·G, addition and doubling, negation, decoding).
 - `EapolTestIT#pwd`: wpa_supplicant 2.12 with alice's cleartext and bob's NT hash, and wrong passwords for both.
-- `ExternalEapComparisonIT`: the same outcome and matching keys on an external RADIUS server and on the gateway.
+- `ExternalEapComparisonIT`: the same outcome and matching keys on an external RADIUS server and on the RADIUS server.

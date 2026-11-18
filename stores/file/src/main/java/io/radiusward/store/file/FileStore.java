@@ -22,7 +22,7 @@ import org.apache.logging.log4j.Logger;
 
 /**
  * Users from a FreeRADIUS-style users file ({@code auth.store.<name>.type = file}, {@code path}); for tests, labs and
- * small sites. The file is read at start (an error stops the gateway) and re-read when it changes, checked at most
+ * small sites. The file is read at start (an error stops the RADIUS server) and re-read when it changes, checked at most
  * every {@code reload.interval} (5 s); a changed file with errors is logged and the previous users stay.
  */
 final class FileStore implements IdentityStore {

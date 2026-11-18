@@ -8,7 +8,7 @@ import org.agrona.DirectBuffer;
 import org.agrona.collections.Long2LongHashMap;
 
 /**
- * RFC 5080 §2.2.2 duplicate detection at the gateway, keyed by source address, port, Identifier and Request
+ * RFC 5080 §2.2.2 duplicate detection at the RADIUS server, keyed by source address, port, Identifier and Request
  * Authenticator. Stores only a state per request (~32 bytes): the Accounting-Response is deterministic, so a
  * COMMITTED retransmit is answered by re-encoding it from the incoming packet (ADR 0011). Entries expire in
  * insertion order. Owned by the UDP agent thread; allocation-free except when growing.

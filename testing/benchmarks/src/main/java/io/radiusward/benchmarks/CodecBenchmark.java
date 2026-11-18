@@ -104,7 +104,7 @@ public class CodecBenchmark {
         return responses.encode(packet, out, 0, SECRET, false);
     }
 
-    /** Everything the gateway does per accounting packet before handing it to the cluster. */
+    /** Everything the RADIUS server does per accounting packet before handing it to the cluster. */
     @Benchmark
     public int fullReceivePath() {
         packet.wrap(in, 0, length);

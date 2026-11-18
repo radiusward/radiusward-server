@@ -31,7 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The real gateway with authentication on: its own threads, four workers sharing the queue, concurrent clients.
+ * The real RADIUS server with authentication on: its own threads, four workers sharing the queue, concurrent clients.
  * No cluster is needed for Access-Requests.
  */
 @Epic("Authentication")
@@ -75,7 +75,7 @@ class ServerAuthIT {
                     .isEqualTo(decided.get());
             assertThat(stats.get(AuthStats.Counter.REJECTED)).isEqualTo(clients * perClient / 2);
             assertThat(radiusServer.metrics())
-                    .contains("radiusward_gateway_access_requests_total{gateway=\"1\",result=\"accepted\"}");
+                    .contains("radiusward_server_access_requests_total{server=\"1\",result=\"accepted\"}");
             assertThat(radiusServer.stateJson()).contains("\"access\":{");
         }
     }
@@ -102,7 +102,7 @@ class ServerAuthIT {
                 config.debugResponseDelay());
     }
 
-    /** The real gateway with the file store: PAP and CHAP over UDP, reply items from the users file. */
+    /** The real RADIUS server with the file store: PAP and CHAP over UDP, reply items from the users file. */
     @Test
     void fileStoreAnswersPapAndChap() throws Exception {
         Path users = dir.resolve("users");
@@ -152,7 +152,7 @@ class ServerAuthIT {
         }
     }
 
-    /** EAP-TLS through the real gateway: Message-Authenticator, Access-Challenges over 1 KiB, keys in the Accept. */
+    /** EAP-TLS through the real RADIUS server: Message-Authenticator, Access-Challenges over 1 KiB, keys in the Accept. */
     @Test
     void eapTlsOverUdp() throws Exception {
         TestPki pki = new TestPki(dir, "gw");

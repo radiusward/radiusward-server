@@ -36,8 +36,8 @@ class LeaderFailoverIT extends E2eTestBase {
         LoadGenerator load = new LoadGenerator(
                 LoadGenerator.Settings.builder(
                                 List.of(
-                                        new InetSocketAddress("127.0.0.1", cluster.radiusPort("gateway-a")),
-                                        new InetSocketAddress("127.0.0.1", cluster.radiusPort("gateway-b"))),
+                                        new InetSocketAddress("127.0.0.1", cluster.radiusPort("server-a")),
+                                        new InetSocketAddress("127.0.0.1", cluster.radiusPort("server-b"))),
                                 Nas.SECRET)
                         .nas(10)
                         .sessions(1000)

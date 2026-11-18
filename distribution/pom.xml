@@ -13,7 +13,7 @@
 
     <artifactId>distribution</artifactId>
     <name>radiusward :: distribution</name>
-    <description>Single runnable radiusward.jar (cluster-node | gateway)</description>
+    <description>Single runnable radiusward.jar (cluster-node | server)</description>
 
     <dependencies>
         <dependency>

@@ -13,7 +13,7 @@ import org.agrona.concurrent.ShutdownSignalBarrier;
 import org.apache.logging.log4j.LogManager;
 
 /**
- * {@code radiusward gateway --config gateway.properties --config nas-clients.properties}. No static logger:
+ * {@code radiusward server --config server.properties --config nas-clients.properties}. No static logger:
  * logging is configured first.
  */
 public final class ServerMain {
@@ -66,7 +66,7 @@ public final class ServerMain {
         io.radiusward.common.net.DnsCache.shortLived(); // members are found by name; pods change address (ADR 0062)
         TlsCredentials.statefulSessions(); // before anything loads the JDK's TLS classes
         java.util.List<java.nio.file.Path> files =
-                ConfigArgs.files(args, "gateway --config <file.properties> [--config ...]");
+                ConfigArgs.files(args, "server --config <file.properties> [--config ...]");
         Config config = Config.load(files, System.getenv());
         Logging.configure(config.enumValue("profile", Profile.class, Profile.SMALL));
         ServerConfig serverConfig = ServerConfig.from(config);
@@ -104,13 +104,13 @@ public final class ServerMain {
                 management.handle("/coa/", radiusServer.coaApi()); // ADR 0036, with coa.api.token only
             }
             barrier.await();
-            drain(radiusServer, config.duration("gateway.shutdown.drain", java.time.Duration.ZERO));
+            drain(radiusServer, config.duration("server.shutdown.drain", java.time.Duration.ZERO));
         } finally {
             LogManager.shutdown();
         }
     }
 
-    /** Not ready, still answering, for {@code drain} before the gateway closes (ADR 0062); nothing when zero. */
+    /** Not ready, still answering, for {@code drain} before the RADIUS server closes (ADR 0062); nothing when zero. */
     static void drain(RadiusServer radiusServer, java.time.Duration drain) {
         if (drain.isZero() || drain.isNegative()) {
             return;

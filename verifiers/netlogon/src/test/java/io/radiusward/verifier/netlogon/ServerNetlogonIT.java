@@ -42,7 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The whole chain through a real gateway over UDP: users from the LDAP store (the domain's directory, with a group
+ * The whole chain through a real RADIUS server over UDP: users from the LDAP store (the domain's directory, with a group
  * policy), credentials checked by the Netlogon verifier against the domain controller.
  */
 @Epic("Authentication")

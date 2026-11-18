@@ -4,7 +4,7 @@ Status: **done** (2026-11-08) · Created: 2026-11-08 · Builds on: [Phase 0](pha
 
 ## Goal
 
-Phase 1 delivers the first working version: a 3-node Aeron Cluster plus 2 gateways, running **locally on
+Phase 1 delivers the first working version: a 3-node Aeron Cluster plus 2 RADIUS servers, running **locally on
 macOS without Docker** (ADR 0009). The NAS gets an Accounting-Response only after the record is
 committed and fsynced on a majority, and duplicates are never applied twice.
 
@@ -15,12 +15,12 @@ committed and fsynced on a majority, and duplicates are never applied twice.
    is back, retries are acknowledged and each event is applied exactly once.
 3. **`kill -9` of the leader under load** (about 2k requests/s, 1,000 sessions): every acknowledged event
    is in the cluster state, no event is applied twice, and the state of all three nodes is identical.
-4. **Duplicates:** an identical retransmit is answered from the gateway cache. A retransmit with a new
-   Identifier or Acct-Delay-Time, or one sent through the other gateway, is recognised by the cluster and
+4. **Duplicates:** an identical retransmit is answered from the RADIUS server cache. A retransmit with a new
+   Identifier or Acct-Delay-Time, or one sent through the other RADIUS server, is recognised by the cluster and
    not applied again.
 5. **Restarts:** a restarted node catches up from snapshot plus log. After a snapshot and a full restart,
    duplicates are still recognised.
-6. **No allocation per packet** in the gateway hot path (including a path that logs) or in the cluster
+6. **No allocation per packet** in the RADIUS server hot path (including a path that logs) or in the cluster
    service in steady state, enforced by tests. One known JDK exception (P1.6).
 7. **Memory:** about 80 bytes per session or less, measured. Nodes run with `-Xmx384m` (small profile).
 8. **Three ways to run it:** an in-JVM test harness, dev mode in IntelliJ, and `scripts/run-local.sh`,
@@ -35,7 +35,7 @@ committed and fsynced on a majority, and duplicates are never applied twice.
 | 1 | **Config:** properties files with environment variable overrides (`RADIUSWARD_*`, `${env:VAR}` for secrets), no extra library |
 | 2 | **Logging:** **Log4j2 async loggers backed by the LMAX Disruptor**; logging **never blocks** the producing thread (custom always-discard queue-full policy + dropped-events counter); garbage-free mode; Log4j2 API directly |
 | 3 | **Health and `/state` endpoint** on the JDK's built-in HTTP server (`com.sun.net.httpserver`), already in Phase 1 |
-| 4 | **Packaging:** one `radiusward.jar` with subcommands (`cluster-node`, `gateway`) — the single container image in Phase 2 |
+| 4 | **Packaging:** one `radiusward.jar` with subcommands (`cluster-node`, `server`) — the single container image in Phase 2 |
 | 5 | **Load generator:** `radclient load` in Phase 1 |
 | 6 | **Log purge:** spike in Phase 1, implementation in Phase 3 with the sink checkpoints |
 
@@ -56,8 +56,8 @@ radiusward/
 │                          # health server, Log4j2 setup + non-blocking queue-full policy
 ├── cluster-service/       # AccountingService, SessionStore, dedup, snapshots (deterministic, no I/O)
 ├── cluster-node/          # launcher: ClusteredMediaDriver + ServiceContainer, snapshot scheduler, health
-├── gateway/               # UdpAgent, ClusterClientAgent, NAS registry, response cache, EventKeyStrategy
-├── distribution/          # one radiusward.jar: `radiusward cluster-node | gateway`
+├── server/                # UdpAgent, ClusterClientAgent, NAS registry, response cache, EventKeyStrategy
+├── distribution/          # one radiusward.jar: `radiusward cluster-node | server`
 ├── testing/
 │   ├── test-harness/      # LocalCluster (in-JVM), DevCluster main, cluster integration tests
 │   └── e2e-tests/         # -Pe2e: ProcessLauncher, real UDP, kill -9 scenarios
@@ -79,7 +79,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 
   | Message | Fields (core) |
   |---|---|
-  | `AccountingCommand` | correlationId, gatewayId, nasId, sessionKey (128 bit), exactKey (128 bit), statusType, sessionTime, eventTimestamp, inputOctets64, outputOctets64, sessionId (var), rawAttributes (var) |
+  | `AccountingCommand` | correlationId, serverId, nasId, sessionKey (128 bit), exactKey (128 bit), statusType, sessionTime, eventTimestamp, inputOctets64, outputOctets64, sessionId (var), rawAttributes (var) |
   | `AccountingCommitted` | correlationId, outcome (APPLIED / DUPLICATE / STALE), eventId (= log position) |
   | `AccountingRejected` | correlationId, reason (CAPACITY, …) |
   | `SessionQuery` / `SessionReport` | admin and test: the state of one session |
@@ -101,10 +101,10 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
   `jdk.httpserver`, supported exported API since Java 6), **no dependency**. One small management port per
   process, separate from RADIUS traffic:
 
-  | Endpoint | Cluster node | Gateway | Kubernetes (Phase 4) |
+  | Endpoint | Cluster node | RADIUS server | Kubernetes (Phase 4) |
   |---|---|---|---|
   | `/health` | process alive, Aeron agents running, no fatal error | process alive, UdpAgent + ClusterClientAgent running | `livenessProbe` |
-  | `/ready` | cluster member, leader known, archive up | UDP socket bound **and** connected to the cluster leader | `readinessProbe` — LB sends RADIUS only to ready gateways |
+  | `/ready` | cluster member, leader known, archive up | UDP socket bound **and** connected to the cluster leader | `readinessProbe` — LB sends RADIUS only to ready RADIUS servers |
   | `/state` | JSON: role, leaderId, term, commitPosition, applied, duplicates, activeSessions, stateDigest, dropped log events | JSON: pending, ring-buffer fill, response-cache size, packets accepted / dropped / unauthentic, dropped log events | debugging; used by the Phase 1 e2e tests |
   | `/metrics` (Phase 3) | same numbers, Prometheus text format | same | Prometheus scraping |
 
@@ -128,7 +128,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
   ```properties
   management.http.enabled=true
   management.http.host=127.0.0.1     # 0.0.0.0 inside a pod, never exposed through the RADIUS Service
-  management.http.port=9090          # locally: node i -> 9090+i, gateways 9190, 9191
+  management.http.port=9090          # locally: node i -> 9090+i, servers 9190, 9191
   ```
 
   Security: no authentication in Phase 1; `/state` contains no secrets (no shared secrets, no user names);
@@ -202,7 +202,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 - SIGTERM shuts down cleanly; `kill -9` is part of the tests.
 - ✅ **Done when:** 3 nodes start locally, elect a leader, `/state` shows the role.
 
-### P1.5: Gateway: NAS registry and event keys (size M)
+### P1.5: Server: NAS registry and event keys (size M)
 
 - **NasRegistry** from config: `nas.<name>.address` (IP or CIDR), `.secret`, `.vendor`,
   `.messageAuthenticator=required|optional|off`. IPv4 lookups allocation-free (`Int2ObjectHashMap` keyed by
@@ -215,7 +215,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 - ✅ **Done when:** key tests across all 21 fixtures, including the same event with a different Identifier
   or delay time giving the same key.
 
-### P1.6: Gateway agents (size L)
+### P1.6: RADIUS server agents (size L)
 
 - **Pipeline** without object queues:
 
@@ -229,7 +229,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 - **UdpAgent:** receive → `RadiusPacket.wrap` → NAS lookup → verify authenticator / Message-Authenticator
   → response cache → extract → keys → command into the ring buffer.
 - **Response cache** (RFC 5080): (source IP, port, Identifier, authenticator hash) → `PENDING | COMMITTED`,
-  30 s expiry. The response is deterministic, so it is not stored: on a COMMITTED retransmit the gateway
+  30 s expiry. The response is deterministic, so it is not stored: on a COMMITTED retransmit the RADIUS server
   re-encodes it from the incoming packet (~32 bytes per entry). PENDING retransmits are dropped.
 - **Pending table:** preallocated slab of in-flight request copies (needed to build the response),
   bounded (default 64k; full → drop), 10 s timeout. A late commit marks the cache entry COMMITTED so the
@@ -237,30 +237,30 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 - **ClusterClientAgent:** `tryClaim` into the cluster without copying; **keeps polling egress while
   backpressured**; on leader change or lost connection reconnects asynchronously and **resends pending
   commands unchanged** (safe because of dedup).
-- **Threading:** `gateway.threading=shared` (one thread, small profile) or `dedicated` (two threads).
+- **Threading:** `server.threading=shared` (one thread, small profile) or `dedicated` (two threads).
 - **Known JDK limitation:** `DatagramChannel.receive()` creates a new `InetSocketAddress` whenever the
   sender changes — with 1,000 NAS ~80 bytes per packet, ~1.3 MB/s at peak, harmless for the GC.
   radiusward's own code allocates nothing; the test checks exactly that boundary.
-- ✅ **Done when:** component tests against a mocked cluster client (ring buffers), and `GatewayAllocationIT`.
+- ✅ **Done when:** component tests against a mocked cluster client (ring buffers), and `ServerAllocationIT`.
 
 ### P1.7: `distribution` and `run-local.sh` (size S)
 
 - One shaded `radiusward.jar` with `Main`: `radiusward cluster-node --config …`,
-  `radiusward gateway --config …`; `Add-Exports` in the manifest.
-- `config/local/`: `node-0..2.properties`, `gateway-a.properties` (UDP 1813), `gateway-b.properties`
+  `radiusward server --config …`; `Add-Exports` in the manifest.
+- `config/local/`: `node-0..2.properties`, `server-a.properties` (UDP 1813), `server-b.properties`
   (UDP 1814), `nas-clients.properties` (127.0.0.1, `testing123`, vendor default).
-- **`scripts/run-local.sh`:** `start | stop | status`, `kill <node|gateway>` (`kill -9`), `restart <x>`,
+- **`scripts/run-local.sh`:** `start | stop | status`, `kill <node|server>` (`kill -9`), `restart <x>`,
   `logs <x>`, `demo-failover` (load → kill the leader → show the result). PID and log files in `.local/`
   (git-ignored).
 - ✅ **Done when:** `run-local.sh start` + `radclient acct` gives an ACK, and `demo-failover` runs end to end.
 
 ### P1.8: Test harness and dev mode (size M)
 
-- **`LocalCluster`** (in-JVM): builder for N nodes and M gateways with temp directories and free ports;
+- **`LocalCluster`** (in-JVM): builder for N nodes and M RADIUS servers with temp directories and free ports;
   `awaitLeader()`, `stop(i)`, `restart(i)`, `state(i)`, `send(fixture)`.
 - **Cluster integration tests** on the harness: election, commit, snapshot and restore, digest equal on
   all nodes.
-- **`DevCluster` main:** 3 nodes + 2 gateways in one JVM on fixed ports; IntelliJ run configuration in `.run/`.
+- **`DevCluster` main:** 3 nodes + 2 RADIUS servers in one JVM on fixed ports; IntelliJ run configuration in `.run/`.
 - ✅ **Done when:** integration tests stable (10 runs in a row, no flakes); dev mode starts in under 5 s.
 
 ### P1.9: `radclient load` (size S)
@@ -279,12 +279,12 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
   |---|---|---|
   | `AckAfterCommitIT` | stop 2 of 3 nodes → send; restart one | no ACK without a majority; ACK afterwards; applied exactly once |
   | `LeaderFailoverIT` | load at 2k/s, `kill -9` the leader at t=10 s | every acked event in state; per-session state equals the last event; digests equal |
-  | `RetransmitIT` | identical retransmit; new Identifier and Acct-Delay-Time; via gateway B | cache hit without a cluster round trip; cluster DUPLICATE; state unchanged |
-  | `GatewayFailoverIT` | `debug.responseDelayMs` on gateway A, kill A, retry via B | answered by B as DUPLICATE, applied once |
+  | `RetransmitIT` | identical retransmit; new Identifier and Acct-Delay-Time; via RADIUS server B | cache hit without a cluster round trip; cluster DUPLICATE; state unchanged |
+  | `ServerFailoverIT` | `debug.responseDelayMs` on RADIUS server A, kill A, retry via B | answered by B as DUPLICATE, applied once |
   | `NodeRestartIT` | kill a follower, load, restart | catches up; digest equal |
   | `SnapshotRestoreIT` | snapshot, restart all nodes, send old events again | recognised as duplicates |
   | `AccountingOnOffIT` | Accounting-On from a NAS with active sessions | its sessions are closed |
-  | `VendorFixturesIT` | all 21 fixtures through the gateway | ACK for each, correct state |
+  | `VendorFixturesIT` | all 21 fixtures through the RADIUS server | ACK for each, correct state |
 
 - `debug.*` settings only work with `debug.enabled=true`; the node refuses to start with them in the
   production profile.
@@ -292,7 +292,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 
 ### P1.11: Documentation (size M), written alongside the code
 
-- **New ADRs:** 0010 Configuration (properties + env, no dependency); 0011 Gateway pipeline (ring buffers,
+- **New ADRs:** 0010 Configuration (properties + env, no dependency); 0011 RADIUS server pipeline (ring buffers,
   response cache without stored responses, pending slab); 0012 SessionStore and dedup algorithm (details
   for ADR 0003); **0013 Operational endpoints and logging (JDK HTTP server: `/health`, `/ready`, `/state`,
   later `/metrics`, counters read off the hot path; Log4j2 async loggers + LMAX Disruptor, non-blocking)**; 0014 Log purge (spike result, implementation in Phase 3).
@@ -311,7 +311,7 @@ built and tested with); `sbe-tool` 1.42.0 at build time only.
 ```text
 P1.1 protocol ─┬─▶ P1.3 cluster-service ─▶ P1.4 cluster-node ─┐
 P1.2 common ───┤                                               ├─▶ P1.7 distribution ─▶ P1.8 harness/dev ─▶ P1.10 e2e ─▶ P1.12
-               └─▶ P1.5 registry/keys ─▶ P1.6 gateway agents ──┘          ▲
+               └─▶ P1.5 registry/keys ─▶ P1.6 server agents ───┘          ▲
                                                     P1.9 radclient load ───┘
 P1.11 docs alongside: ADR 0010–0013 before the code, the rest with each step
 ```
@@ -350,9 +350,9 @@ each). In-JVM integration tests: 10+ consecutive green runs.
 | 1 | `verify` and `-Pe2e verify` green | ✅ both; e2e 3× in a row |
 | 2 | ACK only after commit | ✅ `AckAfterCommitIT`: with 2 of 3 members down nothing is acknowledged; after recovery the retransmit is acknowledged and applied once |
 | 3 | `kill -9` of the leader under ~2k req/s | ✅ local processes: 70,000 events at 2,057 req/s, **70,000 acknowledged, 0 failed**, 10,000 sessions ended STOPPED on both survivors, identical digests. `LeaderFailoverIT` additionally checks every session's state against the ack log |
-| 4 | Duplicates | ✅ cache hit for identical retransmits; new Identifier / Acct-Delay-Time / other gateway → cluster duplicate (`RetransmitIT`, `GatewayFailoverIT`) |
+| 4 | Duplicates | ✅ cache hit for identical retransmits; new Identifier / Acct-Delay-Time / other RADIUS server → cluster duplicate (`RetransmitIT`, `ServerFailoverIT`) |
 | 5 | Restarts | ✅ follower restart right after `kill -9` (`NodeRestartIT`); snapshot + full restart keeps dedup (`SnapshotRestoreIT`) |
-| 6 | No allocation per packet | ✅ gateway (100k packets < 64 KB incl. the test client), state machine (2M commands < 4 KB), logging (100k calls < 64 KB). JDK caveat: sender address allocation when the sender changes |
+| 6 | No allocation per packet | ✅ RADIUS server (100k packets < 64 KB incl. the test client), state machine (2M commands < 4 KB), logging (100k calls < 64 KB). JDK caveat: sender address allocation when the sender changes |
 | 7 | ≤ ~80 bytes per session, `-Xmx384m` | ✅ ~77 bytes (500k sessions ≈ 38 MB, asserted ≤ 45 MB); nodes run with `-Xmx384m` in `run-local.sh` and the e2e tests |
 | 8 | Three ways to run | ✅ `LocalCluster`, `DevCluster` (ready in 885 ms), `scripts/run-local.sh` incl. `demo-failover` |
 | 9 | Docs | ✅ ADR 0010–0014, configuration reference, local-cluster guide, protocol (final), module READMEs, contributor guide, failure matrix; links checked |
@@ -363,7 +363,7 @@ each). In-JVM integration tests: 10+ consecutive green runs.
 |---|---|
 | ACK latency, steady | p50 ~18–20 ms, p99 ~30–45 ms |
 | Failover (`kill -9` leader, 3 s heartbeat timeout) | ~6 s outage; every event acknowledged after NAS retransmission |
-| Throughput tested | 2,057 req/s sustained through 2 gateways during failover |
+| Throughput tested | 2,057 req/s sustained through 2 RADIUS servers during failover |
 | Session state | ~77 bytes per session |
 | Dev mode startup | 885 ms |
 
@@ -374,7 +374,7 @@ commit; it is far below NAS timeouts (3–5 s) and will be profiled on Linux in 
 
 | Plan | What was done | Why |
 |---|---|---|
-| Gateway resends pending commands after a reconnect | A retransmit of a request pending > 1 s is resubmitted (`gateway.retransmit.resubmit.after`) | Found by the failover demo: 846 of 7,000 events failed because the gateway swallowed retransmits of commands lost with the dead leader. Resubmission on retransmit needs no stored command bytes; afterwards 0 failures |
+| RADIUS server resends pending commands after a reconnect | A retransmit of a request pending > 1 s is resubmitted (`server.retransmit.resubmit.after`) | Found by the failover demo: 846 of 7,000 events failed because the RADIUS server swallowed retransmits of commands lost with the dead leader. Resubmission on retransmit needs no stored command bytes; afterwards 0 failures |
 | — | Launcher retries for up to 20 s on "active mark file detected" | Aeron's archive/cluster mark files count as alive for a fixed 10 s; without this a member cannot restart right after `kill -9` (systemd/Kubernetes would crash-loop) |
 | `scripts/cluster-tool.sh` | `radiusward cluster-tool …` subcommand | `java -cp` does not apply the jar's `Add-Exports`; the subcommand does |
 | Interim progress compared field by field when both carry it | A value only the incoming event carries counts as 0 on the stored side | Found by the smoke test: the first Interim after a Start (same second, no traffic) was taken for a duplicate |

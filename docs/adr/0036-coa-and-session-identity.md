@@ -14,7 +14,7 @@ and device. Three triggers were decided:
 - Simultaneous-Use: disconnect the oldest session instead of rejecting a new one;
 - store changes: a disabled or regrouped user, found by a rate-limited sweep.
 
-Each needs those attributes, for any session, from any gateway, also after restarts.
+Each needs those attributes, for any session, from any RADIUS server, also after restarts.
 
 ## Decision
 - **Identity in the replicated state** (state version 7, `atLeast(7)`). The state machine takes the identifying
@@ -48,7 +48,7 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - Both scan the store: operator and sweep questions, not per-packet work.
   - `AdminClient.session`, `userSessions` and `sessionPage` expose them.
 
-- **Sending** (milestone 2): `DynamicAuthorization`, one gateway thread.
+- **Sending** (milestone 2): `DynamicAuthorization`, one RADIUS server thread.
   - Disconnect-Request (40) and CoA-Request (43) are signed like an Accounting-Request and always carry a
     Message-Authenticator.
   - Each request gets an identifier free for its destination.
@@ -63,18 +63,18 @@ Each needs those attributes, for any session, from any gateway, also after resta
     session's NAS-IP-Address. The port is `nas.<name>.coa.port` (3799), the secret `nas.<name>.coa.secret` (else
     the entry's).
   - A NAS-IP-Address is added when the identity names no NAS and the entry has a single address.
-- **Finding the sessions**: the gateway asks the cluster through its client session (`ClusterQueries`), by user or
+- **Finding the sessions**: the RADIUS server asks the cluster through its client session (`ClusterQueries`), by user or
   by NAS entry and Acct-Session-Id.
   - Entries that tell devices apart are addressed by user only.
   - A session without an identity yet (applied before version 7) is reported unreachable.
-- **API**: on the gateway's management port, only with `coa.api.token` (at least 16 characters, compared in
+- **API**: on the RADIUS server's management port, only with `coa.api.token` (at least 16 characters, compared in
   constant time):
   - `POST /coa/disconnect?user=` or `?nas=&session=`.
   - `POST /coa/update?user=` with a body of attributes in the users-file syntax, encoded with the dictionary.
   - The answer is one JSON result per session: `ack`, `nak` with `errorCause`, `timeout` or `unreachable`.
   - The work runs on its own threads, so a slow NAS never holds up `/health`.
   - `admin disconnect` and `admin coa` call it.
-- **Metrics**: `radiusward_gateway_coa_requests_total{result}`, and RadSec's `coa_sent`, `coa_no_connection` and
+- **Metrics**: `radiusward_server_coa_requests_total{result}`, and RadSec's `coa_sent`, `coa_no_connection` and
   `coa_answers`.
 
 - **Simultaneous-Use** (milestone 3, `coa.simultaneous.use = disconnect-oldest`; default `reject`): when the
@@ -85,12 +85,12 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - Up to 3 sessions, oldest first.
   - The NAS's retransmissions of the new Access-Request meanwhile are dropped as in flight.
   - Sessions without an identity (from before version 7) are skipped.
-  - `radiusward_gateway_simultaneous_use_disconnects_total{result}` counts the disconnects.
+  - `radiusward_server_simultaneous_use_disconnects_total{result}` counts the disconnects.
   - The cluster keeps deciding alone: it frees the place only when the Stop is applied, so the limit is never
     exceeded, even while a NAS is slow to send the Stop.
 
-- **Store sweep** (milestone 4, `coa.sweep.enabled` on one gateway): every `coa.sweep.interval` (15 min) the
-  gateway pages through the active sessions with a user (`SessionPageQuery`) and looks each user up again, at most
+- **Store sweep** (milestone 4, `coa.sweep.enabled` on one RADIUS server): every `coa.sweep.interval` (15 min) the
+  RADIUS server pages through the active sessions with a user (`SessionPageQuery`) and looks each user up again, at most
   `coa.sweep.rate` (20) lookups per second.
   - The lookup is the login's authorization, checks and groups included, against a request made of the session's
     identifying attributes. Conditions on other attributes do not match there.
@@ -101,18 +101,18 @@ Each needs those attributes, for any session, from any gateway, also after resta
   - A user no store has any more is kept, because EAP-TLS devices with a certificate alone are in no store, unless
     `coa.sweep.missing = disconnect`.
   - A store outage changes nothing.
-  - Running the sweep on two gateways only repeats requests: a NAS NAKs a session it no longer has.
-  - `radiusward_gateway_store_sweep_total{result}` counts sweeps, users, disconnects, changes and outages.
+  - Running the sweep on two RADIUS servers only repeats requests: a NAS NAKs a session it no longer has.
+  - `radiusward_server_store_sweep_total{result}` counts sweeps, users, disconnects, changes and outages.
 
 - **Interop** (milestone 5): `ExternalCoaReceiverIT` (`-Pinterop`, skipped without an installed `radiusd`) starts an
   external RADIUS server with a configuration of its own: a CoA listener that requires Message-Authenticator and
   refuses one user.
   - It acknowledges our Disconnect-Request and our CoA-Request with a Session-Timeout, and NAKs the refused user.
   - It drops a request with the wrong secret, which our sender reports as a timeout.
-  - Its log ends up in `gateway/target/external-coa-receiver`.
+  - Its log ends up in `server/target/external-coa-receiver`.
 
 ## Consequences
-- Any gateway can name any active session to its NAS, and that survives member restarts and snapshots.
+- Any RADIUS server can name any active session to its NAS, and that survives member restarts and snapshots.
 - Session state is native memory now: an operator who starts members without the image's entrypoint must set
   `-XX:MaxDirectMemorySize` (~240 bytes per session for member and replica, plus a margin); the heap can be smaller.
 - NAS-IP-Address and the other lower-priority attributes may not fit 63 bytes behind a long Acct-Session-Id and

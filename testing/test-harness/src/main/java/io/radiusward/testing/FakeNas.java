@@ -18,7 +18,7 @@ import java.util.Arrays;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
- * A NAS for tests: one UDP socket on loopback, so a retransmission comes from the same source port and the gateways'
+ * A NAS for tests: one UDP socket on loopback, so a retransmission comes from the same source port and the RADIUS servers'
  * response caches see what they would see from a real NAS. Build its requests with {@link AccountingRequest}.
  */
 public final class FakeNas implements AutoCloseable {
@@ -51,7 +51,7 @@ public final class FakeNas implements AutoCloseable {
     }
 
     /**
-     * Sends {@code request} to a gateway on loopback, retransmitting like a NAS, and returns the verified
+     * Sends {@code request} to a RADIUS server on loopback, retransmitting like a NAS, and returns the verified
      * Accounting-Response; {@code null} if none arrives within the attempts. A response to this request with a wrong
      * authenticator or another code fails at once.
      */

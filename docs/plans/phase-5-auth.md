@@ -7,7 +7,7 @@ RadSec").
 ## Goals and limits
 
 - Answer Access-Requests within a NAS timeout with room to spare: target p99 < 20 ms for PAP/CHAP at 5,000 req/s per
-  gateway (a mass reconnect after an outage), with no allocation per packet on the PAP/CHAP path.
+  RADIUS server (a mass reconnect after an outage), with no allocation per packet on the PAP/CHAP path.
 - Secure by default: per-NAS secrets, Message-Authenticator required on Access-Request and first in every reply
   (BlastRADIUS, CVE-2024-3596), no secrets or passwords in logs, credentials never stored reversibly unless an
   operator chooses a method that needs it.
@@ -39,7 +39,7 @@ RadSec").
 ## Architecture
 
 ```text
-NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            cluster (only when a policy needs it)
+NAS ──UDP 1812──► server: AuthAgent (NIO, own socket)             cluster (only when a policy needs it)
                     validate → NAS entry → Message-Authenticator   ┌──────────────────────────────────┐
                     → response cache → method (PAP/CHAP/…)  ──────►│ AuthReservation (simultaneous use,│
                     → IdentityStore (cache, async I/O pool)        │  quota) through the log           │
@@ -47,24 +47,24 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
                                                                    └──────────────────────────────────┘
 ```
 
-- **AuthAgent** in the gateway process, beside the accounting `UdpAgent`: same NIO model, NAS registry, response
+- **AuthAgent** in the RADIUS server process, beside the accounting `UdpAgent`: same NIO model, NAS registry, response
   cache and Message-Authenticator handling; its own socket (1812) and its own counters. The receive thread never
   blocks: a request that needs I/O goes to a **bounded** worker pool; full → drop.
 - **IdentityStore** (plug-in SPI like sinks): looks up a user's credentials and attributes. Built-ins: `file`
   (properties/YAML, tests and small sites) and `sql` (JDBC; a FreeRADIUS-`radcheck`/`radreply`-compatible schema
-  option); later `rest` (portal integration, like rlm_rest) and `ldap`. Results cached per gateway with a short TTL and
+  option); later `rest` (portal integration, like rlm_rest) and `ldap`. Results cached per RADIUS server with a short TTL and
   explicit invalidation; a store outage → no answer (the NAS retries or falls back), never Accept.
 - **Credential formats** per user: PAP verifies salted hashes (`$argon2id$`, `$2y$` bcrypt, `$6$` SHA-512-crypt,
   PBKDF2); CHAP needs the cleartext (RFC 1994) — allowed only where an operator enables CHAP for that store;
   MS-CHAPv2 needs the NT hash (MD4) — stored as `NT-Password`, not cleartext. Slow hashes (argon2/bcrypt) cost
-  10–100 ms of CPU: verified on the worker pool, with a per-gateway cache of successful verifications (keyed by
+  10–100 ms of CPU: verified on the worker pool, with a per-server cache of successful verifications (keyed by
   user + hash of the presented password, short TTL) so a reconnect storm does not cost a hash per request.
 - **Policy** (pure function, unit-tested): inputs = NAS entry (tenant), user record, request attributes, optional
   cluster facts; output = Accept + attributes or Reject + internal reason. Rules: account enabled/expiry, NAS/tenant
   binding, time-of-day, Session-Timeout / Idle-Timeout / Acct-Interim-Interval / VLAN (Tunnel-Type 13) / Filter-Id /
   bandwidth via per-vendor attribute **templates** (data, not scripts).
 - **Cluster involvement** only for rules that need the replicated session state: *simultaneous use* and later
-  *quotas*. The gateway sends an `AuthReservation` command (user, NAS, device, limit) through the log; the state
+  *quotas*. The RADIUS server sends an `AuthReservation` command (user, NAS, device, limit) through the log; the state
   machine counts active sessions plus reservations not yet followed by an Accounting-Start (short TTL, closes the
   Accept→Start race) and answers granted/denied; the Accept goes out after the commit (same ACK boundary as
   accounting). Without such a rule nothing touches the cluster, so plain PAP/CHAP latency is local.
@@ -79,8 +79,8 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
   credential and Result TLV. One step at a time per conversation; a retransmitted request gets the cached reply.
 - **State**: fresh 16-byte DRBG token per round; conversations keyed by State (+ NAS entry), not source port.
   Bounded table (count, bytes), TTL ~60 s, freed on completion; TLS engines and buffers pooled (~50–70 KB each).
-- **Where**: node-local in the gateway that started it. A UDP load balancer with source-IP affinity keeps a NAS on
-  one gateway; on gateway loss a conversation restarts (the supplicant retries). TLS engine state is not replicated.
+- **Where**: node-local in the RADIUS server that started it. A UDP load balancer with source-IP affinity keeps a NAS on
+  one RADIUS server; on RADIUS server loss a conversation restarts (the supplicant retries). TLS engine state is not replicated.
 - **TLS**: TLS 1.2 and 1.3, server certificate + chain from files with reload on change, client-certificate
   validation for EAP-TLS (trust store, revocation via CRL/OCSP, EKU/SAN policy). Keys via the RFC 5705 exporter —
   the JDK 25 exporter (decision 3). MSK per RFC 5216 / RFC 9427 (TLS 1.3) / PEAP / RFC 5281 labels.
@@ -102,7 +102,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.4 ✅ | Reply attributes | user and group reply items, vendor filter per NAS entry, reply items checked at load, encoded once, large replies cached ([ADR 0022](../adr/0022-reply-attributes.md)) | S |
 | 5.5 ✅ | Simultaneous use via the cluster | `AuthReservation` command, distinct devices per user, reservations until the Accounting-Start, same device always let in, state version 6 (`atLeast(6)`) ([ADR 0023](../adr/0023-simultaneous-use.md)) | M |
 | 5.6 ✅ | MS-CHAPv1/v2 (non-EAP), Status-Server | RFC 2433/2759, NT-Password (or cleartext with `mschap` opt-in), MS-CHAP2-Success, RFC 3079 MPPE keys encrypted per RFC 2548, MS-CHAP-Error; Status-Server (RFC 5997) on both ports ([ADR 0024](../adr/0024-ms-chap-and-status-server.md)) | S |
-| 5.6b ✅ | Active Directory (Netlogon, pure Java) + LDAP store | a credential-verifier plug-in type next to identity stores; MS-NRPC over TCP: DC discovery (DNS SRV), secure channel with a machine account (NetrServerReqChallenge/Authenticate3, AES session key), Netlogon-signed and sealed RPC as DCs require since CVE-2020-1472, NetrLogonSamLogon network logon for MS-CHAPv1/v2 (and PAP) returning the user session key for MPPE; failover between DCs, timeouts (no answer → no answer to the NAS), machine password rotation; tests against a Samba AD DC container in `-Plinux`. Done: credential-verifier plug-in type, LDAP store and bind verifier, the `netlogon` verifier (endpoint mapper, AES secure channel, sealed RPC, network logons, DNS discovery, failover, metrics), through a real gateway. Open: a check against a Windows domain controller; no machine-password rotation by design ([ADR 0025](../adr/0025-credential-verifiers-and-ldap.md)) | L |
+| 5.6b ✅ | Active Directory (Netlogon, pure Java) + LDAP store | a credential-verifier plug-in type next to identity stores; MS-NRPC over TCP: DC discovery (DNS SRV), secure channel with a machine account (NetrServerReqChallenge/Authenticate3, AES session key), Netlogon-signed and sealed RPC as DCs require since CVE-2020-1472, NetrLogonSamLogon network logon for MS-CHAPv1/v2 (and PAP) returning the user session key for MPPE; failover between DCs, timeouts (no answer → no answer to the NAS), machine password rotation; tests against a Samba AD DC container in `-Plinux`. Done: credential-verifier plug-in type, LDAP store and bind verifier, the `netlogon` verifier (endpoint mapper, AES secure channel, sealed RPC, network logons, DNS discovery, failover, metrics), through a real RADIUS server. Open: a check against a Windows domain controller; no machine-password rotation by design ([ADR 0025](../adr/0025-credential-verifiers-and-ldap.md)) | L |
 | 5.7 ✅ | EAP framework | conversations keyed by single-use State tokens, bounded node-local table with timeout, method interface with Nak, EAP-Success/Failure, MSK → MS-MPPE keys, EAP-MD5 for the plumbing; `radeapclient` interop ([ADR 0026](../adr/0026-eap-framework.md)). TLS fragmentation moves to 5.8 with the methods that need it | M |
 | 5.8 ✅ | EAP-TLS, PEAP, TTLS | TLS engine + exporter, methods above, certificates, `eapol_test` interop: milestone 1 Java 25 baseline ([ADR 0027](../adr/0027-java-25-baseline.md)), milestone 2 EAP-TLS ([ADR 0028](../adr/0028-eap-tls.md)), milestone 3 PEAPv0/EAP-MSCHAPv2 ([ADR 0029](../adr/0029-peap.md)), milestone 4 TTLS with PAP and MS-CHAPv2 ([ADR 0030](../adr/0030-ttls.md)), milestone 4b PEAP inner EAP-GTC and EAP-TLS ([ADR 0031](../adr/0031-peap-inner-methods.md)), milestone 5 PEAP crypto-binding and `eapol_test` interop ([ADR 0032](../adr/0032-peap-crypto-binding.md)), client certificate identity, CRL/OCSP revocation, reload ([ADR 0033](../adr/0033-client-certificates.md)). PEAPv1: not planned (practically unused) | L |
 | 5.9 ✅ | RadSec (RFC 6614) | TLS over TCP on `SSLEngine` without Netty, authentication and accounting on one connection, NAS by source address plus optional certificate name, secret `radsec`, the same decision and commit paths through rings, connection limits and timeouts, metrics; interop through radsecproxy with `radclient` and `eapol_test` ([ADR 0034](../adr/0034-radsec.md)). Not covered: DTLS, dynamic discovery (RFC 7585), proxying | M |
@@ -110,8 +110,8 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
 | 5.11 ✅ | EAP session resumption | TLS 1.2 session IDs and TLS 1.3 PSK for EAP-TLS, PEAP, TTLS within `auth.eap.tls.session.timeout`; PEAP and TTLS fast reconnect for the remembered inner user, who is authorized again; crypto-binding from the tunnel key on fast reconnect; failed sessions invalidated; `eapol_test -r 1` interop ([ADR 0035](../adr/0035-eap-session-resumption.md)) | M |
 | 5.12 ✅ | CoA / Disconnect (RFC 5176) | CoA-Request and Disconnect-Request to the NAS (port 3799 or its RadSec connection), ACK/NAK, retries, metrics. Session identification (Acct-Session-Id, User-Name, NAS address/identifier, Framed-IP, Calling-Station-Id) is kept per active session in the replicated state (state version 7). Triggers: the admin API (by user or session), Simultaneous-Use (the oldest session is disconnected instead of the new one rejected), store changes found by a rate-limited sweep of users with active sessions (disabled: Disconnect; changed reply items: CoA). Milestones: 1 ✅ session identity in the state, store off-heap to keep 2M sessions in a small member ([ADR 0036](../adr/0036-coa-and-session-identity.md), [0012](../adr/0012-session-store-dedup.md)), 2 ✅ sender + admin API, 3 ✅ Simultaneous-Use, 4 ✅ store sweep, 5 ✅ interop with an external RADIUS server as CoA receiver | L |
 | 5.13 ✅ | Proxying, RadSec client, dynamic discovery | realms (`@realm`, `DOMAIN\`, default) strictly local or proxied; home servers and pools (failover, load-balance per device); Access-Requests proxied by a non-blocking agent (User-Password, CHAP, Message-Authenticator, Proxy-State, MS-MPPE keys and Tunnel-Password re-encrypted), EAP passed through; Status-Server health and failover; RadSec client; proxied accounting committed in the cluster first, then forwarded by a `radius` export sink with retries and lease; NAPTR/SRV discovery (RFC 7585) for TLS home servers. CoA from home servers back to the NAS followed in 5.19. Milestones: 1 ✅ realms and home servers, 2 ✅ UDP proxy, 3 ✅ health and failover ([ADR 0037](../adr/0037-proxying.md)), 4 ✅ RadSec client, 5 ✅ accounting forwarding, 6 ✅ discovery, 7 ✅ interop with radsecproxy and an external RADIUS server ([ADR 0037](../adr/0037-proxying.md)) | L |
-| 5.14 ✅ | DTLS (RFC 7360) | RADIUS over DTLS 1.2 on 2083/udp (the JDK has no DTLS 1.3); radsecproxy as the interop client. Milestones: 1 ✅ DTLS associations in the RadSec agent: NAS by address or certificate, secret `radius/dtls`, handshake retransmission, restarted NAS, idle timeout, accounting deduplicated across UDP/RadSec/DTLS, CoA over the association ([ADR 0038](../adr/0038-dtls.md)); 2 ✅ interop with radsecproxy as the DTLS client of `radclient` and `eapol_test`. Not covered: DTLS 1.3 (not in the JDK), the gateway as a DTLS client of home servers | M |
-| 5.15 ✅ | PEAP alignment | PEAPv0 only as other servers (PEAPv1 not planned until a user with old Cisco PEAP/GTC clients asks); PEAP and TTLS version bits checked; `auth.eap.peap.client.certificate`; `ExternalEapComparisonIT`: the same `eapol_test` profiles against an installed external RADIUS server and the gateway end the same way, resume alike ([ADR 0039](../adr/0039-peap-alignment.md)) | S |
+| 5.14 ✅ | DTLS (RFC 7360) | RADIUS over DTLS 1.2 on 2083/udp (the JDK has no DTLS 1.3); radsecproxy as the interop client. Milestones: 1 ✅ DTLS associations in the RadSec agent: NAS by address or certificate, secret `radius/dtls`, handshake retransmission, restarted NAS, idle timeout, accounting deduplicated across UDP/RadSec/DTLS, CoA over the association ([ADR 0038](../adr/0038-dtls.md)); 2 ✅ interop with radsecproxy as the DTLS client of `radclient` and `eapol_test`. Not covered: DTLS 1.3 (not in the JDK), the RADIUS server as a DTLS client of home servers | M |
+| 5.15 ✅ | PEAP alignment | PEAPv0 only as other servers (PEAPv1 not planned until a user with old Cisco PEAP/GTC clients asks); PEAP and TTLS version bits checked; `auth.eap.peap.client.certificate`; `ExternalEapComparisonIT`: the same `eapol_test` profiles against an installed external RADIUS server and the RADIUS server end the same way, resume alike ([ADR 0039](../adr/0039-peap-alignment.md)) | S |
 | 5.16 ✅ | TTLS inner methods | CHAP, MS-CHAPv1 and EAP inside TTLS (EAP-MSCHAPv2, EAP-GTC, EAP-MD5; `auth.eap.ttls.inner`); `eapol_test` and comparison profiles ([ADR 0040](../adr/0040-ttls-inner-methods.md)) | S |
 | 5.17 ✅ | TEAP | TEAPv1 (RFC 7170/9930) with inner EAP-MSCHAPv2, EAP-GTC, EAP-MD5, EAP-TLS or Basic-Password-Auth, Crypto-Binding, machine and user chaining; `eapol_test` 2.12 built from source; comparison profiles ([ADR 0041](../adr/0041-teap.md)) | M |
 | 5.18 ✅ | EAP-pwd | RFC 5931 with group 19, password preparation none (cleartext) or MS (NT hash), interop and comparison ([ADR 0042](../adr/0042-eap-pwd.md)) | M |
@@ -145,8 +145,8 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
   (`EapolTestIT`, a Docker test in `./mvnw verify`: EAP-TLS, PEAP, TTLS, TLS 1.2 and 1.3, fragmentation, crypto-binding,
   wrong credentials). Retransmissions mid-handshake are covered by the response cache and conversation tests, as
   `eapol_test` cannot drop packets.
-- Cluster IT: simultaneous use across two gateways (reservations), gateway restart, store outage.
-- Load: reconnect storm of 50k users through two gateways; p99 and drops.
+- Cluster IT: simultaneous use across two RADIUS servers (reservations), RADIUS server restart, store outage.
+- Load: reconnect storm of 50k users through two RADIUS servers; p99 and drops.
 
 ## Decisions
 
@@ -161,7 +161,7 @@ NAS ──UDP 1812──► gateway: AuthAgent (NIO, own socket)            clus
    the EAP type as context (TLS 1.3, RFC 9190 / RFC 9427), `ttls challenge` for TTLS inner challenges. The project
    baseline moves from Java 21 to **Java 25** (the current LTS; the image and release builds already run it) no
    later than work package 5.8 — done in 5.8 milestone 1 ([ADR 0027](../adr/0027-java-25-baseline.md)).
-4. **Identity stores** (decided 2026-11-09, [ADR 0021](../adr/0021-identity-stores.md)): stores run in the gateway
+4. **Identity stores** (decided 2026-11-09, [ADR 0021](../adr/0021-identity-stores.md)): stores run in the RADIUS server
    workers; one ordered list `auth.stores` with an optional `nas.<name>.auth.stores`; our own bounded JDBC
    connection pool. Password formats in our own code, no runtime library: cleartext, SHA-crypt, bcrypt, salted
    SHA, PBKDF2 (Bouncy Castle only as a test reference). argon2 and yescrypt are deferred until there is demand.

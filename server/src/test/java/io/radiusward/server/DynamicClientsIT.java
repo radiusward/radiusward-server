@@ -32,7 +32,7 @@ import org.testcontainers.DockerClientFactory;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
- * NAS entries from a database (ADR 0046) through the real gateway: no NAS is configured, {@code nas.dynamic.*} points
+ * NAS entries from a database (ADR 0046) through the real RADIUS server: no NAS is configured, {@code nas.dynamic.*} points
  * at PostgreSQL with a {@code nas} table in the usual layout. The first Access-Request from 127.0.0.1 is dropped while
  * the entry is looked up; the NAS's retransmission is answered, signed with the secret from the table. Skipped where
  * Docker is missing, a failure where it is required.
@@ -153,7 +153,7 @@ class DynamicClientsIT {
             AuthAgentTest.assertSignedReplyTo(answer, request, RadiusCode.ACCESS_ACCEPT, SECRET);
         }
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_nas_dynamic_total{gateway=\"1\",result=\"found\"} 1")
-                .contains("radiusward_gateway_nas_dynamic_entries{gateway=\"1\"} 1");
+                .contains("radiusward_server_nas_dynamic_total{server=\"1\",result=\"found\"} 1")
+                .contains("radiusward_server_nas_dynamic_entries{server=\"1\"} 1");
     }
 }

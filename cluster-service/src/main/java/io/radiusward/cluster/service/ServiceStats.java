@@ -95,7 +95,7 @@ public final class ServiceStats {
 
     /**
      * Commands whose NAS entry carried another identity setting than the entry's first command seen by this member
-     * (gateways configured differently, ADR 0019; since start).
+     * (RADIUS servers configured differently, ADR 0019; since start).
      */
     public long identityMismatches() {
         return values.getAcquire(IDENTITY_MISMATCHES);

@@ -1,12 +1,12 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# radiusward: 3 cluster members + 2 gateways (small profile, fsync on).
+# radiusward: 3 cluster members + 2 RADIUS servers (small profile, fsync on).
 #
 #   docker compose -f deploy/compose/compose.yaml up -d
-#   docker compose -f deploy/compose/compose.yaml run --rm tools acct --server gateway-a:1813 \
+#   docker compose -f deploy/compose/compose.yaml run --rm tools acct --server server-a:1813 \
 #          --secret "$NAS_SECRET" --status start --session-id s1
-#   docker compose -f deploy/compose/compose.yaml run --rm tools auth --server gateway-a:1812 \
+#   docker compose -f deploy/compose/compose.yaml run --rm tools auth --server server-a:1812 \
 #          --secret "$NAS_SECRET" --user alice --password secret
 #
 # Test clients run inside this network: on macOS Docker rewrites the source address of UDP traffic through
@@ -30,9 +30,9 @@ x-node: &node
     retries: 12
     start_period: 5s
 
-x-gateway: &gateway
+x-server: &server
   image: ${RADIUSWARD_IMAGE:-radiusward:dev}
-  command: ["gateway", "--config", "/etc/radiusward/gateway.properties", "--config", "/etc/radiusward/nas-clients.properties"]
+  command: ["server", "--config", "/etc/radiusward/server.properties", "--config", "/etc/radiusward/nas-clients.properties"]
   shm_size: 128m
   mem_limit: 384m
   cpus: 1.0
@@ -71,26 +71,26 @@ services:
     networks: {radius: {ipv4_address: 172.28.0.12}}
     ports: ["127.0.0.1:9092:9090"]
 
-  gateway-a:
-    <<: *gateway
-    hostname: gateway-a
+  server-a:
+    <<: *server
+    hostname: server-a
     environment:
       RADIUSWARD_PROFILE: ${RADIUSWARD_PROFILE:-small}
-      RADIUSWARD_GATEWAY_ID: "1"
-      RADIUSWARD_GATEWAY_EGRESS_HOST: 172.28.0.20  # an IP, so the cluster never resolves a dead gateway's name
+      RADIUSWARD_SERVER_ID: "1"
+      RADIUSWARD_SERVER_EGRESS_HOST: 172.28.0.20  # an IP, so the cluster never resolves a dead RADIUS server's name
       NAS_SECRET: ${NAS_SECRET:-testing123}
-    volumes: ["./config/gateway.properties:/etc/radiusward/gateway.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro", "./config/users:/etc/radiusward/users:ro"]
+    volumes: ["./config/server.properties:/etc/radiusward/server.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro", "./config/users:/etc/radiusward/users:ro"]
     networks: {radius: {ipv4_address: 172.28.0.20}}
     ports: ["1812:1812/udp", "1813:1813/udp", "127.0.0.1:9190:9090"]
-  gateway-b:
-    <<: *gateway
-    hostname: gateway-b
+  server-b:
+    <<: *server
+    hostname: server-b
     environment:
       RADIUSWARD_PROFILE: ${RADIUSWARD_PROFILE:-small}
-      RADIUSWARD_GATEWAY_ID: "2"
-      RADIUSWARD_GATEWAY_EGRESS_HOST: 172.28.0.21
+      RADIUSWARD_SERVER_ID: "2"
+      RADIUSWARD_SERVER_EGRESS_HOST: 172.28.0.21
       NAS_SECRET: ${NAS_SECRET:-testing123}
-    volumes: ["./config/gateway.properties:/etc/radiusward/gateway.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro", "./config/users:/etc/radiusward/users:ro"]
+    volumes: ["./config/server.properties:/etc/radiusward/server.properties:ro", "./config/nas-clients.properties:/etc/radiusward/nas-clients.properties:ro", "./config/users:/etc/radiusward/users:ro"]
     networks: {radius: {ipv4_address: 172.28.0.21}}
     ports: ["1815:1812/udp", "1814:1813/udp", "127.0.0.1:9191:9090"]
 

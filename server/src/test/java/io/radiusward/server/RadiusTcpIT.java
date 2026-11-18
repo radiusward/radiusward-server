@@ -32,7 +32,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * RADIUS over plain TCP (RFC 6613, ADR 0045) through the real gateway, without any certificate: Access-Requests and
+ * RADIUS over plain TCP (RFC 6613, ADR 0045) through the real RADIUS server, without any certificate: Access-Requests and
  * Status-Server on the authentication port with the NAS entry's own secret, an Accounting-Request there discarded, a
  * NAS entry that does not allow TCP refused at once, a malformed length closing the connection. Accounting over TCP
  * with a cluster: {@code RadsecAccountingIT}.
@@ -175,7 +175,7 @@ class RadiusTcpIT {
         assertThat(agent.getTcp(RadsecAgent.Counter.REPLIES)).isEqualTo(3);
         assertThat(agent.getTcp(RadsecAgent.Counter.NOT_HANDLED)).isEqualTo(1);
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_tcp_total{gateway=\"1\",result=\"connections_accepted\"} 1");
+                .contains("radiusward_server_tcp_total{server=\"1\",result=\"connections_accepted\"} 1");
     }
 
     @Test

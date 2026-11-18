@@ -92,10 +92,10 @@ public final class CoaService {
 
     void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String radiusServer) {
         w.counter(
-                "radiusward_gateway_simultaneous_use_disconnects_total",
+                "radiusward_server_simultaneous_use_disconnects_total",
                 "Oldest sessions disconnected to make room for a new one (coa.simultaneous.use = disconnect-oldest)");
-        w.sample(simultaneousUseDisconnected.get(), "gateway", radiusServer, "result", "acknowledged");
-        w.sample(simultaneousUseFailed.get(), "gateway", radiusServer, "result", "failed");
+        w.sample(simultaneousUseDisconnected.get(), "server", radiusServer, "result", "acknowledged");
+        w.sample(simultaneousUseFailed.get(), "server", radiusServer, "result", "failed");
     }
 
     /** Disconnect-Request to every active session of the user. */

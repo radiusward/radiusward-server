@@ -19,7 +19,7 @@ steps or packets to reproduce, and what an attacker gains.
 ## In scope
 
 Anything that lets an attacker bypass authentication or authorization, forge or replay accepted packets, read or
-change accounting records or replicated state, lose acknowledged accounting records, crash or stall a gateway or a
+change accounting records or replicated state, lose acknowledged accounting records, crash or stall a RADIUS server or a
 member with crafted input, reach the management API without its token, or recover secrets or passwords.
 
 ## Out of scope
@@ -28,7 +28,7 @@ member with crafted input, reach the management API without its token, or recove
   MS-CHAP (RFC 2433/2759), the MILENAGE functions of EAP-AKA. They are implemented as specified; the mitigations below
   apply.
 - Findings that need a NAS shared secret, a management token or access to the hosts and their files.
-- Denial of service by volume from an address the NAS registry accepts; gateways drop what they cannot handle rather
+- Denial of service by volume from an address the NAS registry accepts; RADIUS servers drop what they cannot handle rather
   than queue it.
 
 ## Running it securely

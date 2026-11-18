@@ -4,7 +4,7 @@ Status: Accepted (2026-11-10). Phase 5, work package 5.23 ([plans/phase-5-auth.m
 
 ## Context
 NAS entries were IPv4 only: a packet from an IPv6 address matched no entry and was dropped. IPv6-only access networks
-(mobile cores, new campus deployments) could not use the gateway at all.
+(mobile cores, new campus deployments) could not use the RADIUS server at all.
 
 ## Decision
 - **`nas.<name>.address` takes an IPv6 address or range** (`2001:db8::7`, `2001:db8:1::/48`). An address without a
@@ -17,7 +17,7 @@ NAS entries were IPv4 only: a packet from an IPv6 address matched no entry and w
     remembered. The JDK hands out the same object for a sender that keeps sending, so a steady NAS costs no
     allocation.
   - The IPv4 path is unchanged, and `HotPathAllocationIT` still covers it.
-- **Listening**: IPv6 needs `gateway.listen.host = ::` (dual stack; IPv4 NAS keep working) or an IPv6 address. The
+- **Listening**: IPv6 needs `server.listen.host = ::` (dual stack; IPv4 NAS keep working) or an IPv6 address. The
   default `0.0.0.0` stays IPv4 only.
 - **CoA**: a single-address IPv6 entry is sent to its address, and a session's NAS-IPv6-Address (95) is used like
   NAS-IP-Address. Requests carry NAS-IPv6-Address when the session named no NAS. The relay (ADR 0043) finds an entry
@@ -28,5 +28,5 @@ NAS entries were IPv4 only: a packet from an IPv6 address matched no entry and w
 ## Tests
 - `NasRegistryTest#ipv6EntriesMatchLongestPrefixFirst`: /128, /64 and /48 entries beside an IPv4 one, the cached
   repeat lookup, no IPv4 match for an IPv6 entry, bad prefixes and literals, duplicates.
-- `Ipv6IT`: a gateway on `::` answers Access-Requests from `[::1]` with the IPv6 entry's secret (accept and reject),
+- `Ipv6IT`: a RADIUS server on `::` answers Access-Requests from `[::1]` with the IPv6 entry's secret (accept and reject),
   and its IPv4 NAS on the same socket. Skipped where the host has no IPv6 loopback.

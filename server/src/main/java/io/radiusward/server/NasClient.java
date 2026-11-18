@@ -8,7 +8,7 @@ package io.radiusward.server;
  * A configured NAS ({@code nas.<name>.*}).
  *
  * @param name configuration name
- * @param id stable identity used in event keys; the same on every gateway (FNV-1a of the name unless
+ * @param id stable identity used in event keys; the same on every RADIUS server (FNV-1a of the name unless
  *     {@code nas.<name>.id} is set)
  * @param network IPv4 network address as an int
  * @param prefixLength CIDR prefix length, 32 for a single address (128 for a single IPv6 address)
@@ -193,7 +193,7 @@ public record NasClient(
         return identity.length > 0;
     }
 
-    /** Hash of the identity setting; gateways must agree on it (the cluster counts mismatches). */
+    /** Hash of the identity setting; RADIUS servers must agree on it (the cluster counts mismatches). */
     public int identityFingerprint() {
         int h = 17;
         for (Identity i : identity) {

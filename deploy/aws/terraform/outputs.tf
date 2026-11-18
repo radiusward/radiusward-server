@@ -1,18 +1,18 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 
-output "gateway_addresses" {
+output "server_addresses" {
   description = "primary and secondary RADIUS servers for the NAS devices (UDP 1812/1813)"
-  value       = [for id in local.gateways : aws_lb.gateway[id].dns_name]
+  value       = [for id in local.servers : aws_lb.server[id].dns_name]
 }
 
 output "nas_secret_arn" {
-  description = "set this secret to the shared secret your NAS devices use, then restart the gateway services"
+  description = "set this secret to the shared secret your NAS devices use, then restart the RADIUS server services"
   value       = aws_secretsmanager_secret.nas.arn
 }
 
-output "gateway_users_secret_arn" {
-  description = "the gateways' users file, written to /tmp/users (identity store type file)"
+output "server_users_secret_arn" {
+  description = "the RADIUS servers' users file, written to /tmp/users (identity store type file)"
   value       = aws_secretsmanager_secret.users.arn
 }
 

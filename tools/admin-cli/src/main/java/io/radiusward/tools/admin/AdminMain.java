@@ -60,8 +60,8 @@ public final class AdminMain {
                 case "activate-version" -> need(o, "members", "version");
                 case "verify-export" -> need(o, "jdbc-url", "ack-log", "nas-id");
                 case "export-schema" -> {}
-                case "disconnect" -> need(o, "gateway");
-                case "coa" -> need(o, "gateway", "attributes");
+                case "disconnect" -> need(o, "server");
+                case "coa" -> need(o, "server", "attributes");
                 default -> throw new IllegalArgumentException("unknown command " + command);
             }
             byDevice(o);
@@ -84,7 +84,7 @@ public final class AdminMain {
     }
 
     /**
-     * CoA and Disconnect through a gateway's API (ADR 0036): the gateway finds the sessions in the cluster and sends
+     * CoA and Disconnect through a RADIUS server's API (ADR 0036): the RADIUS server finds the sessions in the cluster and sends
      * the requests to their NAS. The token is {@code --token} or {@code RADIUSWARD_COA_API_TOKEN}.
      */
     private static int coa(String command, Map<String, String> o, PrintStream out) throws Exception {
@@ -102,7 +102,7 @@ public final class AdminMain {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("--token or RADIUSWARD_COA_API_TOKEN");
         }
-        String radiusServer = o.get("gateway");
+        String radiusServer = o.get("server");
         int end = radiusServer.length();
         while (end > 0 && radiusServer.charAt(end - 1) == '/') { // trailing slashes, without a backtracking regex
             end--;
@@ -273,10 +273,10 @@ public final class AdminMain {
                        admin verify-export  --jdbc-url <url> [--jdbc-user u --jdbc-password p] --ack-log <acks.csv>
                                             --nas-id <id> [--members ...]   (sessions in the database vs. acks/cluster)
                        verify-acks/verify-export: [--identity nas-identifier] when the NAS entry identifies devices
-                       admin disconnect     --radiusServer http://<gateway>:<management port> [--token t] --user <name>
+                       admin disconnect     --server http://<server>:<management port> [--token t] --user <name>
                                             | --nas <entry> --session <Acct-Session-Id>   (Disconnect-Request, RFC 5176)
-                       admin coa            --radiusServer ... [--token t] --user <name> --attributes 'Session-Timeout = 600'
-                       disconnect/coa: the radiusServer's coa.api.token, or RADIUSWARD_COA_API_TOKEN
+                       admin coa            --server ... [--token t] --user <name> --attributes 'Session-Timeout = 600'
+                       disconnect/coa: the server's coa.api.token, or RADIUSWARD_COA_API_TOKEN
                 exit: 0 ok, 1 something missing or no answer, 64 usage""";
     }
 }

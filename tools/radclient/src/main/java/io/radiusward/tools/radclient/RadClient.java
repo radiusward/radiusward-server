@@ -189,7 +189,7 @@ public final class RadClient {
             builder.add("Calling-Station-Id", o.value("calling-station-id"));
         }
         o.values("attr").forEach(builder::add);
-        builder.messageAuthenticator(); // gateways require it by default
+        builder.messageAuthenticator(); // RADIUS servers require it by default
         return exchange(o, dictionary, builder.build(secret), secret);
     }
 

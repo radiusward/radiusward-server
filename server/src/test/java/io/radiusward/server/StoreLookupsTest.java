@@ -33,9 +33,9 @@ class StoreLookupsTest {
         StoreLookups.write(w, "2", stores);
         String text = w.finish();
         assertThat(text)
-                .contains("radiusward_gateway_store_lookups_total{gateway=\"2\",store=\"sql\",result=\"not_found\"} 1")
-                .contains("radiusward_gateway_store_lookup_seconds_bucket{gateway=\"2\",store=\"sql\",le=\"+Inf\"} 3")
-                .contains("radiusward_gateway_store_lookup_seconds_count{gateway=\"2\",store=\"sql\"} 3");
+                .contains("radiusward_server_store_lookups_total{server=\"2\",store=\"sql\",result=\"not_found\"} 1")
+                .contains("radiusward_server_store_lookup_seconds_bucket{server=\"2\",store=\"sql\",le=\"+Inf\"} 3")
+                .contains("radiusward_server_store_lookup_seconds_count{server=\"2\",store=\"sql\"} 3");
         PrometheusWriter.validate(text);
 
         PrometheusWriter none = new PrometheusWriter();

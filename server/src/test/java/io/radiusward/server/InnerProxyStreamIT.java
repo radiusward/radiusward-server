@@ -21,7 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Inner tunnel credentials checked by home servers over RadSec and plain TCP (ADR 0044, 0055): a gateway with RadSec
+ * Inner tunnel credentials checked by home servers over RadSec and plain TCP (ADR 0044, 0055): a RADIUS server with RadSec
  * and TCP listeners is the home server of two realms; the inner proxy's verdicts come back over both.
  */
 @Epic("Proxying")

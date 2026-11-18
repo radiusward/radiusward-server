@@ -9,7 +9,7 @@ package io.radiusward.auth;
  * (ADR 0025). The identity stores still supply the user's check items, groups and reply items; a verifier only says
  * whether the credential is right.
  *
- * <p>Called from several gateway workers at once; must return within its own timeouts. {@link
+ * <p>Called from several RADIUS server workers at once; must return within its own timeouts. {@link
  * StoreUnavailableException} when it cannot tell (the request is then not answered), never a guess.
  */
 public interface CredentialVerifier extends AutoCloseable {

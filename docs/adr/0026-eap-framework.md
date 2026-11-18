@@ -8,12 +8,12 @@ Access-Request) per login, carried in `EAP-Message` attributes and tied together
 (5.8) need this plumbing; it must be bounded, safe against replays, and fit the existing decision pipeline.
 
 ## Decision
-- **Conversations live in the gateway that started them**, between round trips, in a table keyed by the `State` sent
+- **Conversations live in the RADIUS server that started them**, between round trips, in a table keyed by the `State` sent
   to the peer: a fresh random 16-byte token every round. Taking a conversation removes it; it goes back under a new
   token — so every `State` is good for exactly one response, and a `State` from another NAS entry is refused. The
   table is bounded (`auth.eap.conversations`), conversations expire (`auth.eap.timeout`, 30 s) and have a round
   limit; a full table means no answer. Shared by all workers: Agrona maps behind 16 lock stripes. A NAS should reach
-  the same gateway for one login (source-IP affinity); on gateway loss the peer starts over.
+  the same RADIUS server for one login (source-IP affinity); on RADIUS server loss the peer starts over.
 - **Methods** implement a small interface: started after the Identity response, then given each response until they
   succeed (optionally with an MSK) or fail. `auth.eap.methods` lists the methods offered in order; a peer's Nak may
   switch to another listed one, once, before the method begins.

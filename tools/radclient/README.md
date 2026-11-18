@@ -36,7 +36,7 @@ radclient load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 --nas 
 
 `auth` builds PAP (RFC 2865), CHAP (RFC 1994: CHAP-Challenge and CHAP-Password) or MS-CHAPv2 (RFC 2759:
 MS-CHAP-Challenge and MS-CHAP2-Response) credentials; `--server` defaults to port 1812. It always sends
-Message-Authenticator, which gateways require by default.
+Message-Authenticator, which RADIUS servers require by default.
 
 With `--access-rate`, `load` also sends that many Access-Requests per second for the same duration, round-robin over
 `--auth-users` (default `load`), all with `--auth-password` (default `load`), and over `--auth-methods`; a
@@ -50,7 +50,7 @@ one rejected); either of the last two makes the exit code non-zero.
 NAS-Identifier (`nas<n>`) from this one address, like access points behind NAT; `--shared-session-ids` makes them
 reuse the same Acct-Session-Ids, which only a NAS entry with `identity = nas-identifier` keeps apart
 ([ADR 0019](../../docs/adr/0019-nas-device-identity.md)). It retransmits the identical datagram like a
-NAS, so it exercises the gateways' response caches and the cluster's dedup. `radiusward admin verify-acks`
+NAS, so it exercises the RADIUS servers' response caches and the cluster's dedup. `radiusward admin verify-acks`
 checks an ack log against the replicated state. `--sessions` is the total; the request rate is at most
 sessions / interim. Several generators in parallel need distinct `--first-session` values.
 

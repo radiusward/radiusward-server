@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * EAP on the gateway ({@code auth.eap.*}, ADR 0026).
+ * EAP on the RADIUS server ({@code auth.eap.*}, ADR 0026).
  *
  * @param methods the EAP methods offered, in order of preference ({@code auth.eap.methods}); a peer may ask for
  *     another of them with a Nak

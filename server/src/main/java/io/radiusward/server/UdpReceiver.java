@@ -18,7 +18,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * A gateway agent's RADIUS socket: bound non-blocking, read in batches into one receive buffer, which also takes the
+ * A RADIUS server agent's RADIUS socket: bound non-blocking, read in batches into one receive buffer, which also takes the
  * requests that arrive from a RadSec connection. Owned by one agent and used on its thread only; allocation-free
  * after {@link #open}.
  */

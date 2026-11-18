@@ -29,7 +29,7 @@ import java.util.function.BooleanSupplier;
 import org.agrona.CloseHelper;
 
 /**
- * A complete radiusward cluster in one JVM: cluster members and gateways on loopback with their own
+ * A complete radiusward cluster in one JVM: cluster members and RADIUS servers on loopback with their own
  * directories and free ports. Used by integration tests and {@link DevCluster}. Real Aeron, real UDP, real
  * fsync; only {@code kill -9} cannot be simulated here (see the e2e tests).
  */
@@ -65,12 +65,12 @@ public final class LocalCluster implements AutoCloseable {
         this.snapshotInterval = snapshotInterval;
     }
 
-    /** Starts {@code members} cluster nodes and {@code gatewayCount} gateways (RADIUS ports chosen freely). */
+    /** Starts {@code members} cluster nodes and {@code serverCount} RADIUS servers (RADIUS ports chosen freely). */
     public static LocalCluster start(File baseDir, int members, int serverCount) {
         return builder(baseDir).members(members).radiusServers(serverCount).start();
     }
 
-    /** A cluster with other settings: {@code LocalCluster.builder(dir).members(3).gateways(2).export(..).start()}. */
+    /** A cluster with other settings: {@code LocalCluster.builder(dir).members(3).radiusServers(2).export(..).start()}. */
     public static Builder builder(File baseDir) {
         return new Builder(baseDir);
     }
@@ -109,7 +109,7 @@ public final class LocalCluster implements AutoCloseable {
             return this;
         }
 
-        /** The gateways' RADIUS ports, 0 for a free one (default: all free). */
+        /** The RADIUS servers' RADIUS ports, 0 for a free one (default: all free). */
         public Builder radiusPorts(int... radiusPorts) {
             this.radiusPorts = radiusPorts.clone();
             return this;
@@ -161,7 +161,7 @@ public final class LocalCluster implements AutoCloseable {
 
     private static LocalCluster launch(LocalCluster cluster, int members, int serverCount, int[] radiusPorts) {
         try {
-            Reports.step("start " + members + " members and " + serverCount + " gateways", () -> {
+            Reports.step("start " + members + " members and " + serverCount + " RADIUS servers", () -> {
                 for (int i = 0; i < members; i++) {
                     cluster.startNode(i);
                 }
@@ -234,12 +234,12 @@ public final class LocalCluster implements AutoCloseable {
         return startServer(serverId, radiusPort, registry());
     }
 
-    /** A gateway with its own NAS entries, e.g. {@link #registry(NasClient.Identity...)} for devices behind NAT. */
+    /** A RADIUS server with its own NAS entries, e.g. {@link #registry(NasClient.Identity...)} for devices behind NAT. */
     public RadiusServer startServer(int serverId, int radiusPort, NasRegistry registry) {
         return startServer(serverId, radiusPort, registry, AuthConfig.DISABLED, dictionary -> null);
     }
 
-    /** A gateway that also answers Access-Requests, with the handler made once the dictionary is loaded. */
+    /** A RADIUS server that also answers Access-Requests, with the handler made once the dictionary is loaded. */
     public RadiusServer startServer(
             int serverId,
             int radiusPort,
@@ -311,11 +311,11 @@ public final class LocalCluster implements AutoCloseable {
                 Duration.ofSeconds(30),
                 false,
                 Profile.SMALL.idleStrategyName(),
-                new File(baseDir, "aeron/gateway-" + serverId).getPath(),
+                new File(baseDir, "aeron/server-" + serverId).getPath(),
                 null,
                 Duration.ZERO);
         RadiusServer radiusServer = Reports.step(
-                "start gateway " + serverId,
+                "start RADIUS server " + serverId,
                 () -> RadiusServer.builder(config, registry)
                         .auth(auth)
                         .handlerFactory(handler)
@@ -364,13 +364,13 @@ public final class LocalCluster implements AutoCloseable {
         return leader[0];
     }
 
-    /** Waits until every gateway is connected to the cluster. */
+    /** Waits until every RADIUS server is connected to the cluster. */
     public void awaitServersConnected() {
         Reports.step(
-                "gateways connected",
+                "RADIUS servers connected",
                 () -> await(
                         Duration.ofSeconds(30),
-                        "gateways connected",
+                        "RADIUS servers connected",
                         () -> radiusServers.stream().allMatch(g -> g.stats().connected())));
     }
 

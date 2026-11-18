@@ -32,7 +32,7 @@ import org.agrona.collections.IntHashSet;
 import org.agrona.collections.Object2ObjectHashMap;
 
 /**
- * The identity stores of a gateway ({@code auth.stores}, {@code auth.store.<name>.*}), created through
+ * The identity stores of a RADIUS server ({@code auth.stores}, {@code auth.store.<name>.*}), created through
  * {@link IdentityStoreProvider}s on the class path and in {@code auth.plugins.dir}, and which of them answer each NAS
  * entry ({@code nas.<name>.auth.stores}, default all, in order).
  *

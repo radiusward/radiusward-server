@@ -27,7 +27,7 @@ see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Pli
 ```bash
 ./mvnw verify                                   # build, unit + integration tests, coverage, format check
 ./mvnw -Pquick -T1C verify                      # the fast loop: compile + unit tests, no ITs, coverage, format check (~1 min)
-./mvnw -Pquick -pl gateway -am verify           # the same for one module and what it depends on
+./mvnw -Pquick -pl server -am verify            # the same for one module and what it depends on
 ./mvnw -Pcoverage verify -Dradiusward.require.docker=true   # unit + integration coverage, module floors
 ./mvnw spotless:apply                           # format (palantir-java-format) + license headers
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dsurefire.failIfNoSpecifiedTests=false
@@ -37,7 +37,7 @@ see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Pli
 ./mvnw -Pe2e verify                             # end-to-end tests against separate radiusward processes
 ./mvnw -Preports verify                         # also Allure results of the *IT tests (labels, steps) for the test reports
 ./mvnw -Pinterop verify                         # also runs against a local FreeRADIUS (brew install freeradius-server)
-scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 gateways (docs/operations/local-cluster.md)
+scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 servers (docs/operations/local-cluster.md)
 docker build -f deploy/docker/Dockerfile -t radiusward:dev .   # image (after ./mvnw install -DskipTests)
 docker compose -f deploy/compose/compose.yaml up -d --wait     # compose stack (docs/operations/docker.md)
 scripts/linux-tests.sh [TestClass]              # fault injection in containers (-Plinux; nightly in CI, ~2 h in full)
@@ -73,7 +73,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 
 | Module | Purpose |
 |---|---|
-| `protocol` | SBE schema and generated codecs (gateway ↔ cluster, snapshots) |
+| `protocol` | SBE schema and generated codecs (RADIUS server ↔ cluster, snapshots) |
 | `units` | Durations, sizes and PEM certificates and keys in settings, read alike by the server, the sinks and the identity stores; no dependencies |
 | `common` | Config (properties + env), profiles, management HTTP server, non-blocking Log4j2 |
 | `cluster-service` | `AccountingService` + deterministic `AccountingStateMachine`, `SessionStore`, snapshots |
@@ -87,8 +87,8 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `testing/samba-ad` | Samba AD domain controller image for the LDAP and Netlogon tests |
 | `testing/eapol-test` | wpa_supplicant's `eapol_test` image, with its SIM/USIM simulator, for the EAP interop tests (`EapolTestIT`, `AkaEapolIT`) |
 | `testing/radsec-client` | radsecproxy, `radclient` and `eapol_test` image for the RadSec and DTLS interop test (`RadsecproxyIT`) |
-| `gateway` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
-| `distribution` | `radiusward.jar`: `cluster-node`, `gateway`, `cluster-backup`, `cluster-restore`, `radclient`, `admin`, `probe`, `cluster-tool` |
+| `server` | NIO UDP agent, cluster client agent, NAS registry, response cache, event keys |
+| `distribution` | `radiusward.jar`: `cluster-node`, `server`, `cluster-backup`, `cluster-restore`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster` (and its builder), `DevCluster`; `FakeNas` and `AccountingRequest` for tests that send accounting |
 | `testing/test-support` | `Reports` (steps for the published reports), `Await`, `Ports`: for every module's integration tests, without dependencies on radiusward |
 | `testing/test-images` | `TestImages`: the prebuilt test images from GHCR, built locally when not published |
@@ -129,7 +129,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
   compose and `-Plinux` do. Container and durability changes come with a `linux-tests` scenario.
 - **Configuration** goes through `Config` (properties + `RADIUSWARD_*` env); document new keys in
   `docs/configuration.md`. `debug.*` keys only work with `debug.enabled=true`.
-- **Gateways never block:** full rings or tables drop the packet (the NAS retransmits); never answer
+- **RADIUS servers never block:** full rings or tables drop the packet (the NAS retransmits); never answer
   without a commit.
 - **Dictionaries:** only FreeRADIUS files carrying the CC BY 4.0 header; never edit them by hand —
   use `scripts/update-dictionaries.sh`. Keep `NOTICE` / `THIRD-PARTY-LICENSES.md` in sync.

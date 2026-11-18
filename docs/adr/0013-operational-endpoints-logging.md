@@ -5,7 +5,7 @@ Status: Accepted (2026-11-08)
 ## Management endpoints
 The JDK's built-in `com.sun.net.httpserver.HttpServer` (no dependency), one management port per process:
 
-| Endpoint | Cluster node | Gateway |
+| Endpoint | Cluster node | RADIUS server |
 |---|---|---|
 | `/health` | process and agents running | process and agents running |
 | `/ready` | service started, leader known | UDP bound and connected to the cluster |

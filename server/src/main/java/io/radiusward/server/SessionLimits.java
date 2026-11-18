@@ -34,7 +34,7 @@ public interface SessionLimits {
 
     /**
      * The next SQN of a SIM subscriber for an EAP-AKA challenge, from the cluster (state version 8, ADR 0061): above
-     * the last one any gateway used and above {@code floor}.
+     * the last one any RADIUS server used and above {@code floor}.
      *
      * @param subscriberKey {@link UserKeys#user} of the IMSI
      * @param floor the store's {@code SIM-SQN}, or after a resynchronisation the USIM's SQN

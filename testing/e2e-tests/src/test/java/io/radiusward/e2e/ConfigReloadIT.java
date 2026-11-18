@@ -14,8 +14,8 @@ import java.time.Duration;
 import org.junit.jupiter.api.Test;
 
 /**
- * SIGHUP reloads a gateway's configuration files (ADR 0054): a NAS entry first on another address does not get its
- * requests answered; after its file names the right address and the gateway gets SIGHUP, it does — the process keeps
+ * SIGHUP reloads a RADIUS server's configuration files (ADR 0054): a NAS entry first on another address does not get its
+ * requests answered; after its file names the right address and the RADIUS server gets SIGHUP, it does — the process keeps
  * running, its other settings unchanged.
  */
 @Epic("Operations")
@@ -32,20 +32,20 @@ class ConfigReloadIT extends E2eTestBase {
 
     @Test
     void hangUpReloadsTheNasEntries() throws Exception {
-        int port = cluster.radiusPort("gateway-a");
+        int port = cluster.radiusPort("server-a");
         assertThat(nas.exchange(port, Nas.request(1, 1, "reload-1", 0), 2, Duration.ofMillis(500)))
                 .as("unknown NAS")
                 .isNull();
         cluster.nasConfig("");
         assertThat(Files.readString(dir.resolve("nas-clients.properties"))).doesNotContain("192.0.2.1");
-        cluster.hangUp("gateway-a");
+        cluster.hangUp("server-a");
         nas.ack(port, Nas.request(2, 1, "reload-1", 0));
-        assertThat(cluster.running("gateway-a")).isTrue();
+        assertThat(cluster.running("server-a")).isTrue();
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos(); // the log is written asynchronously
-        while (!Files.readString(dir.resolve("gateway-a.log")).contains("configuration reloaded")
+        while (!Files.readString(dir.resolve("server-a.log")).contains("configuration reloaded")
                 && System.nanoTime() < deadline) {
             Thread.sleep(50);
         }
-        assertThat(Files.readString(dir.resolve("gateway-a.log"))).contains("configuration reloaded");
+        assertThat(Files.readString(dir.resolve("server-a.log"))).contains("configuration reloaded");
     }
 }

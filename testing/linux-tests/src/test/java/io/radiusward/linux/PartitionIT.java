@@ -16,8 +16,8 @@ import java.util.concurrent.CompletableFuture;
 import org.junit.jupiter.api.Test;
 
 /**
- * The leader loses its links to both followers (iptables) while the gateways still reach it. The majority
- * elects a new leader and the gateways move there; the old leader cannot commit, so whatever it might
+ * The leader loses its links to both followers (iptables) while the RADIUS servers still reach it. The majority
+ * elects a new leader and the RADIUS servers move there; the old leader cannot commit, so whatever it might
  * acknowledge would show up as lost. After healing it rejoins as a follower with the same state.
  */
 @Epic("Fault injection")

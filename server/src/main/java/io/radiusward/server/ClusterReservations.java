@@ -20,7 +20,7 @@ import org.agrona.concurrent.ringbuffer.RingBufferDescriptor;
  * Simultaneous-use reservations from the access workers to the cluster (ADR 0023). Workers write {@code
  * AuthReservation} commands into a many-to-one ring that the {@link ClusterClientAgent} forwards to the cluster; the
  * cluster's answer, sent after the commit, comes back through a mailbox per worker. A worker waits for its answer up to
- * {@code gateway.auth.reservation.timeout}; without one the request is not answered and the NAS retransmits, which
+ * {@code server.auth.reservation.timeout}; without one the request is not answered and the NAS retransmits, which
  * asks again — a second reservation for the same device only extends the first.
  */
 final class ClusterReservations {
@@ -88,10 +88,10 @@ final class ClusterReservations {
     /** {@code nextSqn} answers by outcome: the cluster's three, and none in time ({@code unavailable}). */
     void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String radiusServer) {
         w.counter(
-                "radiusward_gateway_sim_sqn_requests_total",
+                "radiusward_server_sim_sqn_requests_total",
                 "SIM sequence numbers asked of the cluster (EAP-AKA, AKA'), by outcome");
         for (int i = 0; i < SQN_OUTCOMES.length; i++) {
-            w.sample(sqnOutcomes.get(i), "gateway", radiusServer, "outcome", SQN_OUTCOMES[i]);
+            w.sample(sqnOutcomes.get(i), "server", radiusServer, "outcome", SQN_OUTCOMES[i]);
         }
     }
 

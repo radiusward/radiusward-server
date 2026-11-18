@@ -11,7 +11,7 @@ import org.agrona.DirectBuffer;
 /**
  * MurmurHash3 x64 128 (Austin Appleby, public domain) over a {@link DirectBuffer} region, allocation-free.
  * The event keys depend on it, so it is pinned and tested against reference vectors: changing it would make
- * the gateway compute different keys than the ones already in the cluster's dedup state.
+ * the RADIUS server compute different keys than the ones already in the cluster's dedup state.
  */
 public final class Murmur3 {
 

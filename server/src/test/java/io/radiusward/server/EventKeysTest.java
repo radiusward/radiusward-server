@@ -15,7 +15,7 @@ class EventKeysTest {
     private static final UnsafeBuffer SESSION = new UnsafeBuffer("00000A1B".getBytes(StandardCharsets.US_ASCII));
 
     /**
-     * Pinned layout: changing it would make gateways compute keys the cluster has never seen, so every
+     * Pinned layout: changing it would make RADIUS servers compute keys the cluster has never seen, so every
      * retransmit after an upgrade would count as new. Values come from an independent reference implementation.
      */
     @Test

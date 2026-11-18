@@ -44,7 +44,7 @@ import org.testcontainers.utility.MountableFile;
 /**
  * EAP-AKA, EAP-AKA′ and EAP-SIM against wpa_supplicant's {@code eapol_test} with its simulated SIM/USIM (ADR 0061): a
  * three-member
- * cluster keeps the sequence numbers, one gateway computes the vectors from the subscribers' Ki and OPc (3GPP test set
+ * cluster keeps the sequence numbers, one RADIUS server computes the vectors from the subscribers' Ki and OPc (3GPP test set
  * 1). Covers both methods, a USIM ahead of the server (resynchronisation), an anonymous outer identity, a subscriber
  * stored with OP, a wrong key and an unknown IMSI. Skipped where Docker is missing, a failure where it is required.
  */

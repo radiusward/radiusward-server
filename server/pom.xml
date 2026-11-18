@@ -13,7 +13,7 @@
 
     <artifactId>server</artifactId>
     <name>radiusward :: server</name>
-    <description>RADIUS UDP gateway in front of the cluster</description>
+    <description>The RADIUS server in front of the cluster: UDP, TCP, RadSec and DTLS</description>
 
     <properties>
         <!-- test classes start their own clusters, ports and directories: two JVMs at a time -->

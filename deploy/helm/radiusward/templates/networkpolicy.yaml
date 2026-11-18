@@ -1,12 +1,12 @@
 {{- /*
 Copyright 2026 The radiusward Authors
 SPDX-License-Identifier: Apache-2.0
-Members talk Aeron (UDP, fixed and ephemeral ports) with each other and with gateways; the management port is open
+Members talk Aeron (UDP, fixed and ephemeral ports) with each other and with servers; the management port is open
 to the monitoring namespaces and to the other pods of the release.
 */ -}}
 {{- if .Values.networkPolicy.enabled }}
 {{- $node := include "radiusward.selector" (dict "root" . "component" "node") | fromYaml -}}
-{{- $gw := include "radiusward.selector" (dict "root" . "component" "gateway") | fromYaml -}}
+{{- $server := include "radiusward.selector" (dict "root" . "component" "server") | fromYaml -}}
 {{- $backup := include "radiusward.selector" (dict "root" . "component" "backup") | fromYaml -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -19,7 +19,7 @@ spec:
   ingress:
     - from:
         - podSelector: {matchLabels: {{ toJson $node }}}
-        - podSelector: {matchLabels: {{ toJson $gw }}}
+        - podSelector: {matchLabels: {{ toJson $server }}}
         - podSelector: {matchLabels: {{ toJson $backup }}}
     - from:
         - namespaceSelector: {{- toYaml .Values.networkPolicy.monitoringNamespaceSelector | nindent 12 }}
@@ -28,10 +28,10 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "radiusward.fullname" . }}-gateway
+  name: {{ include "radiusward.fullname" . }}-server
   labels: {{- include "radiusward.labels" . | nindent 4 }}
 spec:
-  podSelector: {matchLabels: {{ toJson $gw }}}
+  podSelector: {matchLabels: {{ toJson $server }}}
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -46,13 +46,13 @@ spec:
         {{- end }}
       {{- end }}
       ports:
-        - {port: {{ .Values.gateway.ports.auth }}, protocol: UDP}
-        - {port: {{ .Values.gateway.ports.acct }}, protocol: UDP}
-        {{- if .Values.gateway.coa.enabled }}
-        - {port: {{ .Values.gateway.coa.port }}, protocol: UDP}
+        - {port: {{ .Values.server.ports.auth }}, protocol: UDP}
+        - {port: {{ .Values.server.ports.acct }}, protocol: UDP}
+        {{- if .Values.server.coa.enabled }}
+        - {port: {{ .Values.server.coa.port }}, protocol: UDP}
         {{- end }}
-        {{- if .Values.gateway.radsec.enabled }}
-        - {port: {{ .Values.gateway.radsec.port }}, protocol: TCP}
+        {{- if .Values.server.radsec.enabled }}
+        - {port: {{ .Values.server.radsec.port }}, protocol: TCP}
         {{- end }}
 {{- if .Values.backup.enabled }}
 ---

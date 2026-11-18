@@ -26,7 +26,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 
 /**
  * Queries the replicated state through the cluster log ({@code StateQuery}, {@code SessionQuery}), so answers
- * reflect everything committed before the query. For tests and tooling; not used by the gateways.
+ * reflect everything committed before the query. For tests and tooling; not used by the RADIUS servers.
  *
  * <p>The egress host must be an address of this machine that the cluster members can reach: {@code localhost}
  * when they run on the same host, the container IP inside a Docker network.

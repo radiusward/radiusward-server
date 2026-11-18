@@ -150,7 +150,7 @@ final class ClusterNodeProbes {
                 .sample(s.exportLagRejections(), "member", member);
         w.counter(
                         "radiusward_nas_identity_mismatches_total",
-                        "Accounting from gateways whose nas.<name>.identity differs from the entry's first one seen")
+                        "Accounting from RADIUS servers whose nas.<name>.identity differs from the entry's first one seen")
                 .sample(s.identityMismatches(), "member", member);
         w.gauge("radiusward_state_version", "State-machine version (ADR 0005): active in the cluster, supported here")
                 .sample(s.activeVersion(), "member", member, "kind", "active")
@@ -162,7 +162,7 @@ final class ClusterNodeProbes {
                 .sample(s.activeSessions(), "member", member, "state", "active")
                 .sample(s.stoppedSessions(), "member", member, "state", "stopped");
         w.counter("radiusward_snapshots_total", "Snapshots taken").sample(s.snapshots(), "member", member);
-        w.counter("radiusward_egress_dropped_total", "Replies to gateways given up under back pressure")
+        w.counter("radiusward_egress_dropped_total", "Replies to RADIUS servers given up under back pressure")
                 .sample(s.egressDropped(), "member", member);
         w.gauge("radiusward_disk_free_bytes", "Usable space in the data directory")
                 .sample(config.dataDir().getUsableSpace(), "member", member);

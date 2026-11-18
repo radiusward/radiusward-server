@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 apiVersion: v2
 name: radiusward
-description: Replicated RADIUS server on Aeron Cluster — three members and RADIUS gateways
+description: Replicated RADIUS server on Aeron Cluster — three members and RADIUS servers
 type: application
 version: 0.1.0
 appVersion: "0.1.0-SNAPSHOT"

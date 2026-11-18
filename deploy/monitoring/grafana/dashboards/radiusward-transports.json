@@ -86,18 +86,18 @@
         "hide": 0
       },
       {
-        "name": "gateway",
-        "label": "Gateway",
+        "name": "server",
+        "label": "Server",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
-          "refId": "gateway"
+          "query": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
+          "refId": "server"
         },
-        "definition": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
+        "definition": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
         "refresh": 2,
         "includeAll": true,
         "allValue": ".*",
@@ -165,7 +165,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_radsec_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_radsec_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -207,8 +207,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "radiusward_gateway_radsec_connections{namespace=~\"$namespace\",gateway=~\"$gateway\"}",
-          "legendFormat": "gw {{gateway}}",
+          "expr": "radiusward_server_radsec_connections{namespace=~\"$namespace\",server=~\"$server\"}",
+          "legendFormat": "server {{server}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -249,7 +249,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_dtls_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_dtls_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -291,8 +291,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "radiusward_gateway_dtls_associations{namespace=~\"$namespace\",gateway=~\"$gateway\"}",
-          "legendFormat": "gw {{gateway}}",
+          "expr": "radiusward_server_dtls_associations{namespace=~\"$namespace\",server=~\"$server\"}",
+          "legendFormat": "server {{server}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -333,7 +333,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_tcp_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_tcp_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -375,7 +375,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (increase(radiusward_gateway_radsec_tls_reloads_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[1h]))",
+          "expr": "sum by (result) (increase(radiusward_server_radsec_tls_reloads_total{namespace=~\"$namespace\",server=~\"$server\"}[1h]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -430,7 +430,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_nas_dynamic_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_nas_dynamic_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -472,8 +472,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "radiusward_gateway_nas_dynamic_entries{namespace=~\"$namespace\",gateway=~\"$gateway\"}",
-          "legendFormat": "gw {{gateway}}",
+          "expr": "radiusward_server_nas_dynamic_entries{namespace=~\"$namespace\",server=~\"$server\"}",
+          "legendFormat": "server {{server}}",
           "datasource": {
             "type": "prometheus",
             "uid": "${datasource}"
@@ -527,7 +527,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (home, result) (rate(radiusward_gateway_proxy_requests_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m])) > 0",
+          "expr": "sum by (home, result) (rate(radiusward_server_proxy_requests_total{namespace=~\"$namespace\",server=~\"$server\"}[5m])) > 0",
           "legendFormat": "{{home}} {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -569,7 +569,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "min by (home) (radiusward_gateway_proxy_home_alive{namespace=~\"$namespace\",gateway=~\"$gateway\"})",
+          "expr": "min by (home) (radiusward_server_proxy_home_alive{namespace=~\"$namespace\",server=~\"$server\"})",
           "legendFormat": "{{home}}",
           "datasource": {
             "type": "prometheus",
@@ -612,7 +612,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_inner_proxy_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_inner_proxy_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",
@@ -654,7 +654,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_coa_relay_total{namespace=~\"$namespace\",gateway=~\"$gateway\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_coa_relay_total{namespace=~\"$namespace\",server=~\"$server\"}[5m]))",
           "legendFormat": "{{result}}",
           "datasource": {
             "type": "prometheus",

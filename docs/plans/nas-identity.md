@@ -29,7 +29,7 @@ Aruba-Location-Id) for exactly this reason.
 ## Proposal
 
 A NAS client entry gets an optional **device identity**: one or more request attributes that tell the devices behind
-it apart. The gateway turns it into a **device scope**; everything that is "per NAS" today becomes per device.
+it apart. The RADIUS server turns it into a **device scope**; everything that is "per NAS" today becomes per device.
 
 ```properties
 nas.cloud.address  = 0.0.0.0/0                # or the NAT ranges
@@ -86,8 +86,8 @@ Acct-Session-Id); the identity partitions sessions, it does not authenticate. Do
 
 ## Operations
 
-- Every gateway must use the same `identity` for an entry (like `nas.<name>.id`). The command carries a fingerprint
-  of the entry's identity config; the cluster counts and logs a mismatch between gateways (`identity_mismatch`).
+- Every RADIUS server must use the same `identity` for an entry (like `nas.<name>.id`). The command carries a fingerprint
+  of the entry's identity config; the cluster counts and logs a mismatch between RADIUS servers (`identity_mismatch`).
 - Changing `identity` on a running system changes session keys: active sessions continue as new sessions, the old
   ones end by the idle timeout. Do it in a maintenance window; documented in `configuration.md`.
 
@@ -112,8 +112,8 @@ Acct-Session-Id); the identity partitions sessions, it does not authenticate. Do
   missing attribute → fallback + counter.
 - **State machine:** Accounting-On of device A leaves device B's sessions active; On/Off without identity stops
   nothing.
-- **Allocation:** `HotPathAllocationIT` / `GatewayAllocationIT` with `identity = nas-identifier, called-station-id`.
-- **Cluster IT:** 3 members, 2 gateways, 50 simulated APs behind one address with colliding Acct-Session-Ids; one
+- **Allocation:** `HotPathAllocationIT` / `ServerAllocationIT` with `identity = nas-identifier, called-station-id`.
+- **Cluster IT:** 3 members, 2 RADIUS servers, 50 simulated APs behind one address with colliding Acct-Session-Ids; one
   AP reboots (Accounting-On) — only its sessions stop; `verify-acks` clean.
 - **Export:** `PostgresSinkTest` V2 migration from a V1 schema with data; `nas_device` filled; `PostgresExportIT`
   with devices.

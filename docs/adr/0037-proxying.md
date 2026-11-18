@@ -5,8 +5,8 @@ realms, UDP proxy, health, RadSec client, accounting forwarding, discovery, inte
 
 ## Context
 Roaming federations (eduroam-style), partners and migrations need users of some realms authenticated by other RADIUS
-servers ("home servers"), while the gateway keeps deciding everyone else and keeps all accounting. A proxy must not
-weaken what the gateway guarantees: it never blocks, never answers a NAS without the home server's decision, and
+servers ("home servers"), while the RADIUS server keeps deciding everyone else and keeps all accounting. A proxy must not
+weaken what the RADIUS server guarantees: it never blocks, never answers a NAS without the home server's decision, and
 never lets one network's secret protect another's data.
 
 ## Decision
@@ -28,7 +28,7 @@ never lets one network's secret protect another's data.
     server's secret.
   - **Credentials:** User-Password is decrypted with the NAS's secret and encrypted with the home server's. CHAP
     without CHAP-Challenge gets the original authenticator as one.
-  - **Proxy-State:** the NAS's Proxy-States are kept, and one of ours is added (gateway token, slot, generation).
+  - **Proxy-State:** the NAS's Proxy-States are kept, and one of ours is added (RADIUS server token, slot, generation).
   - **EAP and the rest** pass through unchanged: the home server runs the EAP conversation.
 - **Answers**:
   - An answer counts only if its Response Authenticator verifies and it carries a valid Message-Authenticator (BlastRADIUS;
@@ -53,7 +53,7 @@ never lets one network's secret protect another's data.
   - A request is written once (RFC 6613 §2.6.1: no retransmission on a connection) and waits as long as all tries
     over UDP would.
   - Status-Server goes over the connection as well.
-- **Accounting** (milestone 5): the gateway commits it in the cluster as always. A `radius` export sink
+- **Accounting** (milestone 5): the RADIUS server commits it in the cluster as always. A `radius` export sink
   (`sink.<name>.type = radius`, in the members) forwards the events of its `realms` to its `servers`.
   - Each event is resent as an Accounting-Request: its original attributes, Acct-Delay-Time raised by the time
     since the commit, and a new Message-Authenticator for the home server's secret.
@@ -76,11 +76,11 @@ never lets one network's secret protect another's data.
   - Discovered servers are TLS home servers like configured ones, with `proxy.discovery.tls.*` and the secret
     `radsec`. Their certificate must carry the SRV target's name, the classic TLS name check. Matching it against
     the NAI realm instead is not covered.
-- **Metrics**: `radiusward_gateway_proxy_requests_total{home,result}` and `radiusward_gateway_proxy_home_alive{home}`.
+- **Metrics**: `radiusward_server_proxy_requests_total{home,result}` and `radiusward_server_proxy_home_alive{home}`.
 
 - **Interop** (milestone 7):
-  - `ProxyRadsecproxyIT` (Docker): the gateway proxies over RadSec to radsecproxy, which relays over UDP to a home
-    server. The MS-MPPE key, re-encrypted by radsecproxy and by the gateway, reaches the NAS intact; Status-Server
+  - `ProxyRadsecproxyIT` (Docker): the RADIUS server proxies over RadSec to radsecproxy, which relays over UDP to a home
+    server. The MS-MPPE key, re-encrypted by radsecproxy and by the RADIUS server, reaches the NAS intact; Status-Server
     is answered.
   - `ExternalHomeServerIT` (`-Pinterop`): an external RADIUS server as a UDP home server checks our re-encrypted
     User-Password and Message-Authenticator. Its Accept and Reject pass our checks, and it answers our Status-Server.
@@ -90,7 +90,7 @@ never lets one network's secret protect another's data.
   reply items go to the NAS as they are.
 - Accounting of proxied users is committed and answered by the cluster like any other; nothing the home server does
   can lose it or keep the NAS waiting.
-- Not covered: CoA from a home server back through the gateway to the NAS.
+- Not covered: CoA from a home server back through the RADIUS server to the NAS.
 
 CoA and Disconnect from home servers are relayed to the NAS since work package 5.19 ([ADR 0043](0043-coa-relay.md)).
 Ending tunnels here and proxying only the inner user followed in work package 5.20 ([ADR 0044](0044-inner-tunnel-proxying.md)).

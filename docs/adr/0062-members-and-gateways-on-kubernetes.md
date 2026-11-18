@@ -1,18 +1,18 @@
-# ADR 0062: Members and gateways on Kubernetes
+# ADR 0062: Members and RADIUS servers on Kubernetes
 
-Status: Accepted (2026-11-11). Work package 4.1 of [Phase 4](../plans/phase-4.md); the spike's measurements are below.
+Status: Accepted (2026-11-11). Work package 4.1 of [Phase 4](../plans/phase-4.md); the spike's measurements are below. Renamed by [ADR 0067](0067-the-radius-server.md) (it said gateways).
 
 ## Context
 Cluster membership is static: `cluster.members` lists every member's host, and Aeron Cluster uses it for all of a
 member's endpoints. The compose stack gives members fixed IP addresses because a lookup of a stopped container's name
 once blocked the media driver for seconds (Phase 2). On Kubernetes a pod gets a new IP every time it is recreated,
-and NAS devices reach gateways through Services, so the questions were: can members be addressed by name, how fast
+and NAS devices reach RADIUS servers through Services, so the questions were: can members be addressed by name, how fast
 does a leader fail over, what does a rolling restart do, can a member with a lost volume rejoin, and what happens
 when a whole node dies.
 
 ## Spike
 kind 0.33 (Kubernetes 1.37) with three workers, the `small` image, members as a StatefulSet with a headless Service
-(`publishNotReadyAddresses: true`), anti-affinity, a 2 Gi volume each; gateways in the cluster network; `radclient
+(`publishNotReadyAddresses: true`), anti-affinity, a 2 Gi volume each; RADIUS servers in the cluster network; `radclient
 load` from a pod (500 sessions, 200 requests/s, NAS timeout 3 s, 3 retries).
 
 | Experiment | Result |
@@ -27,9 +27,9 @@ load` from a pod (500 sessions, 200 requests/s, NAS timeout 3 s, 3 retries).
 | Rolling restart, readiness = election closed (caught up) | 2 of 5 runs failed (915 and 1035 failures): a member restarted seconds earlier and an old follower could not elect for ~20 s |
 | Same, JVM name cache 1 s instead of the default 30 s | **4 of 4 runs and 4 more with the fix in code: 0 failures, 0 retransmissions**, max 2.7 s |
 | Member volume deleted after the log was purged | the empty member loops on "failed to join catchup log" and never becomes ready |
-| Node with the leader and the only gateway stopped | 3965/5000 failed: one gateway is a single point of failure |
-| Node with the leader and one of two gateways stopped, one shared Service | 496/6500 failed: the Service sent part of the traffic to the dead gateway until the node was NotReady (48 s) |
-| Node with a gateway stopped, **one Service per gateway**, the NAS retrying the other | 6500/6500, max 3.0 s |
+| Node with the leader and the only RADIUS server stopped | 3965/5000 failed: one RADIUS server is a single point of failure |
+| Node with the leader and one of two RADIUS servers stopped, one shared Service | 496/6500 failed: the Service sent part of the traffic to the dead RADIUS server until the node was NotReady (48 s) |
+| Node with a RADIUS server stopped, **one Service per RADIUS server**, the NAS retrying the other | 6500/6500, max 3.0 s |
 | Node back after a stop | its member restarted with a new IP before its own DNS record existed, crashed on resolving its own name and recovered only after 5 restarts (back-off) |
 
 ## Decision
@@ -45,13 +45,13 @@ load` from a pod (500 sessions, 200 requests/s, NAS timeout 3 s, 3 retries).
    instead of crashing into back-off (code in 4.2).
 5. **A member with a lost volume is seeded** from a backup of the cluster (Aeron `ClusterBackup`: the latest
    snapshot and the log after it) before it starts; an empty member cannot catch up once the log is purged (4.6).
-6. **Gateways are a StatefulSet** without volumes: `gateway.id` comes from the pod index like `cluster.node.id`,
+6. **RADIUS servers are a StatefulSet** without volumes: `server.id` comes from the pod index like `cluster.node.id`,
    at least two, spread over nodes.
-7. **Every gateway gets its own address** (one Service per gateway pod) and NAS devices are configured with two
-   gateways as primary and secondary RADIUS servers; retries through the other gateway are deduplicated by the
+7. **Every RADIUS server gets its own address** (one Service per RADIUS server pod) and NAS devices are configured with two
+   of them as primary and secondary; retries through the other RADIUS server are deduplicated by the
    cluster. A single shared Service stays available for small setups, documented as losing up to the node-failure
    detection time (about 40–50 s) for the NAS devices behind a failed node.
-8. **Members and gateways cache names for 1 s** (`networkaddress.cache.ttl`, no negative cache) unless the operator
+8. **Members and RADIUS servers cache names for 1 s** (`networkaddress.cache.ttl`, no negative cache) unless the operator
    sets the JVM's cache: with the default 30 s an old follower kept sending its votes to the old address of a member
    that had just restarted, and the election after the next restart took ~20 s. This, not catch-up, was the main
    cause of the failed rolling restarts; readiness on the closed election stays as a guard.

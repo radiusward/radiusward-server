@@ -39,5 +39,5 @@ without duplicates, and without RADIUS logic in every sink plug-in.
   sidecar container in the member's pod (same `/dev/shm`, same archive) is possible later without redesign.
 - Upgrades: protocol and snapshot format version 2. All members must run it before an exporter is enabled — an
   older member would ignore checkpoints and decide `block` differently.
-- Aeron Cluster client sessions grow with sinks (two per sink per member) and gateways: `cluster.client.sessions.max`
+- Aeron Cluster client sessions grow with sinks (two per sink per member) and servers: `cluster.client.sessions.max`
   (default 256).

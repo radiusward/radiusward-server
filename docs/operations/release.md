@@ -53,7 +53,7 @@ version than the cluster applies.
    `radiusward admin activate-version --members … --version <n>`. Before activation every member can go back to the
    previous release; after it, a member on an older release stops with "the cluster applies state version n" and
    must be upgraded.
-4. Gateways and the exporter need no order: the protocol only appends fields.
+4. RADIUS servers and the exporter need no order: the protocol only appends fields.
 
 ## Verifying an image
 

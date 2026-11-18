@@ -32,15 +32,15 @@ needed for every TLS method.
     - `off`: no TLV is sent.
   - A failure Result TLV carries no binding. A peer that requires binding then ends the conversation itself.
 - **Interop with `eapol_test`** (wpa_supplicant 2.10, Debian's `eapoltest`, image `testing/eapol-test`):
-  - `EapolTestIT` runs it in a container against the real gateway over UDP.
+  - `EapolTestIT` runs it in a container against the real RADIUS server over UDP.
   - It covers EAP-TLS, PEAP (MS-CHAPv2, GTC, inner EAP-TLS) and TTLS (PAP, MS-CHAPv2).
   - Each runs on TLS 1.2 and 1.3, with 400-byte fragments both ways.
   - PEAP runs with binding required and with binding off.
   - Negative cases: wrong passwords, a disabled user, a certificate of another CA, an identity that is not the
     certificate's.
   - Every Accept is checked by `eapol_test` itself: the MS-MPPE keys must equal its own MSK.
-  - The container reaches the host as `host.docker.internal`. That is the bridge gateway on Linux and the host
-    through Colima on macOS. Logs go to `gateway/target/eapol-test`.
+  - The container reaches the host as `host.docker.internal`. That is the bridge RADIUS server on Linux and the host
+    through Colima on macOS. Logs go to `server/target/eapol-test`.
 
 ## Consequences
 - Relaying an inner MS-CHAPv2 exchange through another tunnel fails against binding-capable peers. With `required`, it

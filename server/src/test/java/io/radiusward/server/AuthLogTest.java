@@ -66,7 +66,7 @@ class AuthLogTest {
             io.radiusward.common.management.PrometheusWriter w = new io.radiusward.common.management.PrometheusWriter();
             log.writeMetrics(w, "1");
             assertThat(w.finish())
-                    .contains("radiusward_gateway_auth_log_entries_total{gateway=\"1\",result=\"dropped\"}");
+                    .contains("radiusward_server_auth_log_entries_total{server=\"1\",result=\"dropped\"}");
         }
     }
 

@@ -192,12 +192,12 @@ final class HomeServers {
     }
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
-        w.counter("radiusward_gateway_proxy_requests_total", "Access-Requests proxied to home servers (ADR 0037)");
+        w.counter("radiusward_server_proxy_requests_total", "Access-Requests proxied to home servers (ADR 0037)");
         for (HomeState h : all) {
             for (Proxy.Counter c : Proxy.Counter.values()) {
                 w.sample(
                         h.counts.get(c.ordinal()),
-                        "gateway",
+                        "server",
                         radiusServer,
                         "home",
                         h.config.name(),
@@ -205,9 +205,9 @@ final class HomeServers {
                         c.name().toLowerCase(Locale.ROOT));
             }
         }
-        w.gauge("radiusward_gateway_proxy_home_alive", "1 while a home server answers");
+        w.gauge("radiusward_server_proxy_home_alive", "1 while a home server answers");
         for (HomeState h : all) {
-            w.sample(h.alive ? 1 : 0, "gateway", radiusServer, "home", h.config.name());
+            w.sample(h.alive ? 1 : 0, "server", radiusServer, "home", h.config.name());
         }
     }
 

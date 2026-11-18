@@ -13,7 +13,7 @@ import java.util.Arrays;
  * EAP-AKA (RFC 4187) and EAP-AKA′ (RFC 9048) with vectors computed here from the subscriber's Ki and OPc (MILENAGE),
  * ADR 0061. The identity names the subscriber: permanent ({@code 0<IMSI>@realm}, AKA′ {@code 6…}), a pseudonym this
  * server issued, or a fast re-authentication identity it keeps; anything else gets an AKA-Identity request. The
- * challenge carries RAND and AUTN with the next SQN from the cluster (one sequence per subscriber for all gateways);
+ * challenge carries RAND and AUTN with the next SQN from the cluster (one sequence per subscriber for all RADIUS servers);
  * a USIM out of step answers with AUTS, from which the SQN is resynchronised once. RES and AT_MAC must match; the
  * MSK becomes the MPPE keys. With {@link SimIdentities}, the challenge also hands out the next pseudonym and
  * re-authentication identity in AT_ENCR_DATA. The IMSI is the user authorized afterwards, like a tunnel's inner user.

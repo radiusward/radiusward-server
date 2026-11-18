@@ -5,7 +5,7 @@ Status: **done** (2026-11-07) · Created: 2026-11-07 · Report: [below](#phase-0
 ## Goal
 
 Phase 0 delivers what everything else stands on: the repo, the RADIUS codec, the dictionaries
-plus code generation, all docs, the contributor guide, and CI. **No cluster or gateway yet.** Those come in
+plus code generation, all docs, the contributor guide, and CI. **No cluster or RADIUS server yet.** Those come in
 Phase 1. Phase 0–1 runs entirely locally on macOS, without Docker (see ADR 0009).
 
 ## Exit criteria
@@ -223,7 +223,7 @@ Packages: for example `io.radiusward.radius.codec`, `io.radiusward.radius.dictio
 | `README.md` (root) | What it is, architecture overview, quickstart, module map, license, Third-Party Resources | Complete for Phase 0 |
 | `README.md` per module | Purpose, public API, dependencies, examples | Complete |
 | `CONTRIBUTING.md` + `AGENTS.md` | Commands (`./mvnw verify`, `-Pe2e`, `-Pinterop`, `-Pbench`), module map, project rules | Complete |
-| `docs/architecture.md` | C4 context and container views, data flow NAS → gateway → cluster → sinks, threading model | Complete (target picture) |
+| `docs/architecture.md` | C4 context and container views, data flow NAS → RADIUS server → cluster → sinks, threading model | Complete (target picture) |
 | `docs/accounting-contract.md` | What an ACK guarantees: majority commit + fsync; silent drop on failure; dedup semantics | Complete |
 | `docs/dictionaries.md` | Bundled set + commit SHA, `dictionary.d` override, v3/v4 support, CC-BY, update script | Complete |
 | `docs/protocol.md` | SBE messages (AccountingCommand, AccountingCommitted, ExportCheckpoint), versioning rules | Draft |
@@ -348,5 +348,5 @@ Apple M4 Pro, JDK 21, ~200 byte Cisco interim update: full receive path **~2.2 M
 - Optionally `brew install freeradius-server` and run `./mvnw -Pinterop verify`.
 - ~~Decide whether Juniper ERX (4874) attributes join the hot list.~~ Done 2026-11-08: 12 ERX fields,
   `Unisphere` constants class, 3 fixtures, radclient preset `juniper-erx` (61 of 64 fields used).
-- Phase 1 detailed plan: SBE `protocol` module, cluster node + AccountingService, gateway agents,
+- Phase 1 detailed plan: SBE `protocol` module, cluster node + AccountingService, RADIUS server agents,
   NAS registry, local harness/dev mode/`run-local.sh`, `testing/e2e-tests`.

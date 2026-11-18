@@ -19,7 +19,7 @@ import org.agrona.concurrent.SleepingMillisIdleStrategy;
  * @param threadingMode Aeron media driver threading mode name
  * @param loggingRingSize Log4j2 async logger ring buffer slots (power of two)
  * @param maxSessions session store capacity per cluster
- * @param pendingRequests in-flight requests per gateway
+ * @param pendingRequests in-flight requests per RADIUS server
  */
 public enum Profile {
     SMALL(2 << 20, 2 << 20, "SHARED", 8192, 2_000_000, 16_384),
@@ -72,7 +72,7 @@ public enum Profile {
         return pendingRequests;
     }
 
-    /** Idle strategies by name, for {@code gateway.idle.strategy}. */
+    /** Idle strategies by name, for {@code server.idle.strategy}. */
     public static final List<String> IDLE_STRATEGIES =
             List.of("sleep-1ms", "backoff-1ms", "backoff-100us", "busy-spin");
 

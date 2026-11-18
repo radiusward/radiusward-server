@@ -16,7 +16,7 @@ FROM ${RELEASE} AS release
 FROM ${BASE_IMAGE}
 COPY --from=release /opt/radiusward/ /opt/radiusward/
 COPY --from=release /usr/local/bin/radiusward /usr/local/bin/radiusward
-COPY deploy/systemd/radiusward-node.service deploy/systemd/radiusward-gateway.service /etc/systemd/system/
+COPY deploy/systemd/radiusward-node.service deploy/systemd/radiusward-server.service /etc/systemd/system/
 COPY deploy/systemd/99-radiusward.conf /etc/sysctl.d/99-radiusward.conf
 ENV RADIUSWARD_PROFILE=small
 WORKDIR /

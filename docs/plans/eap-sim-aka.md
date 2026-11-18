@@ -20,8 +20,8 @@ either; it can follow later behind the same vector interface.
 | Methods | EAP-SIM | EAP-SIM, EAP-AKA, EAP-AKA′ | all three |
 | Keys in the store | `EAP-Sim-Ki`, `EAP-Sim-Algo-Version` (COMP128 v1–3) | `SIM-Ki`, `SIM-OPc` or `SIM-OP`, `SIM-AMF`, `SIM-SQN`, `SIM-Algo-Version` (Comp128-1…4, Milenage) | both sets of names accepted as check items, so existing users files and `radcheck` rows work unchanged; algorithms Milenage and Comp128-4 (GSM-Milenage); a COMP128 v1–3 subscriber is rejected with a clear log line (not planned, see below) |
 | Stored vectors | `EAP-Sim-Rand1…3`, `EAP-Sim-SRES1…3`, `EAP-Sim-KC1…3` | `RAND`/`SRES`/`KC`, `RAND`/`AUTN`/`XRES`/`CK`/`IK` from an AuC | stored triplets accepted (testing, migration); AuC quintuplets later |
-| SQN | — | kept by policy (an SQL update), resync computes the new value into `SIM-SQN` | **kept in the cluster**: one value per subscriber shared by all gateways, failover-safe; the store's `SIM-SQN` is the starting floor |
-| Pseudonyms, fast re-authentication | — | `Next-Pseudonym`, `Next-Reauth-Id`, stored by policy; 3GPP temporary-id encryption | pseudonyms encrypted with a shared key (no storage, any gateway resolves them); fast re-auth state per gateway with a lifetime |
+| SQN | — | kept by policy (an SQL update), resync computes the new value into `SIM-SQN` | **kept in the cluster**: one value per subscriber shared by all RADIUS servers, failover-safe; the store's `SIM-SQN` is the starting floor |
+| Pseudonyms, fast re-authentication | — | `Next-Pseudonym`, `Next-Reauth-Id`, stored by policy; 3GPP temporary-id encryption | pseudonyms encrypted with a shared key (no storage, any RADIUS server resolves them); fast re-auth state per RADIUS server with a lifetime |
 | AKA′ network name | — | `network_name` / `KDF-Input` | `auth.eap.aka-prime.network.name`, per NAS entry if needed |
 
 On the wire both servers follow the same RFCs, so devices see no difference; the algorithms are checked against the
@@ -47,9 +47,9 @@ On the wire both servers follow the same RFCs, so devices see no difference; the
 - New cluster command `SqnNext(subscriber key, floor)`: the state machine returns the next SQN, `max(current + 32,
   floor)` following TS 33.102 Annex C (SEQ‖IND with a 5-bit IND), and stores it. Deterministic, replicated, in the
   snapshot. **State version 8**, active with `atLeast(8)` once every member runs it (ADR 0005).
-- Resync: on `AT_AUTS` the gateway verifies MAC-S, recovers SQN_MS with f5*, and sends `SqnResync(key, SQN_MS)`; one
+- Resync: on `AT_AUTS` the RADIUS server verifies MAC-S, recovers SQN_MS with f5*, and sends `SqnResync(key, SQN_MS)`; one
   resync per conversation, then a new challenge.
-- Like `Simultaneous-Use`, a gateway that cannot reach the cluster leaves the request unanswered.
+- Like `Simultaneous-Use`, a RADIUS server that cannot reach the cluster leaves the request unanswered.
 
 ### Keys and messages
 - EAP-SIM and EAP-AKA: MK from SHA-1, keys from the FIPS 186-2 PRF (RFC 4186 §7, RFC 4187 §7); AT_MAC with
@@ -62,8 +62,8 @@ On the wire both servers follow the same RFCs, so devices see no difference; the
 
 ### Identity privacy and fast re-authentication
 - **Pseudonyms**: the IMSI encrypted with AES-GCM under a key id (`auth.eap.sim.pseudonym.keys`, rotatable), sent
-  in `AT_NEXT_PSEUDONYM` (encrypted in `AT_ENCR_DATA`); any gateway decrypts it, nothing stored.
-- **Fast re-authentication**: `AT_NEXT_REAUTH_ID`; MK and counter kept per gateway for `auth.eap.sim.reauth.lifetime`
+  in `AT_NEXT_PSEUDONYM` (encrypted in `AT_ENCR_DATA`); any RADIUS server decrypts it, nothing stored.
+- **Fast re-authentication**: `AT_NEXT_REAUTH_ID`; MK and counter kept per RADIUS server for `auth.eap.sim.reauth.lifetime`
   with a maximum count; an unknown or expired one falls back to full authentication (no state in the cluster).
 
 ### Configuration (new keys)
@@ -76,7 +76,7 @@ On the wire both servers follow the same RFCs, so devices see no difference; the
 | # | Work package | Content | Size |
 |---|---|---|---|
 | 5.37 ✅ | Algorithms | Milenage f1–f5, f1*, f5* and OPc; GSM-Milenage; FIPS 186-2 PRF; TS 33.402 KDF and PRF′; all against the 3GPP and RFC test vectors | M |
-| 5.38 ✅ | SQN in the cluster | `SqnNext`/`SqnResync` commands, state version 8, snapshot, rolling-upgrade gate, gateway client with a mailbox per worker | M |
+| 5.38 ✅ | SQN in the cluster | `SqnNext`/`SqnResync` commands, state version 8, snapshot, rolling-upgrade gate, RADIUS server client with a mailbox per worker | M |
 | 5.39 ✅ | EAP-AKA and EAP-AKA′ | identities and hints, negotiation and checkcode, challenge, resync, notifications, result indication, keys; store attributes of both naming schemes | L |
 | 5.40 ✅ | EAP-SIM | start/version negotiation, nonce, three triplets from GSM-Milenage or stored ones, keys | M |
 | 5.41 ✅ | Privacy and fast re-auth | encrypted pseudonyms with key rotation, fast re-authentication with counters | M |
@@ -112,7 +112,7 @@ Each with an ADR, docs (`configuration.md`, the EAP section of the ADR index, st
 ## Risks
 
 - **Key protection**: Ki and OPc are as sensitive as passwords; they stay in the store (protect `radcheck` and the
-  users file) and are never logged or traced. A gateway zeroes its copies as soon as the vectors are computed
+  users file) and are never logged or traced. A RADIUS server zeroes its copies as soon as the vectors are computed
   (EAP-AKA keeps them until the challenge is answered, for a resynchronisation); the AES key schedule inside the JCE
   cipher cannot be cleared and goes with the short-lived Milenage instance.
 - **Real devices**: Android and iOS EAP-SIM/AKA support depends on carrier configuration; tests with a programmable

@@ -31,7 +31,7 @@ radiusward does in Java or through the stores.
 - **Actions**: `reply <attribute> = value` (only if the reply lacks it), `:=` (replace), `+=` (add); `remove
   <attribute>`; `reject`; `stop` (no further rules). `%{Attribute}` in a value is the request's attribute.
 - Attributes are checked against the dictionary and patterns compiled when the file is read; a file that does not
-  parse stops the gateway at start, and a later broken edit keeps the previous rules (`auth.rules.reload.interval`).
+  parse stops the RADIUS server at start, and a later broken edit keeps the previous rules (`auth.rules.reload.interval`).
 - Rules run on the worker threads with the reply items, before encoding; the packet path is untouched.
 
 ## Consequences

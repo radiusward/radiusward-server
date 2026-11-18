@@ -9,7 +9,7 @@ roaming federations) are often reached over the internet. RadSec (RFC 6614, with
 RADIUS inside mutually authenticated TLS over TCP, port 2083, carrying authentication and accounting on one
 connection.
 
-ADR 0006 chose plain NIO for UDP and named RadSec as the place to reconsider Netty. The gateway's two socket agents
+ADR 0006 chose plain NIO for UDP and named RadSec as the place to reconsider Netty. The RADIUS server's two socket agents
 already decide every packet without blocking. What RadSec adds is a TLS transport in front of them.
 
 ## Decision
@@ -43,11 +43,11 @@ already decide every packet without blocking. What RadSec adds is a TLS transpor
   - A full ring drops the packet; the NAS times out and retries.
   - A peer that does not read its replies, over 1 MiB of pending output, is disconnected.
   - A malformed packet (length below 20 or above 4096) closes the connection (RFC 6613 §2.6.4).
-  - Packet types the gateway does not answer, such as CoA, are counted and ignored.
+  - Packet types the RADIUS server does not answer, such as CoA, are counted and ignored.
   - Limits: `radsec.connections` (default 256), `radsec.handshake.timeout` (10 s), `radsec.idle.timeout` (off; TCP
     keep-alive is on).
-- **Metrics**: `radiusward_gateway_radsec_total{result}`, `radiusward_gateway_radsec_connections`,
-  `radiusward_gateway_radsec_tls_reloads_total`.
+- **Metrics**: `radiusward_server_radsec_total{result}`, `radiusward_server_radsec_connections`,
+  `radiusward_server_radsec_tls_reloads_total`.
 - **Interop**: `RadsecproxyIT` runs radsecproxy 1.11 (`testing/radsec-client`) as the RadSec client. FreeRADIUS's
   `radclient` and wpa_supplicant's `eapol_test` speak UDP to it: PAP, PEAP and TTLS. The MS-MPPE keys are encrypted
   with the RadSec secret, re-encrypted by radsecproxy, and must still match the peer's MSK.
@@ -61,16 +61,16 @@ already decide every packet without blocking. What RadSec adds is a TLS transpor
 - **Resumption**: reconnects resume their TLS session (TLS 1.2 session IDs, TLS 1.3 PSK) within
   `radsec.session.timeout` (default 1 h). A resumed session is not checked against revocation again, so the timeout
   bounds how long a revoked certificate keeps working.
-  - The JDK resumes its default stateless tickets without checking the session's age. The gateway therefore sets
+  - The JDK resumes its default stateless tickets without checking the session's age. The RADIUS server therefore sets
     `jdk.tls.server.enableSessionTicketExtension=false` at start, unless set otherwise. Sessions then live in the
     server's cache, which honours the timeout.
-  - Consequence: resumption works within one gateway. A reconnect to another gateway gets a full handshake.
-  - `radiusward_gateway_radsec_total{result="handshakes_resumed"}` counts resumed handshakes.
+  - Consequence: resumption works within one RADIUS server. A reconnect to another RADIUS server gets a full handshake.
+  - `radiusward_server_radsec_total{result="handshakes_resumed"}` counts resumed handshakes.
 
 ## Consequences
-- NAS can reach gateways across untrusted networks without a VPN. Their identity is a certificate, not only an
+- NAS can reach RADIUS servers across untrusted networks without a VPN. Their identity is a certificate, not only an
   address and a secret.
-- The gateway's UDP behaviour is unchanged: RadSec is off unless `radsec.enabled`, and its requests take the same
+- The RADIUS server's UDP behaviour is unchanged: RadSec is off unless `radsec.enabled`, and its requests take the same
   decision and commit paths.
-- Not covered: DTLS (RFC 7360, planned as 5.14), dynamic peer discovery (RFC 7585) and the gateway as a RadSec
+- Not covered: DTLS (RFC 7360, planned as 5.14), dynamic peer discovery (RFC 7585) and the RADIUS server as a RadSec
   client (planned with proxying as 5.13).

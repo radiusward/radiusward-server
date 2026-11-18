@@ -224,7 +224,7 @@ final class CoaRelay implements AutoCloseable {
     }
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
-        w.counter("radiusward_gateway_coa_relay_total", "CoA and Disconnect-Requests from home servers, relayed");
+        w.counter("radiusward_server_coa_relay_total", "CoA and Disconnect-Requests from home servers, relayed");
         counts.write(w, radiusServer);
     }
 

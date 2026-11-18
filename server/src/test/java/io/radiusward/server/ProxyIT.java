@@ -34,7 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The gateway as a proxy (ADR 0037): realms to pools of fake home servers over UDP — PAP and CHAP re-encrypted, the
+ * The RADIUS server as a proxy (ADR 0037): realms to pools of fake home servers over UDP — PAP and CHAP re-encrypted, the
  * realm stripped, Proxy-State kept for the NAS and ours removed, MS-MPPE keys re-encrypted for the NAS, Reject and
  * Challenge (EAP stays on its home server), answers without Message-Authenticator ignored, failover to the next home
  * server when one is dead and back when it answers Status-Server again; users without a proxied realm stay local.
@@ -228,7 +228,7 @@ class ProxyIT {
                 .isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
         assertThat(a.requests).hasSize(2);
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_proxy_requests_total{gateway=\"1\",home=\"a\",result=\"accepted\"} 2");
+                .contains("radiusward_server_proxy_requests_total{server=\"1\",home=\"a\",result=\"accepted\"} 2");
     }
 
     private static void assertForTheNasWithoutState(byte[] reply, byte[] request) {
@@ -266,7 +266,7 @@ class ProxyIT {
         int port = start(Map.of());
         a.mode = FakeHomeServer.Mode.SILENT;
         assertThat(send(port, pap("f1@partner.example", "x", "aa-bb-cc-00-00-05"), Duration.ofSeconds(1)))
-                .as("a does not answer: neither does the gateway")
+                .as("a does not answer: neither does the RADIUS server")
                 .isNull();
         Thread.sleep(800); // a is dead after proxy.dead.after without an answer
         byte[] request = pap("f2@partner.example", "x", "aa-bb-cc-00-00-06");
@@ -283,7 +283,7 @@ class ProxyIT {
         byte[] back = pap("f3@partner.example", "x", "aa-bb-cc-00-00-07");
         assertForTheNas(send(port, back, Duration.ofSeconds(3)), back, RadiusCode.ACCESS_ACCEPT);
         assertThat(a.requests).as("a is first again").hasSize(before + 1);
-        assertThat(radiusServer.metrics()).contains("radiusward_gateway_proxy_home_alive{gateway=\"1\",home=\"a\"} 1");
+        assertThat(radiusServer.metrics()).contains("radiusward_server_proxy_home_alive{server=\"1\",home=\"a\"} 1");
     }
 
     @Test

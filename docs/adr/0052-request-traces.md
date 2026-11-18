@@ -4,7 +4,7 @@ Status: Accepted (2026-11-10). Phase 5, work package 5.28 ([plans/phase-5-auth.m
 
 ## Context
 "Why was this user rejected?" was answered by counters and once-per-cause warnings, never per request: per-packet log
-lines are forbidden on the packet path, and a log level for everything would flood the log of a busy gateway. Other
+lines are forbidden on the packet path, and a log level for everything would flood the log of a busy RADIUS server. Other
 servers offer a debug mode for one user or NAS. Operators need the same without a restart.
 
 ## Decision

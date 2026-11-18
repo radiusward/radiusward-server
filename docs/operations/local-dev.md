@@ -54,5 +54,5 @@ $RADCLIENT replay radius-codec/src/test/resources/fixtures/cisco/stop.fixture --
 ## A local cluster
 
 Three ways to run the cluster locally: the in-JVM harness used by tests (`LocalCluster`), a single-process dev mode
-(`DevCluster`) for the IDE, and `scripts/run-local.sh` with three `cluster-node` JVMs and two gateways on loopback
+(`DevCluster`) for the IDE, and `scripts/run-local.sh` with three `cluster-node` JVMs and two RADIUS servers on loopback
 for the `kill -9` failover demo ([local-cluster.md](local-cluster.md)).

@@ -19,7 +19,7 @@ internal attributes removed) and for answers to be filtered. The inner proxy rea
     handshake wait for it.
   Status-Server probes, dead detection and failover work the same over every transport. CoA from home servers stays
   UDP-only.
-- **Rewriting per realm**, resolved and encoded once with the gateway's dictionary when the proxy starts:
+- **Rewriting per realm**, resolved and encoded once with the RADIUS server's dictionary when the proxy starts:
   - `realm.<id>.pre-proxy.remove`: standard attributes left out of the request;
   - `realm.<id>.pre-proxy.add`: items (`Operator-Name = "1example.net", Cisco-AVPair += "x=y"`) appended to it;
   - `realm.<id>.post-proxy.remove`: standard attributes left out of the answer to the NAS.
@@ -31,5 +31,5 @@ internal attributes removed) and for answers to be filtered. The inner proxy rea
 
 ## Consequences
 - Proxy chains across transports are possible: UDP from the NAS, DTLS to a partner, TLS to a federation.
-- A rewrite error (unknown attribute, value that does not encode) stops the gateway at start.
+- A rewrite error (unknown attribute, value that does not encode) stops the RADIUS server at start.
 - Inner requests over TLS cost a handshake (or a resumption) each; volumes are small (one per tunnel).

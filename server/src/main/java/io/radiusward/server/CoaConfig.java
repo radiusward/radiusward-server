@@ -14,7 +14,7 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * CoA and Disconnect-Request (RFC 5176, ADR 0036): {@code coa.*} for the gateway, {@code nas.<name>.coa.*} per NAS
+ * CoA and Disconnect-Request (RFC 5176, ADR 0036): {@code coa.*} for the RADIUS server, {@code nas.<name>.coa.*} per NAS
  * entry.
  *
  * @param enabled {@code coa.enabled}

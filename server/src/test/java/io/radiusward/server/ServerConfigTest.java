@@ -33,17 +33,17 @@ class ServerConfigTest {
         assertThat(c.dedicatedThreads()).isFalse();
         assertThat(c.idleStrategy()).isEqualTo("backoff-100us");
         assertThat(c.debugResponseDelay()).isZero();
-        assertThat(c.aeronDir()).contains("radiusward-gateway-1-");
+        assertThat(c.aeronDir()).contains("radiusward-server-1-");
     }
 
     @Test
     void settingsAndProfileDefaults() {
         ServerConfig c = ServerConfig.from(Config.of(Map.of(
                 "profile", "large",
-                "gateway.id", "2",
+                "server.id", "2",
                 "cluster.members", "10.0.0.1,10.0.0.2,10.0.0.3",
-                "gateway.listen.port", "1814",
-                "gateway.egress.host", "10.0.0.9",
+                "server.listen.port", "1814",
+                "server.egress.host", "10.0.0.9",
                 "debug.enabled", "true",
                 "debug.response.delay", "500ms")));
         assertThat(c.serverId()).isEqualTo(2);
@@ -60,10 +60,10 @@ class ServerConfigTest {
         assertThatThrownBy(() -> ServerConfig.from(Config.of(Map.of("debug.response.delay", "1s"))))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("debug.enabled=true");
-        assertThatThrownBy(() -> ServerConfig.from(Config.of(Map.of("gateway.threading", "both"))))
+        assertThatThrownBy(() -> ServerConfig.from(Config.of(Map.of("server.threading", "both"))))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("shared or dedicated");
-        assertThatThrownBy(() -> ServerConfig.from(Config.of(Map.of("gateway.idle.strategy", "yield"))))
+        assertThatThrownBy(() -> ServerConfig.from(Config.of(Map.of("server.idle.strategy", "yield"))))
                 .isInstanceOf(ConfigException.class)
                 .hasMessageContaining("backoff-100us");
     }

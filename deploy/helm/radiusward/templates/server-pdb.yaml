@@ -5,9 +5,9 @@ SPDX-License-Identifier: Apache-2.0
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: {{ include "radiusward.fullname" . }}-gateway
+  name: {{ include "radiusward.fullname" . }}-server
   labels: {{- include "radiusward.labels" . | nindent 4 }}
 spec:
   minAvailable: 1
   selector:
-    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "gateway") | nindent 6 }}
+    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "server") | nindent 6 }}

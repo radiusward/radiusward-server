@@ -24,7 +24,7 @@ class AckAfterCommitIT extends E2eTestBase {
 
     @Test
     void noAckWithoutMajority() throws Exception {
-        int port = cluster.radiusPort("gateway-a");
+        int port = cluster.radiusPort("server-a");
         nas.ack(port, Nas.request(1, 1, "ack-1", 0));
 
         String leader = cluster.awaitLeader();

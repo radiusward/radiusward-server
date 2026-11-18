@@ -1,18 +1,18 @@
 # verifier-netlogon
 
 Credential verifier for Active Directory over Netlogon (MS-NRPC), in pure Java — no Samba, no domain join on the
-gateway hosts ([ADR 0025](../../docs/adr/0025-credential-verifiers-and-ldap.md)). **In progress** (work package 5.6b):
+RADIUS server hosts ([ADR 0025](../../docs/adr/0025-credential-verifiers-and-ldap.md)). **In progress** (work package 5.6b):
 
 | Milestone | State |
 |---|---|
 | 1. DCE/RPC over TCP, endpoint mapper (`ept_map`) | done, tested against Samba AD |
 | 2. Secure channel: `NetrServerReqChallenge`, `NetrServerAuthenticate3`, AES session key and credentials | done, tested against Samba AD |
 | 3. Netlogon-signed and sealed RPC, `NetrLogonSamLogonEx` | done, tested against Samba AD |
-| 4. The verifier: MS-CHAPv1/v2 and PAP, user session key for MPPE, channel pool, failover | done, tested against Samba AD, also through a real gateway |
+| 4. The verifier: MS-CHAPv1/v2 and PAP, user session key for MPPE, channel pool, failover | done, tested against Samba AD, also through a real RADIUS server |
 | 5. DNS discovery of domain controllers, metrics, failover and outage tests | done |
 | Check against a Windows domain controller | open — tested against Samba AD only |
 
-The gateway authenticates as a workstation trust account that an administrator creates once (a computer object with
+The RADIUS server authenticates as a workstation trust account that an administrator creates once (a computer object with
 a known password):
 
 ```powershell
@@ -45,7 +45,7 @@ auth.verifier.dc.machine.password = ${env:NETLOGON_MACHINE_PASSWORD}
 | `netlogon.port` | asked | a fixed Netlogon port |
 | `strip.realm` | `true` | `user@realm` is `user` in `domain` |
 | `timeout` | `2s` | connect, call and channel wait |
-| `connections` | `gateway.auth.workers` | secure channels kept open |
+| `connections` | `server.auth.workers` | secure channels kept open |
 
 User names: `DOMAIN\user`, `user@realm` or `user`. MS-CHAPv1/v2 responses are forwarded; PAP becomes a network logon
 (an NT response to a random challenge). Wrong passwords and disabled, locked or expired accounts are rejections; a
@@ -66,16 +66,16 @@ Details that matter (each found against a real domain controller):
   `ntlmv2-only`, hardened Windows) still accept them when configured to (`mschapv2-and-ntlmv2-only`).
 
 **Machine password.** Domain controllers do not expire computer-account passwords; rotating them is the client's
-choice. All gateways share the machine account, so one gateway rotating it would lock the others out — radiusward
+choice. All RADIUS servers share the machine account, so one RADIUS server rotating it would lock the others out — radiusward
 therefore does not rotate it. Rotate it by hand when your policy asks for it (`Set-ADAccountPassword`, then update the
-secret on every gateway), or give each gateway its own machine account.
+secret on every RADIUS server), or give each RADIUS server its own machine account.
 
-**Metrics.** `radiusward_gateway_verifier_events_total{verifier,event}`: `accepted`, `rejected`, `unavailable`,
+**Metrics.** `radiusward_server_verifier_events_total{verifier,event}`: `accepted`, `rejected`, `unavailable`,
 `channels_opened`, `server_failures`.
 
 **Tunnels.** PEAP (inner MS-CHAPv2 or GTC) and TTLS (inner MS-CHAPv2 or PAP) use this verifier for their inner
 credential; tested against Samba AD end to end (`TunnelNetlogonIT`).
 
 **Outages.** Tested with a domain controller that does not answer (failover to the next one) and one frozen mid-way
-(no answers meanwhile, a fresh channel afterwards, no gateway restart).
+(no answers meanwhile, a fresh channel afterwards, no RADIUS server restart).
 

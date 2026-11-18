@@ -24,7 +24,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * How a gateway is put together and started: the dictionary, the embedded media driver, the rings to the cluster
+ * How a RADIUS server is put together and started: the dictionary, the embedded media driver, the rings to the cluster
  * client, the UDP, authentication, RadSec/DTLS and CoA agents with their threads (one each, or one composite), the
  * access workers, and the CoA service, sweep, API and relay. A failure on the way closes the media driver.
  */
@@ -45,7 +45,7 @@ final class ServerAssembly {
             CoaConfig coa,
             ProxyConfig proxy) {
         if (proxy.enabled() && !auth.enabled()) {
-            throw new IllegalArgumentException("proxy.enabled needs gateway.auth.enabled");
+            throw new IllegalArgumentException("proxy.enabled needs server.auth.enabled");
         }
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (config.dictionaryDir() != null) {
@@ -190,7 +190,7 @@ final class ServerAssembly {
                 }
             } else if (proxy.coaRelay()) {
                 throw new IllegalArgumentException("home.<id>.coa needs coa.enabled: the relay finds sessions and"
-                        + " sends to the NAS like the gateway's own CoA");
+                        + " sends to the NAS like the RADIUS server's own CoA");
             }
             RadiusServer radiusServer = new RadiusServer(new RadiusServer.Parts(
                     config,
@@ -213,7 +213,7 @@ final class ServerAssembly {
                     coaApi,
                     coaRelay));
             LOG.info(
-                    "gateway {} started: {} NAS, cluster {}, {} threads",
+                    "RADIUS server {} started: {} NAS, cluster {}, {} threads",
                     config.serverId(),
                     registry.clients().size(),
                     ingressEndpoints(config),
@@ -247,7 +247,7 @@ final class ServerAssembly {
     }
 
     private static void error(Throwable t) {
-        LOG.error("gateway agent error", t);
+        LOG.error("RADIUS server agent error", t);
     }
 
     /**

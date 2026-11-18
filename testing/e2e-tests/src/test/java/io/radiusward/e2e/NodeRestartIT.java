@@ -24,7 +24,7 @@ class NodeRestartIT extends E2eTestBase {
                 .findFirst()
                 .orElseThrow();
         cluster.kill(follower);
-        int port = cluster.radiusPort("gateway-a");
+        int port = cluster.radiusPort("server-a");
         for (int i = 0; i < 50; i++) {
             nas.ack(port, Nas.request(i, 1, "nr-" + i, 0));
         }

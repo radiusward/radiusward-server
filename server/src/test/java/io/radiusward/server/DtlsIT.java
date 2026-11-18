@@ -27,9 +27,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * RADIUS over DTLS 1.2 (RFC 7360, ADR 0038) through the real gateway, with the JDK's DTLS as the NAS: Access-Requests
+ * RADIUS over DTLS 1.2 (RFC 7360, ADR 0038) through the real RADIUS server, with the JDK's DTLS as the NAS: Access-Requests
  * and Status-Server with the secret {@code radius/dtls}, many in flight; lost handshake flights retransmitted by the
- * gateway's timer; client certificates required and checked; a restarted NAS replacing its association; datagrams
+ * RADIUS server's timer; client certificates required and checked; a restarted NAS replacing its association; datagrams
  * outside DTLS and malformed packets discarded without closing; idle associations closed. Accounting over DTLS with a
  * cluster: {@code RadsecAccountingIT}; interop with radsecproxy: {@code RadsecproxyIT}.
  */
@@ -142,15 +142,15 @@ class DtlsIT {
         }
         assertThat(agent().getDtls(RadsecAgent.Counter.REPLIES)).isEqualTo(53);
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_dtls_total{gateway=\"1\",result=\"connections_accepted\"} 1")
-                .contains("radiusward_gateway_dtls_total{gateway=\"1\",result=\"requests\"} 53");
+                .contains("radiusward_server_dtls_total{server=\"1\",result=\"connections_accepted\"} 1")
+                .contains("radiusward_server_dtls_total{server=\"1\",result=\"requests\"} 53");
         RadsecIT.LocalWait.until(() -> agent().openAssociations() == 0); // close_notify ends the association
     }
 
     @Test
     void lostHandshakeFlightsAreRetransmittedByTheServer() throws Exception {
         int port = start(Map.of("radsec.dtls.retransmit", "300ms"));
-        // the NAS loses the gateway's second and third datagrams and never retransmits itself
+        // the NAS loses the RADIUS server's second and third datagrams and never retransmits itself
         DatagramSocket socket = new DatagramSocket(0, InetAddress.getLoopbackAddress());
         try (DtlsClient client = new DtlsClient(
                 port, TestPki.clientContext(pki.client("nas-1"), pki.ca, "DTLS"), socket, new int[] {2, 3}, false)) {

@@ -28,8 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * An IPv6 NAS (ADR 0047): the gateway listens on {@code ::}, the NAS entry is {@code ::1}, and an Access-Request from
- * {@code [::1]} is answered with that entry's secret; the same gateway still answers its IPv4 NAS.
+ * An IPv6 NAS (ADR 0047): the RADIUS server listens on {@code ::}, the NAS entry is {@code ::1}, and an Access-Request from
+ * {@code [::1]} is answered with that entry's secret; the same RADIUS server still answers its IPv4 NAS.
  */
 @Epic("Transports")
 @Feature("IPv6 NAS")

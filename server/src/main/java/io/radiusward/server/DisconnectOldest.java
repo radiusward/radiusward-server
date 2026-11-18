@@ -32,7 +32,7 @@ final class DisconnectOldest implements SessionLimits {
     private final Supplier<CoaService> coa;
     private final Duration wait;
 
-    /** @param coa the gateway's CoA service, available once the gateway runs */
+    /** @param coa the RADIUS server's CoA service, available once the RADIUS server runs */
     DisconnectOldest(SessionLimits limits, Supplier<CoaService> coa, Duration wait) {
         this.limits = limits;
         this.coa = coa;

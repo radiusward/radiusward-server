@@ -78,7 +78,7 @@ class ClusterReservationsTest {
         var metrics = new io.radiusward.common.management.PrometheusWriter();
         reservations.writeMetrics(metrics, "0");
         assertThat(metrics.finish())
-                .contains("radiusward_gateway_sim_sqn_requests_total{gateway=\"0\",outcome=\"unavailable\"} 1");
+                .contains("radiusward_server_sim_sqn_requests_total{server=\"0\",outcome=\"unavailable\"} 1");
         reservations.deliver(5, SessionLimits.DENIED); // not a reservation id
         reservations.deliver((1L << 62) | (99L << 40), SessionLimits.DENIED); // no such worker
     }

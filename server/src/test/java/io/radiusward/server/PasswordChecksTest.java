@@ -86,7 +86,7 @@ class PasswordChecksTest extends HandlerFixture {
         var metrics = new io.radiusward.common.management.PrometheusWriter();
         h.writeMetrics(metrics, "1");
         assertThat(metrics.finish())
-                .contains("radiusward_gateway_verifier_events_total{gateway=\"1\",verifier=\"ad\",event=\"calls\"} "
+                .contains("radiusward_server_verifier_events_total{server=\"1\",verifier=\"ad\",event=\"calls\"} "
                         + ad.calls);
     }
 

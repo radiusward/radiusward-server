@@ -36,13 +36,13 @@ pages next to the test reports.
 
 ## Findings from the first GitHub run
 
-Run 43045796811 (2026-11-11, 4 vCPU shared by three members, two gateways and four generators) reported accounting
+Run 43045796811 (2026-11-11, 4 vCPU shared by three members, two RADIUS servers and four generators) reported accounting
 3,788/s, authentication 3,701/s and the mix 1,929/s. The raw steps showed that these were not three ceilings:
 
 - **The ladder was too coarse.** Accounting and authentication both passed 4,000/s and both failed at 8,000/s; the
   "ceiling" was what the 4,000 step delivered. The mix stopped at its 2,000 step for the same reason.
 - **Authentication was not limited by radiusward.** At 8,000/s its p99 stayed at 46 ms, as at 500/s, with no
-  timeouts; it failed only because 6,915/s arrived. Members, gateways and generators used about 330 % of the 400 %
+  timeouts; it failed only because 6,915/s arrived. Members, RADIUS servers and generators used about 330 % of the 400 %
   CPU: the host and the generators ran out first.
 - **Accounting did saturate** at 8,000/s (7,188/s answered, p99 704 ms, nothing lost), but on CPUs shared with the
   generators — a lower bound, as the pages say.
@@ -69,19 +69,19 @@ result is not load-limited, plus the cost of a leader kill there.
 **Topology**
 
 - The CloudFormation stack as documented: three members on EC2 (`small` c7g.large, `standard` m7g.large), one per
-  availability zone; two gateways on Fargate behind one internal NLB each; the backup on Fargate with EFS.
+  availability zone; two RADIUS servers on Fargate behind one internal NLB each; the backup on Fargate with EFS.
 - **Generators**: c7g.xlarge instances (4 vCPU) in the same VPC, running the `radclient load` container from the same
   image, aimed at both NLBs. Start with two instances × 4 generators, in two zones; the load-limited verdict adds
   generators, and a third or fourth instance is added when one instance's CPU passes 70 %. Their addresses fall
   inside `NasCidr`.
-- Generators reach the members' and gateways' `/metrics` on port 9090 (already open to the VPC).
+- Generators reach the members' and RADIUS servers' `/metrics` on port 9090 (already open to the VPC).
 
 **Harness changes** (B4a, without AWS access)
 
 - `bench.py --target <nlb-a>,<nlb-b> --generator-hosts <h1>,<h2>`: no compose stack; generators started on the
   instances (`docker run` over SSM or SSH), results gathered from their output as today; `shared_host: false`.
 - CPU per process from `/metrics` instead of `docker stats`: add `radiusward_process_cpu_seconds_total` (JVM
-  `OperatingSystemMXBean`) to members, gateways and the backup — useful for every deployment, not only here; the
+  `OperatingSystemMXBean`) to members, RADIUS servers and the backup — useful for every deployment, not only here; the
   generators' CPU from the instances.
 - Failover: find the leader from `/state`, then `aws ecs stop-task` on its task; ECS starts a replacement, which seeds
   itself (ADR 0063) — the run measures losses and the gap as on GitHub.
@@ -111,13 +111,13 @@ OIDC role (a template comes with B4b).
 | # | Step | Needs AWS |
 |---|---|---|
 | B4a ✅ | `bench.py` remote mode, process CPU metric, ECS failover | no |
-| B4b ✅ | `bench-aws.sh`, generator stack, OIDC role template, `bench-aws.yml`; a users file secret for the gateways in both ECS templates | no (validated with cfn-lint and tofu) |
+| B4b ✅ | `bench-aws.sh`, generator stack, OIDC role template, `bench-aws.yml`; a users file secret for the RADIUS servers in both ECS templates | no (validated with cfn-lint and tofu) |
 | B4c | first run per profile from a workstation, results on the pages and in the ECS guide | yes |
 | B4d | on demand in GitHub Actions | yes (OIDC role) |
 
 ## Limits
 
-- On one machine (a laptop, a runner) members, gateways and generators share the CPUs: the result is a **lower
+- On one machine (a laptop, a runner) members, RADIUS servers and generators share the CPUs: the result is a **lower
   bound** and a trend, not the ceiling; the JSON says so (`environment.shared_host: true`), and a ladder that ran
   out of load says so too (`load_limited`).
 - EAP methods are not in the ladder yet: `radclient` has no EAP client; EAP throughput is bounded by TLS handshakes

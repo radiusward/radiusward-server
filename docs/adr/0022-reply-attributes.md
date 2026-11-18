@@ -17,7 +17,7 @@ question is how one user or group can serve NAS devices of different vendors wit
   they come from `nas.<name>.vendor` when it names a dictionary vendor (Juniper also gets the E-series vendor 4874),
   and an entry whose vendor is `default` or unknown gets every item. So one group can hold every vendor's
   attributes, and each NAS receives the ones it understands, in a smaller packet. Left-out attributes are counted
-  per NAS entry (`radiusward_gateway_access_reply_items_filtered_total`).
+  per NAS entry (`radiusward_server_access_reply_items_filtered_total`).
 - **Reply items are checked where possible**: a store that reads all users up front (the users file) checks every
   reply item against the dictionary at load and on reload and reports the line; others (SQL) are checked when first
   used, logged once and left out.

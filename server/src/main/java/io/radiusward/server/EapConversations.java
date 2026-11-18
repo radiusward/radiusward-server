@@ -10,9 +10,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.agrona.collections.Object2ObjectHashMap;
 
 /**
- * EAP conversations between their round trips (ADR 0026), keyed by the {@code State} the gateway sent: a fresh random
+ * EAP conversations between their round trips (ADR 0026), keyed by the {@code State} the RADIUS server sent: a fresh random
  * 16-byte token every round, so a {@code State} is good for exactly one response — taking a conversation out removes
- * it, and it goes back under a new token. Node-local: a conversation continues on the gateway that started it.
+ * it, and it goes back under a new token. Node-local: a conversation continues on the RADIUS server that started it.
  *
  * <p>Shared by all workers: 16 stripes of Agrona maps, each behind its own lock. Bounded in count; when the table is
  * full, expired conversations are swept from every stripe before a new one is refused.

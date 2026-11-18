@@ -14,7 +14,7 @@ public final class ServerStats {
         MALFORMED,
         UNKNOWN_NAS,
         NOT_ACCOUNTING,
-        /** Status-Server (RFC 5997) answered: the gateway is connected to the cluster */
+        /** Status-Server (RFC 5997) answered: the RADIUS server is connected to the cluster */
         STATUS_SERVER,
         /** Status-Server not answered: no valid Message-Authenticator, or no cluster to acknowledge accounting */
         STATUS_SERVER_IGNORED,

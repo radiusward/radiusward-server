@@ -8,7 +8,7 @@ import io.radiusward.cluster.node.ClusterNodeMain;
 import io.radiusward.server.ServerMain;
 import java.util.Arrays;
 
-/** {@code java -jar radiusward.jar cluster-node|gateway --config <file>...}. */
+/** {@code java -jar radiusward.jar cluster-node|server --config <file>...}. */
 public final class Main {
 
     private Main() {}
@@ -22,7 +22,7 @@ public final class Main {
         try {
             switch (args[0]) {
                 case "cluster-node" -> ClusterNodeMain.main(rest);
-                case "gateway" -> ServerMain.main(rest);
+                case "server" -> ServerMain.main(rest);
                 case "cluster-backup" -> io.radiusward.cluster.node.ClusterBackupMain.main(rest);
                 case "cluster-restore" -> io.radiusward.cluster.node.ClusterRestore.main(rest);
                 case "cluster-tool" -> io.aeron.cluster.ClusterTool.main(rest); // e.g. <cluster-dir> snapshot
@@ -49,7 +49,7 @@ public final class Main {
     private static void usage() {
         System.err.println("""
                 usage: radiusward cluster-node --config <file.properties> [--config ...]
-                       radiusward radiusServer      --config <file.properties> [--config ...]
+                       radiusward server            --config <file.properties> [--config ...]
                        radiusward cluster-backup --config <file.properties>   (continuous backup outside the cluster)
                        radiusward cluster-restore --from <backup dir> --config <cluster.properties>
                        radiusward cluster-tool <cluster-dir> <command>   (Aeron ClusterTool: describe, snapshot, ...)

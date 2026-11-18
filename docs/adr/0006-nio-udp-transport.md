@@ -3,7 +3,7 @@
 Status: Accepted (2026-11-07); pipeline details in [ADR 0011](0011-gateway-pipeline.md)
 
 ## Context
-The gateway needs UDP at ~16k packets/s peak, small memory, and a threading model that fits Aeron's
+The RADIUS server needs UDP at ~16k packets/s peak, small memory, and a threading model that fits Aeron's
 agents.
 
 ## Decision

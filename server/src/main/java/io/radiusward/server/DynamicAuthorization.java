@@ -109,7 +109,7 @@ public final class DynamicAuthorization implements Agent {
     private int nextIdentifier;
 
     /**
-     * @param host the local address to send from ({@code gateway.listen.host})
+     * @param host the local address to send from ({@code server.listen.host})
      * @param radsec the link to the RadSec agent, {@code null} without RadSec
      */
     DynamicAuthorization(CoaConfig config, String host, RadsecLink radsec) {
@@ -319,7 +319,7 @@ public final class DynamicAuthorization implements Agent {
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
         w.counter(
-                "radiusward_gateway_coa_requests_total",
+                "radiusward_server_coa_requests_total",
                 "CoA and Disconnect-Requests to NAS (RFC 5176): sent, resent and what came of them");
         counts.write(w, radiusServer);
     }

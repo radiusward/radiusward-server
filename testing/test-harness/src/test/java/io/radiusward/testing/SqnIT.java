@@ -31,7 +31,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 /**
  * SIM sequence numbers through the cluster (state version 8, ADR 0061): an access handler asks for the next SQN of a
- * subscriber and answers with it. Two gateways share one sequence, a floor lifts it, and a new leader continues it.
+ * subscriber and answers with it. Two RADIUS servers share one sequence, a floor lifts it, and a new leader continues it.
  */
 @Epic("EAP")
 @Feature("SIM sequence numbers")
@@ -101,7 +101,7 @@ class SqnIT {
 
         assertThat(sqn(g0, "262011000000001", 0)).isEqualTo(32);
         assertThat(sqn(g1, "262011000000001", 0))
-                .as("the other gateway goes on")
+                .as("the other RADIUS server goes on")
                 .isEqualTo(64);
         assertThat(sqn(g0, "262011000000002", 0)).as("another subscriber").isEqualTo(32);
         assertThat(sqn(g1, "262011000000001", 4000))

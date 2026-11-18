@@ -156,8 +156,8 @@ class ClusterBackupIT {
                             .as("member %d has every acknowledged event", i)
                             .isEqualTo(applied);
                 }
-                // the gateways' sessions belonged to the cluster before the loss: they reconnect first
-                LocalCluster.await(Duration.ofSeconds(60), "gateways reconnected", () -> {
+                // the RADIUS servers' sessions belonged to the cluster before the loss: they reconnect first
+                LocalCluster.await(Duration.ofSeconds(60), "RADIUS servers reconnected", () -> {
                     for (int g = 0; g < connects.length; g++) {
                         if (cluster.radiusServers()
                                         .get(g)

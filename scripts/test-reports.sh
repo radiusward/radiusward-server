@@ -20,10 +20,10 @@ allure_version=${ALLURE:-3.33.0}
 
 # suite id | title | what it runs
 suites=(
-  "integration|Integration tests|Failsafe *IT of every module on each push to main: gateways, cluster members and stores together in one JVM"
+  "integration|Integration tests|Failsafe *IT of every module on each push to main: servers, cluster members and stores together in one JVM"
   "e2e|End-to-end tests|separate radiusward processes on each push to main: failover, retransmissions, rolling upgrade"
   "linux|Fault injection|nightly on Linux in containers: power loss with LazyFS, partitions, full disk, overload, PostgreSQL outage"
-  "k8s|Kubernetes|nightly on kind with the Helm chart under load: leader killed, members and gateways rolled, a volume replaced"
+  "k8s|Kubernetes|nightly on kind with the Helm chart under load: leader killed, members and servers rolled, a volume replaced"
 )
 
 generate() {

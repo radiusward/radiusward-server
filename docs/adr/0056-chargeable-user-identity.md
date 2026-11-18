@@ -9,7 +9,7 @@ them without learning who the user is: tunnelled EAP hides the inner identity, a
 single NUL byte, the home server answers with a stable pseudonym.
 
 ## Decision
-- With **`auth.cui.key`** (at least 16 characters) the gateway adds a CUI to Access-Accepts:
+- With **`auth.cui.key`** (at least 16 characters) the RADIUS server adds a CUI to Access-Accepts:
   `auth.cui.mode = requested` (default) when the request carries the attribute, `always` for every Accept.
 - The value is HMAC-SHA-256(key, lower-case user name ‖ 0 ‖ Operator-Name), its first 16 bytes as 32 hex digits. The
   user is the authorized one: the inner user of PEAP, TTLS and TEAP. Different operators (Operator-Name, RFC 5580)

@@ -35,9 +35,9 @@ COMPOSE_FILE = os.path.join(ROOT, "deploy/compose/compose.yaml")
 COMPOSE = (["docker", "compose"] if subprocess.run(["docker", "compose", "version"], capture_output=True).returncode == 0
            else ["docker-compose"]) + ["-f", COMPOSE_FILE]
 NETWORK = "radiusward_radius"
-GATEWAYS = ["172.28.0.20", "172.28.0.21"]
+SERVERS = ["172.28.0.20", "172.28.0.21"]
 MEMBER_PORTS = [9090, 9091, 9092]          # published management ports of node-0..2
-GATEWAY_PORTS = [9190, 9191]
+SERVER_PORTS = [9190, 9191]
 STACK = None                               # LocalStack or EcsStack, set by main()
 ARGS = None
 MAX_PROBES = 19                            # per workload: 20M session ids each within the workload's 400M
@@ -165,14 +165,14 @@ class LocalStack:
     def __init__(self, args):
         self.args = args
 
-    def gateways(self):
-        return GATEWAYS
+    def servers(self):
+        return SERVERS
 
     def member_urls(self):
         return [f"http://127.0.0.1:{p}" for p in MEMBER_PORTS]
 
-    def gateway_urls(self):
-        return [f"http://127.0.0.1:{p}" for p in GATEWAY_PORTS]
+    def server_urls(self):
+        return [f"http://127.0.0.1:{p}" for p in SERVER_PORTS]
 
     def kill_member(self, n):
         run(["docker", "kill", f"radiusward-node-{n}-1"])
@@ -182,7 +182,7 @@ class LocalStack:
 
 
 class EcsStack:
-    """A stack on Amazon ECS (deploy/aws): the gateways' load balancers from --target, the tasks' addresses from the
+    """A stack on Amazon ECS (deploy/aws): the servers' load balancers from --target, the tasks' addresses from the
     ECS cluster (they change when a task is replaced), a member killed by stopping its task. Runs inside the VPC."""
 
     remote = True
@@ -190,7 +190,7 @@ class EcsStack:
     def __init__(self, args):
         self.args, self.cluster = args, args.ecs_cluster
 
-    def gateways(self):
+    def servers(self):
         return self.args.target.split(",")
 
     def _tasks(self, service):
@@ -218,8 +218,8 @@ class EcsStack:
     def member_urls(self):
         return self._urls("node", 3)
 
-    def gateway_urls(self):
-        return self._urls("gateway", 2)
+    def server_urls(self):
+        return self._urls("server", 2)
 
     def kill_member(self, n):
         for arn, _ in self._tasks(f"node-{n}"):
@@ -273,7 +273,7 @@ def generators(workload, rate, seconds, count, image, first_session, interim):
     per = max(1, rate // count)
     procs = []
     for g in range(count):
-        args = ["radclient", "load", "--server", ",".join(f"{gw}:1813" for gw in STACK.gateways()),
+        args = ["radclient", "load", "--server", ",".join(f"{gw}:1813" for gw in STACK.servers()),
                 "--retry-other-server", "--secret", ARGS.secret, "--nas", "20", "--duration", f"{seconds}s", "--timeout", "3s",
                 "--retries", "3", "--first-session", str(first_session + g * 2_000_000)]
         if workload == "accounting":
@@ -390,7 +390,7 @@ def ladder(workload, steps, args, image, first):
         nonlocal probes
         # session ids are 32-bit: workloads 400M apart, probes 20M, generators 2M
         urls = {f"node-{n}": u for n, u in enumerate(STACK.member_urls())}
-        urls.update({f"gateway-{n}": u for n, u in enumerate(STACK.gateway_urls())})
+        urls.update({f"server-{n}": u for n, u in enumerate(STACK.server_urls())})
         before, started = {name: scrape(u) for name, u in urls.items()}, time.time()
         with Sampler(enabled=not STACK.remote) as sampler:
             outputs = generators(workload, rate, args.duration, count, image, first + probes * 20_000_000,
@@ -408,7 +408,7 @@ def ladder(workload, steps, args, image, first):
                    "mem_max_bytes": int(v.get("heap_used_bytes", 0) + v.get("direct_bytes", 0))}
             for name, v in after.items() if "cpu_cores" in v}
         step["members"] = {n: v for n, v in after.items() if n.startswith("node-")}
-        step["gateways"] = {n: v for n, v in after.items() if n.startswith("gateway-")}
+        step["servers"] = {n: v for n, v in after.items() if n.startswith("server-")}
         step["problems"], step["load_limited"] = verdict(step, args.p99_limit)
         results.append(step)
         log(f"  {rate:>6}/s ×{count} → {step['rps']:>8}/s, p99 {step['p99_ms']} ms"
@@ -546,7 +546,7 @@ def main():
     p.add_argument("--jmh", action="store_true", help="also run the JMH micro-benchmarks")
     p.add_argument("--quick", action="store_true", help="20 s steps, 250 → 4000/s, no failover")
     p.add_argument("--secret", default="testing123", help="the NAS entry's shared secret")
-    p.add_argument("--target", help="gateway addresses of a remote stack (the ECS load balancers); implies --external")
+    p.add_argument("--target", help="server addresses of a remote stack (the ECS load balancers); implies --external")
     p.add_argument("--ecs-cluster", help="with --target: the ECS cluster, for the tasks' metrics and the failover")
     p.add_argument("--generator-hosts", type=lambda v: v.split(","), default=None,
                    help="where the generators run, round robin: 'local' or EC2 instance ids (through SSM)")

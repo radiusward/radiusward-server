@@ -152,12 +152,12 @@ class StoreSweepIT {
                 .as("the new Session-Timeout")
                 .isEqualTo(600);
         assertThat(radiusServer.metrics())
-                .contains("radiusward_gateway_store_sweep_total{gateway=\"1\",result=\"changed\"} 1");
+                .contains("radiusward_server_store_sweep_total{server=\"1\",result=\"changed\"} 1");
     }
 
     private static long sweeps(RadiusServer radiusServer) {
         String metrics = radiusServer.metrics();
-        String key = "radiusward_gateway_store_sweep_total{gateway=\"1\",result=\"sweeps\"} ";
+        String key = "radiusward_server_store_sweep_total{server=\"1\",result=\"sweeps\"} ";
         int at = metrics.indexOf(key);
         return at < 0
                 ? 0

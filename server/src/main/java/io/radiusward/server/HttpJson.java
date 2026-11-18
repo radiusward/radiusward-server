@@ -12,7 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-/** What the gateway's HTTP APIs (CoA, reload, traces) share: query parameters in, JSON out. */
+/** What the RADIUS server's HTTP APIs (CoA, reload, traces) share: query parameters in, JSON out. */
 final class HttpJson {
 
     private HttpJson() {}

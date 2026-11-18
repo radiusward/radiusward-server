@@ -3,7 +3,7 @@
   Copyright 2026 The radiusward Authors
   SPDX-License-Identifier: Apache-2.0
 
-  TEST ONLY: version 2 of the schema. Messages between gateways, the cluster and tools, plus the snapshot format.
+  TEST ONLY: version 2 of the schema. Messages between RADIUS servers, the cluster and tools, plus the snapshot format.
   Rules (ADR 0005, docs/protocol.md): fields are only appended; every new field gets sinceVersion;
   the schema version increments with each change; ids are never reused.
 -->
@@ -55,7 +55,7 @@
         </set>
     </types>
 
-    <!-- gateway -> cluster -->
+    <!-- RADIUS server -> cluster -->
     <sbe:message name="AccountingCommand" id="1" description="One accounting event to apply">
         <field name="correlationId" id="1" type="int64"/>
         <field name="serverId" id="2" type="int32"/>
@@ -75,13 +75,13 @@
         <data name="rawAttributes" id="15" type="varDataEncoding" description="attribute section of the request, for export"/>
     </sbe:message>
 
-    <!-- cluster -> gateway -->
-    <sbe:message name="AccountingCommitted" id="2" description="The event is committed or was a duplicate; the gateway may answer">
+    <!-- cluster -> RADIUS server -->
+    <sbe:message name="AccountingCommitted" id="2" description="The event is committed or was a duplicate; the RADIUS server may answer">
         <field name="correlationId" id="1" type="int64"/>
         <field name="outcome" id="2" type="Outcome"/>
         <field name="eventId" id="3" type="int64" description="log position of the applied event"/>
     </sbe:message>
-    <sbe:message name="AccountingRejected" id="3" description="Not applied; the gateway stays silent">
+    <sbe:message name="AccountingRejected" id="3" description="Not applied; the RADIUS server stays silent">
         <field name="correlationId" id="1" type="int64"/>
         <field name="reason" id="2" type="RejectReason"/>
     </sbe:message>

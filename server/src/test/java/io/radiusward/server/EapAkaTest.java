@@ -25,7 +25,7 @@ class EapAkaTest {
     static final String IMSI = "262011000000001";
     static final byte[] WLAN = "WLAN".getBytes(StandardCharsets.US_ASCII);
 
-    /** The gateway side: one subscriber, sequence numbers from a counter, or answers set by the test. */
+    /** The RADIUS server side: one subscriber, sequence numbers from a counter, or answers set by the test. */
     static class Side implements EapMethod.InnerAuth {
         int subscriberCode = AccessHandler.ACCEPT;
         long sqn = 0;

@@ -66,70 +66,70 @@ groups:
           summary: "Member {{ $labels.member }} is low on disk space"
           description: A full disk stops the member. Check the log purge (radiusward_log_purge_floor_bytes) and sink lag.
 
-      - alert: RadiuswardGatewayDropping
-        expr: sum by (gateway) (rate(radiusward_gateway_packets_total{result=~"pending_full|ring_full"}[5m])) > 0
+      - alert: RadiuswardServerDropping
+        expr: sum by (server) (rate(radiusward_server_packets_total{result=~"pending_full|ring_full"}[5m])) > 0
         for: 5m
         labels: {severity: warning}
         annotations:
-          summary: "Gateway {{ $labels.gateway }} drops requests (overload)"
-          description: NAS devices retransmit; add gateways or capacity.
+          summary: "RADIUS server {{ $labels.server }} drops requests (overload)"
+          description: NAS devices retransmit; add RADIUS servers or capacity.
 
-      - alert: RadiuswardGatewayDisconnected
-        expr: radiusward_gateway_cluster_connected == 0
+      - alert: RadiuswardServerDisconnected
+        expr: radiusward_server_cluster_connected == 0
         for: 1m
         labels: {severity: critical}
         annotations:
-          summary: "Gateway {{ $labels.gateway }} is not connected to the cluster"
+          summary: "RADIUS server {{ $labels.server }} is not connected to the cluster"
 
-      # authentication (gateway.auth.enabled)
+      # authentication (server.auth.enabled)
       - alert: RadiuswardRejectRatioHigh
         expr: |
-          sum by (gateway) (rate(radiusward_gateway_access_requests_total{result="rejected"}[10m]))
-            / (sum by (gateway) (rate(radiusward_gateway_access_requests_total{result=~"accepted|rejected"}[10m])) > 0.1)
+          sum by (server) (rate(radiusward_server_access_requests_total{result="rejected"}[10m]))
+            / (sum by (server) (rate(radiusward_server_access_requests_total{result=~"accepted|rejected"}[10m])) > 0.1)
             > 0.5
         for: 10m
         labels: {severity: warning}
         annotations:
-          summary: "More than half of the Access-Requests on gateway {{ $labels.gateway }} are rejected"
-          description: Look at radiusward_gateway_access_rejects_total by cause; a store that lost its users or a NAS with a wrong secret are common reasons.
+          summary: "More than half of the Access-Requests on RADIUS server {{ $labels.server }} are rejected"
+          description: Look at radiusward_server_access_rejects_total by cause; a store that lost its users or a NAS with a wrong secret are common reasons.
 
       - alert: RadiuswardIdentityStoreUnavailable
-        expr: sum by (gateway, store) (rate(radiusward_gateway_store_lookups_total{result="unavailable"}[5m])) > 0
+        expr: sum by (server, store) (rate(radiusward_server_store_lookups_total{result="unavailable"}[5m])) > 0
         for: 5m
         labels: {severity: critical}
         annotations:
-          summary: "Identity store {{ $labels.store }} does not answer gateway {{ $labels.gateway }}"
+          summary: "Identity store {{ $labels.store }} does not answer RADIUS server {{ $labels.server }}"
           description: Users it might know are not answered (never rejected on its behalf); the NAS retransmits.
 
       - alert: RadiuswardAuthWorkersSaturated
-        expr: sum by (gateway) (rate(radiusward_gateway_access_requests_total{result="busy"}[5m])) > 0
+        expr: sum by (server) (rate(radiusward_server_access_requests_total{result="busy"}[5m])) > 0
         for: 5m
         labels: {severity: warning}
         annotations:
-          summary: "Gateway {{ $labels.gateway }} has no free slot for Access-Requests"
-          description: Raise gateway.auth.workers or gateway.auth.pending, add gateways, or look at slow stores (radiusward_gateway_store_lookup_seconds).
+          summary: "RADIUS server {{ $labels.server }} has no free slot for Access-Requests"
+          description: Raise server.auth.workers or server.auth.pending, add RADIUS servers, or look at slow stores (radiusward_server_store_lookup_seconds).
 
       - alert: RadiuswardHomeServerDown
-        expr: min by (gateway, home) (radiusward_gateway_proxy_home_alive) == 0
+        expr: min by (server, home) (radiusward_server_proxy_home_alive) == 0
         for: 2m
         labels: {severity: warning}
         annotations:
-          summary: "Home server {{ $labels.home }} is marked dead on gateway {{ $labels.gateway }}"
+          summary: "Home server {{ $labels.home }} is marked dead on RADIUS server {{ $labels.server }}"
           description: Proxied realms fail over to other home servers of their pool, if there are any.
 
       - alert: RadiuswardCertificateExpiring
-        expr: min by (gateway, use) (radiusward_tls_certificate_expiry_timestamp_seconds) - time() < 14 * 86400
+        expr: min by (server, use) (radiusward_tls_certificate_expiry_timestamp_seconds) - time() < 14 * 86400
         labels: {severity: warning}
         annotations:
-          summary: "The {{ $labels.use }} server certificate of gateway {{ $labels.gateway }} expires within 14 days"
-          description: Replace the files; gateways reload them without a restart.
+          summary: "The {{ $labels.use }} server certificate of RADIUS server {{ $labels.server }} expires within 14 days"
+          description: Replace the files; RADIUS servers reload them without a restart.
 
       - alert: RadiuswardSimSequenceNumbersUnavailable
-        expr: sum by (gateway) (rate(radiusward_gateway_sim_sqn_requests_total{outcome=~"capacity|unsupported"}[5m])) > 0
+        expr: sum by (server) (rate(radiusward_server_sim_sqn_requests_total{outcome=~"capacity|unsupported"}[5m])) > 0
         for: 5m
         labels: {severity: critical}
         annotations:
-          summary: "EAP-AKA on gateway {{ $labels.gateway }} gets no sequence numbers from the cluster"
+          summary: "EAP-AKA on RADIUS server {{ $labels.server }} gets no sequence numbers from the cluster"
           description: "capacity: raise service.sim.subscribers.max; unsupported: state version 8 is not active yet (a member runs an older release)."
 
       # cluster backup (ADR 0065)

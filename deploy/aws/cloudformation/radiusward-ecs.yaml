@@ -5,13 +5,13 @@
 # only; it has not been deployed in AWS by the project. Review sizes, subnets and security groups before use.
 #
 # Graviton (arm64) throughout. Three cluster members as three ECS services on EC2, one per availability zone and so
-# one per instance (/dev/shm, host sysctls, an ECS-managed EBS volume each, a Cloud Map name each), two gateways on
+# one per instance (/dev/shm, host sysctls, an ECS-managed EBS volume each, a Cloud Map name each), two RADIUS servers on
 # Fargate behind one Network Load Balancer each (UDP, client IP kept; NAS devices use both as primary and secondary),
 # the continuous backup on Fargate with EFS, and a nightly copy of the backup to S3. Task sizes follow the profile. A member whose volume is new seeds itself from the others; after a total loss it restores
 # itself from the backup on EFS (cluster.seed.timeout, cluster.restore.from; ADR 0063, ADR 0065).
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::LanguageExtensions
-Description: radiusward on ECS (example) - three members on EC2, two gateways and the backup on Fargate
+Description: radiusward on ECS (example) - three members on EC2, two RADIUS servers and the backup on Fargate
 
 Parameters:
   VpcId:
@@ -26,9 +26,9 @@ Parameters:
   MemberAvailabilityZones:
     Type: List<AWS::EC2::AvailabilityZone::Name>
     Description: the availability zones of MemberSubnetIds, in the same order (member i is pinned to zone i)
-  GatewaySubnetIds:
+  ServerSubnetIds:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: subnets for the gateways and their load balancers (public ones for an internet-facing scheme)
+    Description: subnets for the RADIUS servers and their load balancers (public ones for an internet-facing scheme)
   LoadBalancerScheme:
     Type: String
     Default: internal
@@ -36,7 +36,7 @@ Parameters:
   NasCidr:
     Type: String
     Default: 10.0.0.0/8
-    Description: where NAS devices send from (RADIUS UDP 1812/1813 to the gateways)
+    Description: where NAS devices send from (RADIUS UDP 1812/1813 to the RADIUS servers)
   Image:
     Type: String
     Default: ghcr.io/radiusward/radiusward-server:0.1.0-rc.1
@@ -80,21 +80,21 @@ Mappings:
       MemberMemory: '1536'
       MemberShm: 512
       MemberInstance: c7g.large
-      GatewayCpu: '1024'
-      GatewayMemory: '2048'
+      ServerCpu: '1024'
+      ServerMemory: '2048'
     standard:
       MemberCpu: '2048'
       MemberMemory: '4096'
       MemberShm: 1024
       MemberInstance: m7g.large
-      GatewayCpu: '2048'
-      GatewayMemory: '4096'
+      ServerCpu: '2048'
+      ServerMemory: '4096'
 
 Conditions:
   InstanceTypeGiven: !Not [!Equals [!Ref MemberInstanceType, '']]
 
 Resources:
-  # ---------------------------------------------------------------- logs, secrets, gateway configuration
+  # ---------------------------------------------------------------- logs, secrets, RADIUS server configuration
   LogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
@@ -109,21 +109,21 @@ Resources:
         PasswordLength: 32
         ExcludePunctuation: true
 
-  # A users file for the gateways, written to /tmp/users in each gateway task: to use it, add an identity store
+  # A users file for the RADIUS servers, written to /tmp/users in each RADIUS server task: to use it, add an identity store
   # with auth.store.<name>.type=file and auth.store.<name>.path=/tmp/users to the properties, set this secret to
-  # the file's content, then restart the gateway services.
-  GatewayUsers:
+  # the file's content, then restart the RADIUS server services.
+  ServerUsers:
     Type: AWS::SecretsManager::Secret
     Properties:
-      Description: the gateways' users file (/tmp/users; identity store type file)
-      SecretString: '# users file of the gateways (docs/configuration.md#identity-stores)'
+      Description: the RADIUS servers' users file (/tmp/users; identity store type file)
+      SecretString: '# users file of the RADIUS servers (docs/configuration.md#identity-stores)'
 
-  # The gateways' properties: NAS entries and anything else (docs/configuration.md). Edit the parameter to add NAS
-  # entries or identity stores, then restart the gateway services; a stack update writes this default again.
-  GatewayConfig:
+  # The RADIUS servers' properties: NAS entries and anything else (docs/configuration.md). Edit the parameter to add NAS
+  # entries or identity stores, then restart the RADIUS server services; a stack update writes this default again.
+  ServerConfig:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub /radiusward/${AWS::StackName}/gateway.properties
+      Name: !Sub /radiusward/${AWS::StackName}/server.properties
       Type: String
       Value: !Sub |
         # NAS devices of ${NasCidr}; their secret comes from Secrets Manager as NAS_SECRET
@@ -139,10 +139,10 @@ Resources:
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - {IpProtocol: tcp, FromPort: 9090, ToPort: 9090, CidrIp: !Ref VpcCidr, Description: management and metrics}
-  GatewaySecurityGroup:
+  ServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: radiusward gateways
+      GroupDescription: radiusward servers
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - {IpProtocol: udp, FromPort: 1812, ToPort: 1813, CidrIp: !Ref NasCidr, Description: RADIUS from NAS devices}
@@ -159,20 +159,20 @@ Resources:
     Properties:
       GroupDescription: radiusward backup file system
       VpcId: !Ref VpcId
-  # Aeron between members, gateways and the backup: fixed ports (cluster.base.port + 100 x id + 0..5, backup.port
+  # Aeron between members, RADIUS servers and the backup: fixed ports (cluster.base.port + 100 x id + 0..5, backup.port
   # + 0..3) and ephemeral ones (replies, replication), so all UDP among the three groups
   MembersFromMembers:
     Type: AWS::EC2::SecurityGroupIngress
     Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
-  MembersFromGateways:
+  MembersFromServers:
     Type: AWS::EC2::SecurityGroupIngress
-    Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref GatewaySecurityGroup}
+    Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref ServerSecurityGroup}
   MembersFromBackup:
     Type: AWS::EC2::SecurityGroupIngress
     Properties: {GroupId: !Ref MemberSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref BackupSecurityGroup}
-  GatewaysFromMembers:
+  ServersFromMembers:
     Type: AWS::EC2::SecurityGroupIngress
-    Properties: {GroupId: !Ref GatewaySecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
+    Properties: {GroupId: !Ref ServerSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
   BackupFromMembers:
     Type: AWS::EC2::SecurityGroupIngress
     Properties: {GroupId: !Ref BackupSecurityGroup, IpProtocol: udp, FromPort: 0, ToPort: 65535, SourceSecurityGroupId: !Ref MemberSecurityGroup}
@@ -196,10 +196,10 @@ Resources:
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
-              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: [!Ref NasSecret, !Ref GatewayUsers]}
+              - {Effect: Allow, Action: secretsmanager:GetSecretValue, Resource: [!Ref NasSecret, !Ref ServerUsers]}
               - Effect: Allow
                 Action: ssm:GetParameters
-                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${GatewayConfig}
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ServerConfig}
   # ECS creates and attaches the members' EBS volumes with this role
   VolumeRole:
     Type: AWS::IAM::Role
@@ -428,22 +428,22 @@ Resources:
                 Encrypted: true
           EnableExecuteCommand: true
 
-  # ---------------------------------------------------------------- gateways, one load balancer each
-  Fn::ForEach::Gateways:
+  # ---------------------------------------------------------------- RADIUS servers, one load balancer each
+  Fn::ForEach::Servers:
     - Id
     - ['0', '1']
-    - GatewayTaskDefinition${Id}:
+    - ServerTaskDefinition${Id}:
         Type: AWS::ECS::TaskDefinition
         Properties:
-          Family: !Sub ${AWS::StackName}-gateway-${Id}
+          Family: !Sub ${AWS::StackName}-server-${Id}
           RequiresCompatibilities: [FARGATE]
           RuntimePlatform: {CpuArchitecture: ARM64, OperatingSystemFamily: LINUX}
           NetworkMode: awsvpc
-          Cpu: !FindInMap [Sizes, !Ref Profile, GatewayCpu]
-          Memory: !FindInMap [Sizes, !Ref Profile, GatewayMemory]
+          Cpu: !FindInMap [Sizes, !Ref Profile, ServerCpu]
+          Memory: !FindInMap [Sizes, !Ref Profile, ServerMemory]
           ExecutionRoleArn: !GetAtt ExecutionRole.Arn
           ContainerDefinitions:
-            - Name: gateway
+            - Name: server
               Image: !Ref Image
               Essential: true
               StopTimeout: 30
@@ -452,21 +452,21 @@ Resources:
               # task's own address
               Command:
                 - >-
-                  printf '%s\n' "$GATEWAY_PROPERTIES" > /tmp/gateway.properties &&
-                  printf '%s\n' "$GATEWAY_USERS" > /tmp/users &&
-                  ip=$(hostname -i) && export RADIUSWARD_GATEWAY_EGRESS_HOST=${ip%% *} &&
-                  exec /usr/local/bin/radiusward gateway --config /tmp/gateway.properties
+                  printf '%s\n' "$SERVER_PROPERTIES" > /tmp/server.properties &&
+                  printf '%s\n' "$SERVER_USERS" > /tmp/users &&
+                  ip=$(hostname -i) && export RADIUSWARD_SERVER_EGRESS_HOST=${ip%% *} &&
+                  exec /usr/local/bin/radiusward server --config /tmp/server.properties
               Environment:
                 - {Name: RADIUSWARD_PROFILE, Value: !Ref Profile}
-                - {Name: RADIUSWARD_GATEWAY_ID, Value: !Ref Id}
+                - {Name: RADIUSWARD_SERVER_ID, Value: !Ref Id}
                 - {Name: RADIUSWARD_CLUSTER_MEMBERS, Value: !Sub 'node-0.${Namespace},node-1.${Namespace},node-2.${Namespace}'}
-                - {Name: RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN, Value: 5s}
-                - {Name: RADIUSWARD_GATEWAY_AERON_DIR, Value: /tmp/aeron-gateway}
+                - {Name: RADIUSWARD_SERVER_SHUTDOWN_DRAIN, Value: 5s}
+                - {Name: RADIUSWARD_SERVER_AERON_DIR, Value: /tmp/aeron-server}
                 - {Name: RADIUSWARD_MANAGEMENT_HTTP_HOST, Value: 0.0.0.0}
               Secrets:
                 - {Name: NAS_SECRET, ValueFrom: !Ref NasSecret}
-                - {Name: GATEWAY_PROPERTIES, ValueFrom: !Ref GatewayConfig}
-                - {Name: GATEWAY_USERS, ValueFrom: !Ref GatewayUsers}
+                - {Name: SERVER_PROPERTIES, ValueFrom: !Ref ServerConfig}
+                - {Name: SERVER_USERS, ValueFrom: !Ref ServerUsers}
               PortMappings:
                 - {ContainerPort: 1812, Protocol: udp}
                 - {ContainerPort: 1813, Protocol: udp}
@@ -482,15 +482,15 @@ Resources:
                 Options:
                   awslogs-group: !Ref LogGroup
                   awslogs-region: !Ref AWS::Region
-                  awslogs-stream-prefix: !Sub gateway-${Id}
-      GatewayLoadBalancer${Id}:
+                  awslogs-stream-prefix: !Sub server-${Id}
+      ServerLoadBalancer${Id}:
         Type: AWS::ElasticLoadBalancingV2::LoadBalancer
         Properties:
           Type: network
           Scheme: !Ref LoadBalancerScheme
-          Subnets: !Ref GatewaySubnetIds
+          Subnets: !Ref ServerSubnetIds
           LoadBalancerAttributes: [{Key: load_balancing.cross_zone.enabled, Value: 'true'}]
-      GatewayAuthTarget${Id}:
+      ServerAuthTarget${Id}:
         Type: AWS::ElasticLoadBalancingV2::TargetGroup
         Properties:
           VpcId: !Ref VpcId
@@ -500,11 +500,11 @@ Resources:
           HealthCheckProtocol: HTTP
           HealthCheckPort: '9090'
           HealthCheckPath: /ready
-          # NAS entries are found by the source address: it must reach the gateway unchanged
+          # NAS entries are found by the source address: it must reach the RADIUS server unchanged
           TargetGroupAttributes:
             - {Key: preserve_client_ip.enabled, Value: 'true'}
             - {Key: deregistration_delay.timeout_seconds, Value: '10'}
-      GatewayAcctTarget${Id}:
+      ServerAcctTarget${Id}:
         Type: AWS::ElasticLoadBalancingV2::TargetGroup
         Properties:
           VpcId: !Ref VpcId
@@ -517,55 +517,55 @@ Resources:
           TargetGroupAttributes:
             - {Key: preserve_client_ip.enabled, Value: 'true'}
             - {Key: deregistration_delay.timeout_seconds, Value: '10'}
-      GatewayAuthListener${Id}:
+      ServerAuthListener${Id}:
         Type: AWS::ElasticLoadBalancingV2::Listener
         Properties:
           LoadBalancerArn: !Ref
-            Fn::Sub: GatewayLoadBalancer${Id}
+            Fn::Sub: ServerLoadBalancer${Id}
           Protocol: UDP
           Port: 1812
           DefaultActions:
             - Type: forward
               TargetGroupArn: !Ref
-                Fn::Sub: GatewayAuthTarget${Id}
-      GatewayAcctListener${Id}:
+                Fn::Sub: ServerAuthTarget${Id}
+      ServerAcctListener${Id}:
         Type: AWS::ElasticLoadBalancingV2::Listener
         Properties:
           LoadBalancerArn: !Ref
-            Fn::Sub: GatewayLoadBalancer${Id}
+            Fn::Sub: ServerLoadBalancer${Id}
           Protocol: UDP
           Port: 1813
           DefaultActions:
             - Type: forward
               TargetGroupArn: !Ref
-                Fn::Sub: GatewayAcctTarget${Id}
-      GatewayService${Id}:
+                Fn::Sub: ServerAcctTarget${Id}
+      ServerService${Id}:
         Type: AWS::ECS::Service
         DependsOn:
           - CapacityProviders
-          - Fn::Sub: GatewayAuthListener${Id}
-          - Fn::Sub: GatewayAcctListener${Id}
+          - Fn::Sub: ServerAuthListener${Id}
+          - Fn::Sub: ServerAcctListener${Id}
         Properties:
-          ServiceName: !Sub gateway-${Id}
+          ServiceName: !Sub server-${Id}
           Cluster: !Ref Cluster
           TaskDefinition: !Ref
-            Fn::Sub: GatewayTaskDefinition${Id}
+            Fn::Sub: ServerTaskDefinition${Id}
           DesiredCount: 1
           DeploymentConfiguration: {MinimumHealthyPercent: 0, MaximumPercent: 100}
           CapacityProviderStrategy: [{CapacityProvider: FARGATE, Weight: 1}]
           NetworkConfiguration:
             AwsvpcConfiguration:
-              Subnets: !Ref GatewaySubnetIds
-              SecurityGroups: [!Ref GatewaySecurityGroup]
+              Subnets: !Ref ServerSubnetIds
+              SecurityGroups: [!Ref ServerSecurityGroup]
           LoadBalancers:
-            - ContainerName: gateway
+            - ContainerName: server
               ContainerPort: 1812
               TargetGroupArn: !Ref
-                Fn::Sub: GatewayAuthTarget${Id}
-            - ContainerName: gateway
+                Fn::Sub: ServerAuthTarget${Id}
+            - ContainerName: server
               ContainerPort: 1813
               TargetGroupArn: !Ref
-                Fn::Sub: GatewayAcctTarget${Id}
+                Fn::Sub: ServerAcctTarget${Id}
           HealthCheckGracePeriodSeconds: 60
 
   # ---------------------------------------------------------------- the continuous backup (ADR 0065)
@@ -700,21 +700,21 @@ Resources:
               AssignPublicIp: DISABLED
 
 Outputs:
-  Gateway0Address:
+  Server0Address:
     Description: primary RADIUS server for the NAS devices (UDP 1812/1813)
-    Value: !GetAtt GatewayLoadBalancer0.DNSName
-  Gateway1Address:
+    Value: !GetAtt ServerLoadBalancer0.DNSName
+  Server1Address:
     Description: secondary RADIUS server for the NAS devices
-    Value: !GetAtt GatewayLoadBalancer1.DNSName
+    Value: !GetAtt ServerLoadBalancer1.DNSName
   NasSecretArn:
-    Description: set this secret to the shared secret your NAS devices use, then restart the gateway services
+    Description: set this secret to the shared secret your NAS devices use, then restart the RADIUS server services
     Value: !Ref NasSecret
-  GatewayConfigParameter:
-    Description: the gateways' properties (NAS entries, identity stores)
-    Value: !Ref GatewayConfig
-  GatewayUsersSecretArn:
-    Description: the gateways' users file, written to /tmp/users (identity store type file)
-    Value: !Ref GatewayUsers
+  ServerConfigParameter:
+    Description: the RADIUS servers' properties (NAS entries, identity stores)
+    Value: !Ref ServerConfig
+  ServerUsersSecretArn:
+    Description: the RADIUS servers' users file, written to /tmp/users (identity store type file)
+    Value: !Ref ServerUsers
   ClusterName:
     Value: !Ref Cluster
   BackupBucketName:

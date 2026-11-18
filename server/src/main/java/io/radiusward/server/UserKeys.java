@@ -8,7 +8,7 @@ import org.agrona.DirectBuffer;
 
 /**
  * Keys of users and devices for simultaneous use (ADR 0023), computed alike on the accounting path, the access path
- * and every gateway. Allocation-free; 0 means none.
+ * and every RADIUS server. Allocation-free; 0 means none.
  */
 public final class UserKeys {
 

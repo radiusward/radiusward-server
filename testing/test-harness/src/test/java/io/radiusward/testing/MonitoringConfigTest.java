@@ -85,7 +85,7 @@ class MonitoringConfigTest {
     @Test
     void dashboardsAndAlertsUseOnlyExportedMetrics() throws IOException {
         Set<String> exported = exported();
-        assertThat(exported).contains("radiusward_gateway_access_requests_total", "radiusward_cluster_leader");
+        assertThat(exported).contains("radiusward_server_access_requests_total", "radiusward_cluster_leader");
         Set<String> used = new TreeSet<>();
         for (Path dashboard : dashboards()) {
             Matcher expr = EXPR.matcher(read(dashboard));
@@ -107,10 +107,10 @@ class MonitoringConfigTest {
         assertThat(used)
                 .as("the authentication metrics are on a dashboard")
                 .contains(
-                        "radiusward_gateway_access_rejects_total",
-                        "radiusward_gateway_eap_total",
-                        "radiusward_gateway_store_lookup_seconds",
-                        "radiusward_gateway_sim_sqn_requests_total",
+                        "radiusward_server_access_rejects_total",
+                        "radiusward_server_eap_total",
+                        "radiusward_server_store_lookup_seconds",
+                        "radiusward_server_sim_sqn_requests_total",
                         "radiusward_tls_certificate_expiry_timestamp_seconds");
     }
 
@@ -162,10 +162,11 @@ class MonitoringConfigTest {
             assertThat(uids.add(u.group(1))).as("uid " + u.group(1) + " once").isTrue();
             assertThat(dashboard.getFileName().toString()).isEqualTo(u.group(1) + ".json");
             assertThat(json)
-                    .as(dashboard.getFileName() + ": data source, namespace and gateway variables, dashboard links")
+                    .as(dashboard.getFileName()
+                            + ": data source, namespace and RADIUS server variables, dashboard links")
                     .contains("\"uid\": \"${datasource}\"")
                     .contains("\"name\": \"namespace\"")
-                    .contains("\"name\": \"gateway\"")
+                    .contains("\"name\": \"server\"")
                     .contains("\"type\": \"dashboards\"")
                     .doesNotContain("\"uid\": \"prometheus\"");
             Set<String> ids = new HashSet<>();

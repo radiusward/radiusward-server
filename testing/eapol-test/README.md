@@ -1,10 +1,10 @@
 # eapol_test interop client
 
 `eapol_test` from wpa_supplicant 2.12, built from the release tarball (checksum pinned in the Dockerfile) with TEAP
-and EAP-PWD, which the distribution's package lacks, as an independent EAP peer for the gateway's EAP-TLS, PEAP, TTLS
-and TEAP — never for production. Built by `EapolTestIT` in the gateway module (Testcontainers); the
+and EAP-PWD, which the distribution's package lacks, as an independent EAP peer for the RADIUS server's EAP-TLS, PEAP, TTLS
+and TEAP — never for production. Built by `EapolTestIT` in the RADIUS server module (Testcontainers); the
 test copies a network configuration and certificates into `/work` and runs `eapol_test` once per case against the
-gateway on the host (`host.docker.internal`, mapped to the host gateway).
+RADIUS server on the host (`host.docker.internal`, mapped to the host RADIUS server).
 
 Published as `ghcr.io/radiusward/radiusward-test-images:eapol-test-<hash>`; tests pull it and build from this
 directory only when that tag is missing ([test images](../../docs/testing/strategy.md#test-images)).

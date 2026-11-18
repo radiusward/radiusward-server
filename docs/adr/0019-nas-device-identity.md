@@ -15,7 +15,7 @@ access point from request attributes for this reason.
   `called-station-id` (its MAC, normalised to 12 lower-case hex digits, `:SSID` dropped), `nas-ip-address`; the first
   present and non-empty one wins. Default `source-ip`: no attribute, keys byte-identical to before. An entry for
   `0.0.0.0/0` must set it (configuration error otherwise).
-- The gateway resolves the identity allocation-free (`DeviceIdentity`). Both 128-bit keys cover
+- The RADIUS server resolves the identity allocation-free (`DeviceIdentity`). Both 128-bit keys cover
   `nasId, length, identity` before the session id, so devices never share a session. The **device scope** — a 32-bit
   hash of entry id and identity — is sent as the command's `nasId`; the state machine, store and snapshots are
   unchanged and group sessions, and Accounting-On/Off, per device. A scope collision (≈1 % among 10,000 devices of
@@ -23,17 +23,17 @@ access point from request attributes for this reason.
 - Protocol v3 appends `nasClientId` (the entry), `identityFingerprint`, `nasDevice` (the normalised identity) and the
   flag `deviceUnknown`. Without the identity attribute, Start/Interim/Stop use the entry's own scope (as before) and
   an Accounting-On/Off is acknowledged but **stops nothing** (stopping the whole entry is the failure this fixes);
-  gateway counter `identity_missing`.
+  RADIUS server counter `identity_missing`.
 - Export: `nas_id` is the entry, new `nas_device` (PostgreSQL migration V2, `radacct.nasidentifier`); a session's
   `nas_id` is no longer updated after its first write.
 - The cluster counts commands of an entry whose identity setting differs from the first seen
-  (`radiusward_nas_identity_mismatches_total`): every gateway must configure an entry alike.
+  (`radiusward_nas_identity_mismatches_total`): every RADIUS server must configure an entry alike.
 
 ## Consequences
 - **Choose an attribute the devices send in every accounting packet.** RFC 2866 requires NAS-IP-Address *or*
   NAS-Identifier; vendors differ in which, and Called-Station-Id is often missing from Interim and Stop. A session
   whose packets resolve to different attributes splits (the fixtures show it: Huawei and Ruckus send NAS-Identifier
-  only in the Start, Juniper NAS-IP-Address only in the Start). Hence one entry per device fleet, and the gateway
+  only in the Start, Juniper NAS-IP-Address only in the Start). Hence one entry per device fleet, and the RADIUS server
   counter `identity_fallback` for packets that needed a later attribute of the list.
 - NAS-IP-Address behind NAT is a private address that may repeat across sites: give each site's public address its
   own entry, or use NAS-Identifier.

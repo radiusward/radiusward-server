@@ -19,7 +19,7 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The shipped {@code deploy/compose} file as an operator would use it: {@code up --wait}, one accounting
- * request through each gateway from the tools container, {@code down -v}.
+ * request through each RADIUS server from the tools container, {@code down -v}.
  */
 @Epic("Operations")
 @Feature("Compose stack")
@@ -34,7 +34,7 @@ class ComposeSmokeIT {
     void shippedComposeFileAcknowledgesAccounting() throws Exception {
         Result up = compose("up", "-d", "--wait", "--wait-timeout", "120");
         assertThat(up.exit()).as("compose up --wait\n" + up.output()).isZero();
-        for (String radiusServer : List.of("gateway-a:1813", "gateway-b:1813")) {
+        for (String radiusServer : List.of("server-a:1813", "server-b:1813")) {
             Result acct = compose(
                     "run",
                     "--rm",

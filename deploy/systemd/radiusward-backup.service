@@ -1,7 +1,7 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# The cluster backup (ADR 0065, docs/operations/backup.md): on a fourth machine, or a gateway host — not on a member.
+# The cluster backup (ADR 0065, docs/operations/backup.md): on a fourth machine, or a RADIUS server host — not on a member.
 # Settings: /etc/radiusward/backup.properties (cluster.members, backup.host, backup.port).
 [Unit]
 Description=radiusward cluster backup

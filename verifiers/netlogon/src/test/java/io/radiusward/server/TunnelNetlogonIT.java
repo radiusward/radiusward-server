@@ -24,9 +24,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * PEAP and TTLS whose inner credentials a domain controller checks: the gateway's EAP pipeline with users from the LDAP
+ * PEAP and TTLS whose inner credentials a domain controller checks: the RADIUS server's EAP pipeline with users from the LDAP
  * store and the Netlogon verifier, against a Samba AD domain controller (Docker). The inner peers verify the server's
- * MS-CHAPv2 proof, which the gateway builds from the session key Netlogon returns.
+ * MS-CHAPv2 proof, which the RADIUS server builds from the session key Netlogon returns.
  */
 @Epic("Authentication")
 @Feature("Active Directory over Netlogon")

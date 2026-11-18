@@ -29,10 +29,10 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.utility.MountableFile;
 
 /**
- * The gateway's RadSec client against radsecproxy as the home side (ADR 0037, milestone 7): the gateway proxies a realm
+ * The RADIUS server's RadSec client against radsecproxy as the home side (ADR 0037, milestone 7): the RADIUS server proxies a realm
  * over TLS to radsecproxy in a container ({@code testing/radsec-client}), which forwards over UDP to a fake home server
  * on the host. The Accept comes back through both: its MS-MPPE key re-encrypted by radsecproxy (home secret to
- * {@code radsec}) and by the gateway ({@code radsec} to the NAS's secret) must still be the home server's key. Skipped
+ * {@code radsec}) and by the RADIUS server ({@code radsec} to the NAS's secret) must still be the home server's key. Skipped
  * where Docker is missing, a failure where it is required.
  */
 @Epic("Proxying")
@@ -71,11 +71,11 @@ class ProxyRadsecproxyIT {
                 DockerClientFactory.instance().isDockerAvailable(), Boolean.getBoolean("radiusward.require.docker"));
         home = new FakeHomeServer("home-secret", "0.0.0.0");
         TestPki pki = new TestPki(dir, "relay");
-        TestPki.Issued client = pki.client("gateway.corp.test");
+        TestPki.Issued client = pki.client("server.corp.test");
         Path clientPem = TestPki.write(
-                dir.resolve("gateway.pem"), "CERTIFICATE", client.certificate().getEncoded());
+                dir.resolve("server.pem"), "CERTIFICATE", client.certificate().getEncoded());
         Path clientKey = TestPki.write(
-                dir.resolve("gateway.key"),
+                dir.resolve("server.key"),
                 "PRIVATE KEY",
                 client.keys().getPrivate().getEncoded());
         Path conf = Files.writeString(dir.resolve("radsecproxy.template"), """
@@ -86,7 +86,7 @@ class ProxyRadsecproxyIT {
                     CertificateFile /work/server.pem
                     CertificateKeyFile /work/server.key
                 }
-                client radiusServer {
+                client radiusward {
                     host 0.0.0.0/0
                     type tls
                     secret radsec

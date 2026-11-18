@@ -9,10 +9,10 @@ import io.radiusward.common.config.ConfigException;
 import java.time.Duration;
 
 /**
- * Authentication on the gateway ({@code gateway.auth.*}, Phase 5): the Access-Request socket and its bounded
+ * Authentication on the RADIUS server ({@code server.auth.*}, Phase 5): the Access-Request socket and its bounded
  * resources.
  *
- * @param enabled whether the gateway answers Access-Requests
+ * @param enabled whether the RADIUS server answers Access-Requests
  * @param port UDP port (1812); 0 picks a free one (tests)
  * @param workers threads that decide requests (identity store look-ups may block them, never the socket)
  * @param pending requests between the socket and the workers (power of two); beyond it requests are dropped
@@ -37,25 +37,25 @@ public record AuthConfig(
 
     public AuthConfig {
         if (workers < 1 || workers > 256) {
-            throw new ConfigException("gateway.auth.workers: 1 to 256, got " + workers);
+            throw new ConfigException("server.auth.workers: 1 to 256, got " + workers);
         }
         if (pending < 2 || Integer.bitCount(pending) != 1 || pending > 65_536) {
-            throw new ConfigException("gateway.auth.pending: a power of two from 2 to 65536, got " + pending);
+            throw new ConfigException("server.auth.pending: a power of two from 2 to 65536, got " + pending);
         }
         if (replyCacheEntries < 16 || replyCacheEntries > 1 << 20) {
-            throw new ConfigException("gateway.auth.reply.cache.entries: 16 to 1048576, got " + replyCacheEntries);
+            throw new ConfigException("server.auth.reply.cache.entries: 16 to 1048576, got " + replyCacheEntries);
         }
         if (replyCacheTtl.isNegative() || replyCacheTtl.isZero()) {
-            throw new ConfigException("gateway.auth.reply.cache.ttl: must be positive");
+            throw new ConfigException("server.auth.reply.cache.ttl: must be positive");
         }
         if (port < 0 || port > 65_535) {
-            throw new ConfigException("gateway.auth.port: 0 to 65535, got " + port);
+            throw new ConfigException("server.auth.port: 0 to 65535, got " + port);
         }
         if (reservationTimeout.isNegative() || reservationTimeout.isZero()) {
-            throw new ConfigException("gateway.auth.reservation.timeout: must be positive");
+            throw new ConfigException("server.auth.reservation.timeout: must be positive");
         }
         if (reservationTtl.toSeconds() < 1 || reservationTtl.toSeconds() > 65_535) {
-            throw new ConfigException("gateway.auth.reservation.ttl: 1s to 65535s, got " + reservationTtl);
+            throw new ConfigException("server.auth.reservation.ttl: 1s to 65535s, got " + reservationTtl);
         }
     }
 
@@ -74,13 +74,13 @@ public record AuthConfig(
 
     public static AuthConfig from(Config config) {
         return new AuthConfig(
-                config.bool("gateway.auth.enabled", false),
-                config.integer("gateway.auth.port", 1812),
-                config.integer("gateway.auth.workers", 4),
-                config.integer("gateway.auth.pending", 256),
-                config.integer("gateway.auth.reply.cache.entries", 4096),
-                config.duration("gateway.auth.reply.cache.ttl", Duration.ofSeconds(10)),
-                config.duration("gateway.auth.reservation.timeout", Duration.ofSeconds(1)),
-                config.duration("gateway.auth.reservation.ttl", Duration.ofSeconds(60)));
+                config.bool("server.auth.enabled", false),
+                config.integer("server.auth.port", 1812),
+                config.integer("server.auth.workers", 4),
+                config.integer("server.auth.pending", 256),
+                config.integer("server.auth.reply.cache.entries", 4096),
+                config.duration("server.auth.reply.cache.ttl", Duration.ofSeconds(10)),
+                config.duration("server.auth.reservation.timeout", Duration.ofSeconds(1)),
+                config.duration("server.auth.reservation.ttl", Duration.ofSeconds(60)));
     }
 }

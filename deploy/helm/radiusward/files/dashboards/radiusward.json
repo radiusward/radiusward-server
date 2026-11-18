@@ -1,7 +1,7 @@
 {
   "uid": "radiusward",
   "title": "radiusward \u00b7 overview",
-  "description": "Is every NAS being answered? Cluster, gateways, accounting and authentication at a glance.",
+  "description": "Is every NAS being answered? Cluster, RADIUS servers, accounting and authentication at a glance.",
   "tags": [
     "radiusward"
   ],
@@ -86,18 +86,18 @@
         "hide": 0
       },
       {
-        "name": "gateway",
-        "label": "Gateway",
+        "name": "server",
+        "label": "Server",
         "type": "query",
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
         },
         "query": {
-          "query": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
-          "refId": "gateway"
+          "query": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
+          "refId": "server"
         },
-        "definition": "label_values(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"}, gateway)",
+        "definition": "label_values(radiusward_server_cluster_connected{namespace=~\"$namespace\"}, server)",
         "refresh": 2,
         "includeAll": true,
         "allValue": ".*",
@@ -274,7 +274,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Gateways connected",
+      "title": "RADIUS servers connected",
       "gridPos": {
         "x": 8,
         "y": 0,
@@ -314,7 +314,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(radiusward_gateway_cluster_connected{namespace=~\"$namespace\"})",
+          "expr": "sum(radiusward_server_cluster_connected{namespace=~\"$namespace\"})",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -372,7 +372,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(radiusward_gateway_packets_total{namespace=~\"$namespace\",result=\"responses_sent\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_packets_total{namespace=~\"$namespace\",result=\"responses_sent\"}[5m]))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -430,7 +430,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=\"accepted\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=\"accepted\"}[5m]))",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -496,7 +496,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=\"rejected\"}[5m])) / (sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=~\"accepted|rejected\"}[5m])) > 0)",
+          "expr": "sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=\"rejected\"}[5m])) / (sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=~\"accepted|rejected\"}[5m])) > 0)",
           "legendFormat": "",
           "datasource": {
             "type": "prometheus",
@@ -914,7 +914,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(radiusward_gateway_packets_total{namespace=~\"$namespace\",result=\"received\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_packets_total{namespace=~\"$namespace\",result=\"received\"}[5m]))",
           "legendFormat": "accounting received",
           "datasource": {
             "type": "prometheus",
@@ -923,7 +923,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum(rate(radiusward_gateway_packets_total{namespace=~\"$namespace\",result=\"responses_sent\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_packets_total{namespace=~\"$namespace\",result=\"responses_sent\"}[5m]))",
           "legendFormat": "Accounting-Responses",
           "datasource": {
             "type": "prometheus",
@@ -932,7 +932,7 @@
         },
         {
           "refId": "C",
-          "expr": "sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=\"received\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=\"received\"}[5m]))",
           "legendFormat": "Access-Requests",
           "datasource": {
             "type": "prometheus",
@@ -941,7 +941,7 @@
         },
         {
           "refId": "D",
-          "expr": "sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=\"accepted\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=\"accepted\"}[5m]))",
           "legendFormat": "Access-Accepts",
           "datasource": {
             "type": "prometheus",
@@ -950,7 +950,7 @@
         },
         {
           "refId": "E",
-          "expr": "sum(rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=\"rejected\"}[5m]))",
+          "expr": "sum(rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=\"rejected\"}[5m]))",
           "legendFormat": "Access-Rejects",
           "datasource": {
             "type": "prometheus",
@@ -992,7 +992,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (result) (rate(radiusward_gateway_packets_total{namespace=~\"$namespace\",result=~\"pending_full|ring_full|timed_out|send_failed\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_packets_total{namespace=~\"$namespace\",result=~\"pending_full|ring_full|timed_out|send_failed\"}[5m]))",
           "legendFormat": "accounting {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -1001,7 +1001,7 @@
         },
         {
           "refId": "B",
-          "expr": "sum by (result) (rate(radiusward_gateway_access_requests_total{namespace=~\"$namespace\",result=~\"busy|dropped|handler_errors|send_failed\"}[5m]))",
+          "expr": "sum by (result) (rate(radiusward_server_access_requests_total{namespace=~\"$namespace\",result=~\"busy|dropped|handler_errors|send_failed\"}[5m]))",
           "legendFormat": "access {{result}}",
           "datasource": {
             "type": "prometheus",
@@ -1043,7 +1043,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "topk(5, sum by (cause) (rate(radiusward_gateway_access_rejects_total{namespace=~\"$namespace\"}[5m])))",
+          "expr": "topk(5, sum by (cause) (rate(radiusward_server_access_rejects_total{namespace=~\"$namespace\"}[5m])))",
           "legendFormat": "{{cause}}",
           "datasource": {
             "type": "prometheus",

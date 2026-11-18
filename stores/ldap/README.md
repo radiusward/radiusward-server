@@ -42,7 +42,7 @@ auth.verifier.ad-bind.base.dn = DC=corp,DC=example
 | `policy.<id>.group` / `.check` / `.reply` | — | items for members of a group, in id order |
 | `check.<attribute>` / `reply.<attribute>` | — | RADIUS item from an LDAP attribute (several values: `+=`) |
 | `timeout` | `1500ms` | connect, read and search time limit; beyond it the store is unavailable |
-| `pool` | `gateway.auth.workers` | service-account connections |
+| `pool` | `server.auth.workers` | service-account connections |
 
 Domain controllers refuse simple binds without TLS: use `ldaps://`. Disabled and expired Active Directory accounts
 (`userAccountControl`, `accountExpires`) get `Auth-Type := Reject`. The verifier checks PAP only; MS-CHAP needs the

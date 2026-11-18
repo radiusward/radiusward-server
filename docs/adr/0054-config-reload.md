@@ -1,9 +1,9 @@
-# ADR 0054: Reloading the gateway configuration
+# ADR 0054: Reloading the RADIUS server configuration
 
 Status: Accepted (2026-11-10). Phase 5, work package 5.30 ([plans/phase-5-auth.md](../plans/phase-5-auth.md)).
 
 ## Context
-Adding a NAS, changing a secret or pointing a store at another database meant restarting the gateway: EAP
+Adding a NAS, changing a secret or pointing a store at another database meant restarting the server: EAP
 conversations, TOTP challenges and reply caches were lost, and NAS retransmitted. Some files already reloaded
 themselves (users files, certificates, CRLs, rules), the properties did not. Other servers reload on SIGHUP.
 

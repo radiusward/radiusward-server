@@ -26,7 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * FreeRADIUS's own client ({@code radclient}) against a real gateway: PAP, CHAP, MS-CHAP (v1, which {@code radclient}
+ * FreeRADIUS's own client ({@code radclient}) against a real RADIUS server: PAP, CHAP, MS-CHAP (v1, which {@code radclient}
  * builds from {@code MS-CHAP-Password}) and Status-Server, checked by an implementation that is not ours.
  *
  * <p>Runs only with {@code -Pinterop} and when {@code radclient} is installed ({@code brew install

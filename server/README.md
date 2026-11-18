@@ -1,9 +1,9 @@
-# gateway
+# RADIUS server
 
 The RADIUS UDP front end ([ADR 0006](../docs/adr/0006-nio-udp-transport.md), [ADR 0011](../docs/adr/0011-gateway-pipeline.md)).
 
 ```bash
-java -jar distribution/target/radiusward.jar gateway --config config/local/gateway-a.properties --config config/local/nas-clients.properties
+java -jar distribution/target/radiusward.jar server --config config/local/server-a.properties --config config/local/nas-clients.properties
 ```
 
 | Class | Role |
@@ -16,7 +16,7 @@ java -jar distribution/target/radiusward.jar gateway --config config/local/gatew
 | `PendingTable` | preallocated in-flight requests |
 | `AuthAgent` | Access-Requests (Phase 5, [ADR 0020](../docs/adr/0020-authentication-path.md)): its own non-blocking NIO socket; validate, NAS lookup, Message-Authenticator (required by default), reply cache, hand-off to the workers, send the replies |
 | `AccessWorker`, `AccessSlots`, `AccessHandler`, `AccessContext` | bounded hand-off to worker threads that decide a request (`AccessHandler`) and build the signed reply |
-| `ReplyCache`, `AuthConfig`, `AuthStats` | RFC 5080 reply cache with in-flight marks; `gateway.auth.*`; counters |
+| `ReplyCache`, `AuthConfig`, `AuthStats` | RFC 5080 reply cache with in-flight marks; `server.auth.*`; counters |
 | `AuthStores`, `StoreAccessHandler` | identity stores from `auth.*` ([ADR 0021](../docs/adr/0021-identity-stores.md)); PAP/CHAP decision: stores in order, check items, groups, reply items filtered by the NAS entry's vendors ([ADR 0022](../docs/adr/0022-reply-attributes.md)); per-worker Agrona caches |
 | `SessionLimits`, `ClusterReservations`, `UserKeys` | simultaneous use: reservations through the cluster with a mailbox per worker; user and device keys shared with the accounting path ([ADR 0023](../docs/adr/0023-simultaneous-use.md)) |
 | `TlsTunnel`, `EapTls`, `Peap`, `Ttls`, `EapTlsConfig` | the JDK TLS engine in RFC 5216 framing with exporter keys; EAP-TLS ([ADR 0028](../docs/adr/0028-eap-tls.md)); PEAPv0 with inner EAP-MSCHAPv2, EAP-GTC or EAP-TLS, inner user authorized ([ADR 0029](../docs/adr/0029-peap.md), [0031](../docs/adr/0031-peap-inner-methods.md)); TTLS with inner PAP and MS-CHAPv2 ([ADR 0030](../docs/adr/0030-ttls.md)) |
@@ -33,8 +33,8 @@ java -jar distribution/target/radiusward.jar gateway --config config/local/gatew
 | `Rules`, `RulesFile`, `Totp` | the rule layer on Access-Accepts ([ADR 0051](../docs/adr/0051-rules.md)); TOTP second factor ([ADR 0053](../docs/adr/0053-totp.md)) |
 | `Cui`, `AuthLog` | Chargeable-User-Identity ([ADR 0056](../docs/adr/0056-chargeable-user-identity.md)); the authentication log ([ADR 0058](../docs/adr/0058-authentication-log.md)); delayed rejects live in `AuthAgent` ([ADR 0057](../docs/adr/0057-reject-delay.md)) |
 | `Tracer`, `ReloadApi` | per-request traces ([ADR 0052](../docs/adr/0052-request-traces.md)); configuration reload on SIGHUP or `POST /reload` ([ADR 0054](../docs/adr/0054-config-reload.md)) |
-| `Gateway`, `GatewayConfig`, `GatewayMain` | wiring, embedded media driver, threading, management |
+| `Server`, `ServerConfig`, `ServerMain` | wiring, embedded media driver, threading, management |
 
-Never blocks and never allocates per packet (`GatewayAllocationIT`, 100k accounting packets and 100k
+Never blocks and never allocates per packet (`ServerAllocationIT`, 100k accounting packets and 100k
 Access-Requests). A retransmit of a request
 pending for over 1 s is resubmitted, so commands lost with a failed leader are recovered.

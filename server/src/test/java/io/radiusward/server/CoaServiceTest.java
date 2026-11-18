@@ -397,8 +397,8 @@ class CoaServiceTest {
         PrometheusWriter.validate(text);
         assertThat(text)
                 .contains(
-                        "radiusward_gateway_simultaneous_use_disconnects_total{gateway=\"g1\",result=\"acknowledged\"} 2")
-                .contains("radiusward_gateway_simultaneous_use_disconnects_total{gateway=\"g1\",result=\"failed\"} 1");
+                        "radiusward_server_simultaneous_use_disconnects_total{server=\"g1\",result=\"acknowledged\"} 2")
+                .contains("radiusward_server_simultaneous_use_disconnects_total{server=\"g1\",result=\"failed\"} 1");
         assertThat(coa.config().enabled()).isTrue();
         assertThat(coa.queries()).isNotNull();
     }

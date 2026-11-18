@@ -76,7 +76,7 @@ public final class AccessContext {
 
     /**
      * Encoder for the reply attributes (Session-Timeout, Reply-Message, …); Message-Authenticator and Proxy-State
-     * are added by the gateway.
+     * are added by the RADIUS server.
      */
     public RadiusPacketEncoder reply() {
         return reply;

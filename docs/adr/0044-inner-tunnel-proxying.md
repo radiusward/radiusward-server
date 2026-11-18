@@ -35,10 +35,10 @@ checks the password; it does not need to run TLS for us. Other servers call this
   stores are not asked about that user.
 - **Resumption**: a tunnel whose inner user was proxied is not remembered for fast reconnect. A reconnect runs the
   inner method again, and the home server decides again.
-- **Metrics**: `radiusward_gateway_inner_proxy_total{result}`: requests, accepted, rejected, no_answer.
+- **Metrics**: `radiusward_server_inner_proxy_total{result}`: requests, accepted, rejected, no_answer.
 
 ## Tests
-- `EapolTestIT#innerUsersOfAProxiedRealmAreCheckedByTheirHomeServer`: a second gateway plays the home server and alone
+- `EapolTestIT#innerUsersOfAProxiedRealmAreCheckedByTheirHomeServer`: a second RADIUS server plays the home server and alone
   knows `bob@partner.example`. Through the proxy:
   - PEAP-MSCHAPv2 with required crypto-binding, PEAP-GTC, TTLS-PAP, TTLS-MSCHAPv2, TTLS with EAP-MSCHAPv2 and
     TEAP-MSCHAPv2 succeed with matching keys, and the home server's Reply-Message reaches the NAS;

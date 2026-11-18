@@ -32,7 +32,7 @@ import org.testcontainers.utility.MountableFile;
 
 /**
  * The same EAP profiles against an installed external RADIUS server ({@code radiusd}, {@code -Pinterop}) and against
- * the gateway, with wpa_supplicant's {@code eapol_test} ({@code testing/eapol-test}) as the peer of both (ADR 0039):
+ * the RADIUS server, with wpa_supplicant's {@code eapol_test} ({@code testing/eapol-test}) as the peer of both (ADR 0039):
  * each profile must end the same way on both — accepted with the MS-MPPE keys matching the peer's MSK, or rejected —
  * and where both resume, both resume. Both servers use the same users file, certificates and secret.
  *
@@ -91,7 +91,7 @@ class ExternalEapComparisonIT {
                 dir.resolve("users"),
                 "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n"
                         // EAP-SIM with stored triplets (ADR 0061): the external server looks the subscriber up by
-                        // its identity with the hint, the gateway by the IMSI
+                        // its identity with the hint, the RADIUS server by the IMSI
                         + "1" + SIM_IMSI + "  " + storedTriplets() + "\n"
                         + SIM_IMSI + "  " + storedTriplets() + "\n");
 
@@ -422,12 +422,12 @@ class ExternalEapComparisonIT {
         List<String> differences = new ArrayList<>();
         for (Profile p : profiles) {
             Container.ExecResult theirs = run("external-" + p.name(), p.network(), externalPort);
-            Container.ExecResult ours = run("gateway-" + p.name(), p.network(), radiusServer.authPort());
+            Container.ExecResult ours = run("server-" + p.name(), p.network(), radiusServer.authPort());
             check(p, "external", theirs, differences);
-            check(p, "gateway", ours, differences);
+            check(p, "server", ours, differences);
             if (p.outcome() == Outcome.ACCEPTED && resumed(theirs) != resumed(ours)) {
                 differences.add(p.name() + ": the external server " + (resumed(theirs) ? "resumed" : "did not resume")
-                        + ", the gateway " + (resumed(ours) ? "resumed" : "did not"));
+                        + ", the RADIUS server " + (resumed(ours) ? "resumed" : "did not"));
             }
             if (p.name().startsWith("peap-mschapv2") && innerChallenges(theirs) != innerChallenges(ours)) {
                 differences.add(p.name() + ": inner MS-CHAPv2 challenges " + innerChallenges(theirs) + " vs "
@@ -446,7 +446,7 @@ class ExternalEapComparisonIT {
                 new Profile("peap-certificate", Outcome.ACCEPTED, withCertificate),
                 new Profile("peap-no-certificate", Outcome.REJECTED, without))) {
             check(p, "external", run("external-" + p.name(), p.network(), externalCertificatePort), differences);
-            check(p, "gateway", run("gateway-" + p.name(), p.network(), certificateServer.authPort()), differences);
+            check(p, "server", run("server-" + p.name(), p.network(), certificateServer.authPort()), differences);
         }
         assertThat(differences).as("see " + LOGS).isEmpty();
     }

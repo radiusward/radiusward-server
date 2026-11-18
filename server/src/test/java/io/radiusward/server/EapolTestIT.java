@@ -28,7 +28,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.MountableFile;
 
 /**
- * wpa_supplicant's {@code eapol_test} ({@code testing/eapol-test}) as an independent peer against the real gateway:
+ * wpa_supplicant's {@code eapol_test} ({@code testing/eapol-test}) as an independent peer against the real RADIUS server:
  * EAP-TLS, PEAP and TTLS over TLS 1.2 and 1.3, fragments both ways, wrong credentials, MPPE keys compared with the
  * peer's MSK. Skipped where Docker is missing, a failure where it is required.
  */
@@ -281,12 +281,12 @@ class EapolTestIT {
                 """.formatted(user, password);
     }
 
-    /** A second gateway offering only TEAP with these settings. */
+    /** A second RADIUS server offering only TEAP with these settings. */
     private static RadiusServer teapServer(String name, Map<String, String> extra) throws Exception {
         return secondServer(name, "alice   Cleartext-Password := \"Alice-Passw0rd!\"\n", extra);
     }
 
-    /** Another gateway with its own users file and settings (TEAP offered unless the settings say otherwise). */
+    /** Another RADIUS server with its own users file and settings (TEAP offered unless the settings say otherwise). */
     private static RadiusServer secondServer(String name, String usersFile, Map<String, String> extra)
             throws Exception {
         Path users = Files.writeString(dir.resolve(name + "-users"), usersFile);
@@ -332,7 +332,7 @@ class EapolTestIT {
     }
 
     /**
-     * The tunnel ends here, the inner user of a proxied realm is checked by its home server (ADR 0044): another gateway
+     * The tunnel ends here, the inner user of a proxied realm is checked by its home server (ADR 0044): another RADIUS server
      * plays the home server and knows bob@partner.example, which the proxy does not. PAP, MS-CHAPv2 (its MPPE keys
      * decrypted for PEAP's crypto-binding and TEAP's binding) and EAP-GTC go through; wrong passwords are rejected.
      */
@@ -373,7 +373,7 @@ class EapolTestIT {
             assertRejected(run("inner-peap-wrong", peap(TLS12, "auth=MSCHAPV2", bob, "wrong"), 0, proxy.authPort()));
             assertRejected(run("inner-ttls-wrong", ttlsAs(bob, TLS12, "auth=PAP", "wrong"), 0, proxy.authPort()));
             assertThat(proxy.metrics())
-                    .contains("radiusward_gateway_inner_proxy_total{gateway=\"1\",result=\"accepted\"} 6");
+                    .contains("radiusward_server_inner_proxy_total{server=\"1\",result=\"accepted\"} 6");
         }
     }
 
@@ -385,7 +385,7 @@ class EapolTestIT {
         return teap(tls, phase2, password).replace("identity=\"alice\"", "identity=\"" + user + "\"");
     }
 
-    /** TEAP's Basic-Password-Auth (no inner EAP) from a gateway that offers it first; checked like PAP. */
+    /** TEAP's Basic-Password-Auth (no inner EAP) from a RADIUS server that offers it first; checked like PAP. */
     @Test
     void teapBasicPasswordAuth() throws Exception {
         try (RadiusServer basic = teapServer("basic", Map.of("auth.eap.teap.inner", "basic, mschapv2"))) {

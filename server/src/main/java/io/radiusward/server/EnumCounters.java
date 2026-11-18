@@ -39,10 +39,10 @@ final class EnumCounters<E extends Enum<E>> {
         return counts.get(counter.ordinal());
     }
 
-    /** The samples of a counter family the caller has started, each with {@code gateway} and {@code result}. */
+    /** The samples of a counter family the caller has started, each with {@code server} and {@code result}. */
     void write(PrometheusWriter w, String radiusServer) {
         for (E v : values) {
-            w.sample(counts.get(v.ordinal()), "gateway", radiusServer, "result", labels[v.ordinal()]);
+            w.sample(counts.get(v.ordinal()), "server", radiusServer, "result", labels[v.ordinal()]);
         }
     }
 }

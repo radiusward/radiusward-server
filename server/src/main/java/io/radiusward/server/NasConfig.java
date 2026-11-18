@@ -83,7 +83,7 @@ final class NasConfig {
                 && !config.string(prefix + transport + ".identity", "").isBlank();
     }
 
-    /** The default id of an entry: FNV-1a of its name, the same on every gateway. */
+    /** The default id of an entry: FNV-1a of its name, the same on every RADIUS server. */
     static int fnv1a(String name) {
         int h = 0x811c9dc5;
         for (byte b : name.getBytes(StandardCharsets.UTF_8)) {

@@ -290,7 +290,7 @@ final class Peap extends TlsTunnel {
                 credentials);
     }
 
-    /** The inner MS-CHAPv2 check by the gateway; its outcome as Success or Failure inside the tunnel. */
+    /** The inner MS-CHAPv2 check by the RADIUS server; its outcome as Success or Failure inside the tunnel. */
     private Step check(MsChapV2 exchange, Credentials credentials) {
         if (credentials.inner() == null) {
             return Step.FAILED;

@@ -31,7 +31,7 @@ The image is `radiusward:dev` (`--image` or `RADIUSWARD_IMAGE` for another). Res
 | `--jmh` | | also run the JMH suite |
 | `--quick` | | 20 s steps, 250 → 4000/s, no failover |
 | `--secret` | `testing123` | the NAS entry's shared secret |
-| `--target` | | gateway addresses of a remote stack (the ECS load balancers); no compose stack |
+| `--target` | | RADIUS server addresses of a remote stack (the ECS load balancers); no compose stack |
 | `--ecs-cluster` | | with `--target`: the ECS cluster, to find the tasks' metrics and stop the leader's task |
 | `--generator-hosts` | `local` | where the generators run, round robin: `local` or EC2 instance ids (started through SSM) |
 | `--label` | | `key=value` recorded in the result's environment (region, instance types) |
@@ -42,7 +42,7 @@ and the harness waits until every member is ready again.
 
 ## What it measures
 
-- **Ladders** for `accounting` (Start and Interim records of fresh sessions through both gateways), `access`
+- **Ladders** for `accounting` (Start and Interim records of fresh sessions through both RADIUS servers), `access`
   (Access-Requests with PAP, CHAP and MS-CHAPv2, all correct: rejects are held back `auth.reject.delay` on purpose and
   would set the p99) and `mix` (70 % accounting, 30 % authentication). Each step runs `--generators` radclient
   containers on the stack's network for `--duration` seconds at a share of the target rate.
@@ -67,7 +67,7 @@ and the harness waits until every member is ready again.
 
 | Where | How | Read the numbers as |
 |---|---|---|
-| any machine | `scripts/bench.py` | a lower bound: members, gateways and generators share the CPUs (`environment.shared_host`) |
+| any machine | `scripts/bench.py` | a lower bound: members, RADIUS servers and generators share the CPUs (`environment.shared_host`) |
 | GitHub runner | `bench.yml`, Sundays and on demand; artifact `results-bench` | a weekly trend on a 4-vCPU runner |
 | AWS | `scripts/bench-aws.sh` or `bench-aws.yml` on demand: the ECS stack with generators on their own instances ([below](#on-amazon-ecs)) | the ceiling per profile |
 
@@ -75,18 +75,18 @@ On a MacBook (Colima, 8 vCPU) the first runs carried accounting at 1,000/s (p99 
 (p99 29 ms) and the mix at 2,000/s with every step passing; a leader kill at 700/s lost nothing and caused no
 retransmission (longest wait 2.2 s).
 
-On a GitHub runner (4 vCPU shared by three members, two gateways, PostgreSQL and the generators), the run of
+On a GitHub runner (4 vCPU shared by three members, two RADIUS servers, PostgreSQL and the generators), the run of
 2026-11-11 with the refined ladder carried:
 
 | Workload | Ceiling | Stopped by | CPU at the ceiling |
 |---|---|---|---|
-| accounting | **3,731/s** | p99 609 ms at 4,000/s | members 0.5–0.7 cores each, gateways 0.6 each: the runner's 4 cores busy |
-| authentication | **≥ 15,053/s** | nothing: every step up to 16,000/s passed, p99 200 ms | gateways 0.7 each, members 0.2 |
+| accounting | **3,731/s** | p99 609 ms at 4,000/s | members 0.5–0.7 cores each, RADIUS servers 0.6 each: the runner's 4 cores busy |
+| authentication | **≥ 15,053/s** | nothing: every step up to 16,000/s passed, p99 200 ms | RADIUS servers 0.7 each, members 0.2 |
 | mix (70/30) | **6,821/s** | p99 708 ms at 7,500/s | |
 
 A leader killed at 2,611/s lost nothing and caused no retransmission (longest wait 2.5 s). JMH: the full receive
 path at 1.3 operations/µs, about 1.3 million packets per second on one core. Accounting is bounded by replication
-and fsync on three members sharing four cores; authentication runs on the gateways and stays far from its limit. The
+and fsync on three members sharing four cores; authentication runs on the RADIUS servers and stays far from its limit. The
 numbers of one shared runner vary from run to run (the mix carried more accounting than the accounting ladder
 alone), so the pages show the trend. The first run, before the ladder was refined, reported 3,788 / 3,701 /
 1,929 per second: its authentication and mix figures were limits of the coarse steps and the load generators
@@ -107,7 +107,7 @@ AWS_PROFILE=<aws profile> scripts/bench-aws.sh --profile small --region eu-centr
 1. Deploys `deploy/aws/bench/generators.yaml` (test only: a VPC with public and private subnets, one NAT gateway, a
    results bucket, two to four c7g.xlarge generators reachable only through SSM) and the radiusward stack in its
    private subnets with internal load balancers.
-2. Configures the gateways for the benchmark: a fresh NAS secret, a NAS entry for the VPC, the `load` user in the
+2. Configures the RADIUS servers for the benchmark: a fresh NAS secret, a NAS entry for the VPC, the `load` user in the
    users file secret, authentication on.
 3. Runs `scripts/bench.py` on the first generator through SSM (`--target`, `--ecs-cluster`, `--generator-hosts`):
    generators on every instance, CPU per process from `/metrics`, the failover by stopping the leader's task.
@@ -129,7 +129,7 @@ readers who do not know the harness: what radiusward is and how a result is meas
 (dedicated machines first) the result cards — the three ceilings with their p99 and p50, and the leader killed under
 load — what ran on the machine, the peak memory, each ladder as two charts with a caption (target against answered
 rate, p99 against the 500 ms limit), CPU and memory per process at the ceiling, every step sorted by rate with its run
-order, the gateway's packet path from JMH in nanoseconds per packet and packets per second on one core, the trend over
+order, the RADIUS server's packet path from JMH in nanoseconds per packet and packets per second on one core, the trend over
 all runs, and links to the other reports and to reproducing the numbers. The summary, the landing card and the badge
 show the newest run on dedicated machines once there is one. Claims stay with what was measured: no extrapolation to
 other machines, no comparisons with other products. The runs are kept inside the site's state (`benchmarks/runs/`), like the reports'

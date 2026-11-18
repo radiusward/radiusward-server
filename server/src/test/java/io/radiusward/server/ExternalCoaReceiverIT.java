@@ -24,7 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Disconnect- and CoA-Requests from the gateway's sender to an external RADIUS server acting as the NAS's dynamic
+ * Disconnect- and CoA-Requests from the RADIUS server's sender to an external RADIUS server acting as the NAS's dynamic
  * authorization server (RFC 5176, ADR 0036): an implementation we did not write checks our Request Authenticator,
  * Message-Authenticator and attributes, and answers ACK, NAK or nothing (a wrong secret).
  *
@@ -64,7 +64,7 @@ class ExternalCoaReceiverIT {
                         rcode = reject
                     }
                 }
-                client radiusServer {
+                client radiusward {
                     ipaddr = 127.0.0.1
                     secret = %1$s
                     require_message_authenticator = yes

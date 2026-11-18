@@ -21,7 +21,7 @@ import org.agrona.concurrent.UnsafeBuffer;
  * Per-realm rewriting of proxied packets (ADR 0055): {@code realm.<id>.pre-proxy.remove} drops request attributes
  * before they go to the home server, {@code realm.<id>.pre-proxy.add} adds attributes to it (e.g. Operator-Name),
  * {@code realm.<id>.post-proxy.remove} drops attributes of the home server's answer before it goes to the NAS. Names are
- * resolved and values encoded once, with the gateway's dictionary; the packet path only copies bytes and tests types.
+ * resolved and values encoded once, with the RADIUS server's dictionary; the packet path only copies bytes and tests types.
  */
 final class ProxyRewrite {
 

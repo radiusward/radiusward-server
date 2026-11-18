@@ -32,7 +32,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * The authentication log (ADR 0058): every Access-Accept and Access-Reject decided by this gateway — time, NAS entry,
+ * The authentication log (ADR 0058): every Access-Accept and Access-Reject decided by this RADIUS server — time, NAS entry,
  * user, Calling-Station-Id, result and, for a reject, its cause — written by a thread of its own to daily JSON-lines
  * files ({@code auth.log.dir}) and/or a PostgreSQL table ({@code auth.log.sql.*}). Workers only offer an entry to a
  * bounded queue: when it is full, or the database fails, entries are dropped and counted, never waited for. Passwords
@@ -215,10 +215,10 @@ final class AuthLog implements AutoCloseable {
     }
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
-        w.counter("radiusward_gateway_auth_log_entries_total", "Authentication log entries (ADR 0058)");
-        w.sample(written(), "gateway", radiusServer, "result", "written");
-        w.sample(dropped(), "gateway", radiusServer, "result", "dropped");
-        w.sample(failed(), "gateway", radiusServer, "result", "failed");
+        w.counter("radiusward_server_auth_log_entries_total", "Authentication log entries (ADR 0058)");
+        w.sample(written(), "server", radiusServer, "result", "written");
+        w.sample(dropped(), "server", radiusServer, "result", "dropped");
+        w.sample(failed(), "server", radiusServer, "result", "failed");
     }
 
     /** Writes what is queued, then stops. */

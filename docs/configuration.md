@@ -7,7 +7,7 @@ Durations: `500ms`, `10s`, `5m`, `2h`, `1d`; sizes: `512`, `64k`, `4m`, `1g`, th
 sinks' and identity stores' settings. A number without a unit means milliseconds in the server's own keys and
 seconds in `sink.<name>.timeout`; the other sink and store durations need their unit (`0` aside). Examples: [config/local](../config/local).
 
-Gateways reload NAS entries, identity stores, counters, pools, TOTP, CUI, the reject delay, rules and trace conditions on SIGHUP or
+RADIUS servers reload NAS entries, identity stores, counters, pools, TOTP, CUI, the reject delay, rules and trace conditions on SIGHUP or
 `POST /reload` ([ADR 0054](adr/0054-config-reload.md)); everything else needs a restart.
 
 ## Common
@@ -17,13 +17,13 @@ Gateways reload NAS entries, identity stores, counters, pools, TOTP, CUI, the re
 | `profile` | `small` | `small` \| `standard` \| `large` — Aeron term lengths, threading, idle strategy, logging ring, capacities ([ADR 0004](adr/0004-memory-budget.md)) |
 | `management.http.enabled` | `true` | management HTTP server on/off |
 | `management.http.host` | `127.0.0.1` | bind address (`0.0.0.0` inside a pod) |
-| `management.http.port` | node: `9090+id`, gateway: `9189+gateway.id`, backup: `9090` | `/health`, `/ready` (a member: started, leader known, election closed, disk space left), `/state` |
-| `cluster.members` | `localhost,localhost,localhost` | member hosts in member-id order (nodes and gateways) |
+| `management.http.port` | node: `9090+id`, server: `9189+server.id`, backup: `9090` | `/health`, `/ready` (a member: started, leader known, election closed, disk space left), `/state` |
+| `cluster.members` | `localhost,localhost,localhost` | member hosts in member-id order (nodes and RADIUS servers) |
 | `cluster.base.port` | `9000` | member *i* uses `base + 100·i + {ingress 0, consensus 1, log 2, catchup 3, archive 4, replication 5}` |
 
 In the container image the entrypoint sets defaults (as environment variables, so files still win):
 `cluster.data.dir=/var/lib/radiusward`, `cluster.aeron.dir=/dev/shm/radiusward-node`,
-`gateway.aeron.dir=/dev/shm/radiusward-gateway`, `backup.data.dir=/var/lib/radiusward/backup`,
+`server.aeron.dir=/dev/shm/radiusward-server`, `backup.data.dir=/var/lib/radiusward/backup`,
 `backup.aeron.dir=/dev/shm/radiusward-backup`, `dictionary.dir=/etc/radiusward/dictionary.d`,
 `management.http.host=0.0.0.0`; heap from `RADIUSWARD_PROFILE` ([docker.md](operations/docker.md)).
 
@@ -42,7 +42,7 @@ System properties: `radiusward.log.dir` (also write a rolling file), `radiusward
 | `cluster.election.timeout` | `500ms` | how long a candidate waits for votes |
 | `cluster.session.timeout` | `10s` | client session timeout |
 | `cluster.version.hold` | `false` | keep a newer state-machine version off after an upgrade, so a rollback stays possible; activate with `admin activate-version` ([release.md](operations/release.md#upgrading-a-cluster)) |
-| `cluster.client.sessions.max` | `256` | concurrent cluster client sessions: every gateway, two per sink on every member, one position reporter per member, admin tools |
+| `cluster.client.sessions.max` | `256` | concurrent cluster client sessions: every RADIUS server, two per sink on every member, one position reporter per member, admin tools |
 | `archive.file.sync.level` | `2` | `0` page cache, `1` fsync data, `2` fsync data + metadata; the archive catalog and the cluster's recording log and node state use the same level. Below `2` a power loss can lose acknowledged events or stop members from starting (`PowerLossIT`) |
 | `archive.segment.length` | `128m` | archive segment file size, a power of two of at least the term length; the log is purged in whole segments. **Fixed per recording**: a change only affects recordings created afterwards |
 | `log.purge.enabled` / `log.purge.dry.run` | `true` / `false` | purge the log below what nobody needs ([ADR 0014](adr/0014-log-purge.md)); dry run only logs |
@@ -75,38 +75,38 @@ cluster's value).
 `radiusward cluster-restore --from <backup dir> --config <cluster.properties>` copies a stopped backup into the empty
 data directory of the member `cluster.node.id`.
 
-## Gateway
+## RADIUS server
 
 | Key | Default | Meaning |
 |---|---|---|
-| `gateway.id` | `1` | distinct per gateway |
-| `gateway.listen.host` / `gateway.listen.port` | `0.0.0.0` / `1813` | RADIUS accounting socket; `::` listens on IPv6 and IPv4 (dual stack) for IPv6 NAS |
-| `gateway.socket.receive.buffer` | `4m` | `SO_RCVBUF` |
-| `gateway.egress.host` | `localhost` | address the cluster sends replies to (the pod IP in Kubernetes) |
-| `gateway.aeron.dir` | temp dir per process | embedded media driver directory |
-| `gateway.threading` | `shared` (`dedicated` for large) | both agents on one thread, or one each |
-| `gateway.idle.strategy` | profile: `backoff-100us` (small, standard), `busy-spin` (large) | how the gateway threads wait when idle: `sleep-1ms` \| `backoff-1ms` \| `backoff-100us` \| `busy-spin`; trades CPU for latency (measurements in [testing/strategy.md](testing/strategy.md#latency-in-containers-phase-2)) |
-| `gateway.pending.capacity` | profile (small: 16,384) | requests in flight; beyond it packets are dropped |
-| `gateway.pending.timeout` | `5s` | forget a request with no commit (the next retransmit is submitted again) |
-| `gateway.shutdown.drain` | `0s` | after SIGTERM, report not ready (`/ready`) and keep answering this long before closing, so a load balancer stops sending first; the Helm chart sets `5s` ([ADR 0062](adr/0062-members-and-gateways-on-kubernetes.md)) |
-| `gateway.retransmit.resubmit.after` | `1s` | a retransmit of a request pending longer than this is resubmitted ([ADR 0011](adr/0011-gateway-pipeline.md)) |
-| `gateway.response.cache.ttl` | `30s` | how long committed requests are answered from the cache |
-| `gateway.auth.enabled` | `false` | answer Access-Requests (Phase 5); needs `auth.stores` ([below](#identity-stores)). Status-Server (RFC 5997) is answered on both ports with a valid Message-Authenticator; on the accounting port only while the gateway is connected to the cluster |
-| `gateway.auth.port` | `1812` | RADIUS authentication socket (non-blocking, [ADR 0020](adr/0020-authentication-path.md)) |
-| `gateway.auth.workers` | `4` | threads that decide Access-Requests (they may wait for an identity store; the socket thread never does) |
-| `gateway.auth.pending` | `256` | Access-Requests between the socket and the workers (power of two); beyond it requests are dropped |
-| `gateway.auth.reply.cache.entries` / `gateway.auth.reply.cache.ttl` | `4096` / `10s` | replies kept to answer retransmissions (RFC 5080) |
-| `gateway.auth.reservation.timeout` | `1s` | how long a worker waits for the cluster's answer for a user with `Simultaneous-Use`; without one the request is not answered ([ADR 0023](adr/0023-simultaneous-use.md)) |
-| `gateway.auth.reservation.ttl` | `60s` | how long a granted place waits for the device's Accounting-Start (1s–65535s) |
+| `server.id` | `1` | distinct per RADIUS server |
+| `server.listen.host` / `server.listen.port` | `0.0.0.0` / `1813` | RADIUS accounting socket; `::` listens on IPv6 and IPv4 (dual stack) for IPv6 NAS |
+| `server.socket.receive.buffer` | `4m` | `SO_RCVBUF` |
+| `server.egress.host` | `localhost` | address the cluster sends replies to (the pod IP in Kubernetes) |
+| `server.aeron.dir` | temp dir per process | embedded media driver directory |
+| `server.threading` | `shared` (`dedicated` for large) | both agents on one thread, or one each |
+| `server.idle.strategy` | profile: `backoff-100us` (small, standard), `busy-spin` (large) | how the RADIUS server threads wait when idle: `sleep-1ms` \| `backoff-1ms` \| `backoff-100us` \| `busy-spin`; trades CPU for latency (measurements in [testing/strategy.md](testing/strategy.md#latency-in-containers-phase-2)) |
+| `server.pending.capacity` | profile (small: 16,384) | requests in flight; beyond it packets are dropped |
+| `server.pending.timeout` | `5s` | forget a request with no commit (the next retransmit is submitted again) |
+| `server.shutdown.drain` | `0s` | after SIGTERM, report not ready (`/ready`) and keep answering this long before closing, so a load balancer stops sending first; the Helm chart sets `5s` ([ADR 0062](adr/0062-members-and-gateways-on-kubernetes.md)) |
+| `server.retransmit.resubmit.after` | `1s` | a retransmit of a request pending longer than this is resubmitted ([ADR 0011](adr/0011-gateway-pipeline.md)) |
+| `server.response.cache.ttl` | `30s` | how long committed requests are answered from the cache |
+| `server.auth.enabled` | `false` | answer Access-Requests (Phase 5); needs `auth.stores` ([below](#identity-stores)). Status-Server (RFC 5997) is answered on both ports with a valid Message-Authenticator; on the accounting port only while the RADIUS server is connected to the cluster |
+| `server.auth.port` | `1812` | RADIUS authentication socket (non-blocking, [ADR 0020](adr/0020-authentication-path.md)) |
+| `server.auth.workers` | `4` | threads that decide Access-Requests (they may wait for an identity store; the socket thread never does) |
+| `server.auth.pending` | `256` | Access-Requests between the socket and the workers (power of two); beyond it requests are dropped |
+| `server.auth.reply.cache.entries` / `server.auth.reply.cache.ttl` | `4096` / `10s` | replies kept to answer retransmissions (RFC 5080) |
+| `server.auth.reservation.timeout` | `1s` | how long a worker waits for the cluster's answer for a user with `Simultaneous-Use`; without one the request is not answered ([ADR 0023](adr/0023-simultaneous-use.md)) |
+| `server.auth.reservation.ttl` | `60s` | how long a granted place waits for the device's Accounting-Start (1s–65535s) |
 | `dictionary.dir` | `/etc/radiusward/dictionary.d` | operator dictionaries, loaded after the bundled set if the directory exists |
 | `debug.enabled` | `false` | allows `debug.*` keys; never in production |
 | `debug.response.delay` | `0` | hold Accounting-Responses back (tests only; requires `debug.enabled=true`) |
 | `debug.state.version.supported` | code's version | pretend the member's release knows another state version, to test upgrades (tests only; requires `debug.enabled=true`) |
 
-## NAS entries from a database (gateway)
+## NAS entries from a database (server)
 
 [ADR 0046](adr/0046-dynamic-clients.md): a packet from an address no `nas.<name>` entry covers, inside the dynamic
-networks, makes the gateway look the address up (that packet is dropped; the NAS sends it again). Configured entries
+networks, makes the RADIUS server look the address up (that packet is dropped; the NAS sends it again). Configured entries
 always win; none is needed.
 
 | Key | Default | Meaning |
@@ -119,14 +119,14 @@ always win; none is needed.
 | `nas.dynamic.negative.ttl` | `1m` | how long an unknown address is not asked for again |
 | `nas.dynamic.max` | `10000` | entries held at once |
 
-## RadSec (gateway)
+## RadSec (server)
 
 RADIUS over TLS (RFC 6614, [ADR 0034](adr/0034-radsec.md)): authentication and accounting on one TCP connection,
 client certificates required. A connection belongs to the NAS entry of its source address, which must allow it.
 
 | Key | Default | Meaning |
 |---|---|---|
-| `radsec.enabled` | `false` | accept RadSec connections on `gateway.listen.host` |
+| `radsec.enabled` | `false` | accept RadSec connections on `server.listen.host` |
 | `radsec.port` | `2083` | TCP port |
 | `radsec.certificate` / `radsec.key` | — | the server's certificate chain and unencrypted PKCS#8 key, PEM |
 | `radsec.ca` | — | CAs (PEM) that NAS client certificates must chain to; required |
@@ -135,7 +135,7 @@ client certificates required. A connection belongs to the NAS entry of its sourc
 | `radsec.connections` | `256` | connections at once; more are closed right after accepting |
 | `radsec.handshake.timeout` | `10s` | a connection that has not finished its TLS handshake by then is closed |
 | `radsec.idle.timeout` | `0s` (never) | close a connection without traffic for this long (TCP keep-alive is on regardless) |
-| `radsec.session.timeout` | `1h` | how long a TLS session may be resumed on reconnect; also how long a revoked certificate may keep resuming. Sessions are kept per gateway: the gateway sets `-Djdk.tls.server.enableSessionTicketExtension=false` unless given, because the JDK does not check the age of stateless tickets |
+| `radsec.session.timeout` | `1h` | how long a TLS session may be resumed on reconnect; also how long a revoked certificate may keep resuming. Sessions are kept per server: the RADIUS server sets `-Djdk.tls.server.enableSessionTicketExtension=false` unless given, because the JDK does not check the age of stateless tickets |
 | `nas.<name>.radsec` | `false` | this NAS entry may connect over RadSec |
 | `nas.<name>.radsec.secret` | `radsec` | the shared secret inside TLS (RFC 6614 §2.3) |
 | `nas.<name>.radsec.identity` | — | a name the client certificate must carry (common name, DNS, e-mail or UPN); unset: any certificate of `radsec.ca` |
@@ -159,7 +159,7 @@ certificate needed. A connection belongs to the NAS entry of its source address 
 
 | Key | Default | Meaning |
 |---|---|---|
-| `radius.tcp.enabled` | `false` | accept RADIUS over TCP on `gateway.listen.host` |
+| `radius.tcp.enabled` | `false` | accept RADIUS over TCP on `server.listen.host` |
 | `radius.tcp.auth.port` | `1812` | TCP port for Access-Requests (and Status-Server) |
 | `radius.tcp.acct.port` | `1813` | TCP port for Accounting-Requests (and Status-Server) |
 | `nas.<name>.tcp` | `false` | this NAS entry may connect over TCP |
@@ -172,7 +172,7 @@ with or without the TCP listener. One association per NAS address and port; one 
 
 | Key | Default | Meaning |
 |---|---|---|
-| `radsec.dtls.enabled` | `false` | accept DTLS associations on `gateway.listen.host` |
+| `radsec.dtls.enabled` | `false` | accept DTLS associations on `server.listen.host` |
 | `radsec.dtls.port` | `2083` | UDP port |
 | `radsec.dtls.associations` | `256` | associations at once; a ClientHello beyond is dropped |
 | `radsec.dtls.idle.timeout` | `15m` | close an association without traffic for this long (`0s`: never) |
@@ -194,10 +194,10 @@ nas.ap-cloud.dtls          = true
 nas.ap-cloud.dtls.identity = controller.ap-cloud.example
 ```
 
-## CoA and Disconnect (gateway)
+## CoA and Disconnect (server)
 
-The gateway changes or ends sessions on their NAS (RFC 5176, [ADR 0036](adr/0036-coa-and-session-identity.md)).
-Sessions are found in the replicated state, so any gateway reaches any session.
+The RADIUS server changes or ends sessions on their NAS (RFC 5176, [ADR 0036](adr/0036-coa-and-session-identity.md)).
+Sessions are found in the replicated state, so any RADIUS server reaches any session.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -206,7 +206,7 @@ Sessions are found in the replicated state, so any gateway reaches any session.
 | `coa.api.token` | — | bearer token of the HTTP API on the management port (`POST /coa/disconnect`, `/coa/update`); at least 16 characters, use `${env:...}`; without it there is no API |
 | `coa.simultaneous.use` | `reject` | over a user's `Simultaneous-Use`: `reject` the new device, or `disconnect-oldest`: the user's oldest session gets a Disconnect-Request and the new device is let in once the NAS's Accounting-Stop freed the place |
 | `coa.simultaneous.use.wait` | `3s` | how long the new device's Access-Request waits for that Stop (keep below the NAS's timeout × retries) |
-| `coa.sweep.enabled` | `false` | the store sweep, on one gateway: users with active sessions looked up again; rejected now → Disconnect, changed reply items → CoA |
+| `coa.sweep.enabled` | `false` | the store sweep, on one server: users with active sessions looked up again; rejected now → Disconnect, changed reply items → CoA |
 | `coa.sweep.interval` / `coa.sweep.rate` | `15m` / `20` | time between sweeps; store lookups per second at most (spare the directory) |
 | `coa.sweep.missing` | `keep` | a user no store has any more: `keep` (EAP-TLS devices with a certificate alone are in no store) or `disconnect` |
 | `nas.<name>.coa.address` | the entry's address, else the session's NAS-IP-Address | where the NAS's dynamic-authorization server listens (a NAS on RadSec gets the request on its connection instead) |
@@ -214,17 +214,17 @@ Sessions are found in the replicated state, so any gateway reaches any session.
 | `nas.<name>.coa.secret` | `nas.<name>.secret` | its shared secret |
 
 ```bash
-curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:9190/coa/disconnect?user=alice'
-curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://gw:9190/coa/update?user=alice' \
+curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://server-a:9190/coa/disconnect?user=alice'
+curl -X POST -H "Authorization: Bearer $RADIUSWARD_COA_API_TOKEN" 'http://server-a:9190/coa/update?user=alice' \
      --data 'Session-Timeout = 600, Filter-Id = "restricted"'
-admin disconnect --gateway http://gw:9190 --user alice      # token from RADIUSWARD_COA_API_TOKEN
-admin coa --gateway http://gw:9190 --user alice --attributes 'Session-Timeout = 600'
+admin disconnect --server http://server-a:9190 --user alice      # token from RADIUSWARD_COA_API_TOKEN
+admin coa --server http://server-a:9190 --user alice --attributes 'Session-Timeout = 600'
 ```
 
-## Proxying (gateway)
+## Proxying (server)
 
 Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0037-proxying.md)); needs
-`gateway.auth.enabled`. A user without a configured realm is decided locally.
+`server.auth.enabled`. A user without a configured realm is decided locally.
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -255,12 +255,12 @@ Users of some realms are authenticated by other RADIUS servers ([ADR 0037](adr/0
 | `proxy.pending` | `1024` | proxied requests in flight |
 | `proxy.require.message-authenticator` | `true` | ignore answers without a valid Message-Authenticator (BlastRADIUS) |
 | `home.<id>.coa` | `false` | this (UDP) home server may send CoA and Disconnect-Requests for its users; they are relayed to the NAS of the user's session (needs `coa.enabled`; [ADR 0043](adr/0043-coa-relay.md)) |
-| `proxy.coa.port` | `3799` | where CoA from such home servers is received (on `gateway.listen.host`) |
+| `proxy.coa.port` | `3799` | where CoA from such home servers is received (on `server.listen.host`) |
 | `proxy.inner` | `false` | end PEAP, TTLS and TEAP here and send only the inner credential of a proxied realm's user to its UDP, TCP or RadSec home servers (PAP, CHAP, MS-CHAPv2); their reply attributes become ours ([ADR 0044](adr/0044-inner-tunnel-proxying.md)) |
 
 ## Identity stores
 
-Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.md)).
+RADIUS servers with `server.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.md)).
 
 | Key | Default | Meaning |
 |---|---|---|
@@ -271,7 +271,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.store.<name>.path` | — | `file`: the users file |
 | `auth.store.<name>.reload.interval` | `5s` | `file`: how often the file's modification time is checked |
 | `auth.store.<name>.url` / `.user` / `.password` | — / empty / empty | `sql`: JDBC URL and credentials |
-| `auth.store.<name>.pool` | `gateway.auth.workers` | `sql`: maximum connections |
+| `auth.store.<name>.pool` | `server.auth.workers` | `sql`: maximum connections |
 | `auth.store.<name>.timeout` | `1500ms` | `sql`: wait for a connection, and query timeout; beyond it the store counts as unavailable |
 | `auth.store.<name>.schema` | `radcheck` | `sql`: table layout (only `radcheck` so far) |
 | `auth.store.<name>.table.<table>` | the table's name | `sql`: other names for `radcheck`, `radreply`, `radusergroup`, `radgroupcheck`, `radgroupreply` (`[schema.]name`) |
@@ -303,7 +303,7 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.eap.pwd.server.id` | `radiusward` | EAP-pwd's server identity (method `pwd`, group 19; needs the cleartext of a store that allows it, or an NT-Password) ([ADR 0042](adr/0042-eap-pwd.md)) |
 | `auth.eap.aka-prime.network.name` | `WLAN` | EAP-AKA′'s network name (AT_KDF_INPUT), bound into its keys; SIM subscribers are store entries named by IMSI with `SIM-Ki` and `SIM-OPc` (or `SIM-OP`), optional `SIM-AMF` and `SIM-SQN` (also `EAP-Sim-*` names); EAP-SIM also takes three stored triplets (`EAP-Sim-Rand1…3`, `EAP-Sim-SRES1…3`, `EAP-Sim-KC1…3`); the cluster keeps the sequence numbers ([ADR 0061](adr/0061-eap-sim-aka.md)) |
 | `auth.eap.sim.pseudonym.keys` | none | `<id>:<32 hex digits>`, comma-separated, the first one current: EAP-SIM/AKA/AKA′ pseudonyms are the IMSI encrypted with AES-GCM under it, any listed key decrypts (rotation); without keys no pseudonyms ([ADR 0061](adr/0061-eap-sim-aka.md)) |
-| `auth.eap.sim.reauth.lifetime` / `.max` / `.sessions` | `1h` / `16` / `100000` | fast re-authentication: how long kept keys last from the full authentication, how many re-authentications in a row, how many kept at once per gateway; `0s` = off |
+| `auth.eap.sim.reauth.lifetime` / `.max` / `.sessions` | `1h` / `16` / `100000` | fast re-authentication: how long kept keys last from the full authentication, how many re-authentications in a row, how many kept at once per RADIUS server; `0s` = off |
 | `auth.eap.timeout` | `30s` | how long a conversation waits for the peer's next response |
 | `auth.eap.conversations` | `10000` | EAP conversations held at once; beyond it new rounds are not answered |
 | `auth.cache.ttl` / `auth.cache.max` | `5s` / `100000` | per-worker caches of look-ups, successful slow-hash checks and encoded reply items (each bounded by `max`) |
@@ -322,8 +322,8 @@ Gateways with `gateway.auth.enabled=true` ([ADR 0021](adr/0021-identity-stores.m
 | `auth.pool.<name>.lease` | `5m` | how long an address stays taken without an open exported session (until the Accounting-Start reaches PostgreSQL) |
 | `auth.pool.<name>.exhausted` | `reject` | an empty pool: `reject`, or `accept` without an address |
 | `auth.pool.sessions` | `true` | an address of an open session in `accounting_session` is taken; `false`: the lease alone (no PostgreSQL sink) |
-| `auth.pool.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the pools; the gateway creates and fills `ip_pool`; unreachable = no answer |
-| `auth.rules` | none | a rules file applied to Access-Accepts: `if <conditions> { reply … / remove … / reject / stop }` ([ADR 0051](adr/0051-rules.md)); a file that does not parse stops the gateway |
+| `auth.pool.sql.url` / `.user` / `.password` | — / empty / empty | JDBC connection of the pools; the RADIUS server creates and fills `ip_pool`; unreachable = no answer |
+| `auth.rules` | none | a rules file applied to Access-Accepts: `if <conditions> { reply … / remove … / reject / stop }` ([ADR 0051](adr/0051-rules.md)); a file that does not parse stops the RADIUS server |
 | `auth.rules.reload.interval` | `5s` | how often the rules file is checked for changes; a broken change keeps the previous rules; `0s` = never |
 | `auth.totp.mode` | `challenge` | users with `TOTP-Secret := <base32>` need a code ([ADR 0053](adr/0053-totp.md)): `challenge` (Access-Challenge after the right password; the code comes with the State) or `append` (the code follows the password) |
 | `auth.totp.digits` / `auth.totp.window` | `6` / `1` | code length (6 or 8); 30-second steps of clock drift accepted either way (0–10) |
@@ -365,20 +365,20 @@ all), `sessions.retention` (closed sessions, default `0`: keep), `radacct.view` 
 
 File (`type=file`): `dir` (required), `mode`, `max.file.size` (`256m`).
 
-## NAS clients (gateway)
+## NAS clients (server)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `nas.<name>.address` | — | IPv4 or IPv6 address or CIDR range of the NAS (IPv6 needs `gateway.listen.host = ::`; [ADR 0047](adr/0047-ipv6-nas.md)) |
+| `nas.<name>.address` | — | IPv4 or IPv6 address or CIDR range of the NAS (IPv6 needs `server.listen.host = ::`; [ADR 0047](adr/0047-ipv6-nas.md)) |
 | `nas.<name>.secret` | — | shared secret; use `${env:...}` |
 | `nas.<name>.vendor` | `default` | vendor profile; a dictionary vendor name (`cisco`, `mikrotik`, …) also limits the vendor attributes in Access-Accepts (`reply.vendors`) |
 | `nas.<name>.message-authenticator` | `optional` | `required` \| `optional` \| `off` |
-| `nas.<name>.id` | FNV-1a hash of the name | identity used in event keys — must be identical on every gateway |
+| `nas.<name>.id` | FNV-1a hash of the name | identity used in event keys — must be identical on every RADIUS server |
 | `nas.<name>.access.message-authenticator` | `required` | Message-Authenticator on Access-Requests: `required` \| `optional` \| `off` (BlastRADIUS, CVE-2024-3596; always required with EAP) |
 | `nas.<name>.idle.timeout` | cluster's `service.idle.timeout` | close a session of this NAS without an event for this long (lost Stop): about 3 × the NAS's interim interval, e.g. `15m` for 5-minute interims. Whole minutes, 1m–65535m; the latest event of a session sets it |
-| `nas.<name>.identity` | `source-ip` | devices behind this entry (NAT, cloud Wi-Fi): `nas-identifier`, `called-station-id`, `nas-ip-address`, or a list (first present wins); required for `0.0.0.0/0`. Must be identical on every gateway |
+| `nas.<name>.identity` | `source-ip` | devices behind this entry (NAT, cloud Wi-Fi): `nas-identifier`, `called-station-id`, `nas-ip-address`, or a list (first present wins); required for `0.0.0.0/0`. Must be identical on every RADIUS server |
 
-**Devices behind NAT** ([ADR 0019](adr/0019-nas-device-identity.md)). When many access points reach the gateways
+**Devices behind NAT** ([ADR 0019](adr/0019-nas-device-identity.md)). When many access points reach the RADIUS servers
 through one address, set `identity` so their sessions stay apart and an Accounting-On stops only the rebooted
 device's sessions:
 

@@ -7,10 +7,10 @@ package io.radiusward.auth;
 import java.util.Optional;
 
 /**
- * Where users come from (Phase 5, ADR 0021). A store only <b>looks up</b>: the gateway verifies credentials,
+ * Where users come from (Phase 5, ADR 0021). A store only <b>looks up</b>: the RADIUS server verifies credentials,
  * evaluates check items and encodes reply attributes, so every store gets the same correct crypto.
  *
- * <p>Called on gateway worker threads, concurrently: implementations are thread-safe and bound their own waiting
+ * <p>Called on RADIUS server worker threads, concurrently: implementations are thread-safe and bound their own waiting
  * (connection and query timeouts below the NAS timeout).
  */
 public interface IdentityStore extends AutoCloseable {

@@ -20,7 +20,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * The gateway's CoA API on its management port (ADR 0036), only with {@code coa.api.token}:
+ * The RADIUS server's CoA API on its management port (ADR 0036), only with {@code coa.api.token}:
  *
  * <pre>
  * POST /coa/disconnect?user=alice                       every active session of the user

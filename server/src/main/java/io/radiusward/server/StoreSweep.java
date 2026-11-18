@@ -23,7 +23,7 @@ import org.apache.logging.log4j.Logger;
  * times a second so a directory is not flooded. A user the stores now reject (disabled, {@code Auth-Type := Reject})
  * gets a Disconnect-Request on every session; one whose reply items changed since the previous sweep gets a
  * CoA-Request with the new ones. A user no store has any more is kept unless {@code coa.sweep.missing = disconnect}:
- * EAP-TLS devices with a certificate alone are in no store. Store outages change nothing. Meant for one gateway; a
+ * EAP-TLS devices with a certificate alone are in no store. Store outages change nothing. Meant for one RADIUS server; a
  * second would only send the same requests again.
  */
 final class StoreSweep implements Runnable {
@@ -156,7 +156,7 @@ final class StoreSweep implements Runnable {
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
         w.counter(
-                "radiusward_gateway_store_sweep_total",
+                "radiusward_server_store_sweep_total",
                 "Store sweeps, users looked up again and what was done (ADR 0036)");
         counts.write(w, radiusServer);
     }

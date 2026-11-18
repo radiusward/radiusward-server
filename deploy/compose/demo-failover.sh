@@ -2,7 +2,7 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# Failover demo on the compose stack: ~2k requests/s through both gateways, kill -9 of the leader container
+# Failover demo on the compose stack: ~2k requests/s through both RADIUS servers, kill -9 of the leader container
 # after 10 s, then proof that every acknowledged event is in the replicated state.
 #
 #   deploy/compose/demo-failover.sh            (starts the stack if needed; leaves it running)

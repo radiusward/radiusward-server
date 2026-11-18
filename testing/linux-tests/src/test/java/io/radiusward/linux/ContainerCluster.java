@@ -29,13 +29,13 @@ import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Three cluster members, two gateways and a tools container in one Docker network with the static addresses
+ * Three cluster members, two RADIUS servers and a tools container in one Docker network with the static addresses
  * and configuration files of {@code deploy/compose}, so the shipped configuration is what gets tested.
  *
  * <p>Everything that talks to the containers runs inside the network, from the tools container: on macOS the
  * host cannot reach container addresses, and published UDP ports rewrite the NAS source address.
  *
- * <p>Members use the test image (LazyFS, iptables, root); gateways and tools the release image.
+ * <p>Members use the test image (LazyFS, iptables, root); RADIUS servers and tools the release image.
  */
 final class ContainerCluster implements AutoCloseable {
 
@@ -48,7 +48,7 @@ final class ContainerCluster implements AutoCloseable {
     static final String SECRET = "testing123";
     static final int NAS_ID = 1001;
     static final String MEMBERS = "172.28.0.10,172.28.0.11,172.28.0.12";
-    static final String GATEWAYS = "172.28.0.20:1813,172.28.0.21:1813";
+    static final String SERVERS = "172.28.0.20:1813,172.28.0.21:1813";
     static final String TOOLS_IP = "172.28.0.30";
     private static final long MIB = 1024L * 1024;
     private static final Pattern ROLE = Pattern.compile("\"role\":\"(\\w+)\"");
@@ -70,7 +70,7 @@ final class ContainerCluster implements AutoCloseable {
         }
 
         /**
-         * Members and gateways in the systemd test image, started by the shipped units of {@code deploy/systemd}
+         * Members and RADIUS servers in the systemd test image, started by the shipped units of {@code deploy/systemd}
          * ({@link #SYSTEMD_IMAGE}, SystemdFailoverIT).
          */
         Options systemd(boolean on) {
@@ -79,8 +79,7 @@ final class ContainerCluster implements AutoCloseable {
         }
 
         Options fileSyncLevel(int level) {
-            return new Options(
-                    level, lazyFs, nodeMemoryMib, serverMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
+            return new Options(level, lazyFs, nodeMemoryMib, serverMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         Options lazyFs(boolean on) {
@@ -119,7 +118,7 @@ final class ContainerCluster implements AutoCloseable {
         }
     }
 
-    /** A member or gateway as seen from inside the network. */
+    /** A member or RADIUS server as seen from inside the network. */
     record Member(String name, String ip, GenericContainer<?> container) {}
 
     private final String testName;
@@ -161,7 +160,7 @@ final class ContainerCluster implements AutoCloseable {
             nodes.add(new Member("node-" + i, "172.28.0.1" + i, node(i)));
         }
         for (int i = 0; i < 2; i++) {
-            radiusServers.add(new Member("gateway-" + (char) ('a' + i), "172.28.0.2" + i, radiusServer(i)));
+            radiusServers.add(new Member("server-" + (char) ('a' + i), "172.28.0.2" + i, radiusServer(i)));
         }
     }
 
@@ -214,21 +213,21 @@ final class ContainerCluster implements AutoCloseable {
         return new GenericContainer<>(DockerImageName.parse(IMAGE))
                 .withNetwork(network)
                 .withEnv("RADIUSWARD_PROFILE", "small")
-                .withEnv("RADIUSWARD_GATEWAY_ID", Integer.toString(index + 1))
-                .withEnv("RADIUSWARD_GATEWAY_EGRESS_HOST", ip)
+                .withEnv("RADIUSWARD_SERVER_ID", Integer.toString(index + 1))
+                .withEnv("RADIUSWARD_SERVER_EGRESS_HOST", ip)
                 .withEnv("NAS_SECRET", SECRET)
-                .withCopyToContainer(config("gateway.properties"), "/etc/radiusward/gateway.properties")
+                .withCopyToContainer(config("server.properties"), "/etc/radiusward/server.properties")
                 .withCopyToContainer(config("nas-clients.properties"), "/etc/radiusward/nas-clients.properties")
-                // gateway.properties enables authentication with the demo users file, as compose mounts it
+                // server.properties enables authentication with the demo users file, as compose mounts it
                 .withCopyToContainer(config("users"), "/etc/radiusward/users")
                 .withCommand(
-                        "gateway",
+                        "server",
                         "--config",
-                        "/etc/radiusward/gateway.properties",
+                        "/etc/radiusward/server.properties",
                         "--config",
                         "/etc/radiusward/nas-clients.properties")
                 .withCreateContainerCmdModifier(cmd -> {
-                    cmd.withIpv4Address(ip).withHostName("gateway-" + (char) ('a' + index));
+                    cmd.withIpv4Address(ip).withHostName("server-" + (char) ('a' + index));
                     cmd.getHostConfig()
                             .withShmSize(128 * MIB)
                             .withMemory(options.serverMemoryMib() * MIB)
@@ -241,7 +240,7 @@ final class ContainerCluster implements AutoCloseable {
     // ----
 
     static final String NODE_UNIT = "radiusward-node";
-    static final String GATEWAY_UNIT = "radiusward-gateway";
+    static final String SERVER_UNIT = "radiusward-server";
 
     private GenericContainer<?> systemdNode(int id) {
         StringBuilder env = new StringBuilder()
@@ -262,11 +261,11 @@ final class ContainerCluster implements AutoCloseable {
     private GenericContainer<?> systemdServer(int index) {
         String ip = "172.28.0.2" + index;
         String env = "RADIUSWARD_PROFILE=small\n"
-                + "RADIUSWARD_GATEWAY_ID=" + (index + 1) + "\n"
-                + "RADIUSWARD_GATEWAY_EGRESS_HOST=" + ip + "\n"
+                + "RADIUSWARD_SERVER_ID=" + (index + 1) + "\n"
+                + "RADIUSWARD_SERVER_EGRESS_HOST=" + ip + "\n"
                 + "NAS_SECRET=" + SECRET + "\n";
-        return systemdContainer(ip, "gateway-" + (char) ('a' + index), options.serverMemoryMib(), 128)
-                .withCopyToContainer(config("gateway.properties"), "/etc/radiusward/gateway.properties")
+        return systemdContainer(ip, "server-" + (char) ('a' + index), options.serverMemoryMib(), 128)
+                .withCopyToContainer(config("server.properties"), "/etc/radiusward/server.properties")
                 .withCopyToContainer(config("nas-clients.properties"), "/etc/radiusward/nas-clients.properties")
                 .withCopyToContainer(config("users"), "/etc/radiusward/users")
                 .withCopyToContainer(Transferable.of(env), "/etc/radiusward/radiusward.env");
@@ -288,9 +287,9 @@ final class ContainerCluster implements AutoCloseable {
                 });
     }
 
-    /** The unit that runs radiusward in a member's or gateway's container. */
+    /** The unit that runs radiusward in a member's or RADIUS server's container. */
     static String unit(Member m) {
-        return m.name().startsWith("node-") ? NODE_UNIT : GATEWAY_UNIT;
+        return m.name().startsWith("node-") ? NODE_UNIT : SERVER_UNIT;
     }
 
     /** {@code systemctl <args>} in the container of {@code m}. */
@@ -301,7 +300,7 @@ final class ContainerCluster implements AutoCloseable {
         return exec(m.container(), command);
     }
 
-    /** {@code systemctl is-active} of the member's or gateway's unit: active, activating, deactivating, inactive… */
+    /** {@code systemctl is-active} of the member's or RADIUS server's unit: active, activating, deactivating, inactive… */
     String unitState(Member m) {
         return systemctl(m, "is-active", unit(m)).getStdout().trim();
     }
@@ -335,9 +334,10 @@ final class ContainerCluster implements AutoCloseable {
         }
     }
 
-    /** Starts everything and waits until all members and gateways report ready; cleans up if that fails. */
+    /** Starts everything and waits until all members and RADIUS servers report ready; cleans up if that fails. */
     ContainerCluster start() {
-        return Reports.step("start " + nodes.size() + " members and " + radiusServers.size() + " gateways", this::startAll);
+        return Reports.step(
+                "start " + nodes.size() + " members and " + radiusServers.size() + " RADIUS servers", this::startAll);
     }
 
     private ContainerCluster startAll() {
@@ -463,7 +463,7 @@ final class ContainerCluster implements AutoCloseable {
         return r;
     }
 
-    /** {@code /metrics} of a member or gateway. */
+    /** {@code /metrics} of a member or RADIUS server. */
     String metrics(Member m) {
         return radiusward("probe", "http://" + m.ip() + ":9090/metrics").getStdout();
     }
@@ -528,7 +528,7 @@ final class ContainerCluster implements AutoCloseable {
         });
     }
 
-    /** Runs {@code sh -c <command>} in a member or gateway container (as root in the test image). */
+    /** Runs {@code sh -c <command>} in a member or RADIUS server container (as root in the test image). */
     ExecResult shell(Member m, String command) {
         return exec(m.container(), "sh", "-c", command);
     }
@@ -591,7 +591,7 @@ final class ContainerCluster implements AutoCloseable {
                 v.get("max"));
     }
 
-    /** {@code /state} of a member or gateway, or {@code null} if it does not answer. */
+    /** {@code /state} of a member or RADIUS server, or {@code null} if it does not answer. */
     Map<String, String> state(Member m) {
         ExecResult r = radiusward("probe", "http://" + m.ip() + ":9090/state");
         if (r.getExitCode() != 0) {
@@ -684,7 +684,7 @@ final class ContainerCluster implements AutoCloseable {
         return exec(tools, command);
     }
 
-    /** {@code radclient load} against both gateways with an acknowledgement log in the tools container. */
+    /** {@code radclient load} against both RADIUS servers with an acknowledgement log in the tools container. */
     LoadResult load(int nas, int sessions, int rate, Duration duration, String ackLog) {
         return load(nas, sessions, rate, duration, ackLog, 0);
     }
@@ -701,7 +701,7 @@ final class ContainerCluster implements AutoCloseable {
                 "radclient",
                 "load",
                 "--server",
-                GATEWAYS,
+                SERVERS,
                 "--secret",
                 SECRET,
                 "--nas",

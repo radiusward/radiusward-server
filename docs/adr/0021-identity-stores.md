@@ -13,7 +13,7 @@ the NAS must never become Accept because of it.
   only operation is `lookup(userName)` → a `UserRecord` (check items, reply items, groups with their own check and
   reply items) or empty; `StoreUnavailableException` when it cannot tell. Providers come from the class path and
   from jars in `auth.plugins.dir`, through `ServiceLoader` — the same model as sinks (ADR 0007).
-- **Stores run in the gateway**, on the `gateway.auth.workers` threads; the cluster is not involved. A store may
+- **Stores run in the RADIUS server**, on the `server.auth.workers` threads; the cluster is not involved. A store may
   block a worker up to its own timeout; the socket thread never waits.
 - **Configuration**: `auth.stores` is the ordered list of store names, `auth.store.<name>.*` their settings
   (`type` picks the provider; the rest goes to it), `nas.<name>.auth.stores` an optional list per NAS entry.
@@ -40,7 +40,7 @@ the NAS must never become Accept because of it.
   under the user plus a salted digest of the presented password, never the password itself.
 
 ## Consequences
-- A database or file outage is visible to the NAS as silence; the gateway logs it once per cause.
+- A database or file outage is visible to the NAS as silence; the RADIUS server logs it once per cause.
 - Changing a user takes effect within `auth.cache.ttl` (and `reload.interval` for the file store).
 - Reply items are encoded through the dictionary; v3-style vendor names (`Cisco-AVPair`) and v4 paths
   (`Cisco.AVPair`) both work. Items the dictionary does not know are left out with a warning.

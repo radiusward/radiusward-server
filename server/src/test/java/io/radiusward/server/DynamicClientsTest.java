@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-/** NAS entries looked up on demand (ADR 0046), with a fake source; SQL through a gateway: {@code DynamicClientsIT}. */
+/** NAS entries looked up on demand (ADR 0046), with a fake source; SQL through a RADIUS server: {@code DynamicClientsIT}. */
 class DynamicClientsTest {
 
     static final int NET = 0x0A010000; // 10.1.0.0/16
@@ -71,7 +71,7 @@ class DynamicClientsTest {
         assertThat(c.name()).isEqualTo("dynamic:ap-10.1.0.5");
         assertThat(new String(c.secret(), StandardCharsets.US_ASCII)).isEqualTo("s3cret");
         assertThat(c.vendor()).isEqualTo("ruckus");
-        assertThat(c.id()).as("the same on every gateway").isEqualTo(NasConfig.fnv1a("dynamic:10.1.0.5"));
+        assertThat(c.id()).as("the same on every RADIUS server").isEqualTo(NasConfig.fnv1a("dynamic:10.1.0.5"));
         for (int i = 0; i < 10; i++) {
             clients.find(address, System.currentTimeMillis());
         }

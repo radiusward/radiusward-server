@@ -232,7 +232,7 @@ public final class DynamicClients implements AutoCloseable {
         String name = "dynamic:"
                 + (row.shortname() == null || row.shortname().isBlank() ? ip.getHostAddress() : row.shortname());
         NasClient client = NasClient.builder(name, NasConfig.fnv1a("dynamic:" + ip.getHostAddress()))
-                .network( // the same on every gateway
+                .network( // the same on every RADIUS server
                         address, 32)
                 .secret(row.secret())
                 .vendor(
@@ -286,10 +286,10 @@ public final class DynamicClients implements AutoCloseable {
     }
 
     void writeMetrics(io.radiusward.common.management.PrometheusWriter w, String radiusServer) {
-        w.counter("radiusward_gateway_nas_dynamic_total", "NAS entries looked up on demand (nas.dynamic.*)");
+        w.counter("radiusward_server_nas_dynamic_total", "NAS entries looked up on demand (nas.dynamic.*)");
         counts.write(w, radiusServer);
-        w.gauge("radiusward_gateway_nas_dynamic_entries", "Dynamic NAS entries loaded")
-                .sample(size(), "gateway", radiusServer);
+        w.gauge("radiusward_server_nas_dynamic_entries", "Dynamic NAS entries loaded")
+                .sample(size(), "server", radiusServer);
     }
 
     /** Whether the look-up thread still runs (tests). */

@@ -1,6 +1,6 @@
 # protocol
 
-SBE messages between gateways, the cluster and tools, and the snapshot format. The schema lives in
+SBE messages between RADIUS servers, the cluster and tools, and the snapshot format. The schema lives in
 `src/main/resources/sbe/radiusward-schema.xml`; `sbe-tool` generates the codecs into
 `io.radiusward.protocol` at `generate-sources` (build time only — the runtime needs just Agrona).
 

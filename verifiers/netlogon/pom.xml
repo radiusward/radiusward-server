@@ -80,7 +80,7 @@
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
                     <systemPropertyVariables>
-                        <!-- the gateway test reaches the test domain controller's LDAPS as localhost, its certificate
+                        <!-- the RADIUS server test reaches the test domain controller's LDAPS as localhost, its certificate
                              names its own host; production keeps the JDK's host name check -->
                         <com.sun.jndi.ldap.object.disableEndpointIdentification>true</com.sun.jndi.ldap.object.disableEndpointIdentification>
                     </systemPropertyVariables>

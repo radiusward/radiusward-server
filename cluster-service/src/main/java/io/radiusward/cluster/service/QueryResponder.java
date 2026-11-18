@@ -17,7 +17,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 
 /**
  * The read-only questions the service answers from the replicated state: the state machine's counters and digest,
- * a session by its key, a user's active sessions, and pages of sessions for the gateways' store sweep (ADR 0036).
+ * a session by its key, a user's active sessions, and pages of sessions for the RADIUS servers' store sweep (ADR 0036).
  * They change nothing, so the answer may differ between members only by when it is asked. Reuses its encoders and
  * buffers; called on the service's thread only.
  */
@@ -151,7 +151,7 @@ final class QueryResponder {
         }
     }
 
-    /** A page of active sessions with a user, from a slot on (the gateways' store sweep, ADR 0036). */
+    /** A page of active sessions with a user, from a slot on (the RADIUS servers' store sweep, ADR 0036). */
     void sessionPage(ClientSession session, DirectBuffer buffer, int offset, MessageHeaderDecoder header) {
         sessionPageQueryDecoder.wrapAndApplyHeader(buffer, offset, header);
         SessionStore store = machine.store();

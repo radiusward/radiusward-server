@@ -12,15 +12,15 @@ draft whose only notable users were Cisco's PEAP/EAP-GTC clients. It differs in:
 - no crypto-binding, and no definition for TLS 1.3.
 
 The established open-source RADIUS server offers version 0 only, in its 3.x and its 4.x development line. It steps
-down if a peer answers with a lower version, of which there is none. The gateway also offered version 0, but ignored
+down if a peer answers with a lower version, of which there is none. The RADIUS server also offered version 0, but ignored
 the version bits a peer sent back. That server can also require a client certificate inside PEAP
-(`require_client_cert`); the gateway could not.
+(`require_client_cert`); the RADIUS server could not.
 
 What matters to an operator moving from such a server is that the same supplicants end the same way. That can be
 tested rather than claimed.
 
 ## Decision
-- **PEAPv1 is not planned.** The gateway offers PEAPv0, like the server it is compared with. It will be reconsidered
+- **PEAPv1 is not planned.** The RADIUS server offers PEAPv0, like the server it is compared with. It will be reconsidered
   if a user with PEAPv1 clients (old Cisco PEAP/GTC) asks for it. The outline is kept here:
   - an opt-in setting that offers v1 and accepts a peer's 0 or 1;
   - full inner EAP headers and a tunneled EAP-Success;
@@ -33,7 +33,7 @@ tested rather than claimed.
   chains to `auth.eap.tls.ca`, with its revocation settings (ADR 0033). The inner method still runs: the certificate
   is in addition to the password, not instead of it. Without `auth.eap.tls.ca` this is a configuration error.
 - **Comparison test**: `ExternalEapComparisonIT` (`-Pinterop`, Docker) runs the same `eapol_test` profiles against an
-  installed `radiusd` and against the gateway.
+  installed `radiusd` and against the RADIUS server.
   - Both servers use the same users file, certificates and secret.
   - The external server is configured with EAP-TLS, PEAP (MS-CHAPv2 and GTC inside) and TTLS, and a persistent TLS
     session cache so that it resumes.
@@ -53,8 +53,8 @@ tested rather than claimed.
   - PEAP with a required client certificate, with and without one.
 
   A difference found later becomes a profile there.
-- Not compared: features of that server the gateway does not have, namely SoH (Microsoft NAP, removed from Windows)
-  and proxying the inner request of a tunnel to a home server (the gateway proxies whole EAP conversations by the
+- Not compared: features of that server the RADIUS server does not have, namely SoH (Microsoft NAP, removed from Windows)
+  and proxying the inner request of a tunnel to a home server (the RADIUS server proxies whole EAP conversations by the
   outer realm, ADR 0037).
 
 ## Tests
@@ -65,4 +65,4 @@ tested rather than claimed.
     with a wrong password, and accepts the right certificate with the right password;
   - configuration keys and the missing-CA error.
 - `ExternalEapComparisonIT` as above; each run's `eapol_test` output and the external server's log are kept in
-  `gateway/target/eap-comparison`.
+  `server/target/eap-comparison`.

@@ -23,17 +23,17 @@ servers accept it. RadSec (ADR 0034) already has everything except the missing T
   - A malformed length closes the connection, as over RadSec.
 - **CoA**: not over plain TCP connections; a NAS on TCP gets CoA over UDP (or its RadSec connection or DTLS
   association).
-- **Metrics**: `radiusward_gateway_tcp_total{result}`.
+- **Metrics**: `radiusward_server_tcp_total{result}`.
 - **Use**: only inside protected networks. Without TLS, user names and accounting cross the network readable, as over
   UDP. RadSec is the default recommendation.
 
 ## Tests
-- `RadiusTcpIT`, through a gateway without certificates:
+- `RadiusTcpIT`, through a RADIUS server without certificates:
   - Access-Requests and Status-Server on the authentication port with the NAS's secret;
   - an Accounting-Request there discarded;
   - an entry without `tcp` refused at connect;
   - a malformed length closing the connection.
 - `RadsecAccountingIT`, with 3 cluster members: an Interim over plain TCP in the same session as a Start over DTLS
   and an Interim over RadSec.
-- `RadsecproxyIT#papOverPlainTcp`: `radclient -P tcp` to the gateway's TCP port, accept and reject.
+- `RadsecproxyIT#papOverPlainTcp`: `radclient -P tcp` to the RADIUS server's TCP port, accept and reject.
 - `RadsecConfigTest`: plain TCP without certificates, beside RadSec, and a missing `nas.<name>.tcp`.

@@ -47,35 +47,34 @@ final class AuthMetrics {
         StoreLookups.write(w, radiusServer, new TreeMap<>(lookups));
         if (!stores.eap().methods().isEmpty()) {
             w.counter(
-                    "radiusward_gateway_eap_total",
+                    "radiusward_server_eap_total",
                     "EAP conversations by the outer method and how its method ended (authorization follows a success)");
             for (String method : new TreeSet<>(stores.eap().methods())) {
                 for (String outcome : EAP_OUTCOMES) {
-                    w.sample(
-                            eapOutcome(method, outcome), "gateway", radiusServer, "method", method, "outcome", outcome);
+                    w.sample(eapOutcome(method, outcome), "server", radiusServer, "method", method, "outcome", outcome);
                 }
             }
         }
         EapTlsConfig tls = stores.eap().tls();
         if (tls != null) {
             w.counter(
-                    "radiusward_gateway_eap_tls_reloads_total",
+                    "radiusward_server_eap_tls_reloads_total",
                     "Changes of the EAP TLS certificate, key, CA or CRL files: loaded, or failed (previous kept)");
-            w.sample(tls.context().reloads(), "gateway", radiusServer, "result", "loaded");
-            w.sample(tls.context().reloadFailures(), "gateway", radiusServer, "result", "failed");
+            w.sample(tls.context().reloads(), "server", radiusServer, "result", "loaded");
+            w.sample(tls.context().reloadFailures(), "server", radiusServer, "result", "failed");
             w.counter(
-                    "radiusward_gateway_eap_tls_resumptions_total",
+                    "radiusward_server_eap_tls_resumptions_total",
                     "EAP TLS handshakes that resumed an earlier session (PEAP and TTLS skip their inner method)");
-            w.sample(tls.context().resumptions(), "gateway", radiusServer);
+            w.sample(tls.context().resumptions(), "server", radiusServer);
         }
         if (!stores.verifiers().isEmpty()) {
             w.counter(
-                    "radiusward_gateway_verifier_events_total",
+                    "radiusward_server_verifier_events_total",
                     "What credential verifiers did: accepted, rejected, unavailable and their own events");
             new TreeMap<>(stores.verifiers())
                     .forEach((name, verifier) -> new TreeMap<>(verifier.counters())
                             .forEach((event, count) ->
-                                    w.sample(count, "gateway", radiusServer, "verifier", name, "event", event)));
+                                    w.sample(count, "server", radiusServer, "verifier", name, "event", event)));
         }
     }
 }

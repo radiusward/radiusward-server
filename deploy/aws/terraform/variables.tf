@@ -25,8 +25,8 @@ variable "member_subnet_ids" {
   }
 }
 
-variable "gateway_subnet_ids" {
-  description = "subnets for the gateways and their load balancers (public ones when internal = false)"
+variable "server_subnet_ids" {
+  description = "subnets for the RADIUS servers and their load balancers (public ones when internal = false)"
   type        = list(string)
 }
 
@@ -37,12 +37,12 @@ variable "internal" {
 }
 
 variable "nas_cidrs" {
-  description = "where NAS devices send from (RADIUS UDP 1812/1813 to the gateways)"
+  description = "where NAS devices send from (RADIUS UDP 1812/1813 to the RADIUS servers)"
   type        = list(string)
 }
 
-variable "gateway_properties" {
-  description = "the gateways' properties: NAS entries, identity stores (docs/configuration.md); the NAS secret is NAS_SECRET"
+variable "server_properties" {
+  description = "the RADIUS servers' properties: NAS entries, identity stores (docs/configuration.md); the NAS secret is NAS_SECRET"
   type        = string
   default     = <<-EOT
     nas.site.address=10.0.0.0/8
@@ -51,11 +51,11 @@ variable "gateway_properties" {
   EOT
 }
 
-variable "gateway_users" {
-  description = "the gateways' users file, written to /tmp/users (identity store with type file and that path in gateway_properties)"
+variable "server_users" {
+  description = "the RADIUS servers' users file, written to /tmp/users (identity store with type file and that path in server_properties)"
   type        = string
   sensitive   = true
-  default     = "# users file of the gateways (docs/configuration.md#identity-stores)"
+  default     = "# users file of the RADIUS servers (docs/configuration.md#identity-stores)"
 }
 
 variable "image" {

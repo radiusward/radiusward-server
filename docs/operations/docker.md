@@ -15,7 +15,7 @@ docker run --rm radiusward:dev version
 On macOS, [Colima](https://github.com/abiosoft/colima) works (`colima start --cpu 8 --memory 12`); so does
 Docker Desktop.
 
-## Compose: 3 members + 2 gateways
+## Compose: 3 members + 2 RADIUS servers
 
 ```bash
 docker compose -f deploy/compose/compose.yaml up -d --wait      # small profile, fsync on
@@ -23,9 +23,9 @@ docker compose -f deploy/compose/compose.yaml ps
 
 # one accounting request and one Access-Request from inside the network
 docker compose -f deploy/compose/compose.yaml run --rm tools acct \
-    --server gateway-a:1813 --secret testing123 --status start --session-id s1
+    --server server-a:1813 --secret testing123 --status start --session-id s1
 docker compose -f deploy/compose/compose.yaml run --rm tools auth \
-    --server gateway-a:1812 --secret testing123 --user alice --password secret --method mschapv2
+    --server server-a:1812 --secret testing123 --user alice --password secret --method mschapv2
 
 deploy/compose/demo-failover.sh                                 # load, kill -9 the leader, verify nothing lost
 docker compose -f deploy/compose/compose.yaml down -v           # -v also deletes the data volumes
@@ -34,21 +34,21 @@ docker compose -f deploy/compose/compose.yaml down -v           # -v also delete
 | Service | Address | Ports on the host |
 |---|---|---|
 | `node-0`, `node-1`, `node-2` | 172.28.0.10–12 | management 127.0.0.1:9090–9092 |
-| `gateway-a`, `gateway-b` | 172.28.0.20–21 | accounting 1813/udp and 1814/udp, authentication 1812/udp and 1815/udp (demo users in `config/users`: PAP, CHAP, MS-CHAPv2), management 127.0.0.1:9190–9191 |
+| `server-a`, `server-b` | 172.28.0.20–21 | accounting 1813/udp and 1814/udp, authentication 1812/udp and 1815/udp (demo users in `config/users`: PAP, CHAP, MS-CHAPv2), management 127.0.0.1:9190–9191 |
 | `tools` (profile `tools`) | dynamic | — (`radclient` as entrypoint) |
 
 Configuration lives in [deploy/compose/config](../../deploy/compose/config); per-container values
-(`cluster.node.id`, `gateway.id`, `gateway.egress.host`, the NAS secret) come from the environment. The NAS
+(`cluster.node.id`, `server.id`, `server.egress.host`, the NAS secret) come from the environment. The NAS
 secret defaults to `testing123`; set `NAS_SECRET` for anything else.
 
 ### Profiles
 
 ```bash
-docker compose -f compose.yaml -f compose.standard.yaml up -d    # 2 GiB / 2 CPU members, 768 MiB gateways
+docker compose -f compose.yaml -f compose.standard.yaml up -d    # 2 GiB / 2 CPU members, 768 MiB servers
 docker compose -f compose.yaml -f compose.large.yaml up -d
 ```
 
-| Profile | Member | Gateway | `/dev/shm` member | Heap member / gateway |
+| Profile | Member | RADIUS server | `/dev/shm` member | Heap member / RADIUS server |
 |---|---|---|---|---|
 | small (default) | 1 GiB, 1 CPU | 384 MiB | 512 MiB | 384m / 192m |
 | standard | 2 GiB, 2 CPU | 768 MiB | 1 GiB | 1g / 384m |
@@ -58,15 +58,15 @@ Tools run in the same image with their own heap: `radclient` 512m, `admin` 256m 
 and keep one event per session), `probe`/`cluster-tool` 64m; `JAVA_OPTS` overrides it.
 
 Measured with the small profile ([ADR 0004](../adr/0004-memory-budget.md)): 2M sessions at ~32k requests/s
-stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per gateway.
+stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per RADIUS server.
 
 ## Things to know
 
-- **Static IPs, not container names**, in `cluster.members` and `gateway.egress.host`. Aeron re-resolves the
+- **Static IPs, not container names**, in `cluster.members` and `server.egress.host`. Aeron re-resolves the
   endpoint of a dead member; resolving a stopped container's name blocks the media driver for seconds
   (measured: 5.4 s elections with names, 0.6 s with addresses).
 - **UDP source address on macOS**: Docker Desktop and Colima rewrite the source address of UDP traffic that
-  arrives through a published port, so the gateway sees the VM's address instead of the NAS. A NAS simulator
+  arrives through a published port, so the RADIUS server sees the VM's address instead of the NAS. A NAS simulator
   on the macOS host therefore matches no `nas.*` entry. Run test clients inside the network (`tools`). On a
   Linux host published ports keep the source address. In Kubernetes use `externalTrafficPolicy: Local`.
 - **`/dev/shm`** holds the Aeron buffers; `shm_size` must be set (Docker's default is 64 MiB).
@@ -75,7 +75,7 @@ stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per gateway.
 - **fsync**: keep `archive.file.sync.level=2`. Anything lower can lose acknowledged events on power loss
   (measured, `PowerLossIT`).
 - Health checks call `radiusward probe http://127.0.0.1:9090/ready`.
-- A gateway reloads its configuration on SIGHUP: `docker kill -s HUP <container>` (the entrypoint `exec`s Java, so
+- A RADIUS server reloads its configuration on SIGHUP: `docker kill -s HUP <container>` (the entrypoint `exec`s Java, so
   the signal reaches it). What is reloaded: [ADR 0054](../adr/0054-config-reload.md).
 
 ## PostgreSQL export

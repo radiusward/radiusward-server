@@ -145,7 +145,8 @@ class PostgresExportIT {
             assertThat(count("SELECT count(*) FROM accounting_event WHERE outcome = 1"))
                     .as("every applied event")
                     .isEqualTo(node.stats().applied());
-            // An event is stored once, under its first outcome (insert-if-absent by event id). A gateway resubmits
+            // An event is stored once, under its first outcome (insert-if-absent by event id). A RADIUS server
+            // resubmits
             // pending requests to a new leader; one already applied comes back stale (a newer event of its session
             // was applied meanwhile) and is counted stale again by the cluster, but it is the stored applied row.
             long resubmitted = 0;

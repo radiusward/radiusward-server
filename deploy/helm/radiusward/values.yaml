@@ -1,8 +1,8 @@
 # Copyright 2026 The radiusward Authors
 # SPDX-License-Identifier: Apache-2.0
 #
-# radiusward: three cluster members (StatefulSet) and RADIUS gateways (StatefulSet, one Service each).
-# Every setting of docs/configuration.md stays reachable through node.config and gateway.config.
+# radiusward: three cluster members (StatefulSet) and RADIUS servers (StatefulSet, one Service each).
+# Every setting of docs/configuration.md stays reachable through node.config and server.config.
 
 image:
   repository: ghcr.io/radiusward/radiusward-server
@@ -11,7 +11,7 @@ image:
 imagePullSecrets: []
 
 # small (500k–2M sessions, 1 CPU members), standard (5M) or large (20M): JVM sizes of the image (ADR 0004) and the
-# resources below; override node.resources / gateway.resources to size them yourself.
+# resources below; override node.resources / server.resources to size them yourself.
 profile: small
 
 clusterDomain: cluster.local
@@ -69,10 +69,10 @@ backup:
   nodeSelector: {}
   tolerations: []
 
-gateway:
+server:
   replicas: 2
   terminationGracePeriodSeconds: 30
-  minReadySeconds: 10              # a restarted gateway serves this long before the next one restarts
+  minReadySeconds: 10              # a restarted RADIUS server serves this long before the next one restarts
   shutdownDrain: 5s                # after SIGTERM: not ready, still answering, so the Service stops sending first
   resources: {}
   shmSize: ""
@@ -80,16 +80,16 @@ gateway:
   nodeSelector: {}
   tolerations: []
   podAnnotations: {}
-  # One Service per gateway: configure every NAS with two gateways as primary and secondary RADIUS servers
+  # One Service per RADIUS server: configure every NAS with two of them as primary and secondary
   # (ADR 0062: losing a node then costs nothing).
   service:
     type: LoadBalancer
     externalTrafficPolicy: Local # keeps the NAS source address: NAS entries are matched by it
     annotations: {}
     loadBalancerSourceRanges: []
-    # per gateway pod index: e.g. {"0": {loadBalancerIP: 192.0.2.10}, "1": {...}}
-    perGateway: {}
-  # One Service for all gateways (small setups): a failed node's NAS wait until Kubernetes notices (~40–50 s).
+    # per RADIUS server pod index: e.g. {"0": {loadBalancerIP: 192.0.2.10}, "1": {...}}
+    perServer: {}
+  # One Service for all RADIUS servers (small setups): a failed node's NAS wait until Kubernetes notices (~40–50 s).
   sharedService:
     enabled: false
     type: LoadBalancer
@@ -132,7 +132,7 @@ gateway:
     enabled: false
     port: 2083
     existingSecret: ""             # tls.crt, tls.key, ca.crt
-  # more properties for the gateways
+  # more properties for the RADIUS servers
   config: {}
   extraEnv: []
 
@@ -142,13 +142,13 @@ networkPolicy:
   monitoringNamespaceSelector:
     matchLabels:
       kubernetes.io/metadata.name: monitoring
-  # RADIUS clients allowed to reach the gateways; empty = anywhere
+  # RADIUS clients allowed to reach the RADIUS servers; empty = anywhere
   radiusClientCIDRs: []
 
 metrics:
   podAnnotations: true             # prometheus.io/scrape, /port, /path
   serviceMonitor:
-    enabled: false                 # a PodMonitor for members and gateways (Prometheus Operator)
+    enabled: false                 # a PodMonitor for members and RADIUS servers (Prometheus Operator)
     interval: 15s
     labels: {}
   prometheusRule:

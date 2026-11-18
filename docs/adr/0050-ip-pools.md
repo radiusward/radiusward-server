@@ -10,11 +10,11 @@ accounting goes to the cluster and reaches PostgreSQL through the exporter, and 
 
 ## Decision
 - **Pools in PostgreSQL** (`auth.pools`, `auth.pool.<name>.range`: ranges, CIDRs without network and broadcast, single
-  addresses; at most 65 536 per pool). The gateway creates `ip_pool (pool, address, device, user_name, expires_at)`
-  if missing and adds the addresses; existing rows and leases stay, so gateways share one table.
+  addresses; at most 65 536 per pool). The RADIUS server creates `ip_pool (pool, address, device, user_name, expires_at)`
+  if missing and adds the addresses; existing rows and leases stay, so RADIUS servers share one table.
 - **`Pool-Name := <pool>`** (check item of the user or a matching group) asks for an address, unless the reply already
   has a `Framed-IP-Address`.
-- **One statement allocates** (`FOR UPDATE SKIP LOCKED`, so concurrent workers and gateways never hand out an address
+- **One statement allocates** (`FOR UPDATE SKIP LOCKED`, so concurrent workers and RADIUS servers never hand out an address
   twice): an address is free when
   - its **lease** ran out (`auth.pool.<name>.lease`, default 5 min: the time until the session's Accounting-Start is
     exported), and

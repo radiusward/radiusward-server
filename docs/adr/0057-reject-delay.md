@@ -8,7 +8,7 @@ for about a second (`reject_delay`). A worker that sleeps would tie up the pool 
 starve everyone.
 
 ## Decision
-- **`auth.reject.delay`** (default `1s`, at most `5s`, `0s` off): an Access-Reject decided by this gateway is held
+- **`auth.reject.delay`** (default `1s`, at most `5s`, `0s` off): an Access-Reject decided by this RADIUS server is held
   by the auth agent, not the worker. Its slot goes into a FIFO with its due time (the delay is the same for all, so
   the queue is ordered) and the reply is sent when due; the agent checks the queue on every turn. Nothing is
   allocated: two preallocated arrays of the slots' size.
@@ -16,9 +16,9 @@ starve everyone.
   answered from the reply cache afterwards.
 - Accepts, challenges and Status-Server answers are never delayed; neither are rejects from home servers (the home
   server applies its own delay). Reload changes the delay.
-- `radiusward_gateway_access_requests_total{result="rejects_delayed"}` counts them.
+- `radiusward_server_access_requests_total{result="rejects_delayed"}` counts them.
 
 ## Consequences
-- A held reject keeps its slot: a flood of wrong passwords fills `gateway.auth.pending` and further requests are
+- A held reject keeps its slot: a flood of wrong passwords fills `server.auth.pending` and further requests are
   dropped (`busy`), which is the intended back-pressure; accepts of other users still pass as slots free up.
 - NAS timeouts must exceed the delay (they normally do: 3–5 s).

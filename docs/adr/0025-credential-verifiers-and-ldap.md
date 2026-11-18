@@ -6,7 +6,7 @@ Status: Accepted (2026-11-09). Phase 5, work package 5.6b ([plans/phase-5-auth.m
 Directories such as Active Directory do not give out passwords or NT hashes, so an identity store alone (ADR 0021)
 cannot check a credential for their users: the directory itself, or a domain controller, has to. User data (groups,
 attributes) still comes from the directory. MS-CHAP against AD needs Netlogon (MS-NRPC); the usual way is Samba's
-winbind on a domain-joined host, which would add a native dependency and a domain join to every gateway.
+winbind on a domain-joined host, which would add a native dependency and a domain join to every RADIUS server.
 
 ## Decision
 - **Credential verifiers**, a second plug-in type next to identity stores (`auth-api`: `CredentialVerifierProvider`,
@@ -25,7 +25,7 @@ winbind on a domain-joined host, which would add a native dependency and a domai
   password is never tried (it would be an anonymous bind).
 - **Netlogon verifier** (`type = netlogon`): a pure-Java MS-NRPC client — DCE/RPC over TCP, the endpoint mapper, the AES
   secure channel with a workstation trust account, Netlogon-sealed RPC, `NetrLogonSamLogonEx` network logons for
-  MS-CHAPv1/v2 and PAP — instead of Samba's winbind: no native dependency and no domain join on the gateway hosts;
+  MS-CHAPv1/v2 and PAP — instead of Samba's winbind: no native dependency and no domain join on the RADIUS server hosts;
   the machine account is created once by an administrator.
 - **Tests** run against a Samba AD domain controller in a container (`testing/samba-ad`).
 
@@ -35,7 +35,7 @@ winbind on a domain-joined host, which would add a native dependency and a domai
   way there. Entra Domain Services and AD on Azure VMs behave like on-premises AD.
 - Domain controllers come from the `server` list or from DNS SRV records; an unreachable one is skipped, an outage
   means no answers until a fresh channel works again.
-- The machine password is not rotated by radiusward: domain controllers do not expire it, and gateways share the
-  account. Operators rotate it by hand or give each gateway its own account.
+- The machine password is not rotated by radiusward: domain controllers do not expire it, and RADIUS servers share the
+  account. Operators rotate it by hand or give each RADIUS server its own account.
 - The Netlogon client is tested against Samba; a check against a Windows domain controller is still due before it
   is called production-ready.

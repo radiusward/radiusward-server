@@ -17,7 +17,7 @@ Ship profiles, default **small**:
 | Aeron term length | 1–4 MB | 8 MB | 16–64 MB |
 | media driver threading | SHARED | SHARED_NETWORK | DEDICATED |
 | idle strategy | backoff / sleeping | backoff | busy-spin |
-| gateway limit | 256–384 MiB | 512 MiB | 1 GiB |
+| RADIUS server limit | 256–384 MiB | 512 MiB | 1 GiB |
 
 Budget for a small node: Aeron buffers in `/dev/shm` ~64–100 MB, heap ~256 MB, session state off-heap up to
 ~460 MB at 2M sessions (member and replica, ADR 0012, 0036), metaspace + code cache
@@ -33,12 +33,12 @@ primitive collections, streamed snapshots, explicit JVM flags (`-Xmx`, `MaxMetas
   the exporter's replica; heap and direct memory are set per profile (standard and large estimated, not measured).
 - Measured again 2026-11-10 (`OverloadIT`, state version 7 active, 2M sessions with identities): members at most
   688 / 630 / **883 MiB** unreclaimable of 1 GiB (the highest is the exporter's lease owner: replica and PostgreSQL
-  batches), gateways at most 320 MiB of 384 MiB; no OOM kill. `StateFootprintIT` guards the state's share (heap
+  batches), RADIUS servers at most 320 MiB of 384 MiB; no OOM kill. `StateFootprintIT` guards the state's share (heap
   < 128 MiB, direct < 512 MiB at 2M) in seconds.
 - Measured in Phase 2 (`OverloadIT`: containers limited to 1 GiB / 384 MiB, 2M sessions, 48k requests/s
   offered for 2 min, ~32k/s served): members at most **448 MiB** heap + native + `/dev/shm` (the rest of the
-  1 GiB is page cache, reclaimable), gateways at most **321 MiB** of 384 MiB; no OOM kill. The small profile
+  1 GiB is page cache, reclaimable), RADIUS servers at most **321 MiB** of 384 MiB; no OOM kill. The small profile
   holds its 2M-session maximum within 1 GiB.
-- The gateway has the least headroom (~16 % at 384 MiB): response cache (~340k entries at that rate) and
+- The RADIUS server has the least headroom (~16 % at 384 MiB): response cache (~340k entries at that rate) and
   1 KiB per pending slot for stored commands (ADR 0011).
 - Profiles appear as Helm values and compose files.

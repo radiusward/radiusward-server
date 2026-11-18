@@ -87,9 +87,9 @@ and the same for end-to-end, fault injection and Kubernetes, next to the CI, Cod
 - **Grouping**: epics and features by area (Accounting, Authentication, EAP, Cluster, Export, Kubernetes, Fault
   injection), links to the ADR a test proves (e.g. `ClusterSeedIT` → ADR 0063).
 - **Steps** from the shared helpers, so most tests get them without edits: `LocalCluster` (start members and
-  gateways, stop/kill/seed a member, snapshot), `ContainerCluster` (power loss, partition, full disk, kill), the
+  RADIUS servers, stop/kill/seed a member, snapshot), `ContainerCluster` (power loss, partition, full disk, kill), the
   radclient load (sent/acked/retransmissions as step parameters).
-- **Attachments**, on failure always and on success where small: member and gateway logs, container logs, the load
+- **Attachments**, on failure always and on success where small: member and RADIUS server logs, container logs, the load
   summary, a `/metrics` snapshot; collected without masking the original failure.
 - **Run details** on every report: commit, run link, Java version, profile, Kubernetes version.
 
@@ -106,8 +106,8 @@ and the same for end-to-end, fault injection and Kubernetes, next to the CI, Cod
 - **Labels**: all 70 `*IT` classes carry `@Epic`, `@Feature` and, where the class is about one, `@Link` to the ADR
   (Accounting 10, Authentication 13, EAP 4, Transports 7, Proxying 8, Cluster 11, Export 7, Operations 5, Fault
   injection 5 — no class is tagged Kubernetes; that report comes from the script's XML).
-- **Steps**: `Reports.step` around the shared helpers — `LocalCluster` (start cluster, members, gateways; stop a
-  member; gateways connected; replicas converged), `ProcessCluster` (start/stop/kill -9/SIGHUP a process, leader
+- **Steps**: `Reports.step` around the shared helpers — `LocalCluster` (start cluster, members, RADIUS servers; stop a
+  member; RADIUS servers connected; replicas converged), `ProcessCluster` (start/stop/kill -9/SIGHUP a process, leader
   elected, converged), `ContainerCluster` (start, kill, restart, power loss, isolate/heal, PostgreSQL stop/start, load)
   and the shared load of `LogPurgeIT`/`ClusterSeedIT`. Without `-Preports` a step just runs its body.
 - **Attachments**: every radclient load summary; on failure the end of every process log (e2e, a `TestWatcher` in

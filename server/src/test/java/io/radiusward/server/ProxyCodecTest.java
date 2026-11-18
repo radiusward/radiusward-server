@@ -177,7 +177,7 @@ class ProxyCodecTest {
                 codec.request(nasRequest("alice@partner", "pw", false), partner, NAS_SECRET, HOME_SECRET, SLOT, 3, 42);
         nasAuthenticators.putBytes(SLOT * 16, nasAuthenticator);
         byte[] foreign = sent(length).octets(33);
-        foreign[0] ^= 1; // another gateway's token
+        foreign[0] ^= 1; // another RADIUS server's token
         UnsafeBuffer home = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
         int homeLength = new RadiusPacketEncoder()
                 .wrap(home, 0)

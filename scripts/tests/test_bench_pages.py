@@ -38,6 +38,15 @@ class HelpersTest(unittest.TestCase):
         steps = [{"target_rps": 2000, "generators": 1}, {"target_rps": 1000}, {"target_rps": 2000, "generators": 2}]
         self.assertEqual(pages.per_rate(steps), [{"target_rps": 1000}, {"target_rps": 2000, "generators": 2}])
 
+    def test_memory_of_runs_before_and_after_the_rename(self):
+        def run(name):
+            steps = [{"containers": {name: {"mem_max_bytes": 300 * 2**20}, "node-0": {"mem_max_bytes": 600 * 2**20}}}]
+            return {"workloads": {"accounting": {"steps": steps}}, "environment": {"profile": "small"}}
+        for name in ("gateway-a", "server-a"):
+            note = pages.memory_note(run(name))
+            self.assertIn("each RADIUS server at most 300 MiB", note, name)
+            self.assertIn("each cluster member at most 600 MiB", note, name)
+
     def test_lower_bounds(self):
         self.assertTrue(pages.lower_bound({"load_limited": True, "stopped_by": "only …"}))
         self.assertTrue(pages.lower_bound({"load_limited": False, "stopped_by": None}), "every step passed")

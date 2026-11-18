@@ -453,32 +453,32 @@ final class RadsecAgent implements Agent {
     }
 
     void writeMetrics(PrometheusWriter w, String radiusServer) {
-        w.counter("radiusward_gateway_radsec_total", "RadSec connections and packets by what happened to them");
+        w.counter("radiusward_server_radsec_total", "RadSec connections and packets by what happened to them");
         for (Counter c : Counter.values()) {
-            w.sample(get(c), "gateway", radiusServer, "result", c.name().toLowerCase(Locale.ROOT));
+            w.sample(get(c), "server", radiusServer, "result", c.name().toLowerCase(Locale.ROOT));
         }
-        w.gauge("radiusward_gateway_radsec_connections", "Open RadSec connections")
-                .sample(open.get(), "gateway", radiusServer);
+        w.gauge("radiusward_server_radsec_connections", "Open RadSec connections")
+                .sample(open.get(), "server", radiusServer);
         if (tcpAuth != null) {
-            w.counter("radiusward_gateway_tcp_total", "Plain TCP connections and packets by what happened to them");
+            w.counter("radiusward_server_tcp_total", "Plain TCP connections and packets by what happened to them");
             for (Counter c : Counter.values()) {
-                w.sample(getTcp(c), "gateway", radiusServer, "result", c.name().toLowerCase(Locale.ROOT));
+                w.sample(getTcp(c), "server", radiusServer, "result", c.name().toLowerCase(Locale.ROOT));
             }
         }
         if (dtls != null) {
-            w.counter("radiusward_gateway_dtls_total", "DTLS associations and packets by what happened to them");
+            w.counter("radiusward_server_dtls_total", "DTLS associations and packets by what happened to them");
             for (Counter c : Counter.values()) {
-                w.sample(getDtls(c), "gateway", radiusServer, "result", c.name().toLowerCase(Locale.ROOT));
+                w.sample(getDtls(c), "server", radiusServer, "result", c.name().toLowerCase(Locale.ROOT));
             }
-            w.gauge("radiusward_gateway_dtls_associations", "Open DTLS associations")
-                    .sample(dtls.openAssociations(), "gateway", radiusServer);
+            w.gauge("radiusward_server_dtls_associations", "Open DTLS associations")
+                    .sample(dtls.openAssociations(), "server", radiusServer);
         }
         if (config.credentials() != null) {
             w.counter(
-                    "radiusward_gateway_radsec_tls_reloads_total",
+                    "radiusward_server_radsec_tls_reloads_total",
                     "Changes of the RadSec certificate, key, CA or CRL files: loaded, or failed (previous kept)");
-            w.sample(config.credentials().reloads(), "gateway", radiusServer, "result", "loaded");
-            w.sample(config.credentials().reloadFailures(), "gateway", radiusServer, "result", "failed");
+            w.sample(config.credentials().reloads(), "server", radiusServer, "result", "loaded");
+            w.sample(config.credentials().reloadFailures(), "server", radiusServer, "result", "failed");
         }
     }
 

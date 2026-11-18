@@ -12,8 +12,8 @@ radiusward admin export-schema  [--type postgres]
 radiusward admin verify-export  --jdbc-url jdbc:postgresql://db/radius --jdbc-user u --jdbc-password p \
                                 --ack-log acks.csv --nas-id 1001 [--members h0,h1,h2]
 radiusward admin activate-version --members h0,h1,h2 --version 7
-radiusward admin disconnect     --gateway http://gw:9190 --user alice          # or --nas <entry> --session <id>
-radiusward admin coa            --gateway http://gw:9190 --user alice --attributes 'Session-Timeout = 600'
+radiusward admin disconnect     --server http://server-a:9190 --user alice          # or --nas <entry> --session <id>
+radiusward admin coa            --server http://server-a:9190 --user alice --attributes 'Session-Timeout = 600'
 ```
 
 | Command | What it does |
@@ -23,7 +23,7 @@ radiusward admin coa            --gateway http://gw:9190 --user alice --attribut
 | `sinks` | per sink: checkpoint, lag in bytes, lease owner and epoch, required, detached, resync pending |
 | `resync` | moves a sink's checkpoint (also backwards), fences its exporter with a new epoch and re-attaches it; the next exporter re-exports from there. Sinks are idempotent, so exporting again changes nothing; the log must still hold the position (`radiusward_log_start_bytes`) |
 | `export-schema` | the full SQL of a built-in sink, with its `schema_version` rows, for DBAs (`schema.manage=none`) |
-| `disconnect`, `coa` | Disconnect-Request or CoA-Request to every session of `--user`, or to `--nas` + `--session`, through a gateway's CoA API (`--gateway`, token from `--token` or `RADIUSWARD_COA_API_TOKEN`); exit 1 unless every session acknowledged ([ADR 0036](../../docs/adr/0036-coa-and-session-identity.md)) |
+| `disconnect`, `coa` | Disconnect-Request or CoA-Request to every session of `--user`, or to `--nas` + `--session`, through a RADIUS server's CoA API (`--server`, token from `--token` or `RADIUSWARD_COA_API_TOKEN`); exit 1 unless every session acknowledged ([ADR 0036](../../docs/adr/0036-coa-and-session-identity.md)) |
 | `activate-version` | switches the cluster to a newer state-machine version at this log position; refused unless every member runs a release that knows it (normally automatic, see [release.md](../../docs/operations/release.md#upgrading-a-cluster)) |
 | `verify-export` | every session of an ack log is in `accounting_session` with at least the acknowledged progress; with `--members` it must equal the replicated session |
 

@@ -109,7 +109,7 @@ class FakeStack:
     def member_urls(self):
         return []
 
-    def gateway_urls(self):
+    def server_urls(self):
         return []
 
 

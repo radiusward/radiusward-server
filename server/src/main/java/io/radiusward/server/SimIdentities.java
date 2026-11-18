@@ -20,12 +20,12 @@ import javax.crypto.spec.SecretKeySpec;
  * Identity privacy and fast re-authentication of EAP-SIM, EAP-AKA and EAP-AKA′ (ADR 0061).
  *
  * <p>A <b>pseudonym</b> is the IMSI encrypted with AES-GCM under the current key of {@code auth.eap.sim.pseudonym.keys}:
- * the method's hint, the key's id, then 12 random bytes, the encrypted IMSI and the tag in base64url. Any gateway with
+ * the method's hint, the key's id, then 12 random bytes, the encrypted IMSI and the tag in base64url. Any RADIUS server with
  * the keys reads it back; nothing is stored, and a retired key still decrypts while it is listed.
  *
- * <p>A <b>re-authentication identity</b> names the keys of a full authentication kept on this gateway for
+ * <p>A <b>re-authentication identity</b> names the keys of a full authentication kept on this RADIUS server for
  * {@code auth.eap.sim.reauth.lifetime}, at most {@code auth.eap.sim.reauth.max} times in a row; it is used once (each
- * re-authentication hands out the next one). On another gateway it is unknown, and the peer authenticates in full.
+ * re-authentication hands out the next one). On another RADIUS server it is unknown, and the peer authenticates in full.
  */
 final class SimIdentities {
 

@@ -26,7 +26,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 /**
  * How a proxied request and its answer are rewritten (ADR 0037, ADR 0055): the request for the home server and the
  * answer for the NAS, with the secrets of each side, in the proxy's slot buffers. Our Proxy-State carries a token of
- * this gateway, the slot and its generation, so an answer finds its request. Allocation-free; used by the proxy's
+ * this RADIUS server, the slot and its generation, so an answer finds its request. Allocation-free; used by the proxy's
  * thread only.
  */
 final class ProxyCodec {
@@ -39,7 +39,7 @@ final class ProxyCodec {
     private final AccessRequests credentials = new AccessRequests();
     private final SaltedValues salted = new SaltedValues();
     private final SecureRandom random = new SecureRandom();
-    private final byte[] token = new byte[8]; // Proxy-State: 4 random bytes of this gateway, slot, generation
+    private final byte[] token = new byte[8]; // Proxy-State: 4 random bytes of this RADIUS server, slot, generation
     private final UnsafeBuffer plain = new UnsafeBuffer(new byte[256]);
     private final UnsafeBuffer cipher = new UnsafeBuffer(new byte[256]);
     private final byte[] authScratch = new byte[16];

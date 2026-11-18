@@ -6,7 +6,7 @@ Status: Accepted (2026-11-09). Phase 5, work package 5.8, milestone 5 ([plans/ph
 EAP-TLS (ADR 0028) accepted any certificate that chains to `auth.eap.tls.ca`, then authorized the EAP identity the
 peer sent. A device with a valid certificate could therefore claim another user's identity and get that user's reply
 items. Certificates are also revoked (stolen laptops, people who leave) and renewed. A renewal must not need a restart
-of every gateway.
+of every RADIUS server.
 
 ## Decision
 - **Identity versus certificate** (`auth.eap.tls.identity`), for EAP-TLS and EAP-TLS inside PEAP:
@@ -33,7 +33,7 @@ of every gateway.
   - A change that does not load keeps the previous context and is retried at the next check. Examples: a certificate
     without its new key (the key is checked against the certificate at start and at every reload), or a half-written
     file.
-  - `radiusward_gateway_eap_tls_reloads_total{result="loaded|failed"}` counts both outcomes.
+  - `radiusward_server_eap_tls_reloads_total{result="loaded|failed"}` counts both outcomes.
 
 ## Consequences
 - A certificate authenticates its own names only. Deployments whose devices send other identities choose

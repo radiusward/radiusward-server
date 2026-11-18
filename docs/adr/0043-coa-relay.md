@@ -10,8 +10,8 @@ depend on this. Work package 5.13 left it out.
 
 ## Decision
 - **Who may send**: home servers with `home.<id>.coa = true`, over UDP. The listener (`proxy.coa.port`, 3799, on
-  `gateway.listen.host`) starts only when such a home server exists, and needs `coa.enabled`, because the relay uses
-  the gateway's own CoA path.
+  `server.listen.host`) starts only when such a home server exists, and needs `coa.enabled`, because the relay uses
+  the RADIUS server's own CoA path.
   - A request must come from the home server's address and carry a valid Request Authenticator for its secret, and a
     valid Message-Authenticator if it has one. Anything else is dropped and counted.
   - RadSec home servers are not covered: their CoA would come over our client connection to them.
@@ -30,7 +30,7 @@ depend on this. Work package 5.13 left it out.
     the request is under way, and is not sent to the NAS twice.
 - **Threading**: the relay has its own thread, because finding a session asks the cluster and may wait up to 5 s.
   The RADIUS agents never block.
-- **Metrics**: `radiusward_gateway_coa_relay_total{result}`: received, unknown_sender, bad_authenticator, malformed,
+- **Metrics**: `radiusward_server_coa_relay_total{result}`: received, unknown_sender, bad_authenticator, malformed,
   duplicate, ack, nak, no_session, no_answer.
 
 ## Tests

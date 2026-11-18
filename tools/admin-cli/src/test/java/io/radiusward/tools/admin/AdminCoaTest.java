@@ -16,7 +16,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
-/** {@code admin disconnect} and {@code admin coa} against a stand-in for a gateway's CoA API (ADR 0036). */
+/** {@code admin disconnect} and {@code admin coa} against a stand-in for a RADIUS server's CoA API (ADR 0036). */
 class AdminCoaTest {
 
     @Test
@@ -39,8 +39,7 @@ class AdminCoaTest {
                     "http://127.0.0.1:" + server.getAddress().getPort() + "//"; // trailing slashes dropped
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             assertThat(AdminMain.run(
-                            new String[] {
-                                "disconnect", "--gateway", radiusServer, "--user", "al ice", "--token", "t0k3n"
+                            new String[] {"disconnect", "--server", radiusServer, "--user", "al ice", "--token", "t0k3n"
                             },
                             new PrintStream(out),
                             System.err))
@@ -50,7 +49,7 @@ class AdminCoaTest {
             assertThat(AdminMain.run(
                             new String[] {
                                 "coa",
-                                "--gateway",
+                                "--server",
                                 radiusServer,
                                 "--nas",
                                 "edge",

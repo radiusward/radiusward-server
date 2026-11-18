@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Reloading a running gateway (ADR 0054): a new NAS secret and another users file take effect without a restart; a
+ * Reloading a running RADIUS server (ADR 0054): a new NAS secret and another users file take effect without a restart; a
  * configuration that does not load changes nothing; the same through {@code POST /reload}.
  */
 @Epic("Operations")

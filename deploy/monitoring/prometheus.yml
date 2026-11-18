@@ -10,7 +10,7 @@ scrape_configs:
   - job_name: radiusward-member
     static_configs:
       - targets: ["172.28.0.10:9090", "172.28.0.11:9090", "172.28.0.12:9090"]
-  - job_name: radiusward-gateway
+  - job_name: radiusward-server
     static_configs:
       - targets: ["172.28.0.20:9090", "172.28.0.21:9090"]
   - job_name: radiusward-backup   # the backup profile; down while it is not started

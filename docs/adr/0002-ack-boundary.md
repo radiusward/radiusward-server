@@ -7,9 +7,9 @@ Status: Accepted (2026-11-07)
 majority commit, or forced persistence. Only some of these survive failures.
 
 ## Decision
-The gateway sends the Accounting-Response **only after** the cluster's `AccountingCommitted` egress
+The RADIUS server sends the Accounting-Response **only after** the cluster's `AccountingCommitted` egress
 message. Archive runs with `aeron.archive.file.sync.level=2` and catalog sync level 2, so commit means
-fsynced on a majority. On any failure the gateway stays silent (RADIUS has no Accounting-Reject); the
+fsynced on a majority. On any failure the RADIUS server stays silent (RADIUS has no Accounting-Reject); the
 NAS retries. The contract is "recoverable from the replicated journal", not "written to the database".
 
 ## Consequences

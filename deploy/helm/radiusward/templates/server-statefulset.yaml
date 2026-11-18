@@ -1,31 +1,31 @@
 {{- /*
 Copyright 2026 The radiusward Authors
 SPDX-License-Identifier: Apache-2.0
-Gateways (ADR 0062): a StatefulSet without volumes so that gateway.id is the pod index; each gets its own Service.
+Servers (ADR 0062): a StatefulSet without volumes so that server.id is the pod index; each gets its own Service.
 */ -}}
 {{- $fn := include "radiusward.fullname" . -}}
-{{- $g := .Values.gateway -}}
+{{- $g := .Values.server -}}
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ $fn }}-gateway
+  name: {{ $fn }}-server
   labels: {{- include "radiusward.labels" . | nindent 4 }}
-    app.kubernetes.io/component: gateway
+    app.kubernetes.io/component: server
 spec:
-  serviceName: {{ $fn }}-gateway
+  serviceName: {{ $fn }}-server
   replicas: {{ $g.replicas }}
   minReadySeconds: {{ $g.minReadySeconds }}
   podManagementPolicy: Parallel
   updateStrategy: {type: RollingUpdate}
   selector:
-    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "gateway") | nindent 6 }}
+    matchLabels: {{- include "radiusward.selector" (dict "root" . "component" "server") | nindent 6 }}
   template:
     metadata:
       labels: {{- include "radiusward.labels" . | nindent 8 }}
-        app.kubernetes.io/component: gateway
+        app.kubernetes.io/component: server
       annotations:
-        # a change of configuration, users files or passwords restarts the gateways (they are stateless)
-        checksum/config: {{ include (print $.Template.BasePath "/gateway-configmap.yaml") . | sha256sum }}
+        # a change of configuration, users files or passwords restarts the RADIUS servers (they are stateless)
+        checksum/config: {{ include (print $.Template.BasePath "/server-configmap.yaml") . | sha256sum }}
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- include "radiusward.scrapeAnnotations" . | nindent 8 }}
         {{- with $g.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
@@ -35,7 +35,7 @@ spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets: {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with include "radiusward.affinity" (dict "root" . "component" "gateway" "mode" $g.antiAffinity) }}
+      {{- with include "radiusward.affinity" (dict "root" . "component" "server" "mode" $g.antiAffinity) }}
       affinity: {{- . | nindent 8 }}
       {{- end }}
       {{- with $g.nodeSelector }}
@@ -45,16 +45,16 @@ spec:
       tolerations: {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
-        - name: gateway
+        - name: server
           image: {{ include "radiusward.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["gateway", "--config", "/etc/radiusward/gateway.properties"]
+          args: ["server", "--config", "/etc/radiusward/server.properties"]
           env:
-            - name: RADIUSWARD_GATEWAY_SHUTDOWN_DRAIN
+            - name: RADIUSWARD_SERVER_SHUTDOWN_DRAIN
               value: {{ $g.shutdownDrain | quote }}
-            - name: RADIUSWARD_GATEWAY_ID
+            - name: RADIUSWARD_SERVER_ID
               valueFrom: {fieldRef: {fieldPath: "metadata.labels['apps.kubernetes.io/pod-index']"}}
-            - name: RADIUSWARD_GATEWAY_EGRESS_HOST
+            - name: RADIUSWARD_SERVER_EGRESS_HOST
               valueFrom: {fieldRef: {fieldPath: status.podIP}}
             - {name: RADIUSWARD_PROFILE, value: {{ .Values.profile | quote }}}
             {{- range $i, $n := $g.nas }}
@@ -84,7 +84,7 @@ spec:
             - {name: radsec, containerPort: {{ $g.radsec.port }}, protocol: TCP}
             {{- end }}
             - {name: management, containerPort: 9090, protocol: TCP}
-          resources: {{- include "radiusward.gatewayResources" . | nindent 12 }}
+          resources: {{- include "radiusward.serverResources" . | nindent 12 }}
           securityContext: {{- include "radiusward.containerSecurity" . | nindent 12 }}
           livenessProbe:
             httpGet: {path: /health, port: management}
@@ -94,7 +94,7 @@ spec:
             httpGet: {path: /ready, port: management}
             periodSeconds: 2
           volumeMounts:
-            - {name: config, mountPath: /etc/radiusward/gateway.properties, subPath: gateway.properties}
+            - {name: config, mountPath: /etc/radiusward/server.properties, subPath: server.properties}
             - {name: shm, mountPath: /dev/shm}
             - {name: tmp, mountPath: /tmp}
             - {name: work, mountPath: /var/lib/radiusward}
@@ -111,9 +111,9 @@ spec:
             {{- end }}
       volumes:
         - name: config
-          configMap: {name: {{ $fn }}-gateway}
+          configMap: {name: {{ $fn }}-server}
         - name: shm
-          emptyDir: {medium: Memory, sizeLimit: {{ include "radiusward.gatewayShm" . }}}
+          emptyDir: {medium: Memory, sizeLimit: {{ include "radiusward.serverShm" . }}}
         - name: tmp
           emptyDir: {sizeLimit: 64Mi}
         - name: work
@@ -134,5 +134,5 @@ spec:
         {{- end }}
         {{- if $g.radsec.enabled }}
         - name: radsec-tls
-          secret: {secretName: {{ required "gateway.radsec.existingSecret is required with radsec" $g.radsec.existingSecret }}}
+          secret: {secretName: {{ required "server.radsec.existingSecret is required with radsec" $g.radsec.existingSecret }}}
         {{- end }}

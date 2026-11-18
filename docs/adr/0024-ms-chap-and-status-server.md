@@ -10,7 +10,7 @@ is equivalent to the password for this protocol. NAS devices and load balancers 
 
 ## Decision
 - **MS-CHAPv2** (RFC 2759) and **MS-CHAPv1** (RFC 2433, NT response only; a LAN Manager-only response is rejected)
-  are verified in the gateway workers like PAP and CHAP; check items, groups, reply items and `Simultaneous-Use`
+  are verified in the RADIUS server workers like PAP and CHAP; check items, groups, reply items and `Simultaneous-Use`
   apply unchanged.
 - **Credentials**: `NT-Password` (32 hex digits) works without opt-in; `Cleartext-Password` is used for MS-CHAP only
   where the store allows it (`auth.store.<name>.mschap = true`), like `chap` for CHAP. `NT-Password` also verifies PAP.
@@ -24,7 +24,7 @@ is equivalent to the password for this protocol. NAS devices and load balancers 
 - **Cryptography** from the JDK (SHA-1, MD5, DES); MD4, which the JDK does not offer to applications, is our own small
   implementation checked against RFC 1320. All of it verified against the RFC 2759 and RFC 3079 vectors.
 - **Status-Server** is answered on both ports, only with a valid Message-Authenticator, never cached and never sent to
-  the cluster: on 1812 with an Access-Accept; on 1813 with an Accounting-Response only while the gateway is connected
+  the cluster: on 1812 with an Access-Accept; on 1813 with an Accounting-Response only while the RADIUS server is connected
   to the cluster, so a NAS fails over exactly when accounting could not be acknowledged.
 - **Active Directory** (MS-CHAP without NT hashes in a store) comes as a separate package, 5.6b: a credential
   verifier talking Netlogon to the domain controllers.
@@ -32,4 +32,4 @@ is equivalent to the password for this protocol. NAS devices and load balancers 
 ## Consequences
 - A store holding NT hashes must be protected like one holding passwords.
 - MS-CHAPv1 is weaker than v2 and only there for old clients; it shares all code with v2.
-- Status-Server lets load balancers and NAS devices see a gateway without its cluster as down.
+- Status-Server lets load balancers and NAS devices see a RADIUS server without its cluster as down.

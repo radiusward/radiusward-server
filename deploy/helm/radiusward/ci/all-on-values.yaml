@@ -15,7 +15,7 @@ node:
       radacctView: true
   config:
     snapshot.interval: 30m
-gateway:
+server:
   sharedService:
     enabled: true
   nas:
@@ -49,7 +49,7 @@ gateway:
     enabled: true
     existingSecret: radsec-tls
   config:
-    gateway.auth.workers: 8
+    server.auth.workers: 8
 networkPolicy:
   enabled: true
   radiusClientCIDRs: [10.20.0.0/16]

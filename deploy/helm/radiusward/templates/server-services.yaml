@@ -1,28 +1,28 @@
 {{- /*
 Copyright 2026 The radiusward Authors
 SPDX-License-Identifier: Apache-2.0
-One Service per gateway (ADR 0062): NAS devices list two gateways as primary and secondary RADIUS servers, so a lost
+One Service per RADIUS server (ADR 0062): NAS devices list two of them as primary and secondary, so a lost
 node costs a retry, not the time Kubernetes needs to notice. The headless Service names the StatefulSet's pods.
 */ -}}
 {{- $fn := include "radiusward.fullname" . -}}
-{{- $g := .Values.gateway -}}
+{{- $g := .Values.server -}}
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $fn }}-gateway
+  name: {{ $fn }}-server
   labels: {{- include "radiusward.labels" . | nindent 4 }}
 spec:
   clusterIP: None
-  selector: {{- include "radiusward.selector" (dict "root" . "component" "gateway") | nindent 4 }}
+  selector: {{- include "radiusward.selector" (dict "root" . "component" "server") | nindent 4 }}
   ports:
     - {name: management, port: 9090, protocol: TCP}
 {{- range $i := until (int $g.replicas) }}
-{{- $own := get $g.service.perGateway (toString $i) | default dict }}
+{{- $own := get $g.service.perServer (toString $i) | default dict }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $fn }}-gateway-{{ $i }}
+  name: {{ $fn }}-server-{{ $i }}
   labels: {{- include "radiusward.labels" $ | nindent 4 }}
   {{- with (merge (dict) ($own.annotations | default dict) $g.service.annotations) }}
   annotations: {{- toYaml . | nindent 4 }}
@@ -39,15 +39,15 @@ spec:
   loadBalancerSourceRanges: {{- toYaml . | nindent 4 }}
   {{- end }}
   selector:
-    statefulset.kubernetes.io/pod-name: {{ $fn }}-gateway-{{ $i }}
-  ports: {{- include "radiusward.gatewayPorts" $g | nindent 4 }}
+    statefulset.kubernetes.io/pod-name: {{ $fn }}-server-{{ $i }}
+  ports: {{- include "radiusward.serverPorts" $g | nindent 4 }}
 {{- end }}
 {{- if $g.sharedService.enabled }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ $fn }}-gateways
+  name: {{ $fn }}-servers
   labels: {{- include "radiusward.labels" . | nindent 4 }}
   {{- with $g.sharedService.annotations }}
   annotations: {{- toYaml . | nindent 4 }}
@@ -57,7 +57,7 @@ spec:
   {{- if ne $g.sharedService.type "ClusterIP" }}
   externalTrafficPolicy: {{ $g.sharedService.externalTrafficPolicy }}
   {{- end }}
-  sessionAffinity: ClientIP      # an EAP conversation lives in one gateway
-  selector: {{- include "radiusward.selector" (dict "root" . "component" "gateway") | nindent 4 }}
-  ports: {{- include "radiusward.gatewayPorts" $g | nindent 4 }}
+  sessionAffinity: ClientIP      # an EAP conversation lives in one RADIUS server
+  selector: {{- include "radiusward.selector" (dict "root" . "component" "server") | nindent 4 }}
+  ports: {{- include "radiusward.serverPorts" $g | nindent 4 }}
 {{- end }}

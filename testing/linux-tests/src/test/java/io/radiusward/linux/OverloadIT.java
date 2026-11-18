@@ -20,9 +20,9 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.Container.ExecResult;
 
 /**
- * Small profile at its limits (ADR 0004, with the sessions' CoA identities of ADR 0036), with the exporter and its state-machine replica exporting to PostgreSQL: members limited to 1 GiB and one CPU, gateways to 384 MiB, 2M sessions
+ * Small profile at its limits (ADR 0004, with the sessions' CoA identities of ADR 0036), with the exporter and its state-machine replica exporting to PostgreSQL: members limited to 1 GiB and one CPU, RADIUS servers to 384 MiB, 2M sessions
  * (the profile's maximum), 8 generators offering 48k requests/s for 2 minutes. Measured on an 8-CPU Colima VM:
- * ~32k/s served, so the gateways must shed load (pending table full; the NAS retries). Nothing may be
+ * ~32k/s served, so the RADIUS servers must shed load (pending table full; the NAS retries). Nothing may be
  * OOM-killed, unreclaimable memory stays below the limit, every event is acknowledged eventually and the
  * replicas are consistent afterwards.
  */
@@ -64,7 +64,7 @@ class OverloadIT {
                         "radclient",
                         "load",
                         "--server",
-                        ContainerCluster.GATEWAYS,
+                        ContainerCluster.SERVERS,
                         "--secret",
                         ContainerCluster.SECRET,
                         "--nas",
@@ -113,9 +113,9 @@ class OverloadIT {
                         + Long.parseLong(s.get("pending_full"))
                         + Long.parseLong(s.get("back_pressured"));
             }
-            System.out.println("overload: gateways dropped or back-pressured " + dropped);
+            System.out.println("overload: RADIUS servers dropped or back-pressured " + dropped);
             assertThat(dropped)
-                    .as("the gateways had to shed load, or this was no overload")
+                    .as("the RADIUS servers had to shed load, or this was no overload")
                     .isPositive();
             cluster.awaitConverged(Duration.ofSeconds(120));
             Map<String, String> leader = cluster.state(cluster.awaitLeader(Duration.ofSeconds(5)));

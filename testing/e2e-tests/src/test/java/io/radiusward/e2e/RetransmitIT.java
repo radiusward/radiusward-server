@@ -12,7 +12,7 @@ import io.qameta.allure.Link;
 import io.radiusward.tools.admin.AdminClient;
 import org.junit.jupiter.api.Test;
 
-/** Identical retransmits hit the gateway cache; changed retransmits are recognised by the cluster. */
+/** Identical retransmits hit the RADIUS server cache; changed retransmits are recognised by the cluster. */
 @Epic("Accounting")
 @Feature("Retransmissions and deduplication")
 @Link(
@@ -22,16 +22,16 @@ class RetransmitIT extends E2eTestBase {
 
     @Test
     void cacheAndClusterDedup() throws Exception {
-        int a = cluster.radiusPort("gateway-a");
-        int b = cluster.radiusPort("gateway-b");
+        int a = cluster.radiusPort("server-a");
+        int b = cluster.radiusPort("server-b");
         byte[] interim = Nas.request(7, 3, "rt-1", 120);
         nas.ack(a, Nas.request(6, 1, "rt-1", 0));
         nas.ack(a, interim);
         nas.ack(a, interim); // identical: answered from the response cache
-        assertThat(ProcessCluster.number(cluster.state("gateway-a"), "cache_hits"))
+        assertThat(ProcessCluster.number(cluster.state("server-a"), "cache_hits"))
                 .isEqualTo(1);
 
-        nas.ack(b, Nas.request(99, 3, "rt-1", 120, 5)); // new Identifier, Acct-Delay-Time, other gateway
+        nas.ack(b, Nas.request(99, 3, "rt-1", 120, 5)); // new Identifier, Acct-Delay-Time, other RADIUS server
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();

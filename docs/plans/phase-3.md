@@ -36,7 +36,7 @@ sink more than `maxLag` behind stops new ACKs (`block`).
 8. **Memory:** a small member with the exporter (including its state-machine replica) stays within 1 GiB at
    2M sessions.
 9. **Metrics:** `/metrics` (Prometheus text): lag per sink (bytes, seconds), rows, batch latency, errors,
-   lease owner and epoch, quarantined records, plus the existing node and gateway counters.
+   lease owner and epoch, quarantined records, plus the existing node and RADIUS server counters.
 10. **Docs:** ADRs, export operations guide, sink plug-in guide, configuration, failure matrix.
 
 ## Confirmed decisions (2026-11-08)
@@ -51,7 +51,7 @@ sink more than `maxLag` behind stops new ACKs (`block`).
 | 6 | Schema migrations by a **small versioned SQL runner of our own** in `export-api`, no Flyway/Liquibase: plain SQL files with Flyway-style names (`V1__init.sql`), applied in order in a transaction, checksums in a `schema_version` table, only by the lease holder under a database lock (`pg_advisory_lock` and equivalents). Each sink plug-in ships its own SQL per dialect. **`schema.manage=auto\|validate\|none`** and **`radiusward admin export-schema --sink <name>`** prints the full SQL for DBAs. Same file names keep a later switch to Flyway cheap |
 | 7 | Second built-in sink: **JSON lines file**; proves several sinks at once, reference for plug-in authors, doubles as raw archive |
 | 8 | PostgreSQL tests with **Testcontainers, skipped in `./mvnw verify` when Docker is missing**; Docker stays optional for development. **In CI a skip is a failure:** the workflows pass `-Dradiusward.require.docker=true`, which turns "Docker not available" into a failing test instead of a skip, so the PostgreSQL tests can never silently not run on GitHub (Linux runners have Docker) |
-| 9 | **`/metrics` in Prometheus text format** on the management port of every member and gateway, written from the existing stats counters (no client library, nothing computed per packet). OpenTelemetry users scrape it with an OTel Collector. Example alert rules shipped; optional compose profile `monitoring` with Prometheus + Grafana and one dashboard |
+| 9 | **`/metrics` in Prometheus text format** on the management port of every member and RADIUS server, written from the existing stats counters (no client library, nothing computed per packet). OpenTelemetry users scrape it with an OTel Collector. Example alert rules shipped; optional compose profile `monitoring` with Prometheus + Grafana and one dashboard |
 | 10 | PostgreSQL defaults: **`required=true`, `maxLag=4h`, `onMaxLag=block`** (4 h ≈ 60 GB of log at the reference load, within a 100 GB volume) |
 | 11 | **PostgreSQL 16+**, tested on 17 (`postgres:17-alpine`) |
 | 12 | New runtime dependency **pgjdbc** (BSD-2-Clause) |
@@ -66,7 +66,7 @@ sink more than `maxLag` behind stops new ACKs (`block`).
 ## Design
 
 ```text
-gateway ─▶ cluster log (fsync, majority) ─▶ ACK
+server ──▶ cluster log (fsync, majority) ─▶ ACK
                 │
      member holding the lease (epoch e) for sink S:
                 └─▶ exporter agent
@@ -88,7 +88,7 @@ gateway ─▶ cluster log (fsync, majority) ─▶ ACK
   in snapshots → protocol and snapshot format version 2 (ADR 0005). Lag in bytes and time is deterministic.
   The sink's own checkpoint (in the database) is the resume point; the cluster checkpoint drives lag and
   purge and may trail it, which is safe.
-- **Lag policy:** `block` → `AccountingRejected(EXPORT_LAG)` (new reason), the gateway stays silent;
+- **Lag policy:** `block` → `AccountingRejected(EXPORT_LAG)` (new reason), the RADIUS server stays silent;
   `detach` → the sink stops holding the purge, alert, manual `resync`.
 - **Sink SPI** (`export-api`): `AccountingSink` with `open(SinkContext)`, `write(Batch)`, `close`, `health`,
   `checkpointStyle()`; found with `ServiceLoader` on the class path and in `plugins/*.jar`. A batch holds
@@ -114,7 +114,7 @@ gateway ─▶ cluster log (fsync, majority) ─▶ ACK
     Interim** (so updates can stay HOT; HOT still writes a new row version, it only skips new index
     entries); partial index for active sessions (`WHERE stopped_at IS NULL`); no changing JSON in this table.
   - `accounting_event` (opt-in) — `commit_day` + `event_id` (PK), `log_position`, `received_at`
-    (commit time), `source_event_at`, `nas_id`, `gateway_id`, `session_key` (nullable for
+    (commit time), `source_event_at`, `nas_id`, `server_id`, `session_key` (nullable for
     Accounting-On/Off), `status_type`, `outcome` (applied / stale), `session_seconds`, octets, `framed_ip`,
     `quality_flags`, `attribute_format`, `attributes` (residual JSON); range-partitioned by `commit_day`;
     B-tree on `(session_key, received_at)`, BRIN on `received_at`; no GIN by default.
@@ -232,33 +232,33 @@ order). Defaults (`fillfactor`, batch size, write path, history encoding) are ch
   all members purge below 4 MiB after two snapshots (bounded by the second-latest snapshot); with a follower
   stopped the others purge up to its last reported position (bounded by the slowest member) and it catches up
   after restarting. Hours-long disk boundedness moves to `PurgeIT` (linux, P3.9). Found while testing: whole load-generator
-  ports (256 requests) lost every response although the gateways answered every datagram (counters matched
+  ports (256 requests) lost every response although the RADIUS servers answered every datagram (counters matched
   exactly). Cause: `radclient load` bound its ports to the wildcard address, and Aeron clients in the same host
   (the new member reporter, the lease client) bind `127.0.0.1:0` with address reuse — macOS may hand them a port
   the generator already holds, and unicast then goes to the more specific socket. The generator now binds to
   loopback when its servers are local and counts unmatched and unsendable datagrams. Test-tool issue only: a
-  gateway listens on a fixed port outside the ephemeral range.
+  RADIUS server listens on a fixed port outside the ephemeral range.
 
 ### P3.6: Metrics and monitoring (size M)
 
 - `/metrics` (Prometheus text format, `# HELP` / `# TYPE`, `radiusward_` prefix, base units: seconds,
-  bytes) on every member and gateway:
+  bytes) on every member and server:
 
 | Area | Metrics |
 |---|---|
 | Export | lag per sink (bytes, seconds), rows written, batch latency, errors and retries, quarantined records, lease owner and epoch, detached flag, `EXPORT_LAG` rejections |
 | Cluster member | role, term, commit position, applied / duplicates / stale / rejected, active and stopped sessions, snapshots, disk free, purged bytes, dropped log messages |
-| Gateway | received, committed, response-cache hits, resubmitted (retransmit, new leader), pending-full and ring drops, back pressure, timeouts, cluster connects |
+| RADIUS server | received, committed, response-cache hits, resubmitted (retransmit, new leader), pending-full and ring drops, back pressure, timeouts, cluster connects |
 | JVM | heap, GC pauses, threads, uptime |
 
 - Example Prometheus alert rules (`deploy/monitoring/alerts.yml`): export lag > 50 % of `maxLag`, sink
-  detached, no leader / frequent elections, disk free below `cluster.disk.min.free`, gateway drops rising.
+  detached, no leader / frequent elections, disk free below `cluster.disk.min.free`, RADIUS server drops rising.
 - Compose profile `monitoring`: Prometheus + Grafana with one dashboard
   (`docker compose --profile monitoring up`).
 - ✅ **Done when:** a test parses `/metrics` of every component (format and names pinned); the alert rules
   pass `promtool check rules`; the compose dashboard shows lag during `PostgresOutageIT`-style runs.
 - **Result (2026-11-08):** `PrometheusWriter` (+ `validate`) and `JvmMetrics` in `common`, `/metrics` on members
-  and gateways, metric list in [monitoring.md](../operations/monitoring.md); `EXPORT_LAG` rejections and sink
+  and RADIUS servers, metric list in [monitoring.md](../operations/monitoring.md); `EXPORT_LAG` rejections and sink
   errors counted separately. 10 alert rules in `deploy/monitoring/alerts.yml`, compose profile `monitoring`
   (Prometheus v3.16.0, Grafana 13.3.0, dashboard with 8 panels). Checked: format pinned in `ThreeNodeClusterIT`
   and `LocalClusterIT`, `promtool` in `MonitoringConfigIT`, `/metrics` in `ComposeSmokeIT`; live in compose all
@@ -381,7 +381,7 @@ PostgreSQL 17 in a container on the same VM. Absolute rates are not bare-metal n
 | 6 | disk bounded | ✅ archive 30–38 MiB while the log grows (8 min locally, 60 min nightly); stopped member catches up after a purge |
 | 7 | throughput | ✅ backlog drain ~27k events/s (sessions), ~18.5k events/s (history) — 6–9× the test intake, 2–3× the worst-case reference load |
 | 8 | memory | ✅ 2M sessions under overload with the exporter: members ≤ 583 MiB unreclaimable of 1 GiB |
-| 9 | metrics | ✅ `/metrics` on members and gateways, 10 alert rules (promtool), compose monitoring profile |
+| 9 | metrics | ✅ `/metrics` on members and RADIUS servers, 10 alert rules (promtool), compose monitoring profile |
 | 10 | docs | ✅ ADR 0017, 0018, export, sinks, monitoring guides, configuration, failure matrix |
 
 ### Findings worth knowing
