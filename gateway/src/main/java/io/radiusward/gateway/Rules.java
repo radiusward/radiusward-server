@@ -126,27 +126,8 @@ final class Rules {
         return switch (c.op()) {
             case "present" -> actual != null;
             case "absent" -> actual == null;
-            case "==" -> c.value().equals(actual);
-            case "!=" -> !c.value().equals(actual);
-            case "=~" -> actual != null && c.pattern().matcher(actual).find();
-            case "!~" -> actual == null || !c.pattern().matcher(actual).find();
-            default -> numeric(c.op(), actual, c.value());
+            default -> ValueComparison.holds(c.op(), actual, c.value(), c.pattern());
         };
-    }
-
-    private static boolean numeric(String op, String actual, String expected) {
-        try {
-            long a = Long.parseLong(actual);
-            long e = Long.parseLong(expected);
-            return switch (op) {
-                case "<" -> a < e;
-                case ">" -> a > e;
-                case "<=" -> a <= e;
-                default -> a >= e;
-            };
-        } catch (NumberFormatException | NullPointerException ex) {
-            return false;
-        }
     }
 
     private static String expand(String value, Request request) {

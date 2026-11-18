@@ -97,32 +97,10 @@ final class CheckItems {
                 : AttributeText.decode(def, request.buffer(), request.valueOffset(at), request.valueLength(at));
         String expected = item.value();
         try {
-            return switch (item.op()) {
-                case "==" -> expected.equals(actual);
-                case "!=" -> !expected.equals(actual);
-                case "=~" ->
-                    actual != null && Pattern.compile(expected).matcher(actual).find();
-                case "!~" ->
-                    actual == null || !Pattern.compile(expected).matcher(actual).find();
-                default -> numeric(item.op(), actual, expected);
-            };
+            Pattern pattern = ValueComparison.isPattern(item.op()) ? Pattern.compile(expected) : null;
+            return ValueComparison.holds(item.op(), actual, expected, pattern);
         } catch (PatternSyntaxException e) {
             once.warn("regex:" + expected, "check item {}: invalid pattern, the condition fails", item.attribute());
-            return false;
-        }
-    }
-
-    private static boolean numeric(String op, String actual, String expected) {
-        try {
-            long a = Long.parseLong(actual);
-            long e = Long.parseLong(expected);
-            return switch (op) {
-                case "<" -> a < e;
-                case ">" -> a > e;
-                case "<=" -> a <= e;
-                default -> a >= e;
-            };
-        } catch (NumberFormatException | NullPointerException ex) {
             return false;
         }
     }
