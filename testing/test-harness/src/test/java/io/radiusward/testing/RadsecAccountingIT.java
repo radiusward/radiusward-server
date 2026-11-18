@@ -10,16 +10,16 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.DtlsClient;
-import io.radiusward.gateway.Gateway;
-import io.radiusward.gateway.RadsecClient;
-import io.radiusward.gateway.RadsecConfig;
-import io.radiusward.gateway.TestPki;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.DtlsClient;
+import io.radiusward.server.RadiusServer;
+import io.radiusward.server.RadsecClient;
+import io.radiusward.server.RadsecConfig;
+import io.radiusward.server.TestPki;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -81,12 +81,12 @@ class RadsecAccountingIT {
                         "nas." + LocalCluster.NAS_NAME + ".radsec",
                         "true")),
                 "127.0.0.1");
-        Gateway gateway = cluster.startGateway(
+        RadiusServer radiusServer = cluster.startServer(
                 1, LocalCluster.freePort(), LocalCluster.registry(), AuthConfig.DISABLED, d -> null, radsec);
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
 
-        try (RadsecClient nas =
-                new RadsecClient(gateway.radsecPort(), TestPki.clientContext(pki.client("nas"), pki.ca), "TLSv1.3")) {
+        try (RadsecClient nas = new RadsecClient(
+                radiusServer.radsecPort(), TestPki.clientContext(pki.client("nas"), pki.ca), "TLSv1.3")) {
             byte[] start = request(1, 1, "rs-1", 0, RADSEC);
             nas.send(start);
             assertResponse(nas.receive(), start, RADSEC);
@@ -102,7 +102,7 @@ class RadsecAccountingIT {
         FakeNas udp = new FakeNas();
         try {
             byte[] sameStart = request(7, 1, "rs-1", 0, UDP_SECRET);
-            udp.ack(gateway.radiusPort(), sameStart); // verified with the UDP secret
+            udp.ack(radiusServer.radiusPort(), sameStart); // verified with the UDP secret
         } finally {
             udp.close();
         }
@@ -151,12 +151,12 @@ class RadsecAccountingIT {
                         Map.entry("radius.tcp.acct.port", "0"),
                         Map.entry("nas." + LocalCluster.NAS_NAME + ".tcp", "true"))),
                 "127.0.0.1");
-        Gateway gateway = cluster.startGateway(
+        RadiusServer radiusServer = cluster.startServer(
                 1, LocalCluster.freePort(), LocalCluster.registry(), AuthConfig.DISABLED, d -> null, radsec);
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
 
         try (DtlsClient nas =
-                new DtlsClient(gateway.dtlsPort(), TestPki.clientContext(pki.client("nas"), pki.ca, "DTLS"))) {
+                new DtlsClient(radiusServer.dtlsPort(), TestPki.clientContext(pki.client("nas"), pki.ca, "DTLS"))) {
             byte[] start = request(1, 1, "dt-1", 0, DTLS);
             nas.send(start);
             assertResponse(nas.receive(), start, DTLS);
@@ -164,13 +164,13 @@ class RadsecAccountingIT {
             nas.send(status);
             assertResponse(nas.receive(), status, DTLS);
         }
-        try (RadsecClient nas =
-                new RadsecClient(gateway.radsecPort(), TestPki.clientContext(pki.client("nas"), pki.ca), "TLSv1.3")) {
+        try (RadsecClient nas = new RadsecClient(
+                radiusServer.radsecPort(), TestPki.clientContext(pki.client("nas"), pki.ca), "TLSv1.3")) {
             byte[] interim = request(3, 3, "dt-1", 60, RADSEC);
             nas.send(interim);
             assertResponse(nas.receive(), interim, RADSEC);
         }
-        try (java.net.Socket tcp = new java.net.Socket("127.0.0.1", gateway.tcpPort(false))) {
+        try (java.net.Socket tcp = new java.net.Socket("127.0.0.1", radiusServer.tcpPort(false))) {
             tcp.setSoTimeout(5_000);
             byte[] interim = request(4, 3, "dt-1", 120, UDP_SECRET); // plain TCP: the NAS entry's own secret
             tcp.getOutputStream().write(interim);
@@ -180,7 +180,7 @@ class RadsecAccountingIT {
         }
         FakeNas udp = new FakeNas();
         try {
-            udp.ack(gateway.radiusPort(), request(7, 1, "dt-1", 0, UDP_SECRET));
+            udp.ack(radiusServer.radiusPort(), request(7, 1, "dt-1", 0, UDP_SECRET));
         } finally {
             udp.close();
         }

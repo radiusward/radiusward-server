@@ -89,7 +89,7 @@ class PostgresExportIT {
     void everyAppliedEventOnceAcrossALeaseHandover() throws Exception {
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(2)
+                .radiusServers(2)
                 .export(id -> new ExportConfig(
                         List.of(new SinkConfig(
                                 "pg",
@@ -111,7 +111,7 @@ class PostgresExportIT {
                         null))
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             Path ackLog = dir.resolve("acks.csv");
             CompletableFuture<LoadGenerator.Result> load =
                     CompletableFuture.supplyAsync(() -> load(cluster, Duration.ofSeconds(15), ackLog));
@@ -150,9 +150,9 @@ class PostgresExportIT {
             // was applied meanwhile) and is counted stale again by the cluster, but it is the stored applied row.
             long resubmitted = 0;
             for (int g = 0; g < 2; g++) {
-                io.radiusward.gateway.GatewayStats stats = cluster.gateway(g).stats();
-                resubmitted += stats.get(io.radiusward.gateway.GatewayStats.Counter.RESUBMITTED)
-                        + stats.get(io.radiusward.gateway.GatewayStats.Counter.RESUBMITTED_ON_NEW_LEADER);
+                io.radiusward.server.ServerStats stats = cluster.radiusServer(g).stats();
+                resubmitted += stats.get(io.radiusward.server.ServerStats.Counter.RESUBMITTED)
+                        + stats.get(io.radiusward.server.ServerStats.Counter.RESUBMITTED_ON_NEW_LEADER);
             }
             assertThat(count("SELECT count(*) FROM accounting_event WHERE outcome = 2"))
                     .as("stale events: each once; only resubmissions of stored events are counted again")
@@ -288,10 +288,12 @@ class PostgresExportIT {
                                             List.of(
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(0).radiusPort()),
+                                                            cluster.radiusServer(0)
+                                                                    .radiusPort()),
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(1).radiusPort())),
+                                                            cluster.radiusServer(1)
+                                                                    .radiusPort())),
                                             FakeNas.SECRET)
                                     .nas(10)
                                     .sessions(3000)

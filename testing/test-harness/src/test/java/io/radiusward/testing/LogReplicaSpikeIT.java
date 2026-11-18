@@ -44,7 +44,7 @@ class LogReplicaSpikeIT {
     void replicaMatchesTheClusterOnEveryMember() throws Exception {
         try (LocalCluster cluster = LocalCluster.start(dir.toFile(), 3, 2)) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             load(cluster, 4000, Duration.ofSeconds(8), 0);
             ClusterNode leader = cluster.awaitLeader();
             assertThat(leader.requestSnapshot()).isTrue();
@@ -225,10 +225,12 @@ class LogReplicaSpikeIT {
                                             List.of(
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(0).radiusPort()),
+                                                            cluster.radiusServer(0)
+                                                                    .radiusPort()),
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(1).radiusPort())),
+                                                            cluster.radiusServer(1)
+                                                                    .radiusPort())),
                                             FakeNas.SECRET)
                                     .nas(10)
                                     .sessions(rate)

@@ -63,7 +63,7 @@ class ProxyAccountingIT {
         server.start();
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(1)
+                .radiusServers(1)
                 .export(id -> new ExportConfig(
                         List.of(new SinkConfig(
                                 "partner",
@@ -85,8 +85,8 @@ class ProxyAccountingIT {
                         null))
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
-            int port = cluster.gateway(0).radiusPort();
+            cluster.awaitServersConnected();
+            int port = cluster.radiusServer(0).radiusPort();
             nas.ack(port, SessionIdentityIT.start(1, "s-proxied", "alice@partner.example", "aa-bb-cc-00-02-01"));
             nas.ack(port, SessionIdentityIT.start(2, "s-local", "bob", "aa-bb-cc-00-02-02"));
             LocalCluster.await(Duration.ofSeconds(30), "forwarded to the home server", () -> !forwarded.isEmpty());

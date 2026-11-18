@@ -299,7 +299,7 @@ public final class AccountingService implements ClusteredService {
                         "NAS entry {}: gateways disagree on nas.<name>.identity (gateway {}); sessions of its devices"
                                 + " are split between them — configure every gateway alike",
                         nas,
-                        command.gatewayId());
+                        command.serverId());
             }
         }
     }

@@ -71,7 +71,7 @@ class SystemdFailoverIT {
             cluster.awaitReady(java.util.List.of(follower), Duration.ofSeconds(60));
 
             // 3. configuration reload of a gateway: SIGHUP, the gateway keeps answering
-            ContainerCluster.Member reloaded = cluster.gateways().get(0);
+            ContainerCluster.Member reloaded = cluster.radiusServers().get(0);
             Reports.step("systemctl reload radiusward-gateway on " + reloaded.name(), () -> {
                 assertThat(cluster.systemctl(reloaded, "reload", ContainerCluster.GATEWAY_UNIT)
                                 .getExitCode())
@@ -80,7 +80,7 @@ class SystemdFailoverIT {
             });
 
             // 4. a gateway stopped: not ready while it drains (5 s), then inactive; started again
-            ContainerCluster.Member stopped = cluster.gateways().get(1);
+            ContainerCluster.Member stopped = cluster.radiusServers().get(1);
             Reports.step("systemctl stop radiusward-gateway on " + stopped.name() + " (drain), then start", () -> {
                 assertThat(cluster.systemctl(stopped, "stop", "--no-block", ContainerCluster.GATEWAY_UNIT)
                                 .getExitCode())
@@ -101,7 +101,7 @@ class SystemdFailoverIT {
                                 .getExitCode())
                         .isZero();
             });
-            cluster.awaitReady(cluster.gateways(), Duration.ofSeconds(60));
+            cluster.awaitReady(cluster.radiusServers(), Duration.ofSeconds(60));
 
             LoadResult result = load.join();
             assertThat(result.failed()).as("unacknowledged events").isZero();
@@ -110,7 +110,7 @@ class SystemdFailoverIT {
             for (ContainerCluster.Member m : cluster.nodes()) {
                 assertThat(cluster.unitState(m)).as(m.name()).isEqualTo("active");
             }
-            for (ContainerCluster.Member g : cluster.gateways()) {
+            for (ContainerCluster.Member g : cluster.radiusServers()) {
                 assertThat(cluster.unitState(g)).as(g.name()).isEqualTo("active");
             }
         }

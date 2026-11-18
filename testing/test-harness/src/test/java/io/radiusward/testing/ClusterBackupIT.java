@@ -51,11 +51,11 @@ class ClusterBackupIT {
     void aClusterThatLostEveryMemberIsRestoredFromTheBackup(boolean automatic) throws Exception {
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(2)
+                .radiusServers(2)
                 .purge(new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             ClusterNodeConfig member = cluster.nodeConfig(0);
             ClusterBackupNode.Settings settings = new ClusterBackupNode.Settings(
                     member.members(),
@@ -98,8 +98,8 @@ class ClusterBackupIT {
                         .contains("radiusward_backup_live_log_position_bytes ");
                 long applied = leader.stats().applied();
 
-                long[] connects = cluster.gateways().stream()
-                        .mapToLong(g -> g.stats().get(io.radiusward.gateway.GatewayStats.Counter.CLUSTER_CONNECTS))
+                long[] connects = cluster.radiusServers().stream()
+                        .mapToLong(g -> g.stats().get(io.radiusward.server.ServerStats.Counter.CLUSTER_CONNECTS))
                         .toArray();
                 // every member loses its data: no quorum, nothing to seed from
                 for (int i = 0; i < 3; i++) {
@@ -159,17 +159,17 @@ class ClusterBackupIT {
                 // the gateways' sessions belonged to the cluster before the loss: they reconnect first
                 LocalCluster.await(Duration.ofSeconds(60), "gateways reconnected", () -> {
                     for (int g = 0; g < connects.length; g++) {
-                        if (cluster.gateways()
+                        if (cluster.radiusServers()
                                         .get(g)
                                         .stats()
-                                        .get(io.radiusward.gateway.GatewayStats.Counter.CLUSTER_CONNECTS)
+                                        .get(io.radiusward.server.ServerStats.Counter.CLUSTER_CONNECTS)
                                 <= connects[g]) {
                             return false;
                         }
                     }
                     return true;
                 });
-                cluster.awaitGatewaysConnected();
+                cluster.awaitServersConnected();
                 LogPurgeIT.load(cluster, 300_000); // and accepts new ones
                 cluster.awaitConverged();
             }

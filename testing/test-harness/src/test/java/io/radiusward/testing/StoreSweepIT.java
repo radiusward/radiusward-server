@@ -10,12 +10,12 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.CoaConfig;
-import io.radiusward.gateway.Gateway;
-import io.radiusward.gateway.RadsecConfig;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.CoaConfig;
+import io.radiusward.server.RadiusServer;
+import io.radiusward.server.RadsecConfig;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -79,7 +79,7 @@ class StoreSweepIT {
         CompletableFuture.runAsync(this::answer);
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         Config settings = Config.of(Map.ofEntries(
@@ -98,17 +98,17 @@ class StoreSweepIT {
                         "nas." + LocalCluster.NAS_NAME + ".coa.port",
                         Integer.toString(((InetSocketAddress) fakeNas.getLocalAddress()).getPort()))));
         AuthConfig auth = new AuthConfig(true, 0, 2, 256, 4096, Duration.ofSeconds(10));
-        Gateway gateway = cluster.startGateway(
+        RadiusServer radiusServer = cluster.startServer(
                 1,
                 0,
                 LocalCluster.registry(),
                 auth,
-                Gateway.storeHandler(settings, auth),
+                RadiusServer.storeHandler(settings, auth),
                 RadsecConfig.DISABLED,
                 CoaConfig.from(settings));
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
-        int port = gateway.radiusPort();
+        cluster.awaitServersConnected();
+        int port = radiusServer.radiusPort();
         nas.ack(port, SessionIdentityIT.start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
@@ -119,8 +119,9 @@ class StoreSweepIT {
         nas.ack(port, SessionIdentityIT.start(1, "s-alice", "alice", "aa-bb-cc-00-00-01"));
         nas.ack(port, SessionIdentityIT.start(2, "s-bob", "bob", "aa-bb-cc-00-00-02"));
         nas.ack(port, SessionIdentityIT.start(3, "s-carol", "carol", "aa-bb-cc-00-00-03"));
-        long before = sweeps(gateway); // sweeps run from the start: one now may have begun before the sessions
-        LocalCluster.await(Duration.ofSeconds(10), "a whole sweep that saw them", () -> sweeps(gateway) >= before + 2);
+        long before = sweeps(radiusServer); // sweeps run from the start: one now may have begun before the sessions
+        LocalCluster.await(
+                Duration.ofSeconds(10), "a whole sweep that saw them", () -> sweeps(radiusServer) >= before + 2);
         assertThat(requests).as("nothing changed yet").isEmpty();
 
         Files.writeString(users, """
@@ -133,8 +134,8 @@ class StoreSweepIT {
                 "bob disconnected and alice changed",
                 () -> requests.stream().anyMatch(r -> r[0] == 40)
                         && requests.stream().anyMatch(r -> r[0] == 43));
-        long done = sweeps(gateway);
-        LocalCluster.await(Duration.ofSeconds(10), "another sweep", () -> sweeps(gateway) > done + 1);
+        long done = sweeps(radiusServer);
+        LocalCluster.await(Duration.ofSeconds(10), "another sweep", () -> sweeps(radiusServer) > done + 1);
 
         // bob's session stays active (this NAS sends no Stop), so every sweep asks again; carol is in no store any
         // more, but kept (coa.sweep.missing = keep)
@@ -150,12 +151,12 @@ class StoreSweepIT {
         assertThat(new UnsafeBuffer(coa).getInt(at + 2, java.nio.ByteOrder.BIG_ENDIAN))
                 .as("the new Session-Timeout")
                 .isEqualTo(600);
-        assertThat(gateway.metrics())
+        assertThat(radiusServer.metrics())
                 .contains("radiusward_gateway_store_sweep_total{gateway=\"1\",result=\"changed\"} 1");
     }
 
-    private static long sweeps(Gateway gateway) {
-        String metrics = gateway.metrics();
+    private static long sweeps(RadiusServer radiusServer) {
+        String metrics = radiusServer.metrics();
         String key = "radiusward_gateway_store_sweep_total{gateway=\"1\",result=\"sweeps\"} ";
         int at = metrics.indexOf(key);
         return at < 0

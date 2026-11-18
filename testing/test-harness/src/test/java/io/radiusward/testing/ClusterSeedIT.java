@@ -40,11 +40,11 @@ class ClusterSeedIT {
     void aMemberWithALostVolumeIsSeededAndCatchesUp() throws Exception {
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(2)
+                .radiusServers(2)
                 .purge(new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             LogPurgeIT.load(cluster, 0);
             LogPurgeIT.snapshot(cluster, 1);
             LogPurgeIT.load(cluster, 100_000);
@@ -99,11 +99,11 @@ class ClusterSeedIT {
     void withoutASnapshotTheMemberCatchesUpFromTheLog() throws Exception {
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(2)
+                .radiusServers(2)
                 .purge(LogPurgeConfig.DEFAULTS)
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             LogPurgeIT.load(cluster, 0);
             int lost = (cluster.awaitLeader().config().nodeId() + 1) % 3;
             cluster.stopNode(lost);
@@ -124,7 +124,7 @@ class ClusterSeedIT {
     void withoutAClusterTheMemberStartsEmpty() throws Exception {
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(LogPurgeConfig.DEFAULTS)
                 .start()) {
             ClusterNodeConfig config = cluster.nodeConfig(0);

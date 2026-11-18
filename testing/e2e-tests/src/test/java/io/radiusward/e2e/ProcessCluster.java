@@ -38,7 +38,7 @@ final class ProcessCluster implements AutoCloseable {
     private final Map<String, Integer> managementPorts = new LinkedHashMap<>();
     private final Map<String, Integer> radiusPorts = new LinkedHashMap<>();
     private final Map<String, Process> processes = new LinkedHashMap<>();
-    private final Map<String, String> extraGatewayConfig = new LinkedHashMap<>();
+    private final Map<String, String> extraServerConfig = new LinkedHashMap<>();
     private String extraNasConfig = "";
     private String extraClusterConfig = "";
     private final Map<String, String> extraNodeConfig = new LinkedHashMap<>();
@@ -65,8 +65,8 @@ final class ProcessCluster implements AutoCloseable {
     }
 
     /** Extra properties for one gateway (e.g. debug settings); call before starting it. */
-    ProcessCluster gatewayConfig(String gateway, String properties) throws IOException {
-        extraGatewayConfig.put(gateway, properties);
+    ProcessCluster serverConfig(String radiusServer, String properties) throws IOException {
+        extraServerConfig.put(radiusServer, properties);
         writeConfig();
         return this;
     }
@@ -117,10 +117,10 @@ final class ProcessCluster implements AutoCloseable {
         for (String g : List.of("gateway-a", "gateway-b")) {
             Files.writeString(dir.resolve(g + ".properties"), """
                     profile=small
-                    gateway.id=%d
-                    gateway.listen.host=127.0.0.1
-                    gateway.listen.port=%d
-                    gateway.aeron.dir=%s
+                    radiusServer.id=%d
+                    radiusServer.listen.host=127.0.0.1
+                    radiusServer.listen.port=%d
+                    radiusServer.aeron.dir=%s
                     cluster.members=localhost,localhost,localhost
                     cluster.base.port=%d
                     management.http.host=127.0.0.1
@@ -132,7 +132,7 @@ final class ProcessCluster implements AutoCloseable {
                             dir.resolve("aeron/" + g),
                             basePort,
                             managementPorts.get(g),
-                            extraGatewayConfig.getOrDefault(g, "")));
+                            extraServerConfig.getOrDefault(g, "")));
         }
         Files.writeString(
                 dir.resolve("nas-clients.properties"), """
@@ -239,8 +239,8 @@ final class ProcessCluster implements AutoCloseable {
         return processes.containsKey(name) && processes.get(name).isAlive();
     }
 
-    int radiusPort(String gateway) {
-        return radiusPorts.get(gateway);
+    int radiusPort(String radiusServer) {
+        return radiusPorts.get(radiusServer);
     }
 
     String state(String name) {

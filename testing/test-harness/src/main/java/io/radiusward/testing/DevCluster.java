@@ -31,7 +31,7 @@ public final class DevCluster {
         try (ShutdownSignalBarrier barrier = new ShutdownSignalBarrier();
                 LocalCluster cluster = LocalCluster.builder(dir)
                         .members(3)
-                        .gateways(2)
+                        .radiusServers(2)
                         .basePort(9000)
                         .radiusPorts(1813, 1814)
                         .snapshotInterval(Duration.ofHours(1))
@@ -42,12 +42,17 @@ public final class DevCluster {
                         "127.0.0.1", 9090 + i, node::health, node::ready, node::stateJson, node::metrics));
             }
             for (int g = 0; g < 2; g++) {
-                var gateway = cluster.gateway(g);
+                var radiusServer = cluster.radiusServer(g);
                 servers.add(ManagementServer.start(
-                        "127.0.0.1", 9190 + g, gateway::health, gateway::ready, gateway::stateJson, gateway::metrics));
+                        "127.0.0.1",
+                        9190 + g,
+                        radiusServer::health,
+                        radiusServer::ready,
+                        radiusServer::stateJson,
+                        radiusServer::metrics));
             }
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             System.out.printf(
                     "radiusward dev cluster ready in %d ms: RADIUS 127.0.0.1:1813 and :1814 (secret %s), state http://127.0.0.1:9090/state%n",
                     (System.nanoTime() - start) / 1_000_000, LocalCluster.SECRET);

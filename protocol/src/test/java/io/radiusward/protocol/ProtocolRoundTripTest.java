@@ -21,7 +21,7 @@ class ProtocolRoundTripTest {
         AccountingCommandEncoder encoder = new AccountingCommandEncoder();
         encoder.wrapAndApplyHeader(buffer, 0, headerEncoder)
                 .correlationId(42L)
-                .gatewayId(7)
+                .serverId(7)
                 .nasId(1001)
                 .sessionKeyHi(0x1122334455667788L)
                 .sessionKeyLo(-1L)
@@ -56,7 +56,7 @@ class ProtocolRoundTripTest {
 
         AccountingCommandDecoder d = new AccountingCommandDecoder().wrapAndApplyHeader(buffer, 0, headerDecoder);
         assertThat(d.correlationId()).isEqualTo(42L);
-        assertThat(d.gatewayId()).isEqualTo(7);
+        assertThat(d.serverId()).isEqualTo(7);
         assertThat(d.nasId()).isEqualTo(1001);
         assertThat(d.sessionKeyHi()).isEqualTo(0x1122334455667788L);
         assertThat(d.sessionKeyLo()).isEqualTo(-1L);

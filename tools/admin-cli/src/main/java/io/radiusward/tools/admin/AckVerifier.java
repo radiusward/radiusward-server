@@ -4,8 +4,8 @@
  */
 package io.radiusward.tools.admin;
 
-import io.radiusward.gateway.EventKeys;
 import io.radiusward.protocol.SessionStatus;
+import io.radiusward.server.EventKeys;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;

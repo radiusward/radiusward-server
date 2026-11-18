@@ -269,7 +269,7 @@ class SimultaneousUseTest {
         reservation
                 .wrapAndApplyHeader(buffer, 0, header)
                 .correlationId(77)
-                .gatewayId(1)
+                .serverId(1)
                 .userKey(USER)
                 .deviceKey(B)
                 .maxDevices(1)

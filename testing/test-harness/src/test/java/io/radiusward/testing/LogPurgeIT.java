@@ -43,12 +43,12 @@ class LogPurgeIT {
     void logIsPurgedAndAStoppedMemberStillCatchesUp() throws Exception {
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(2)
+                .radiusServers(2)
                 .purge( // from the first start: the log recording keeps the segment length it was created with
                         new LogPurgeConfig(true, false, 4 << 20, Duration.ofSeconds(1)))
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
 
             load(cluster, 0);
             snapshot(cluster, 1);
@@ -116,10 +116,12 @@ class LogPurgeIT {
                                             List.of(
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(0).radiusPort()),
+                                                            cluster.radiusServer(0)
+                                                                    .radiusPort()),
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(1).radiusPort())),
+                                                            cluster.radiusServer(1)
+                                                                    .radiusPort())),
                                             FakeNas.SECRET)
                                     .nas(10)
                                     .sessions(3000)
@@ -136,7 +138,7 @@ class LogPurgeIT {
                     .run();
             Reports.attach("radclient load", result.toString());
             if (result.failed() > 0) {
-                cluster.gateways().forEach(g -> System.out.println("gateway after failed load: " + g.stateJson()));
+                cluster.radiusServers().forEach(g -> System.out.println("gateway after failed load: " + g.stateJson()));
             }
             assertThat(result.failed()).isZero();
         } catch (IOException e) {

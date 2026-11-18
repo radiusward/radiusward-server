@@ -10,15 +10,15 @@ import io.radiusward.cluster.node.LogPurgeConfig;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
 import io.radiusward.exporter.ExportConfig;
-import io.radiusward.gateway.AccessHandler;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.CoaConfig;
-import io.radiusward.gateway.Gateway;
-import io.radiusward.gateway.GatewayConfig;
-import io.radiusward.gateway.NasClient;
-import io.radiusward.gateway.NasRegistry;
-import io.radiusward.gateway.ProxyConfig;
-import io.radiusward.gateway.RadsecConfig;
+import io.radiusward.server.AccessHandler;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.CoaConfig;
+import io.radiusward.server.NasClient;
+import io.radiusward.server.NasRegistry;
+import io.radiusward.server.ProxyConfig;
+import io.radiusward.server.RadiusServer;
+import io.radiusward.server.RadsecConfig;
+import io.radiusward.server.ServerConfig;
 import io.radiusward.tools.admin.AdminClient;
 import java.io.File;
 import java.nio.charset.StandardCharsets;
@@ -43,7 +43,7 @@ public final class LocalCluster implements AutoCloseable {
     private final int basePort;
     private final int memberCount;
     private final ClusterNode[] nodes;
-    private final List<Gateway> gateways = new ArrayList<>();
+    private final List<RadiusServer> radiusServers = new ArrayList<>();
     private final Duration snapshotInterval;
     private java.util.function.IntFunction<ExportConfig> export = id -> ExportConfig.NONE;
     private LogPurgeConfig purge = LogPurgeConfig.DEFAULTS;
@@ -66,8 +66,8 @@ public final class LocalCluster implements AutoCloseable {
     }
 
     /** Starts {@code members} cluster nodes and {@code gatewayCount} gateways (RADIUS ports chosen freely). */
-    public static LocalCluster start(File baseDir, int members, int gatewayCount) {
-        return builder(baseDir).members(members).gateways(gatewayCount).start();
+    public static LocalCluster start(File baseDir, int members, int serverCount) {
+        return builder(baseDir).members(members).radiusServers(serverCount).start();
     }
 
     /** A cluster with other settings: {@code LocalCluster.builder(dir).members(3).gateways(2).export(..).start()}. */
@@ -79,7 +79,7 @@ public final class LocalCluster implements AutoCloseable {
     public static final class Builder {
         private final File baseDir;
         private int members = 3;
-        private int gateways;
+        private int radiusServers;
         private int basePort = -1;
         private int[] radiusPorts;
         private Duration snapshotInterval = Duration.ZERO;
@@ -98,8 +98,8 @@ public final class LocalCluster implements AutoCloseable {
             return this;
         }
 
-        public Builder gateways(int gateways) {
-            this.gateways = gateways;
+        public Builder radiusServers(int radiusServers) {
+            this.radiusServers = radiusServers;
             return this;
         }
 
@@ -155,18 +155,18 @@ public final class LocalCluster implements AutoCloseable {
             cluster.purge = purge;
             cluster.settings = settings;
             cluster.sweepInterval = sweepInterval;
-            return launch(cluster, members, gateways, radiusPorts == null ? new int[gateways] : radiusPorts);
+            return launch(cluster, members, radiusServers, radiusPorts == null ? new int[radiusServers] : radiusPorts);
         }
     }
 
-    private static LocalCluster launch(LocalCluster cluster, int members, int gatewayCount, int[] radiusPorts) {
+    private static LocalCluster launch(LocalCluster cluster, int members, int serverCount, int[] radiusPorts) {
         try {
-            Reports.step("start " + members + " members and " + gatewayCount + " gateways", () -> {
+            Reports.step("start " + members + " members and " + serverCount + " gateways", () -> {
                 for (int i = 0; i < members; i++) {
                     cluster.startNode(i);
                 }
-                for (int g = 0; g < gatewayCount; g++) {
-                    cluster.startGateway(g + 1, radiusPorts[g]);
+                for (int g = 0; g < serverCount; g++) {
+                    cluster.startServer(g + 1, radiusPorts[g]);
                 }
             });
             return cluster;
@@ -230,51 +230,51 @@ public final class LocalCluster implements AutoCloseable {
         return nodes[id];
     }
 
-    public Gateway startGateway(int gatewayId, int radiusPort) {
-        return startGateway(gatewayId, radiusPort, registry());
+    public RadiusServer startServer(int serverId, int radiusPort) {
+        return startServer(serverId, radiusPort, registry());
     }
 
     /** A gateway with its own NAS entries, e.g. {@link #registry(NasClient.Identity...)} for devices behind NAT. */
-    public Gateway startGateway(int gatewayId, int radiusPort, NasRegistry registry) {
-        return startGateway(gatewayId, radiusPort, registry, AuthConfig.DISABLED, dictionary -> null);
+    public RadiusServer startServer(int serverId, int radiusPort, NasRegistry registry) {
+        return startServer(serverId, radiusPort, registry, AuthConfig.DISABLED, dictionary -> null);
     }
 
     /** A gateway that also answers Access-Requests, with the handler made once the dictionary is loaded. */
-    public Gateway startGateway(
-            int gatewayId,
+    public RadiusServer startServer(
+            int serverId,
             int radiusPort,
             NasRegistry registry,
             AuthConfig auth,
             java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler) {
-        return startGateway(gatewayId, radiusPort, registry, auth, handler, RadsecConfig.DISABLED);
+        return startServer(serverId, radiusPort, registry, auth, handler, RadsecConfig.DISABLED);
     }
 
     /** As above, also accepting RadSec connections (ADR 0034). */
-    public Gateway startGateway(
-            int gatewayId,
+    public RadiusServer startServer(
+            int serverId,
             int radiusPort,
             NasRegistry registry,
             AuthConfig auth,
             java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler,
             RadsecConfig radsec) {
-        return startGateway(gatewayId, radiusPort, registry, auth, handler, radsec, CoaConfig.DISABLED);
+        return startServer(serverId, radiusPort, registry, auth, handler, radsec, CoaConfig.DISABLED);
     }
 
     /** As above, also sending CoA and Disconnect-Requests (ADR 0036). */
-    public Gateway startGateway(
-            int gatewayId,
+    public RadiusServer startServer(
+            int serverId,
             int radiusPort,
             NasRegistry registry,
             AuthConfig auth,
             java.util.function.Function<io.radiusward.radius.dictionary.Dictionary, AccessHandler> handler,
             RadsecConfig radsec,
             CoaConfig coa) {
-        return startGateway(gatewayId, radiusPort, registry, auth, handler, radsec, coa, ProxyConfig.DISABLED);
+        return startServer(serverId, radiusPort, registry, auth, handler, radsec, coa, ProxyConfig.DISABLED);
     }
 
     /** As above, also proxying realms and relaying CoA from their home servers (ADR 0037, ADR 0043). */
-    public Gateway startGateway(
-            int gatewayId,
+    public RadiusServer startServer(
+            int serverId,
             int radiusPort,
             NasRegistry registry,
             AuthConfig auth,
@@ -282,12 +282,12 @@ public final class LocalCluster implements AutoCloseable {
             RadsecConfig radsec,
             CoaConfig coa,
             ProxyConfig proxy) {
-        return startGateway(gatewayId, radiusPort, registry, auth, handler, radsec, coa, proxy, "127.0.0.1");
+        return startServer(serverId, radiusPort, registry, auth, handler, radsec, coa, proxy, "127.0.0.1");
     }
 
     /** As above, listening on {@code listenHost} ({@code 0.0.0.0} for peers in containers). */
-    public Gateway startGateway(
-            int gatewayId,
+    public RadiusServer startServer(
+            int serverId,
             int radiusPort,
             NasRegistry registry,
             AuthConfig auth,
@@ -296,8 +296,8 @@ public final class LocalCluster implements AutoCloseable {
             CoaConfig coa,
             ProxyConfig proxy,
             String listenHost) {
-        GatewayConfig config = new GatewayConfig(
-                gatewayId,
+        ServerConfig config = new ServerConfig(
+                serverId,
                 listenHost,
                 radiusPort,
                 1 << 20,
@@ -311,20 +311,20 @@ public final class LocalCluster implements AutoCloseable {
                 Duration.ofSeconds(30),
                 false,
                 Profile.SMALL.idleStrategyName(),
-                new File(baseDir, "aeron/gateway-" + gatewayId).getPath(),
+                new File(baseDir, "aeron/gateway-" + serverId).getPath(),
                 null,
                 Duration.ZERO);
-        Gateway gateway = Reports.step(
-                "start gateway " + gatewayId,
-                () -> Gateway.builder(config, registry)
+        RadiusServer radiusServer = Reports.step(
+                "start gateway " + serverId,
+                () -> RadiusServer.builder(config, registry)
                         .auth(auth)
                         .handlerFactory(handler)
                         .radsec(radsec)
                         .coa(coa)
                         .proxy(proxy)
                         .start());
-        gateways.add(gateway);
-        return gateway;
+        radiusServers.add(radiusServer);
+        return radiusServer;
     }
 
     public static NasRegistry registry() {
@@ -341,12 +341,12 @@ public final class LocalCluster implements AutoCloseable {
                 .build()));
     }
 
-    public Gateway gateway(int index) {
-        return gateways.get(index);
+    public RadiusServer radiusServer(int index) {
+        return radiusServers.get(index);
     }
 
-    public List<Gateway> gateways() {
-        return gateways;
+    public List<RadiusServer> radiusServers() {
+        return radiusServers;
     }
 
     /** Waits for a leader among the running members and returns it. */
@@ -365,13 +365,13 @@ public final class LocalCluster implements AutoCloseable {
     }
 
     /** Waits until every gateway is connected to the cluster. */
-    public void awaitGatewaysConnected() {
+    public void awaitServersConnected() {
         Reports.step(
                 "gateways connected",
                 () -> await(
                         Duration.ofSeconds(30),
                         "gateways connected",
-                        () -> gateways.stream().allMatch(g -> g.stats().connected())));
+                        () -> radiusServers.stream().allMatch(g -> g.stats().connected())));
     }
 
     /** Waits until all running members applied the same log (same applied count and digest). */
@@ -419,8 +419,8 @@ public final class LocalCluster implements AutoCloseable {
 
     @Override
     public void close() {
-        gateways.forEach(CloseHelper::quietClose);
-        gateways.clear();
+        radiusServers.forEach(CloseHelper::quietClose);
+        radiusServers.clear();
         for (int i = 0; i < nodes.length; i++) {
             CloseHelper.quietClose(nodes[i]);
             nodes[i] = null;

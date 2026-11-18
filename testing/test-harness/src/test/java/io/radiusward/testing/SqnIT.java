@@ -10,14 +10,14 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.cluster.node.ClusterNode;
-import io.radiusward.gateway.AccessHandler;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.Gateway;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.AccessHandler;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.RadiusServer;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -79,18 +79,18 @@ class SqnIT {
     }
 
     @Test
-    void oneSequencePerSubscriberAcrossGatewaysAndALeaderChange() throws Exception {
+    void oneSequencePerSubscriberAcrossServersAndALeaderChange() throws Exception {
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
-        Gateway g0 = cluster.startGateway(1, 0, LocalCluster.registry(), auth, d -> sqnHandler());
-        Gateway g1 = cluster.startGateway(2, 0, LocalCluster.registry(), auth, d -> sqnHandler());
+        RadiusServer g0 = cluster.startServer(1, 0, LocalCluster.registry(), auth, d -> sqnHandler());
+        RadiusServer g1 = cluster.startServer(2, 0, LocalCluster.registry(), auth, d -> sqnHandler());
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
         nas.reply(g0.radiusPort(), warmUp()); // the log needs a recording before members report their versions
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
@@ -115,7 +115,7 @@ class SqnIT {
                 .isEqualTo(4064);
     }
 
-    private long sqn(Gateway gateway, String imsi, long floor) throws Exception {
+    private long sqn(RadiusServer radiusServer, String imsi, long floor) throws Exception {
         byte[] auth = new byte[16];
         ThreadLocalRandom.current().nextBytes(auth);
         byte[] plain = Long.toString(floor).getBytes(StandardCharsets.US_ASCII);
@@ -133,7 +133,7 @@ class SqnIT {
         int ma = enc.messageAuthenticator();
         int length = enc.finish();
         new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, SECRET);
-        byte[] reply = nas.reply(gateway.authPort(), Arrays.copyOf(buffer.byteArray(), length));
+        byte[] reply = nas.reply(radiusServer.authPort(), Arrays.copyOf(buffer.byteArray(), length));
         assertThat(reply[0] & 0xFF).isEqualTo(RadiusCode.ACCESS_ACCEPT);
         RadiusPacket p = new RadiusPacket();
         p.wrap(new UnsafeBuffer(reply), 0, reply.length);

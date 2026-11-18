@@ -32,7 +32,7 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>gateway</artifactId>
+            <artifactId>server</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
@@ -54,7 +54,7 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>gateway</artifactId>
+            <artifactId>server</artifactId>
             <type>test-jar</type>
             <version>${project.version}</version>
             <scope>test</scope>

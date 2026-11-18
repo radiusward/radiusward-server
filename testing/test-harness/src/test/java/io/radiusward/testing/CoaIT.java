@@ -12,18 +12,18 @@ import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.ManagementServer;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.CoaConfig;
-import io.radiusward.gateway.DtlsClient;
-import io.radiusward.gateway.DynamicAuthorization;
-import io.radiusward.gateway.Gateway;
-import io.radiusward.gateway.RadsecClient;
-import io.radiusward.gateway.RadsecConfig;
-import io.radiusward.gateway.TestPki;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.CoaConfig;
+import io.radiusward.server.DtlsClient;
+import io.radiusward.server.DynamicAuthorization;
+import io.radiusward.server.RadiusServer;
+import io.radiusward.server.RadsecClient;
+import io.radiusward.server.RadsecConfig;
+import io.radiusward.server.TestPki;
 import io.radiusward.tools.admin.AdminMain;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -89,18 +89,18 @@ class CoaIT {
         }
     }
 
-    private Gateway start(RadsecConfig radsec) throws Exception {
+    private RadiusServer start(RadsecConfig radsec) throws Exception {
         return start(radsec, Map.of());
     }
 
     /** @param proxy {@code proxy.*}, {@code home.*}, ... settings: proxying, with authentication from an empty store */
-    private Gateway start(RadsecConfig radsec, Map<String, String> proxy) throws Exception {
+    private RadiusServer start(RadsecConfig radsec, Map<String, String> proxy) throws Exception {
         fakeNas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
         int nasPort = ((InetSocketAddress) fakeNas.getLocalAddress()).getPort();
         CompletableFuture.runAsync(this::answer);
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         CoaConfig coa = CoaConfig.from(Config.of(Map.of(
@@ -114,9 +114,9 @@ class CoaIT {
                 TOKEN,
                 "nas." + LocalCluster.NAS_NAME + ".coa.port",
                 Integer.toString(nasPort))));
-        Gateway gateway;
+        RadiusServer radiusServer;
         if (proxy.isEmpty()) {
-            gateway = cluster.startGateway(
+            radiusServer = cluster.startServer(
                     1, LocalCluster.freePort(), LocalCluster.registry(), AuthConfig.DISABLED, d -> null, radsec, coa);
         } else {
             Map<String, String> settings = new java.util.HashMap<>(proxy);
@@ -128,19 +128,19 @@ class CoaIT {
             settings.put("auth.plugins.dir", dir.resolve("plugins").toString());
             Config config = Config.of(settings);
             AuthConfig auth = new AuthConfig(true, 0, 1, 64, 1024, Duration.ofSeconds(10));
-            gateway = cluster.startGateway(
+            radiusServer = cluster.startServer(
                     1,
                     LocalCluster.freePort(),
                     LocalCluster.registry(),
                     auth,
-                    Gateway.storeHandler(config, auth),
+                    RadiusServer.storeHandler(config, auth),
                     radsec,
                     coa,
-                    io.radiusward.gateway.ProxyConfig.from(config));
+                    io.radiusward.server.ProxyConfig.from(config));
         }
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
-        nas.ack(gateway.radiusPort(), SessionIdentityIT.start(99, "warm-up", "nobody", "aa-bb-cc-00-00-99"));
+        cluster.awaitServersConnected();
+        nas.ack(radiusServer.radiusPort(), SessionIdentityIT.start(99, "warm-up", "nobody", "aa-bb-cc-00-00-99"));
         try (io.radiusward.tools.admin.AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(20),
@@ -148,9 +148,9 @@ class CoaIT {
                     () -> admin.state().activeVersion() >= 7);
         }
         management = ManagementServer.start(
-                        "127.0.0.1", 0, () -> Health.up("ok"), () -> Health.up("ok"), () -> "{}", gateway::metrics)
-                .handle("/coa/", gateway.coaApi());
-        return gateway;
+                        "127.0.0.1", 0, () -> Health.up("ok"), () -> Health.up("ok"), () -> "{}", radiusServer::metrics)
+                .handle("/coa/", radiusServer.coaApi());
+        return radiusServer;
     }
 
     /** The fake NAS: acknowledges every Disconnect- and CoA-Request, signed with the NAS's secret. */
@@ -206,8 +206,8 @@ class CoaIT {
 
     @Test
     void disconnectAndChangeThroughTheApiAndAdmin() throws Exception {
-        Gateway gateway = start(RadsecConfig.DISABLED);
-        int port = gateway.radiusPort();
+        RadiusServer radiusServer = start(RadsecConfig.DISABLED);
+        int port = radiusServer.radiusPort();
         nas.ack(port, SessionIdentityIT.start(1, "s-alice-1", "alice", "aa-bb-cc-00-00-01"));
         nas.ack(port, SessionIdentityIT.start(2, "s-alice-2", "alice", "aa-bb-cc-00-00-02"));
         nas.ack(port, SessionIdentityIT.start(3, "s-bob", "bob", "aa-bb-cc-00-00-03"));
@@ -264,13 +264,14 @@ class CoaIT {
                 new PrintStream(new ByteArrayOutputStream()));
         assertThat(exit).as(out.toString()).isZero();
         assertThat(out.toString()).contains("\"result\":\"ack\"");
-        assertThat(gateway.metrics()).contains("radiusward_gateway_coa_requests_total{gateway=\"1\",result=\"ack\"} 6");
+        assertThat(radiusServer.metrics())
+                .contains("radiusward_gateway_coa_requests_total{gateway=\"1\",result=\"ack\"} 6");
     }
 
     @Test
     void aNasOnRadsecGetsItOnItsConnection() throws Exception {
         TestPki pki = new TestPki(dir, "coa");
-        Gateway gateway = start(RadsecConfig.from(
+        RadiusServer radiusServer = start(RadsecConfig.from(
                 Config.of(Map.of(
                         "radsec.enabled",
                         "true",
@@ -286,8 +287,8 @@ class CoaIT {
                         "true")),
                 "127.0.0.1"));
         byte[] radsec = "radsec".getBytes(StandardCharsets.US_ASCII);
-        try (RadsecClient client =
-                new RadsecClient(gateway.radsecPort(), TestPki.clientContext(pki.client("nas"), pki.ca), "TLSv1.3")) {
+        try (RadsecClient client = new RadsecClient(
+                radiusServer.radsecPort(), TestPki.clientContext(pki.client("nas"), pki.ca), "TLSv1.3")) {
             byte[] start = accounting(5, "s-carol", "carol", radsec);
             client.send(start);
             assertThat(client.receive()[0]).isEqualTo((byte) RadiusCode.ACCOUNTING_RESPONSE);
@@ -316,7 +317,7 @@ class CoaIT {
     @Test
     void aNasOnDtlsGetsItOnItsAssociation() throws Exception {
         TestPki pki = new TestPki(dir, "coa-dtls");
-        Gateway gateway = start(RadsecConfig.from(
+        RadiusServer radiusServer = start(RadsecConfig.from(
                 Config.of(Map.of(
                         "radsec.dtls.enabled",
                         "true",
@@ -333,7 +334,7 @@ class CoaIT {
                 "127.0.0.1"));
         byte[] dtls = "radius/dtls".getBytes(StandardCharsets.US_ASCII);
         try (DtlsClient client =
-                new DtlsClient(gateway.dtlsPort(), TestPki.clientContext(pki.client("nas"), pki.ca, "DTLS"))) {
+                new DtlsClient(radiusServer.dtlsPort(), TestPki.clientContext(pki.client("nas"), pki.ca, "DTLS"))) {
             byte[] start = accounting(6, "s-dave", "dave", dtls);
             client.send(start);
             assertThat(client.receive()[0]).isEqualTo((byte) RadiusCode.ACCOUNTING_RESPONSE);
@@ -369,7 +370,7 @@ class CoaIT {
     @Test
     void aHomeServerDisconnectsItsUserThroughTheRelay() throws Exception {
         byte[] homeSecret = "home-secret".getBytes(StandardCharsets.US_ASCII);
-        Gateway gateway = start(
+        RadiusServer radiusServer = start(
                 RadsecConfig.DISABLED,
                 Map.of(
                         "proxy.enabled", "true",
@@ -380,12 +381,12 @@ class CoaIT {
                         "pool.partner.servers", "partner",
                         "realm.partner.name", "partner.example",
                         "realm.partner.pool", "partner"));
-        assertThat(gateway.coaRelayPort()).isPositive();
-        nas.ack(gateway.radiusPort(), accounting(7, "s-erin", "erin@partner.example", UDP_SECRET));
+        assertThat(radiusServer.coaRelayPort()).isPositive();
+        nas.ack(radiusServer.radiusPort(), accounting(7, "s-erin", "erin@partner.example", UDP_SECRET));
 
         try (DatagramChannel home = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0))) {
             home.socket().setSoTimeout(5_000);
-            InetSocketAddress relay = new InetSocketAddress("127.0.0.1", gateway.coaRelayPort());
+            InetSocketAddress relay = new InetSocketAddress("127.0.0.1", radiusServer.coaRelayPort());
             byte[] request = homeRequest(
                     11, DynamicAuthorization.DISCONNECT_REQUEST, "erin@partner.example", "s-erin", homeSecret);
             home.send(ByteBuffer.wrap(request), relay);
@@ -433,11 +434,12 @@ class CoaIT {
             LocalCluster.await(
                     Duration.ofSeconds(5),
                     "the forged request counted",
-                    () -> gateway.metrics()
+                    () -> radiusServer
+                            .metrics()
                             .contains(
                                     "radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"bad_authenticator\"} 1"));
         }
-        assertThat(gateway.metrics())
+        assertThat(radiusServer.metrics())
                 .contains("radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"ack\"} 1")
                 .contains("radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"duplicate\"} 1")
                 .contains("radiusward_gateway_coa_relay_total{gateway=\"1\",result=\"no_session\"} 1");

@@ -10,16 +10,16 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.CoaConfig;
-import io.radiusward.gateway.Gateway;
-import io.radiusward.gateway.NasClient;
-import io.radiusward.gateway.NasRegistry;
-import io.radiusward.gateway.ProxyConfig;
-import io.radiusward.gateway.RadsecConfig;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.CoaConfig;
+import io.radiusward.server.NasClient;
+import io.radiusward.server.NasRegistry;
+import io.radiusward.server.ProxyConfig;
+import io.radiusward.server.RadiusServer;
+import io.radiusward.server.RadsecConfig;
 import io.radiusward.testing.images.TestImages;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
@@ -63,7 +63,7 @@ class AkaEapolIT {
     static Path dir;
 
     static LocalCluster cluster;
-    static Gateway gateway;
+    static RadiusServer radiusServer;
     static GenericContainer<?> peer;
 
     @BeforeAll
@@ -86,7 +86,7 @@ class AkaEapolIT {
                 """.formatted(KI, OPC, OP, StoredTriplets.items()));
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         Config settings = Config.of(Map.of(
@@ -98,19 +98,19 @@ class AkaEapolIT {
                 "auth.eap.sim.pseudonym.keys", "k:000102030405060708090a0b0c0d0e0f"));
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
-        gateway = cluster.startGateway(
+        radiusServer = cluster.startServer(
                 1,
                 0,
                 anyPrivateNas(),
                 auth,
-                Gateway.storeHandler(settings, auth),
+                RadiusServer.storeHandler(settings, auth),
                 RadsecConfig.DISABLED,
                 CoaConfig.DISABLED,
                 ProxyConfig.DISABLED,
                 "0.0.0.0");
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
-        warmUp(gateway.radiusPort());
+        cluster.awaitServersConnected();
+        warmUp(radiusServer.radiusPort());
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(30),
@@ -243,7 +243,7 @@ class AkaEapolIT {
             for (int i = 1; i <= 3; i++) {
                 byte[] rand = new byte[16];
                 rand[15] = (byte) i;
-                byte[][] t = io.radiusward.gateway.SimVectors.gsm(k, opc, rand);
+                byte[][] t = io.radiusward.server.SimVectors.gsm(k, opc, rand);
                 b.append(i == 1 ? "" : ", ")
                         .append("EAP-Sim-Rand")
                         .append(i)
@@ -275,7 +275,7 @@ class AkaEapolIT {
                 "sh",
                 "-c",
                 "eapol_test -c /work/" + name + ".conf -a \"$(getent hosts host.docker.internal | cut -d' ' -f1)\""
-                        + " -p " + gateway.authPort() + " -s " + SECRET + " -t 20 -r " + again);
+                        + " -p " + radiusServer.authPort() + " -s " + SECRET + " -t 20 -r " + again);
         Path logs = Path.of("target/eapol-test-logs");
         Files.createDirectories(logs);
         Files.writeString(logs.resolve("aka-" + name + ".log"), result.getStdout() + result.getStderr());

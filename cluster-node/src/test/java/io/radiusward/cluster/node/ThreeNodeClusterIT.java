@@ -259,7 +259,7 @@ class ThreeNodeClusterIT {
         AccountingCommandEncoder encoder = new AccountingCommandEncoder();
         encoder.wrapAndApplyHeader(buffer, 0, new MessageHeaderEncoder())
                 .correlationId(correlationId)
-                .gatewayId(1)
+                .serverId(1)
                 .nasId(7)
                 .sessionKeyHi(session)
                 .sessionKeyLo(session)

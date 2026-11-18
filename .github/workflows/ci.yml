@@ -80,7 +80,7 @@ jobs:
           ./mvnw -B -ntp verify -Djacoco.skip=true -Dspotless.check.skip=true -Denforcer.skip=true \
             -Dtest=none -Dsurefire.failIfNoSpecifiedTests=false \
             -Dit.test='*AllocationIT' -Dfailsafe.failIfNoSpecifiedTests=false \
-            -pl radius-codec,cluster-service,gateway -am
+            -pl radius-codec,cluster-service,server -am
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v7

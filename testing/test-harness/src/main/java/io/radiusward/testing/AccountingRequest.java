@@ -4,10 +4,10 @@
  */
 package io.radiusward.testing;
 
-import io.radiusward.gateway.EventKeys;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.EventKeys;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;

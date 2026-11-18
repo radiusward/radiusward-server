@@ -4,7 +4,7 @@
  */
 package io.radiusward.tools.admin;
 
-import io.radiusward.gateway.EventKeys;
+import io.radiusward.server.EventKeys;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.sql.Connection;

@@ -60,7 +60,7 @@ final class ContainerCluster implements AutoCloseable {
             int fileSyncLevel,
             boolean lazyFs,
             long nodeMemoryMib,
-            long gatewayMemoryMib,
+            long serverMemoryMib,
             long dataTmpfsMib,
             boolean postgres,
             Map<String, String> nodeEnv,
@@ -75,32 +75,32 @@ final class ContainerCluster implements AutoCloseable {
          */
         Options systemd(boolean on) {
             return new Options(
-                    fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv, on);
+                    fileSyncLevel, lazyFs, nodeMemoryMib, serverMemoryMib, dataTmpfsMib, postgres, nodeEnv, on);
         }
 
         Options fileSyncLevel(int level) {
             return new Options(
-                    level, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
+                    level, lazyFs, nodeMemoryMib, serverMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         Options lazyFs(boolean on) {
             return new Options(
-                    fileSyncLevel, on, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
+                    fileSyncLevel, on, nodeMemoryMib, serverMemoryMib, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         /** Data directory on a tmpfs of this size (0: the image volume), to run out of disk space. */
         Options dataTmpfsMib(long mib) {
-            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, mib, postgres, nodeEnv, systemd);
+            return new Options(fileSyncLevel, lazyFs, nodeMemoryMib, serverMemoryMib, mib, postgres, nodeEnv, systemd);
         }
 
-        Options memoryMib(long node, long gateway) {
-            return new Options(fileSyncLevel, lazyFs, node, gateway, dataTmpfsMib, postgres, nodeEnv, systemd);
+        Options memoryMib(long node, long radiusServer) {
+            return new Options(fileSyncLevel, lazyFs, node, radiusServer, dataTmpfsMib, postgres, nodeEnv, systemd);
         }
 
         /** PostgreSQL at the compose address with the compose sink {@code pg} enabled on the members. */
         Options postgres(boolean on) {
             return new Options(
-                    fileSyncLevel, lazyFs, nodeMemoryMib, gatewayMemoryMib, dataTmpfsMib, on, nodeEnv, systemd);
+                    fileSyncLevel, lazyFs, nodeMemoryMib, serverMemoryMib, dataTmpfsMib, on, nodeEnv, systemd);
         }
 
         /** An extra environment variable for every member, e.g. {@code RADIUSWARD_SINK_PG_MAX_LAG=30s}. */
@@ -111,7 +111,7 @@ final class ContainerCluster implements AutoCloseable {
                     fileSyncLevel,
                     lazyFs,
                     nodeMemoryMib,
-                    gatewayMemoryMib,
+                    serverMemoryMib,
                     dataTmpfsMib,
                     postgres,
                     Map.copyOf(env),
@@ -127,7 +127,7 @@ final class ContainerCluster implements AutoCloseable {
     private final DockerClient docker = DockerClientFactory.instance().client();
     private final Network network;
     private final List<Member> nodes = new ArrayList<>();
-    private final List<Member> gateways = new ArrayList<>();
+    private final List<Member> radiusServers = new ArrayList<>();
     private final GenericContainer<?> tools;
     private final GenericContainer<?> postgres;
     static final String POSTGRES_IP = "172.28.0.40";
@@ -161,7 +161,7 @@ final class ContainerCluster implements AutoCloseable {
             nodes.add(new Member("node-" + i, "172.28.0.1" + i, node(i)));
         }
         for (int i = 0; i < 2; i++) {
-            gateways.add(new Member("gateway-" + (char) ('a' + i), "172.28.0.2" + i, gateway(i)));
+            radiusServers.add(new Member("gateway-" + (char) ('a' + i), "172.28.0.2" + i, radiusServer(i)));
         }
     }
 
@@ -206,9 +206,9 @@ final class ContainerCluster implements AutoCloseable {
         return c;
     }
 
-    private GenericContainer<?> gateway(int index) {
+    private GenericContainer<?> radiusServer(int index) {
         if (options.systemd()) {
-            return systemdGateway(index);
+            return systemdServer(index);
         }
         String ip = "172.28.0.2" + index;
         return new GenericContainer<>(DockerImageName.parse(IMAGE))
@@ -231,8 +231,8 @@ final class ContainerCluster implements AutoCloseable {
                     cmd.withIpv4Address(ip).withHostName("gateway-" + (char) ('a' + index));
                     cmd.getHostConfig()
                             .withShmSize(128 * MIB)
-                            .withMemory(options.gatewayMemoryMib() * MIB)
-                            .withMemorySwap(options.gatewayMemoryMib() * MIB)
+                            .withMemory(options.serverMemoryMib() * MIB)
+                            .withMemorySwap(options.serverMemoryMib() * MIB)
                             .withNanoCPUs(1_000_000_000L);
                 });
     }
@@ -259,13 +259,13 @@ final class ContainerCluster implements AutoCloseable {
                 .withCopyToContainer(Transferable.of(env.toString()), "/etc/radiusward/radiusward.env");
     }
 
-    private GenericContainer<?> systemdGateway(int index) {
+    private GenericContainer<?> systemdServer(int index) {
         String ip = "172.28.0.2" + index;
         String env = "RADIUSWARD_PROFILE=small\n"
                 + "RADIUSWARD_GATEWAY_ID=" + (index + 1) + "\n"
                 + "RADIUSWARD_GATEWAY_EGRESS_HOST=" + ip + "\n"
                 + "NAS_SECRET=" + SECRET + "\n";
-        return systemdContainer(ip, "gateway-" + (char) ('a' + index), options.gatewayMemoryMib(), 128)
+        return systemdContainer(ip, "gateway-" + (char) ('a' + index), options.serverMemoryMib(), 128)
                 .withCopyToContainer(config("gateway.properties"), "/etc/radiusward/gateway.properties")
                 .withCopyToContainer(config("nas-clients.properties"), "/etc/radiusward/nas-clients.properties")
                 .withCopyToContainer(config("users"), "/etc/radiusward/users")
@@ -337,7 +337,7 @@ final class ContainerCluster implements AutoCloseable {
 
     /** Starts everything and waits until all members and gateways report ready; cleans up if that fails. */
     ContainerCluster start() {
-        return Reports.step("start " + nodes.size() + " members and " + gateways.size() + " gateways", this::startAll);
+        return Reports.step("start " + nodes.size() + " members and " + radiusServers.size() + " gateways", this::startAll);
     }
 
     private ContainerCluster startAll() {
@@ -352,11 +352,11 @@ final class ContainerCluster implements AutoCloseable {
                 nodes.parallelStream().forEach(this::enableUnit);
             }
             awaitReady(nodes, Duration.ofSeconds(60));
-            gateways.parallelStream().forEach(g -> g.container().start());
+            radiusServers.parallelStream().forEach(g -> g.container().start());
             if (options.systemd()) {
-                gateways.parallelStream().forEach(this::enableUnit);
+                radiusServers.parallelStream().forEach(this::enableUnit);
             }
-            awaitReady(gateways, Duration.ofSeconds(60));
+            awaitReady(radiusServers, Duration.ofSeconds(60));
             return this;
         } catch (RuntimeException e) {
             close();
@@ -490,8 +490,8 @@ final class ContainerCluster implements AutoCloseable {
         return nodes.stream().filter(n -> n.name().equals(name)).findFirst().orElseThrow();
     }
 
-    List<Member> gateways() {
-        return gateways;
+    List<Member> radiusServers() {
+        return radiusServers;
     }
 
     /** {@code kill -9} of the container's main process. LazyFS dies with it: unsynced writes are gone. */
@@ -775,7 +775,7 @@ final class ContainerCluster implements AutoCloseable {
                 .resolve(testName);
         savedLogs.add(dir);
         List<Member> all = new ArrayList<>(nodes);
-        all.addAll(gateways);
+        all.addAll(radiusServers);
         for (Member m : all) {
             try {
                 if (m.container().getContainerId() != null) {

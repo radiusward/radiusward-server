@@ -102,14 +102,14 @@ public final class AdminMain {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("--token or RADIUSWARD_COA_API_TOKEN");
         }
-        String gateway = o.get("gateway");
-        int end = gateway.length();
-        while (end > 0 && gateway.charAt(end - 1) == '/') { // trailing slashes, without a backtracking regex
+        String radiusServer = o.get("gateway");
+        int end = radiusServer.length();
+        while (end > 0 && radiusServer.charAt(end - 1) == '/') { // trailing slashes, without a backtracking regex
             end--;
         }
-        gateway = gateway.substring(0, end);
+        radiusServer = radiusServer.substring(0, end);
         java.net.http.HttpRequest request = java.net.http.HttpRequest.newBuilder(java.net.URI.create(
-                        gateway + "/coa/" + (command.equals("coa") ? "update" : "disconnect") + "?" + target))
+                        radiusServer + "/coa/" + (command.equals("coa") ? "update" : "disconnect") + "?" + target))
                 .header("Authorization", "Bearer " + token)
                 .timeout(java.time.Duration.ofSeconds(60))
                 .POST(java.net.http.HttpRequest.BodyPublishers.ofString(o.getOrDefault("attributes", "")))
@@ -273,10 +273,10 @@ public final class AdminMain {
                        admin verify-export  --jdbc-url <url> [--jdbc-user u --jdbc-password p] --ack-log <acks.csv>
                                             --nas-id <id> [--members ...]   (sessions in the database vs. acks/cluster)
                        verify-acks/verify-export: [--identity nas-identifier] when the NAS entry identifies devices
-                       admin disconnect     --gateway http://<gateway>:<management port> [--token t] --user <name>
+                       admin disconnect     --radiusServer http://<gateway>:<management port> [--token t] --user <name>
                                             | --nas <entry> --session <Acct-Session-Id>   (Disconnect-Request, RFC 5176)
-                       admin coa            --gateway ... [--token t] --user <name> --attributes 'Session-Timeout = 600'
-                       disconnect/coa: the gateway's coa.api.token, or RADIUSWARD_COA_API_TOKEN
+                       admin coa            --radiusServer ... [--token t] --user <name> --attributes 'Session-Timeout = 600'
+                       disconnect/coa: the radiusServer's coa.api.token, or RADIUSWARD_COA_API_TOKEN
                 exit: 0 ok, 1 something missing or no answer, 64 usage""";
     }
 }

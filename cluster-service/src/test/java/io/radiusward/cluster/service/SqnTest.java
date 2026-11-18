@@ -70,7 +70,7 @@ class SqnTest {
         SqnNextEncoder encoder = new SqnNextEncoder()
                 .wrapAndApplyHeader(buffer, 0, new MessageHeaderEncoder())
                 .correlationId(77)
-                .gatewayId(1)
+                .serverId(1)
                 .subscriberKey(SIM_A)
                 .floor(100);
         assertThat(applier.apply(buffer, 0, 1, 1_000)).isEqualTo(LogApplier.SQN_NEXT);

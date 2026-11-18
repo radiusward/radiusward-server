@@ -34,22 +34,22 @@ class ComposeSmokeIT {
     void shippedComposeFileAcknowledgesAccounting() throws Exception {
         Result up = compose("up", "-d", "--wait", "--wait-timeout", "120");
         assertThat(up.exit()).as("compose up --wait\n" + up.output()).isZero();
-        for (String gateway : List.of("gateway-a:1813", "gateway-b:1813")) {
+        for (String radiusServer : List.of("gateway-a:1813", "gateway-b:1813")) {
             Result acct = compose(
                     "run",
                     "--rm",
                     "tools",
                     "acct",
                     "--server",
-                    gateway,
+                    radiusServer,
                     "--secret",
                     ContainerCluster.SECRET,
                     "--status",
                     "start",
                     "--session-id",
-                    "smoke-" + gateway.charAt(8));
+                    "smoke-" + radiusServer.charAt(8));
             assertThat(acct.exit())
-                    .as("acct via " + gateway + "\n" + acct.output())
+                    .as("acct via " + radiusServer + "\n" + acct.output())
                     .isZero();
         }
         Result metrics = compose(

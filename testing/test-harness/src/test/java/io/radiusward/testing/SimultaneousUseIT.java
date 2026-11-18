@@ -10,12 +10,12 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
-import io.radiusward.gateway.AuthConfig;
-import io.radiusward.gateway.Gateway;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.AuthConfig;
+import io.radiusward.server.RadiusServer;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -65,13 +65,13 @@ class SimultaneousUseIT {
     }
 
     @Test
-    void oneDeviceAtATimeWhicheverGatewayItUses() throws Exception {
+    void oneDeviceAtATimeWhicheverServerItUses() throws Exception {
         Path users = Files.writeString(
                 dir.resolve("users"),
                 "alice Cleartext-Password := \"pw\", Simultaneous-Use := 1\nbob Cleartext-Password := \"pw\"\n");
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         Config stores = Config.of(Map.of(
@@ -85,10 +85,12 @@ class SimultaneousUseIT {
                 dir.resolve("plugins").toString()));
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
-        Gateway g0 = cluster.startGateway(1, 0, LocalCluster.registry(), auth, Gateway.storeHandler(stores, auth));
-        Gateway g1 = cluster.startGateway(2, 0, LocalCluster.registry(), auth, Gateway.storeHandler(stores, auth));
+        RadiusServer g0 =
+                cluster.startServer(1, 0, LocalCluster.registry(), auth, RadiusServer.storeHandler(stores, auth));
+        RadiusServer g1 =
+                cluster.startServer(2, 0, LocalCluster.registry(), auth, RadiusServer.storeHandler(stores, auth));
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
 
         int supported = io.radiusward.cluster.service.AccountingStateMachine.STATE_VERSION;
         exchangeAccounting(g0, accounting(1, "warm-up", "nobody", null)); // the log needs a recording to report
@@ -130,7 +132,7 @@ class SimultaneousUseIT {
         java.util.List<String> disconnected = new java.util.concurrent.CopyOnWriteArrayList<>();
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         Config settings = Config.of(Map.of(
@@ -152,16 +154,16 @@ class SimultaneousUseIT {
                 Integer.toString(((InetSocketAddress) coaNas.getLocalAddress()).getPort())));
         AuthConfig auth = new AuthConfig(
                 true, 0, 2, 256, 4096, Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(30));
-        Gateway g0 = cluster.startGateway(
+        RadiusServer g0 = cluster.startServer(
                 1,
                 0,
                 LocalCluster.registry(),
                 auth,
-                Gateway.storeHandler(settings, auth),
-                io.radiusward.gateway.RadsecConfig.DISABLED,
-                io.radiusward.gateway.CoaConfig.from(settings));
+                RadiusServer.storeHandler(settings, auth),
+                io.radiusward.server.RadsecConfig.DISABLED,
+                io.radiusward.server.CoaConfig.from(settings));
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
         exchangeAccounting(g0, accounting(1, "warm-up", "nobody", null));
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
@@ -202,7 +204,7 @@ class SimultaneousUseIT {
         }
     }
 
-    private int access(Gateway gateway, String user, String password, String station) throws Exception {
+    private int access(RadiusServer radiusServer, String user, String password, String station) throws Exception {
         byte[] auth = new byte[16];
         ThreadLocalRandom.current().nextBytes(auth);
         byte[] plain = password.getBytes(StandardCharsets.US_ASCII);
@@ -223,7 +225,7 @@ class SimultaneousUseIT {
         int ma = enc.messageAuthenticator();
         int length = enc.finish();
         new RadiusAuthenticator().signAccessRequest(buffer, 0, length, ma, SECRET);
-        return nas.reply(gateway.authPort(), Arrays.copyOf(buffer.byteArray(), length))[0] & 0xFF;
+        return nas.reply(radiusServer.authPort(), Arrays.copyOf(buffer.byteArray(), length))[0] & 0xFF;
     }
 
     private byte[] accounting(int status, String sessionId, String user, String station) {
@@ -245,7 +247,7 @@ class SimultaneousUseIT {
         return Arrays.copyOf(buffer.byteArray(), length);
     }
 
-    private void exchangeAccounting(Gateway gateway, byte[] request) throws Exception {
-        assertThat(nas.reply(gateway.radiusPort(), request)[0] & 0xFF).isEqualTo(RadiusCode.ACCOUNTING_RESPONSE);
+    private void exchangeAccounting(RadiusServer radiusServer, byte[] request) throws Exception {
+        assertThat(nas.reply(radiusServer.radiusPort(), request)[0] & 0xFF).isEqualTo(RadiusCode.ACCOUNTING_RESPONSE);
     }
 }

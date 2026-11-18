@@ -35,10 +35,13 @@ class AdminCoaTest {
         });
         server.start();
         try {
-            String gateway = "http://127.0.0.1:" + server.getAddress().getPort() + "//"; // trailing slashes dropped
+            String radiusServer =
+                    "http://127.0.0.1:" + server.getAddress().getPort() + "//"; // trailing slashes dropped
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             assertThat(AdminMain.run(
-                            new String[] {"disconnect", "--gateway", gateway, "--user", "al ice", "--token", "t0k3n"},
+                            new String[] {
+                                "disconnect", "--gateway", radiusServer, "--user", "al ice", "--token", "t0k3n"
+                            },
                             new PrintStream(out),
                             System.err))
                     .isZero();
@@ -48,7 +51,7 @@ class AdminCoaTest {
                             new String[] {
                                 "coa",
                                 "--gateway",
-                                gateway,
+                                radiusServer,
                                 "--nas",
                                 "edge",
                                 "--session",

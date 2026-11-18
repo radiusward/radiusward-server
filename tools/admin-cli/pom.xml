@@ -24,7 +24,7 @@
         <dependency>
             <!-- EventKeys: session keys exactly as the gateways compute them -->
             <groupId>io.radiusward</groupId>
-            <artifactId>gateway</artifactId>
+            <artifactId>server</artifactId>
         </dependency>
         <dependency>
             <!-- export-schema and verify-export (also brings the JDBC driver) -->

@@ -87,7 +87,7 @@
     <!-- gateway -> cluster -->
     <sbe:message name="AccountingCommand" id="1" description="One accounting event to apply">
         <field name="correlationId" id="1" type="int64"/>
-        <field name="gatewayId" id="2" type="int32"/>
+        <field name="serverId" id="2" type="int32"/>
         <field name="nasId" id="3" type="int32"/>
         <field name="sessionKeyHi" id="4" type="int64"/>
         <field name="sessionKeyLo" id="5" type="int64"/>
@@ -130,7 +130,7 @@
     <sbe:message name="AuthReservation" id="16" sinceVersion="6"
                  description="May this user bring another device online? Answered after the commit">
         <field name="correlationId" id="1" type="int64"/>
-        <field name="gatewayId" id="2" type="int32"/>
+        <field name="serverId" id="2" type="int32"/>
         <field name="userKey" id="3" type="int64"/>
         <field name="deviceKey" id="4" type="int64" description="0 = unknown device"/>
         <field name="maxDevices" id="5" type="uint16" description="Simultaneous-Use of the user"/>
@@ -146,7 +146,7 @@
     <sbe:message name="SqnNext" id="29" sinceVersion="8"
                  description="The next SQN of a SIM subscriber for an EAP-AKA challenge; answered after the commit">
         <field name="correlationId" id="1" type="int64"/>
-        <field name="gatewayId" id="2" type="int32"/>
+        <field name="serverId" id="2" type="int32"/>
         <field name="subscriberKey" id="3" type="int64" description="hash of the IMSI"/>
         <field name="floor" id="4" type="int64"
                description="an SQN the next one must exceed: the store's SIM-SQN, or the USIM's after a resynchronisation"/>

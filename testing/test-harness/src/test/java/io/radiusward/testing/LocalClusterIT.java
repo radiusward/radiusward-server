@@ -9,11 +9,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.radiusward.cluster.node.ClusterNode;
-import io.radiusward.gateway.NasRegistry;
 import io.radiusward.protocol.SessionStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.NasRegistry;
 import io.radiusward.tools.admin.AdminClient;
 import io.radiusward.tools.radclient.LoadGenerator;
 import java.io.IOException;
@@ -55,14 +55,14 @@ class LocalClusterIT {
     private LocalCluster start() {
         cluster = LocalCluster.start(dir.toFile(), 3, 2);
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
         return cluster;
     }
 
     @Test
     void vendorFixturesAreAcknowledgedAndReplicated() throws Exception {
         start();
-        int port = cluster.gateway(0).radiusPort();
+        int port = cluster.radiusServer(0).radiusPort();
         List<Path> fixtures;
         try (Stream<Path> walk = Files.walk(Path.of("../../radius-codec/src/test/resources/fixtures"))) {
             fixtures = walk.filter(p -> p.toString().endsWith(".fixture"))
@@ -97,25 +97,25 @@ class LocalClusterIT {
     }
 
     @Test
-    void retransmitThroughTheOtherGatewayIsADuplicate() throws Exception {
+    void retransmitThroughTheOtherServerIsADuplicate() throws Exception {
         start();
         byte[] start = AccountingRequest.request(1, 1, "s-1", 0);
-        nas.ack(cluster.gateway(0).radiusPort(), start);
-        nas.ack(cluster.gateway(1).radiusPort(), start);
-        nas.ack(cluster.gateway(0).radiusPort(), start); // gateway A answers from its cache
+        nas.ack(cluster.radiusServer(0).radiusPort(), start);
+        nas.ack(cluster.radiusServer(1).radiusPort(), start);
+        nas.ack(cluster.radiusServer(0).radiusPort(), start); // gateway A answers from its cache
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();
             assertThat(state.applied()).isEqualTo(1);
             assertThat(state.duplicates()).isEqualTo(1);
         }
-        assertThat(cluster.gateway(0).stats().get(io.radiusward.gateway.GatewayStats.Counter.CACHE_HITS))
+        assertThat(cluster.radiusServer(0).stats().get(io.radiusward.server.ServerStats.Counter.CACHE_HITS))
                 .isEqualTo(1);
 
-        assertThat(cluster.gateway(1).ready().up()).isTrue();
-        cluster.gateway(1).drain(); // SIGTERM with gateway.shutdown.drain: not ready, still answering
-        assertThat(cluster.gateway(1).ready().detail()).isEqualTo("draining before shutdown");
-        nas.ack(cluster.gateway(1).radiusPort(), AccountingRequest.request(1, 2, "s-2", 0));
+        assertThat(cluster.radiusServer(1).ready().up()).isTrue();
+        cluster.radiusServer(1).drain(); // SIGTERM with gateway.shutdown.drain: not ready, still answering
+        assertThat(cluster.radiusServer(1).ready().detail()).isEqualTo("draining before shutdown");
+        nas.ack(cluster.radiusServer(1).radiusPort(), AccountingRequest.request(1, 2, "s-2", 0));
     }
 
     @Test
@@ -123,18 +123,20 @@ class LocalClusterIT {
         start();
         long started = System.currentTimeMillis() / 1000 - 1_800; // sessions that began half an hour ago
         // the Start is lost on the way (or delayed): the first interim creates the session
-        nas.ack(cluster.gateway(0).radiusPort(), AccountingRequest.request(1, 3, "s-4", 300, started + 300));
+        nas.ack(cluster.radiusServer(0).radiusPort(), AccountingRequest.request(1, 3, "s-4", 300, started + 300));
         // the delayed Start arrives after the interim, through the other gateway: acknowledged, merged
         byte[] lateStart = AccountingRequest.request(2, 1, "s-4", 0, started);
-        nas.ack(cluster.gateway(1).radiusPort(), lateStart);
-        nas.ack(cluster.gateway(0).radiusPort(), lateStart); // its retransmission is a duplicate
+        nas.ack(cluster.radiusServer(1).radiusPort(), lateStart);
+        nas.ack(cluster.radiusServer(0).radiusPort(), lateStart); // its retransmission is a duplicate
         // the interim retransmitted after the late Start is still a duplicate: the counters were not reset
-        nas.ack(cluster.gateway(1).radiusPort(), AccountingRequest.request(3, 3, "s-4", 300, started + 300));
-        nas.ack(cluster.gateway(0).radiusPort(), AccountingRequest.request(4, 3, "s-4", 600, started + 600));
+        nas.ack(cluster.radiusServer(1).radiusPort(), AccountingRequest.request(3, 3, "s-4", 300, started + 300));
+        nas.ack(cluster.radiusServer(0).radiusPort(), AccountingRequest.request(4, 3, "s-4", 600, started + 600));
         // a session that only ever sends interims and a Stop
-        nas.ack(cluster.gateway(0).radiusPort(), AccountingRequest.request(5, 3, "s-5", 60, started + 60));
-        nas.ack(cluster.gateway(0).radiusPort(), AccountingRequest.request(6, 2, "s-5", 120, started + 120));
-        nas.ack(cluster.gateway(1).radiusPort(), AccountingRequest.request(7, 1, "s-5", 0, started)); // too late: stale
+        nas.ack(cluster.radiusServer(0).radiusPort(), AccountingRequest.request(5, 3, "s-5", 60, started + 60));
+        nas.ack(cluster.radiusServer(0).radiusPort(), AccountingRequest.request(6, 2, "s-5", 120, started + 120));
+        nas.ack(
+                cluster.radiusServer(1).radiusPort(),
+                AccountingRequest.request(7, 1, "s-5", 0, started)); // too late: stale
 
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
@@ -163,8 +165,8 @@ class LocalClusterIT {
     void interimsInReverseOrderNeverMoveTheSessionBack() throws Exception {
         start();
         long started = System.currentTimeMillis() / 1000 - 1_800;
-        int a = cluster.gateway(0).radiusPort();
-        int b = cluster.gateway(1).radiusPort();
+        int a = cluster.radiusServer(0).radiusPort();
+        int b = cluster.radiusServer(1).radiusPort();
         // the NAS sent Start, 300, 600, 900, 1200, Stop at 1500; they arrive in this order, through both gateways
         nas.ack(a, AccountingRequest.request(1, 3, "s-6", 900, started + 900)); // creates the session
         nas.ack(b, AccountingRequest.request(2, 3, "s-6", 600, started + 600)); // older: stale
@@ -201,9 +203,9 @@ class LocalClusterIT {
         long now = System.currentTimeMillis() / 1000;
         // an Interim held back by the NAS for 2 h (tombstone window 1 h): its session may have been stopped and
         // forgotten meanwhile, so it must not come back as an active session
-        nas.ack(cluster.gateway(0).radiusPort(), AccountingRequest.request(1, 3, "s-7", 600, now - 7_200));
+        nas.ack(cluster.radiusServer(0).radiusPort(), AccountingRequest.request(1, 3, "s-7", 600, now - 7_200));
         // a recent Interim whose Start was lost still creates its session
-        nas.ack(cluster.gateway(1).radiusPort(), AccountingRequest.request(2, 3, "s-8", 600, now - 60));
+        nas.ack(cluster.radiusServer(1).radiusPort(), AccountingRequest.request(2, 3, "s-8", 600, now - 60));
 
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
@@ -224,11 +226,11 @@ class LocalClusterIT {
     @Test
     void devicesBehindOneAddressKeepTheirSessionsApart() throws Exception {
         cluster = LocalCluster.start(dir.toFile(), 3, 0);
-        NasRegistry byDevice = LocalCluster.registry(io.radiusward.gateway.NasClient.Identity.NAS_IDENTIFIER);
-        cluster.startGateway(1, 0, byDevice);
-        cluster.startGateway(2, 0, byDevice);
+        NasRegistry byDevice = LocalCluster.registry(io.radiusward.server.NasClient.Identity.NAS_IDENTIFIER);
+        cluster.startServer(1, 0, byDevice);
+        cluster.startServer(2, 0, byDevice);
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
         Path ackLog = dir.resolve("acks.csv");
         // 50 access points behind one address, each numbering its 10 sessions 00000000..00000009
         LoadGenerator.Result result = new LoadGenerator(
@@ -236,10 +238,10 @@ class LocalClusterIT {
                                         List.of(
                                                 new InetSocketAddress(
                                                         "127.0.0.1",
-                                                        cluster.gateway(0).radiusPort()),
+                                                        cluster.radiusServer(0).radiusPort()),
                                                 new InetSocketAddress(
                                                         "127.0.0.1",
-                                                        cluster.gateway(1).radiusPort())),
+                                                        cluster.radiusServer(1).radiusPort())),
                                         SECRET)
                                 .nas(50)
                                 .sessions(500)
@@ -265,16 +267,16 @@ class LocalClusterIT {
         }
 
         // access point nas3 reboots: only its 10 sessions stop
-        nas.ack(cluster.gateway(0).radiusPort(), accountingOn(1, "nas3"));
+        nas.ack(cluster.radiusServer(0).radiusPort(), accountingOn(1, "nas3"));
         // an Accounting-On without NAS-Identifier is acknowledged, but cannot say whose sessions to stop
-        nas.ack(cluster.gateway(1).radiusPort(), accountingOn(2, null));
+        nas.ack(cluster.radiusServer(1).radiusPort(), accountingOn(2, null));
         cluster.awaitConverged();
         try (AdminClient admin = cluster.admin()) {
             AdminClient.State state = admin.state();
             assertThat(state.active()).isEqualTo(490);
             assertThat(state.stopped()).isEqualTo(10);
         }
-        assertThat(cluster.gateway(1).stats().get(io.radiusward.gateway.GatewayStats.Counter.IDENTITY_MISSING))
+        assertThat(cluster.radiusServer(1).stats().get(io.radiusward.server.ServerStats.Counter.IDENTITY_MISSING))
                 .isEqualTo(1);
         assertThat(cluster.awaitLeader().stats().identityMismatches()).isZero();
     }
@@ -296,13 +298,13 @@ class LocalClusterIT {
         int supported = io.radiusward.cluster.service.AccountingStateMachine.STATE_VERSION;
         cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(1)
+                .radiusServers(1)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
+        cluster.awaitServersConnected();
         nas.ack(
-                cluster.gateway(0).radiusPort(),
+                cluster.radiusServer(0).radiusPort(),
                 AccountingRequest.request(1, 1, "s-9", 0)); // the log needs a recording to report
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
@@ -341,7 +343,7 @@ class LocalClusterIT {
     @Test
     void leaderLossDoesNotLoseAcknowledgedEvents() throws Exception {
         start();
-        int port = cluster.gateway(0).radiusPort();
+        int port = cluster.radiusServer(0).radiusPort();
         nas.ack(port, AccountingRequest.request(1, 1, "s-2", 0));
         nas.ack(port, AccountingRequest.request(2, 3, "s-2", 60));
         ClusterNode leader = cluster.awaitLeader();
@@ -367,7 +369,7 @@ class LocalClusterIT {
     @Test
     void dedupStateSurvivesSnapshotAndFullRestart() throws Exception {
         start();
-        int port = cluster.gateway(0).radiusPort();
+        int port = cluster.radiusServer(0).radiusPort();
         byte[] start = AccountingRequest.request(1, 1, "s-3", 0);
         byte[] interim = AccountingRequest.request(2, 3, "s-3", 300);
         nas.ack(port, start);
@@ -409,17 +411,17 @@ class LocalClusterIT {
     }
 
     @Test
-    void loadThroughBothGatewaysConverges() throws Exception {
+    void loadThroughBothServersConverges() throws Exception {
         start();
         LoadGenerator.Result result = new LoadGenerator(
                         LoadGenerator.Settings.builder(
                                         List.of(
                                                 new InetSocketAddress(
                                                         "127.0.0.1",
-                                                        cluster.gateway(0).radiusPort()),
+                                                        cluster.radiusServer(0).radiusPort()),
                                                 new InetSocketAddress(
                                                         "127.0.0.1",
-                                                        cluster.gateway(1).radiusPort())),
+                                                        cluster.radiusServer(1).radiusPort())),
                                         SECRET)
                                 .nas(5)
                                 .sessions(300)
@@ -440,9 +442,9 @@ class LocalClusterIT {
             assertThat(state.active()).isZero();
             assertThat(state.applied()).isLessThanOrEqualTo(result.sent());
         }
-        String gatewayMetrics = cluster.gateway(0).metrics();
-        io.radiusward.common.management.PrometheusWriter.validate(gatewayMetrics);
-        assertThat(gatewayMetrics)
+        String serverMetrics = cluster.radiusServer(0).metrics();
+        io.radiusward.common.management.PrometheusWriter.validate(serverMetrics);
+        assertThat(serverMetrics)
                 .contains("radiusward_gateway_packets_total{gateway=\"1\",result=\"committed\"}")
                 .contains("radiusward_gateway_cluster_connected{gateway=\"1\"} 1");
         String nodeMetrics = cluster.awaitLeader().metrics();

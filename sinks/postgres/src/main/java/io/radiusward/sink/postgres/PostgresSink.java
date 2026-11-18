@@ -355,7 +355,7 @@ public final class PostgresSink implements AccountingSink {
                             : Instant.ofEpochSecond(e.eventTimestamp()).toString(),
                     false);
             col(out, Integer.toString(e.nasId()), false);
-            col(out, Integer.toString(e.gatewayId()), false);
+            col(out, Integer.toString(e.serverId()), false);
             col(out, e.sessionKey() == null ? null : e.sessionKey().toString(), false);
             col(out, e.acctSessionId(), false);
             col(out, Integer.toString(e.statusType()), false);

@@ -6,8 +6,8 @@ package io.radiusward.tools.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import io.radiusward.gateway.EventKeys;
 import io.radiusward.protocol.SessionStatus;
+import io.radiusward.server.EventKeys;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
@@ -56,7 +56,7 @@ class AckVerifierTest {
         assertThat(AckVerifier.lastAcknowledged(Files.readAllLines(log)))
                 .containsOnlyKeys("nas0/00000001", "nas1/00000001");
         Map<String, AdminClient.Session> state = new HashMap<>();
-        io.radiusward.gateway.EventKeys keys = new io.radiusward.gateway.EventKeys();
+        io.radiusward.server.EventKeys keys = new io.radiusward.server.EventKeys();
         AckVerifier.sessionKey(keys, 7, true, new AckVerifier.Expected("00000001", 3, 30, "nas0"));
         state.put(keys.sessionHi() + ":" + keys.sessionLo(), session(SessionStatus.ACTIVE, 30));
         AckVerifier.sessionKey(keys, 7, true, new AckVerifier.Expected("00000001", 2, 90, "nas1"));

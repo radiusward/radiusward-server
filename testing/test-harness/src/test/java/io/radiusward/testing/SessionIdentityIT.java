@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
-import io.radiusward.gateway.UserKeys;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.UserKeys;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -57,19 +57,19 @@ class SessionIdentityIT {
         // members report their supported version with the log purger's position reports (ADR 0005)
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
-                .gateways(0)
+                .radiusServers(0)
                 .purge(new io.radiusward.cluster.node.LogPurgeConfig(true, false, 128 << 20, Duration.ofSeconds(1)))
                 .start();
-        cluster.startGateway(1, LocalCluster.freePort());
+        cluster.startServer(1, LocalCluster.freePort());
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
-        nas.ack(cluster.gateway(0).radiusPort(), start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
+        cluster.awaitServersConnected();
+        nas.ack(cluster.radiusServer(0).radiusPort(), start(9, "warm-up", "nobody", "aa-bb-cc-00-00-09"));
         try (AdminClient admin = cluster.admin()) {
             LocalCluster.await(
                     Duration.ofSeconds(20),
                     "state version 7 active",
                     () -> admin.state().activeVersion() >= 7);
-            int port = cluster.gateway(0).radiusPort();
+            int port = cluster.radiusServer(0).radiusPort();
             nas.ack(port, start(1, "id-1", "Alice", "aa-bb-cc-00-00-01")); // the warm-up came before 7
             nas.ack(port, start(2, "id-2", "alice", "aa-bb-cc-00-00-02"));
             nas.ack(port, start(3, "id-3", "bob", "aa-bb-cc-00-00-03"));

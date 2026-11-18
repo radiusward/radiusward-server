@@ -54,7 +54,7 @@ class ExporterIT {
         Path exportDir = dir.resolve("export");
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(2)
+                .radiusServers(2)
                 .export(id -> new ExportConfig(
                         List.of(
                                 new SinkConfig(
@@ -90,7 +90,7 @@ class ExporterIT {
                         null))
                 .start()) {
             cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             CompletableFuture<LoadGenerator.Result> load =
                     CompletableFuture.supplyAsync(() -> load(cluster, Duration.ofSeconds(12)));
             Thread.sleep(5_000);
@@ -145,7 +145,7 @@ class ExporterIT {
         FaultySink.reset();
         try (LocalCluster cluster = LocalCluster.builder(dir.toFile())
                 .members(1)
-                .gateways(1)
+                .radiusServers(1)
                 .export(id -> new ExportConfig(
                         List.of(new SinkConfig(
                                 "faulty",
@@ -162,10 +162,10 @@ class ExporterIT {
                         null))
                 .start()) {
             ClusterNode node = cluster.awaitLeader();
-            cluster.awaitGatewaysConnected();
+            cluster.awaitServersConnected();
             FakeNas nas = new FakeNas();
             try {
-                int port = cluster.gateway(0).radiusPort();
+                int port = cluster.radiusServer(0).radiusPort();
                 nas.ack(port, AccountingRequest.request(1, 1, "s-1", 0));
                 LocalCluster.await(Duration.ofSeconds(30), "first batch written", () -> FaultySink.written.get() > 0);
 
@@ -283,10 +283,12 @@ class ExporterIT {
                                             List.of(
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(0).radiusPort()),
+                                                            cluster.radiusServer(0)
+                                                                    .radiusPort()),
                                                     new InetSocketAddress(
                                                             "127.0.0.1",
-                                                            cluster.gateway(1).radiusPort())),
+                                                            cluster.radiusServer(1)
+                                                                    .radiusPort())),
                                             FakeNas.SECRET)
                                     .nas(10)
                                     .sessions(2000)

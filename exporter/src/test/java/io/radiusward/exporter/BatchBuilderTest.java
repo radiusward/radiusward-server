@@ -44,7 +44,7 @@ class BatchBuilderTest {
         AccountingCommandEncoder e = new AccountingCommandEncoder()
                 .wrapAndApplyHeader(buffer, 0, new MessageHeaderEncoder())
                 .correlationId(session)
-                .gatewayId(1)
+                .serverId(1)
                 .nasId(scope)
                 .nasClientId(7)
                 .sessionKeyHi(session)

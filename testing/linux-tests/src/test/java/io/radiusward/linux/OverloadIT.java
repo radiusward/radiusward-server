@@ -43,7 +43,7 @@ class OverloadIT {
                 "overload", ContainerCluster.Options.defaults().postgres(true))) {
             cluster.start();
             List<ContainerCluster.Member> all = new ArrayList<>(cluster.nodes());
-            all.addAll(cluster.gateways());
+            all.addAll(cluster.radiusServers());
             Map<String, Long> maxUnreclaimable = new HashMap<>();
             AtomicBoolean running = new AtomicBoolean(true);
             CompletableFuture<Void> sampler = CompletableFuture.runAsync(() -> {
@@ -106,7 +106,7 @@ class OverloadIT {
                         .isLessThan(mem.limit());
             }
             long dropped = 0;
-            for (ContainerCluster.Member g : cluster.gateways()) {
+            for (ContainerCluster.Member g : cluster.radiusServers()) {
                 Map<String, String> s = cluster.state(g);
                 System.out.println(g.name() + ": " + s);
                 dropped += Long.parseLong(s.get("ring_full"))

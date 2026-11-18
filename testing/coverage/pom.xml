@@ -109,7 +109,7 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>gateway</artifactId>
+            <artifactId>server</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

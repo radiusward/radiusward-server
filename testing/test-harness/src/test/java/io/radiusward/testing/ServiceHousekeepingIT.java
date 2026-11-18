@@ -11,10 +11,10 @@ import io.qameta.allure.Feature;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
-import io.radiusward.gateway.NasClient;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
+import io.radiusward.server.NasClient;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -56,13 +56,13 @@ class ServiceHousekeepingIT {
                 .withExactKeyWindowMs(1_000L);
         cluster = LocalCluster.builder(dir.toFile())
                 .members(3)
-                .gateways(1)
+                .radiusServers(1)
                 .settings(settings)
                 .sweepInterval(Duration.ofMillis(300))
                 .start();
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
-        int port = cluster.gateway(0).radiusPort();
+        cluster.awaitServersConnected();
+        int port = cluster.radiusServer(0).radiusPort();
         long now = System.currentTimeMillis() / 1000;
         nas.ack(port, AccountingRequest.request(1, 1, "idle", 0, now)); // started, then never heard of again
         nas.ack(port, AccountingRequest.request(2, 1, "done", 0, now));
@@ -95,17 +95,17 @@ class ServiceHousekeepingIT {
     }
 
     @Test
-    void gatewaysThatDisagreeOnTheDeviceIdentityOfANasEntryAreCounted() throws Exception {
+    void serversThatDisagreeOnTheDeviceIdentityOfANasEntryAreCounted() throws Exception {
         cluster = LocalCluster.start(dir.toFile(), 3, 0);
-        cluster.startGateway(1, 0, LocalCluster.registry(NasClient.Identity.NAS_IDENTIFIER));
-        cluster.startGateway(2, 0, LocalCluster.registry(NasClient.Identity.NAS_IP_ADDRESS));
+        cluster.startServer(1, 0, LocalCluster.registry(NasClient.Identity.NAS_IDENTIFIER));
+        cluster.startServer(2, 0, LocalCluster.registry(NasClient.Identity.NAS_IP_ADDRESS));
         cluster.awaitLeader();
-        cluster.awaitGatewaysConnected();
-        nas.ack(cluster.gateway(0).radiusPort(), start(1, "s-1"));
+        cluster.awaitServersConnected();
+        nas.ack(cluster.radiusServer(0).radiusPort(), start(1, "s-1"));
         assertThat(cluster.awaitLeader().stats().identityMismatches()).isZero();
 
-        nas.ack(cluster.gateway(1).radiusPort(), start(2, "s-2"));
-        nas.ack(cluster.gateway(1).radiusPort(), start(3, "s-3"));
+        nas.ack(cluster.radiusServer(1).radiusPort(), start(2, "s-2"));
+        nas.ack(cluster.radiusServer(1).radiusPort(), start(3, "s-3"));
         ClusterNode leader = cluster.awaitLeader();
         LocalCluster.await(
                 Duration.ofSeconds(10),
