@@ -21,9 +21,9 @@ fsync, a warning in the log. Production stays the cluster of three members descr
 ```java
 try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
         .client("127.0.0.1", "testing123")                // a NAS entry
-        .user("alice", "secret")                          // users without a users file
-        .identityStore(myStore)                           // or own Java logic (auth-api's IdentityStore)
-        .onAccounting(record -> received.add(record))     // each committed accounting record
+        .identityStore(new MyUsers())                     // authorization: the developer's own store (auth-api)
+        .credentialVerifier(new MyPasswordService())      // optional: passwords checked by their own service
+        .sink(new MyAccountingSink())                     // accounting: the developer's own sink (export-api)
         .setting("auth.eap.methods", "peap,ttls")         // any key of docs/configuration.md
         .start()) {
     int auth = radius.authPort();
@@ -69,12 +69,22 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
 - **Small and temporary.** A temporary directory (or one the developer names), fsync off (`archive.file.sync.level=0`),
   short Aeron terms and a small session capacity, so the JVM needs little memory; all ports free unless set.
   Startup time and memory are measured and documented (target: under 2 s, under 256 MB heap and direct memory).
-- **Users.** `user(name, password, attributes...)` writes a users file in the temporary directory and uses the
-  file store, so the same check and reply items work as in production. `identityStore(...)` registers an object
-  instead of a plug-in found by `ServiceLoader`; `auth-api` gets a way to pass an instance.
-- **Accounting callback.** An in-process sink of the exporter (export-api) given as an object, so the callback
-  sees exactly what a sink sees after the commit: events and session snapshots. The exporter gets a way to take a
-  sink instance besides the plug-ins it loads.
+- **The developer's own code on both sides**, through the same public plug-in interfaces production uses, so a class
+  written for a test runs unchanged as a plug-in in a cluster (`ServiceLoader`, `auth.stores`, `export.sinks`):
+  - *Authorization*: `identityStore(IdentityStore)` looks users up in their system (check items, groups and reply
+    items as a `UserRecord`); radiusward still does the cryptography, the check items, EAP and the reply, so every
+    method works with their users. `credentialVerifier(CredentialVerifier)` checks passwords with their own service
+    instead (as LDAP and Netlogon do). Several stores are asked in order, as `auth.stores` does.
+  - *Accounting*: `sink(AccountingSink)` receives every committed batch — events and session snapshots — on the
+    exporter's thread, after the commit, with the same contract as production sinks (insert events if absent,
+    update sessions only if newer, durable when `write` returns, retried after an exception, a lag policy). Several
+    sinks run side by side, each with its own position.
+  - *Shortcuts for tests*: `user(name, password, attributes...)` (a users file in the temporary directory, the file
+    store), `users(name -> Optional<UserRecord>)` (a lambda store), `onAccounting(event -> ...)` and
+    `AccountingSink.of(batch -> ...)` (a sink without position or checkpoint, replaying from the start).
+  - radiusward's own stores and sinks (file, SQL, LDAP, PostgreSQL, files, RADIUS forwarding) are only used when the
+    developer configures them; none is needed. The exporter and `auth-api` get a way to take instances besides the
+    plug-ins they find with `ServiceLoader`.
 - **EAP.** `eap("peap", "ttls", "tls", ...)` turns methods on (`auth.eap.methods`). The TLS-based methods need a
   server certificate: unless the developer gives one, the embedded server creates a throwaway CA, a server
   certificate and, on request, client certificates in its temporary directory, and exposes the CA
@@ -146,8 +156,10 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
   identity, vendor attributes); `send` retransmits as a NAS does and verifies the Response Authenticator. Recorded
   packets (the vendor fixtures' format, `radclient decode --fixture`) can be replayed.
 - **What the server committed**: `session(id)`, `activeSessions(user)` and `sessions()` read the replicated state as
-  the CoA API does; `onAccounting(...)` receives the exported events and session snapshots in commit order, the way
-  a sink sees them, and `awaitAccounting(n)` waits for them.
+  the CoA API does. The developer's own sink receives the exported events and session snapshots in commit order, as
+  it would in production, so a test checks their real accounting code — billing, quotas, their database — not a
+  copy; `awaitAccounting(n)` waits until it has them. A sink that throws is retried as in production, so its error
+  handling is tested too.
 - **Duplicates and order**: the same event retransmitted, sent with another Identifier or Acct-Delay-Time, or a Stop
   before its Start are applied once, and the test can assert that ([accounting contract](../accounting-contract.md)).
 - **Without the cluster**: `radius.pauseCluster()` stops the member, so the NAS gets no Accounting-Response and has to

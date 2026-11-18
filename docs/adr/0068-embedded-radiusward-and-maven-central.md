@@ -10,7 +10,9 @@ artifacts carry names such as `server` and `common` that are too generic for a p
 
 ## Decision
 - **`radiusward-embedded`**: one cluster member and one RADIUS server in the developer's JVM, started by a builder
-  with NAS entries, users, an identity store object, a callback for committed accounting records and any setting;
+  with NAS entries, the developer's own identity stores and credential verifiers for authorization and their own
+  sinks for accounting (instances of the public plug-in interfaces, so the same classes run as plug-ins in a
+  cluster), shortcuts for tests and any setting;
   free ports, a temporary directory, fsync off; for development and tests only, said at start and in its description.
 - **A real member, not a stand-in**: a single member commits alone, so answers come only after the commit and the
   production code decides everything; no second, in-memory implementation.
@@ -31,5 +33,6 @@ artifacts carry names such as `server` and `common` that are too generic for a p
 - Developers need Java 25 and the JVM option for Agrona and Aeron; the page shows it, the server checks it.
 - Every published module needs complete POM metadata and javadoc that builds; artifactIds change for the
   repository's own modules (directories and packages stay).
-- The exporter and the identity stores accept instances besides `ServiceLoader` plug-ins.
+- The exporter and the identity stores accept instances besides `ServiceLoader` plug-ins; `export-api` and `auth-api`
+  become the interfaces developers implement for both embedded use and production, so they stay compatible.
 - A release needs the Central Portal token and the GPG key as repository secrets.
