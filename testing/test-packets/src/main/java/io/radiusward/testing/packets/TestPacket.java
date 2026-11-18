@@ -10,10 +10,10 @@ import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
@@ -33,8 +33,20 @@ public final class TestPacket {
         void write(RadiusPacketEncoder encoder, Context context);
     }
 
-    /** What an attribute needs at build time: the Request Authenticator and the secret. */
-    private record Context(byte[] authenticator, byte[] secret, int[] messageAuthenticator) {}
+    /** What an attribute needs at build time: the Request Authenticator, the secret, where the MA went. */
+    private static final class Context {
+        private final byte[] authenticator;
+        private final byte[] secret;
+        private int messageAuthenticator = -1;
+
+        private Context(byte[] authenticator, byte[] secret) {
+            this.authenticator = authenticator;
+            this.secret = secret;
+        }
+    }
+
+    /** Request Authenticators are unpredictable, as RFC 2865 §3 asks of a NAS. */
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     private final int code;
     private final int identifier;
@@ -149,9 +161,9 @@ public final class TestPacket {
                             new UnsafeBuffer(plain),
                             0,
                             plain.length,
-                            new UnsafeBuffer(c.authenticator()),
+                            new UnsafeBuffer(c.authenticator),
                             0,
-                            required(c.secret()),
+                            required(c.secret),
                             hidden,
                             0);
             e.attribute(2, hidden, 0, n);
@@ -161,7 +173,7 @@ public final class TestPacket {
 
     /** Message-Authenticator at this position (RFC 3579 §3.2), filled in when the packet is built. */
     public TestPacket messageAuthenticator() {
-        ops.add((e, c) -> c.messageAuthenticator()[0] = e.messageAuthenticator());
+        ops.add((e, c) -> c.messageAuthenticator = e.messageAuthenticator());
         return this;
     }
 
@@ -172,16 +184,16 @@ public final class TestPacket {
         if (request == null && !computed()) {
             if (requestAuthenticator == null) {
                 requestAuthenticator = new byte[RadiusPacket.AUTHENTICATOR_LENGTH];
-                ThreadLocalRandom.current().nextBytes(requestAuthenticator);
+                RANDOM.nextBytes(requestAuthenticator);
             }
             encoder.authenticator(requestAuthenticator);
         }
-        Context context = new Context(requestAuthenticator, secret, new int[] {-1});
+        Context context = new Context(requestAuthenticator, secret);
         for (Op op : ops) {
             op.write(encoder, context);
         }
         int length = encoder.finish();
-        int ma = context.messageAuthenticator()[0];
+        int ma = context.messageAuthenticator;
         RadiusAuthenticator signer = new RadiusAuthenticator();
         if (request != null) {
             signer.signResponse(
