@@ -11,7 +11,7 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>server</artifactId>
+    <artifactId>radiusward-server</artifactId>
     <name>radiusward :: server</name>
     <description>The RADIUS server in front of the cluster: UDP, TCP, RadSec and DTLS</description>
 
@@ -23,26 +23,26 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-packets</artifactId>
+            <artifactId>radiusward-test-packets</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-support</artifactId>
+            <artifactId>radiusward-test-support</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-images</artifactId>
+            <artifactId>radiusward-test-images</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-file</artifactId>
+            <artifactId>radiusward-store-file</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -77,19 +77,19 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>protocol</artifactId>
+            <artifactId>radiusward-protocol</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>common</artifactId>
+            <artifactId>radiusward-common</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
         </dependency>
         <dependency>
             <groupId>io.aeron</groupId>

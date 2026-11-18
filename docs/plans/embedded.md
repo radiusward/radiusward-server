@@ -1,6 +1,6 @@
 # Plan: radiusward as a library for development and tests
 
-Status: designed 2026-11-18, not started. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
+Status: designed 2026-11-18; E1 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
 
 ## Goal
 
@@ -216,7 +216,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 
 | # | Work | Done when |
 |---|---|---|
-| E1 | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc); javadoc builds for every published module | `./mvnw -Prelease verify` passes |
+| E1 ✅ | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc); javadoc builds for every published module; `LICENSE` and `NOTICE` in every jar | `./mvnw -Prelease verify` passes |
 | E2 | `radiusward-client` from `TestPacket` and `FakeNas`: client, packet builder, auth helpers | its tests; the repository's tests use it |
 | E2a | Accounting in `radiusward-client`: `AccountingSession` (Start, Interim, Stop, On, Off), retransmission, fixture replay, a CoA listener | its tests; the e2e and harness tests use it |
 | E2b | The EAP supplicant in `radiusward-client` from the test peers: every method above, results with reply items and keys, single rounds | each method against the embedded server; the repository's EAP tests use it |
@@ -224,7 +224,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | E4 | `radiusward-embedded`: builder, one or three members and one or more RADIUS servers with failover controls, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
 | E6 | `radiusward-bom`; release workflow and snapshots to GitHub Packages; README, website page, release doc | `0.1.0` and a snapshot resolvable from GitHub Packages in an empty project with a token |
-| E7 | Releases to Maven Central: GPG signing, the Central Portal's plugin in the release job; GitHub Packages keeps the snapshots | `0.x` resolvable from Central in an empty project without any repository setting |
+| E7 | Releases to Maven Central: an (empty) javadoc jar for `radiusward-dictionaries`, which has no Java; GPG signing, the Central Portal's plugin in the release job; GitHub Packages keeps the snapshots | `0.x` resolvable from Central in an empty project without any repository setting |
 
 ## What the maintainer does (for E7, Maven Central)
 

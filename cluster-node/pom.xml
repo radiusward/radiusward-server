@@ -11,40 +11,40 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>cluster-node</artifactId>
+    <artifactId>radiusward-cluster-node</artifactId>
     <name>radiusward :: cluster node</name>
     <description>Launches a cluster member: media driver, archive, consensus module and the accounting service</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-support</artifactId>
+            <artifactId>radiusward-test-support</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>cluster-service</artifactId>
+            <artifactId>radiusward-cluster-service</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>exporter</artifactId>
+            <artifactId>radiusward-exporter</artifactId>
         </dependency>
         <dependency>
             <!-- built-in sinks -->
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-file</artifactId>
+            <artifactId>radiusward-sink-file</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-radius</artifactId>
+            <artifactId>radiusward-sink-radius</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-postgres</artifactId>
+            <artifactId>radiusward-sink-postgres</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>common</artifactId>
+            <artifactId>radiusward-common</artifactId>
         </dependency>
         <dependency>
             <groupId>io.aeron</groupId>

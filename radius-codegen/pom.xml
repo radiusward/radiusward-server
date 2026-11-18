@@ -11,19 +11,26 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>radius-codegen</artifactId>
+    <artifactId>radiusward-codegen</artifactId>
     <name>radiusward :: dictionary code generator</name>
 
     <description>Generates Java constants and attribute extractors from RADIUS dictionaries</description>
 
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary</artifactId>
+            <artifactId>radiusward-dictionary</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

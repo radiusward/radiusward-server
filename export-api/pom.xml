@@ -11,22 +11,22 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>export-api</artifactId>
+    <artifactId>radiusward-export-api</artifactId>
     <name>radiusward :: export api</name>
     <description>Sink plug-in API: batches of applied events and session snapshots, canonical attribute encoding</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>units</artifactId>
+            <artifactId>radiusward-units</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
         </dependency>
     </dependencies>
 

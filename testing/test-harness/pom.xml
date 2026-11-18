@@ -11,11 +11,15 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>test-harness</artifactId>
+    <artifactId>radiusward-test-harness</artifactId>
     <name>radiusward :: test harness</name>
     <description>In-JVM local cluster for integration tests and dev mode</description>
 
     <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
         <!-- test classes start their own clusters, ports and directories: two JVMs at a time -->
         <radiusward.it.forks>2</radiusward.it.forks>
     </properties>
@@ -24,28 +28,28 @@
         <dependency>
             <!-- TestPacket: signed requests under AccountingRequest -->
             <groupId>io.radiusward</groupId>
-            <artifactId>test-packets</artifactId>
+            <artifactId>radiusward-test-packets</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-images</artifactId>
+            <artifactId>radiusward-test-images</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>cluster-node</artifactId>
+            <artifactId>radiusward-cluster-node</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radclient</artifactId>
+            <artifactId>radiusward-radclient</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>admin-cli</artifactId>
+            <artifactId>radiusward-admin-cli</artifactId>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
@@ -54,12 +58,12 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-file</artifactId>
+            <artifactId>radiusward-store-file</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
             <type>test-jar</type>
             <version>${project.version}</version>
             <scope>test</scope>
@@ -72,7 +76,7 @@
         <dependency>
             <!-- Reports, Await, Ports -->
             <groupId>io.radiusward</groupId>
-            <artifactId>test-support</artifactId>
+            <artifactId>radiusward-test-support</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>

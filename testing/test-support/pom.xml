@@ -11,9 +11,16 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>test-support</artifactId>
+    <artifactId>radiusward-test-support</artifactId>
     <name>radiusward :: test support</name>
     <description>Report steps, waits and free ports for every module's integration tests; test infrastructure, never shipped</description>
+
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
 
     <dependencies>
         <dependency>

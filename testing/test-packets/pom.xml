@@ -11,14 +11,21 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>test-packets</artifactId>
+    <artifactId>radiusward-test-packets</artifactId>
     <name>radiusward :: test packets</name>
     <description>Signed RADIUS requests and replies for every module's tests; test infrastructure, never shipped</description>
+
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
         </dependency>
     </dependencies>
 

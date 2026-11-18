@@ -11,7 +11,7 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>radclient</artifactId>
+    <artifactId>radiusward-radclient</artifactId>
     <name>radiusward :: radclient</name>
 
     <description>Command-line RADIUS accounting client for testing</description>
@@ -20,24 +20,24 @@
         <dependency>
             <!-- durations as in the settings -->
             <groupId>io.radiusward</groupId>
-            <artifactId>units</artifactId>
+            <artifactId>radiusward-units</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
         </dependency>
         <dependency>
             <!-- MD4 for MS-CHAP requests -->
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-packets</artifactId>
+            <artifactId>radiusward-test-packets</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

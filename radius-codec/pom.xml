@@ -11,7 +11,7 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>radius-codec</artifactId>
+    <artifactId>radiusward-codec</artifactId>
     <name>radiusward :: RADIUS codec</name>
 
     <description>Zero-allocation RADIUS packet codec</description>
@@ -27,18 +27,18 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary</artifactId>
+            <artifactId>radiusward-dictionary</artifactId>
         </dependency>
 
         <!-- build-time only: generate-sources runs the code generator against the bundled dictionaries -->
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codegen</artifactId>
+            <artifactId>radiusward-codegen</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>

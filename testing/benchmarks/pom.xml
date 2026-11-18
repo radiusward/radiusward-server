@@ -11,18 +11,25 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>benchmarks</artifactId>
+    <artifactId>radiusward-benchmarks</artifactId>
     <name>radiusward :: benchmarks</name>
     <description>JMH benchmarks (build with -Pbench)</description>
+
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
         </dependency>
         <dependency>
             <groupId>org.openjdk.jmh</groupId>

@@ -11,8 +11,8 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>units</artifactId>
+    <artifactId>radiusward-units</artifactId>
     <name>radiusward :: units</name>
-    <description>Durations and sizes in settings, parsed the same way everywhere; no dependencies, so the plug-in APIs can use it</description>
+    <description>Durations, sizes, lists, hex and PEM files in settings, read the same way by every module; no dependencies</description>
 
 </project>

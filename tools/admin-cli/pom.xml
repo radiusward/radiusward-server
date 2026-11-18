@@ -11,7 +11,7 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>admin-cli</artifactId>
+    <artifactId>radiusward-admin-cli</artifactId>
     <name>radiusward :: admin cli</name>
 
     <description>Queries the replicated state through the cluster log; verifies acknowledgement logs</description>
@@ -19,17 +19,17 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>protocol</artifactId>
+            <artifactId>radiusward-protocol</artifactId>
         </dependency>
         <dependency>
             <!-- EventKeys: session keys exactly as the RADIUS servers compute them -->
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
         </dependency>
         <dependency>
             <!-- export-schema and verify-export (also brings the JDBC driver) -->
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-postgres</artifactId>
+            <artifactId>radiusward-sink-postgres</artifactId>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>

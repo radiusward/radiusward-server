@@ -11,14 +11,14 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>linux-tests</artifactId>
+    <artifactId>radiusward-linux-tests</artifactId>
     <name>radiusward :: linux tests</name>
     <description>Fault-injection tests in Linux containers: power loss, partitions, overload (-Plinux)</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-support</artifactId>
+            <artifactId>radiusward-test-support</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -53,6 +53,10 @@
                     </systemPropertyVariables>
                     <runOrder>alphabetical</runOrder>
                     <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
                         <!-- FailureLogs attaches container logs to failed tests' reports (META-INF/services) -->
                         <configurationParameters>junit.jupiter.extensions.autodetection.enabled = true</configurationParameters>
                     </properties>

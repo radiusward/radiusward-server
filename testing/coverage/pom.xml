@@ -11,141 +11,148 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>coverage</artifactId>
+    <artifactId>radiusward-coverage</artifactId>
     <packaging>pom</packaging>
     <name>radiusward :: coverage</name>
     <description>One coverage report over all modules, unit and integration tests (-Pcoverage)</description>
 
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary</artifactId>
+            <artifactId>radiusward-dictionary</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codegen</artifactId>
+            <artifactId>radiusward-codegen</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>protocol</artifactId>
+            <artifactId>radiusward-protocol</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>common</artifactId>
+            <artifactId>radiusward-common</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>cluster-service</artifactId>
+            <artifactId>radiusward-cluster-service</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>export-api</artifactId>
+            <artifactId>radiusward-export-api</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>exporter</artifactId>
+            <artifactId>radiusward-exporter</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-file</artifactId>
+            <artifactId>radiusward-sink-file</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-postgres</artifactId>
+            <artifactId>radiusward-sink-postgres</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>sink-radius</artifactId>
+            <artifactId>radiusward-sink-radius</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>units</artifactId>
+            <artifactId>radiusward-units</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-file</artifactId>
+            <artifactId>radiusward-store-file</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-sql</artifactId>
+            <artifactId>radiusward-store-sql</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-ldap</artifactId>
+            <artifactId>radiusward-store-ldap</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>verifier-netlogon</artifactId>
+            <artifactId>radiusward-verifier-netlogon</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>cluster-node</artifactId>
+            <artifactId>radiusward-cluster-node</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radclient</artifactId>
+            <artifactId>radiusward-radclient</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>admin-cli</artifactId>
+            <artifactId>radiusward-admin-cli</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>distribution</artifactId>
+            <artifactId>radiusward-distribution</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-harness</artifactId>
+            <artifactId>radiusward-test-harness</artifactId>
             <version>${project.version}</version>
         </dependency>
         <!-- test infrastructure, without floors; listed so that every analysed module finds its files in the report -->
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-support</artifactId>
+            <artifactId>radiusward-test-support</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-packets</artifactId>
+            <artifactId>radiusward-test-packets</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-images</artifactId>
+            <artifactId>radiusward-test-images</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

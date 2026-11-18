@@ -11,18 +11,18 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>exporter</artifactId>
+    <artifactId>radiusward-exporter</artifactId>
     <name>radiusward :: exporter</name>
     <description>Reads the committed cluster log, replays the state machine and feeds sinks</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>cluster-service</artifactId>
+            <artifactId>radiusward-cluster-service</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>export-api</artifactId>
+            <artifactId>radiusward-export-api</artifactId>
         </dependency>
     </dependencies>
 

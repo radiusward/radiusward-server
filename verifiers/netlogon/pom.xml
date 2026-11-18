@@ -11,24 +11,24 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>verifier-netlogon</artifactId>
+    <artifactId>radiusward-verifier-netlogon</artifactId>
     <name>radiusward :: verifier :: netlogon</name>
     <description>Credential verifier for Active Directory over Netlogon (MS-NRPC), pure Java</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-packets</artifactId>
+            <artifactId>radiusward-test-packets</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-images</artifactId>
+            <artifactId>radiusward-test-images</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
@@ -36,12 +36,12 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
             <type>test-jar</type>
             <version>${project.version}</version>
             <scope>test</scope>
@@ -58,7 +58,7 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-ldap</artifactId>
+            <artifactId>radiusward-store-ldap</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
