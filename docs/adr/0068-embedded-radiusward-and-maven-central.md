@@ -26,10 +26,12 @@ artifacts carry names such as `server` and `common` that are too generic for a p
 - **Accounting is testable end to end**: the client acts as a NAS (sessions from Start to Stop, retransmissions,
   Accounting-On/Off, CoA received); a test reads the committed sessions and the exported records, and can pause the
   member to test a NAS or an application without acknowledgements.
-- **Maven Central under `io.radiusward`**, verified through `radiusward.io`; every production module is published
-  with the prefix `radiusward-` because the embedded artifact depends on them. Supported API: the embedded, JUnit
+- **Releases on Maven Central under `io.radiusward`** (verified through `radiusward.io`), **snapshots on GitHub
+  Packages**; until the Central account exists, releases go to GitHub Packages too, with the same coordinates. Every
+  production module is published with the prefix `radiusward-` because the embedded artifact depends on them. Supported API: the embedded, JUnit
   and client packages and the plug-in APIs; the rest may change in any release.
-- Released with the project's version from the release workflow: sources, javadoc, GPG signatures.
+- Released with the project's version from the release workflow, in a job of its own: sources and javadoc jars, GPG
+  signatures for Central.
 
 ## Consequences
 - Developers need Java 25 and the JVM option for Agrona and Aeron; the page shows it, the server checks it.
@@ -37,4 +39,5 @@ artifacts carry names such as `server` and `common` that are too generic for a p
   repository's own modules (directories and packages stay).
 - The exporter and the identity stores accept instances besides `ServiceLoader` plug-ins; `export-api` and `auth-api`
   become the interfaces developers implement for both embedded use and production, so they stay compatible.
-- A release needs the Central Portal token and the GPG key as repository secrets.
+- Snapshots need a GitHub token with `read:packages` to download; releases on Central need nothing. Publishing to
+  Central needs the Central Portal token and the GPG key as repository secrets.

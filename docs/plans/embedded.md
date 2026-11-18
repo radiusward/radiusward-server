@@ -181,14 +181,21 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 - **CoA and Disconnect**: the client can listen as a NAS (`nas.listenForCoa(...)`); `radius.disconnect(user)` and
   `radius.coa(user, attributes)` send through the embedded server's CoA path, so a test checks what its NAS receives.
 
-## Publishing on Maven Central
+## Publishing
 
-- **Namespace** `io.radiusward`, verified through a DNS TXT record on `radiusward.io` in the Central Portal.
-- **Release build** (`-Prelease`): sources and javadoc jars, GPG signatures, POM metadata (name, description, URL,
-  Apache-2.0 licence, SCM, developers) inherited from the parent, `NOTICE` and the dictionaries' CC BY 4.0 licence in
-  every jar that carries them; published with the Central Portal's Maven plugin.
-- **CI**: `release.yml` on a version tag also deploys to Central with secrets for the Portal token and the GPG key;
-  snapshots of `main` optionally to the Portal's snapshot repository.
+| What | Where | Who can download |
+|---|---|---|
+| Releases (`0.1.0`, …) | Maven Central (`io.radiusward`, verified through `radiusward.io`) | everyone, no login |
+| Snapshots of `main` (`…-SNAPSHOT`) | GitHub Packages of this repository | anyone with a GitHub account and a token with `read:packages`; this repository's workflows with `GITHUB_TOKEN` |
+
+- **First GitHub Packages only** (E6): releases and snapshots go there with the workflow's `GITHUB_TOKEN`, nothing to
+  set up. Coordinates are already `io.radiusward:radiusward-*`, so moving releases to Central (E7) changes only where
+  they are downloaded from, not anyone's dependency.
+- **Release build** (`-Prelease`): sources and javadoc jars, POM metadata (name, description, URL, Apache-2.0 licence,
+  SCM, developers) inherited from the parent, `NOTICE` and the dictionaries' CC BY 4.0 licence in every jar that
+  carries them; GPG signatures from E7 on (Central requires them, GitHub Packages does not).
+- **CI**: `release.yml` on a version tag deploys the release in its own job, so a failing upload never blocks the
+  image, the chart or the GitHub release; pushes to `main` deploy snapshots to GitHub Packages.
 - The version stays the project's version: the jars, the image and the chart are released together.
 
 ## Documentation
@@ -201,22 +208,25 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 - The page has a section "Testing EAP": methods, the throwaway CA and client certificates, checking reply items and
   keys, SIM subscribers, single rounds, and a real supplicant.
 - Website: a page `/docs/develop/embedded/` in the same shape as above, linked from the start pages.
-- `docs/operations/release.md`: how a release reaches Central.
+- The page shows both: the dependency from Maven Central for releases, and the GitHub Packages repository with a
+  token in `~/.m2/settings.xml` (Maven) or the Gradle equivalent for snapshots.
+- `docs/operations/release.md`: how releases and snapshots are published.
 
 ## Work packages
 
 | # | Work | Done when |
 |---|---|---|
-| E1 | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc, signing); javadoc builds for every published module | `./mvnw -Prelease verify` passes locally with a test key |
+| E1 | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc); javadoc builds for every published module | `./mvnw -Prelease verify` passes |
 | E2 | `radiusward-client` from `TestPacket` and `FakeNas`: client, packet builder, auth helpers | its tests; the repository's tests use it |
 | E2a | Accounting in `radiusward-client`: `AccountingSession` (Start, Interim, Stop, On, Off), retransmission, fixture replay, a CoA listener | its tests; the e2e and harness tests use it |
 | E2b | The EAP supplicant in `radiusward-client` from the test peers: every method above, results with reply items and keys, single rounds | each method against the embedded server; the repository's EAP tests use it |
 | E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |
 | E4 | `radiusward-embedded`: builder, one or three members and one or more RADIUS servers with failover controls, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
-| E6 | `radiusward-bom`; release workflow to Central; README, website page, release doc | `0.1.0` resolvable from Central in an empty project |
+| E6 | `radiusward-bom`; release workflow and snapshots to GitHub Packages; README, website page, release doc | `0.1.0` and a snapshot resolvable from GitHub Packages in an empty project with a token |
+| E7 | Releases to Maven Central: GPG signing, the Central Portal's plugin in the release job; GitHub Packages keeps the snapshots | `0.x` resolvable from Central in an empty project without any repository setting |
 
-## What the maintainer does
+## What the maintainer does (for E7, Maven Central)
 
 - Register `radiusward.io` and add the TXT record the Central Portal shows.
 - Create the Central Portal account (sign in with GitHub), verify the namespace, create a user token.
