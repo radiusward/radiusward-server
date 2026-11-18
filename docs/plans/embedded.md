@@ -66,6 +66,13 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
   archive and consensus module, and one RADIUS server, as `LocalCluster` does in the tests. A single member commits
   alone, so Accounting-Responses still come only after the commit and the same code decides everything. A lighter
   in-memory variant would answer faster but behave differently and be a second code path to keep right.
+- **One member and one RADIUS server by default, more when a test needs them.** `members(3)` and `radiusServers(2)`
+  start a whole cluster in the JVM, as the repository's `LocalCluster` does, each RADIUS server with its own ports
+  (`radius.server(1).authPort()`). With them a developer tests what their NAS or application does in a failover:
+  `radius.stopMember(i)`, `radius.killLeader()` (the member stops without closing), `radius.startMember(i)`,
+  `radius.stopServer(i)`; with three members, losing one keeps acknowledging, losing two stops it until one is back.
+  Even numbers of members are refused (two members survive no failure). `pauseCluster()` remains the shortcut for
+  "no acknowledgements" with any number of members.
 - **Small and temporary.** A temporary directory (or one the developer names), fsync off (`archive.file.sync.level=0`),
   short Aeron terms and a small session capacity, so the JVM needs little memory; all ports free unless set.
   Startup time and memory are measured and documented (target: under 2 s, under 256 MB heap and direct memory).
@@ -205,7 +212,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | E2a | Accounting in `radiusward-client`: `AccountingSession` (Start, Interim, Stop, On, Off), retransmission, fixture replay, a CoA listener | its tests; the e2e and harness tests use it |
 | E2b | The EAP supplicant in `radiusward-client` from the test peers: every method above, results with reply items and keys, single rounds | each method against the embedded server; the repository's EAP tests use it |
 | E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |
-| E4 | `radiusward-embedded`: builder, single member, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
+| E4 | `radiusward-embedded`: builder, one or three members and one or more RADIUS servers with failover controls, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
 | E6 | `radiusward-bom`; release workflow to Central; README, website page, release doc | `0.1.0` resolvable from Central in an empty project |
 

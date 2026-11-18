@@ -14,6 +14,8 @@ artifacts carry names such as `server` and `common` that are too generic for a p
   sinks for accounting (instances of the public plug-in interfaces, so the same classes run as plug-ins in a
   cluster), shortcuts for tests and any setting;
   free ports, a temporary directory, fsync off; for development and tests only, said at start and in its description.
+- **One member and one RADIUS server by default**, three members and several RADIUS servers on request, with controls to
+  stop members, the leader and RADIUS servers, so failover can be tested in the JVM.
 - **A real member, not a stand-in**: a single member commits alone, so answers come only after the commit and the
   production code decides everything; no second, in-memory implementation.
 - **`radiusward-junit`** (JUnit 5 extension), **`radiusward-client`** (a RADIUS client for tests, grown from
