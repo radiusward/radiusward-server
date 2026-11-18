@@ -7,11 +7,11 @@ package io.radiusward.store.ldap;
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.ItemParser;
 import io.radiusward.auth.StoreContext;
+import io.radiusward.units.Units;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -63,9 +63,7 @@ record LdapSettings(
     record Policy(String group, List<AttributeItem> check, List<AttributeItem> reply) {}
 
     static LdapSettings from(StoreContext context, String prefix) {
-        List<String> urlList = Arrays.stream(context.required("url").split("[,\\s]+"))
-                .filter(u -> !u.isEmpty())
-                .toList();
+        List<String> urlList = Units.words(context.required("url"));
         String urls = String.join(" ", urlList);
         for (String url : urlList) {
             if (!url.startsWith("ldap://") && !url.startsWith("ldaps://")) {
@@ -133,7 +131,7 @@ record LdapSettings(
                 filter,
                 context.setting("group.attribute", "memberOf"),
                 Boolean.parseBoolean(context.setting("group.nested", "false")),
-                commaList(context.setting("require.groups", "")),
+                Units.list(context.setting("require.groups", "")),
                 List.copyOf(policies),
                 Map.copyOf(check),
                 Map.copyOf(reply),
@@ -141,13 +139,5 @@ record LdapSettings(
                 pool,
                 tlsCa,
                 Boolean.parseBoolean(context.setting("strip.domain", "true")));
-    }
-
-    /** Group names may contain spaces: only commas separate them. */
-    private static List<String> commaList(String value) {
-        return Arrays.stream(value.split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
     }
 }

@@ -5,7 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.auth.AttributeItem;
-import java.util.HexFormat;
+import io.radiusward.units.Units;
 import java.util.List;
 import java.util.Locale;
 
@@ -98,13 +98,8 @@ record SimSubscriber(byte[] ki, byte[] opc, byte[] amf, long sqn, int algorithm,
     }
 
     private static byte[] hex(AttributeItem item, String value, int length) {
-        String hex = value.startsWith("0x") || value.startsWith("0X") ? value.substring(2) : value;
         try {
-            byte[] b = HexFormat.of().parseHex(hex);
-            if (b.length != length) {
-                throw new IllegalArgumentException(item.attribute() + ": " + length + " bytes expected");
-            }
-            return b;
+            return Units.hex(value, length);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException(item.attribute() + ": " + length + " bytes of hex expected", e);
         }

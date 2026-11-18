@@ -340,7 +340,7 @@ class RadClientTest {
     @Test
     void optionParsing() {
         RadClient.Options o = RadClient.Options.parse(
-                new String[] {"acct", "--timeout", "1.5s", "--retries", "0", "--server", "example.org"});
+                new String[] {"acct", "--timeout", "1500ms", "--retries", "0", "--server", "example.org"});
         assertThat(o.timeout()).isEqualTo(Duration.ofMillis(1500));
         assertThat(o.retries()).isZero();
         assertThat(o.server().getPort()).isEqualTo(1813);
@@ -353,6 +353,14 @@ class RadClientTest {
         assertThatThrownBy(() -> RadClient.Options.parse(new String[] {"acct", "--timeout", "soon"})
                         .timeout())
                 .isInstanceOf(UsageException.class);
+        assertThatThrownBy(() -> RadClient.Options.parse(new String[] {"acct", "--timeout", "1.5s"})
+                        .timeout())
+                .as("units as in the settings: no fractions")
+                .isInstanceOf(UsageException.class)
+                .hasMessageContaining("--timeout");
+        assertThat(RadClient.Options.parse(new String[] {"load", "--duration", "2m"})
+                        .duration("duration", Duration.ZERO))
+                .isEqualTo(Duration.ofMinutes(2));
         assertThatThrownBy(() -> RadClient.Options.parse(new String[] {"acct", "--retries", "x"})
                         .retries())
                 .isInstanceOf(UsageException.class);

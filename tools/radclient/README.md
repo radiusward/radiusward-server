@@ -34,6 +34,9 @@ radclient load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 --nas 
                 [--auth-methods pap,chap,mschapv2] [--reject-ratio 0.05]]
 ```
 
+Durations (`--timeout`, `--duration`, `--interim`) are written as in the settings: `250ms`, `3s`, `5m`, `1h`; a
+number without a unit is seconds. Lists (`--server`, `--auth-users`, ...) are comma-separated.
+
 `auth` builds PAP (RFC 2865), CHAP (RFC 1994: CHAP-Challenge and CHAP-Password) or MS-CHAPv2 (RFC 2759:
 MS-CHAP-Challenge and MS-CHAP2-Response) credentials; `--server` defaults to port 1812. It always sends
 Message-Authenticator, which RADIUS servers require by default.

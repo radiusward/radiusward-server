@@ -11,6 +11,7 @@ import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.Dictionary;
 import io.radiusward.radius.dictionary.DictionaryLoader;
 import io.radiusward.radius.dictionary.ParseMode;
+import io.radiusward.units.Units;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.InetSocketAddress;
@@ -18,8 +19,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -209,12 +210,15 @@ public final class RadClient {
         return exchange(o, dictionary, packet, secret);
     }
 
+    /** Hex digits as printed or pasted: spaces, line breaks and {@code #} comments in between are ignored. */
+    static byte[] hex(String text) {
+        return Units.hex(text.replaceAll("(?m)#.*$", "").replaceAll("\\s+", ""), -1);
+    }
+
     private int decode(Options o) throws IOException {
         Dictionary dictionary = o.dictionary();
         String source = o.positional("packet");
-        byte[] packet = Files.exists(Path.of(source))
-                ? readPacket(source)
-                : HexFormat.of().parseHex(source.replaceAll("\\s+", ""));
+        byte[] packet = Files.exists(Path.of(source)) ? readPacket(source) : hex(source);
         RadiusPacket view = new RadiusPacket();
         DecodeStatus status = view.wrap(new UnsafeBuffer(packet), 0, packet.length);
         if (status != DecodeStatus.OK) {
@@ -232,9 +236,8 @@ public final class RadClient {
 
     private int load(Options o) throws IOException {
         List<InetSocketAddress> servers = new ArrayList<>();
-        for (String server : o.required("server").split(",")) {
-            servers.add(Options.parse(new String[] {"load", "--server", server.trim()})
-                    .server());
+        for (String server : Units.list(o.required("server"))) {
+            servers.add(Options.parse(new String[] {"load", "--server", server}).server());
         }
         AccessLoad.Settings access = accessLoad(o, servers);
         java.util.concurrent.atomic.AtomicReference<Object> accessOutcome =
@@ -295,9 +298,9 @@ public final class RadClient {
         }
         List<InetSocketAddress> servers = new ArrayList<>();
         if (o.has("auth-server")) {
-            for (String server : o.value("auth-server").split(",")) {
-                servers.add(Options.parse(new String[] {"load", "--server", server.trim()})
-                        .server(1812));
+            for (String server : Units.list(o.value("auth-server"))) {
+                servers.add(
+                        Options.parse(new String[] {"load", "--server", server}).server(1812));
             }
         } else {
             for (InetSocketAddress a : accountingServers) {
@@ -305,15 +308,10 @@ public final class RadClient {
             }
         }
         List<AccessCredentials.Method> methods = new ArrayList<>();
-        for (String m : o.value("auth-methods", "pap,chap,mschapv2").split(",")) {
+        for (String m : Units.list(o.value("auth-methods", "pap,chap,mschapv2"))) {
             methods.add(AccessCredentials.Method.parse(m));
         }
-        List<String> users = new ArrayList<>();
-        for (String u : o.value("auth-users", "load").split(",")) {
-            if (!u.isBlank()) {
-                users.add(u.trim());
-            }
-        }
+        List<String> users = Units.list(o.value("auth-users", "load"));
         if (users.isEmpty()) {
             throw new UsageException("--auth-users needs at least one user");
         }
@@ -408,7 +406,7 @@ public final class RadClient {
             }
         }
         try {
-            return HexFormat.of().parseHex(hex.replaceAll("(?m)#.*$", "").replaceAll("\\s+", ""));
+            return hex(hex);
         } catch (IllegalArgumentException e) {
             throw new UsageException(file + ": no packet hex found");
         }
@@ -545,32 +543,18 @@ public final class RadClient {
         }
 
         Duration timeout() {
-            String t = value("timeout", "3s");
-            try {
-                if (t.endsWith("ms")) {
-                    return Duration.ofMillis(Long.parseLong(t.substring(0, t.length() - 2)));
-                }
-                return Duration.ofMillis((long)
-                        (Double.parseDouble(t.endsWith("s") ? t.substring(0, t.length() - 1) : t) * 1000));
-            } catch (NumberFormatException e) {
-                throw new UsageException("invalid timeout " + t);
-            }
+            return duration("timeout", Duration.ofSeconds(3));
         }
 
+        /** A duration as in the settings ({@code 250ms}, {@code 10s}, {@code 5m}); a bare number is seconds. */
         Duration duration(String key, Duration fallback) {
             if (!has(key)) {
                 return fallback;
             }
-            String saved = value("timeout", null);
-            values.put("timeout", List.of(value(key)));
             try {
-                return timeout();
-            } finally {
-                if (saved == null) {
-                    values.remove("timeout");
-                } else {
-                    values.put("timeout", List.of(saved));
-                }
+                return Units.duration(value(key), ChronoUnit.SECONDS);
+            } catch (IllegalArgumentException e) {
+                throw new UsageException("--" + key + ": " + e.getMessage());
             }
         }
 

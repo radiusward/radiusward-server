@@ -5,8 +5,8 @@
 package io.radiusward.verifier.netlogon;
 
 import io.radiusward.auth.StoreContext;
+import io.radiusward.units.Units;
 import java.time.Duration;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -45,9 +45,7 @@ record NetlogonSettings(
 
     static NetlogonSettings from(StoreContext context) {
         String prefix = "auth.verifier." + context.name() + ".";
-        List<String> servers = Arrays.stream(context.setting("server", "").split("[,\\s]+"))
-                .filter(s -> !s.isEmpty())
-                .toList();
+        List<String> servers = Units.words(context.setting("server", ""));
         String dnsDomain = context.setting("dns.domain", "").trim();
         if (servers.isEmpty() && dnsDomain.isEmpty()) {
             throw new IllegalArgumentException(

@@ -54,4 +54,32 @@ class UnitsTest {
             assertThatThrownBy(() -> Units.bytes(bad)).as(bad).isInstanceOf(IllegalArgumentException.class);
         }
     }
+
+    @Test
+    void listsAreTrimmedAndLeaveOutEmptyItems() {
+        assertThat(Units.list(" a, b ,,c ,")).containsExactly("a", "b", "c");
+        assertThat(Units.list("group with spaces, other")).containsExactly("group with spaces", "other");
+        assertThat(Units.list("")).isEmpty();
+        assertThat(Units.list(" , ")).isEmpty();
+    }
+
+    @Test
+    void wordsAreSeparatedByCommasOrSpaces() {
+        assertThat(Units.words("ldap://a  ldap://b,ldap://c ,\tldap://d"))
+                .containsExactly("ldap://a", "ldap://b", "ldap://c", "ldap://d");
+        assertThat(Units.words(" ")).isEmpty();
+    }
+
+    @Test
+    void hexWithOrWithoutPrefixInEitherCase() {
+        assertThat(Units.hex("0x00ff", 2)).containsExactly(0, 0xff);
+        assertThat(Units.hex(" 0XAbCd ", -1)).containsExactly(0xab, 0xcd);
+        assertThat(Units.hex("", -1)).isEmpty();
+        assertThatThrownBy(() -> Units.hex("0x00ff", 3))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("3 bytes");
+        for (String bad : new String[] {"0x0", "xyz", "0x 00"}) {
+            assertThatThrownBy(() -> Units.hex(bad, -1)).as(bad).isInstanceOf(IllegalArgumentException.class);
+        }
+    }
 }

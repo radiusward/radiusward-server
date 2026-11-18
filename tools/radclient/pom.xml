@@ -18,6 +18,11 @@
 
     <dependencies>
         <dependency>
+            <!-- durations as in the settings -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>units</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>radius-codec</artifactId>
         </dependency>

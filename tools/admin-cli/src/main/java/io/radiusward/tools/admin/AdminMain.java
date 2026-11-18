@@ -6,13 +6,13 @@ package io.radiusward.tools.admin;
 
 import io.radiusward.export.SqlMigrations;
 import io.radiusward.sink.postgres.PostgresSink;
+import io.radiusward.units.Units;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -126,7 +126,7 @@ public final class AdminMain {
 
     private static AdminClient cluster(Map<String, String> o) {
         return new AdminClient(
-                List.of(o.get("members").split(",")),
+                Units.list(o.get("members")),
                 Integer.parseInt(o.getOrDefault("base-port", "9000")),
                 o.getOrDefault("egress-host", "localhost"));
     }

@@ -8,6 +8,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.radius.codec.RadiusPacket;
+import io.radiusward.units.Units;
 
 /**
  * Addresses from IP pools for an Accept (ADR 0050, ADR 0059): the pools a user's {@code Pool-Name} names, unless the
@@ -31,8 +32,8 @@ final class AddressAssignment {
             if (!item.attribute().equalsIgnoreCase("Pool-Name")) {
                 continue;
             }
-            for (String name : item.value().split(",")) { // e.g. an IPv4 pool and an IPv6 one (ADR 0059)
-                int decision = assign(context, request, user, a, pools, name.trim());
+            for (String name : Units.list(item.value())) { // e.g. an IPv4 pool and an IPv6 one (ADR 0059)
+                int decision = assign(context, request, user, a, pools, name);
                 if (decision != AccessHandler.ACCEPT) {
                     return decision;
                 }

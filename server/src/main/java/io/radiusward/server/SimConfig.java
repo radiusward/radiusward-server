@@ -6,10 +6,10 @@ package io.radiusward.server;
 
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.units.Units;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.List;
 
 /**
@@ -38,11 +38,8 @@ record SimConfig(byte[] networkName, SimIdentities identities) {
             }
             byte[] aes;
             try {
-                aes = HexFormat.of().parseHex(k.substring(2));
+                aes = Units.hex(k.substring(2), 16);
             } catch (IllegalArgumentException e) {
-                aes = new byte[0];
-            }
-            if (aes.length != 16) {
                 throw new ConfigException(
                         "auth.eap.sim.pseudonym.keys: key " + k.charAt(0) + " is not 16 bytes of hex");
             }

@@ -15,6 +15,7 @@ import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.units.Pem;
+import io.radiusward.units.Units;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -29,7 +30,6 @@ import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import javax.net.ssl.SSLContext;
@@ -78,9 +78,8 @@ public final class RadiusSink implements AccountingSink {
             throw new IllegalArgumentException(
                     "sink." + context.name() + ".mode: sessions+events (the radius sink forwards events)");
         }
-        List<String> realms = Arrays.stream(context.required("realms").split(","))
-                .map(r -> r.trim().toLowerCase(Locale.ROOT))
-                .filter(r -> !r.isEmpty())
+        List<String> realms = Units.list(context.required("realms")).stream()
+                .map(r -> r.toLowerCase(Locale.ROOT))
                 .toList();
         tls = switch (context.setting("transport", "udp").trim()) {
             case "udp" -> false;
@@ -89,11 +88,7 @@ public final class RadiusSink implements AccountingSink {
         };
         int defaultPort = tls ? 2083 : 1813;
         servers = new ArrayList<>();
-        for (String s : context.required("servers").split(",")) {
-            String server = s.trim();
-            if (server.isEmpty()) {
-                continue;
-            }
+        for (String server : Units.list(context.required("servers"))) {
             int colon = server.lastIndexOf(':');
             boolean port = colon > 0 && server.indexOf(':') == colon;
             servers.add(new InetSocketAddress(

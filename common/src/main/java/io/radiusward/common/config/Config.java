@@ -217,10 +217,7 @@ public final class Config {
 
     /** Comma separated list, entries trimmed, empty entries dropped. */
     public List<String> list(String key) {
-        return Arrays.stream(string(key).split(","))
-                .map(String::trim)
-                .filter(s -> !s.isEmpty())
-                .toList();
+        return Units.list(string(key));
     }
 
     public List<String> list(String key, List<String> fallback) {

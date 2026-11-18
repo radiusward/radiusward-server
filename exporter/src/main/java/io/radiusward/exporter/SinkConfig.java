@@ -6,6 +6,7 @@ package io.radiusward.exporter;
 
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.units.Units;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -35,11 +36,7 @@ public record SinkConfig(
         if (names == null || names.isBlank()) {
             return sinks; // unset or empty (RADIUSWARD_EXPORT_SINKS=): no exporter
         }
-        for (String name : names.split(",")) {
-            name = name.trim();
-            if (name.isBlank()) {
-                continue;
-            }
+        for (String name : Units.list(names)) {
             if (name.length() > 32 || !name.matches("[a-z0-9][a-z0-9_-]*")) {
                 throw new ConfigException(
                         "export.sinks: sink name \"" + name + "\" must be at most 32 characters of a-z, 0-9, _ and -");

@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.auth.Md4;
+import io.radiusward.units.Units;
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
@@ -39,15 +40,8 @@ final class MsChap {
 
     /** {@code NT-Password} as stored: 32 hex digits, optionally with {@code 0x}; {@code null} if malformed. */
     static byte[] parseNtPassword(String value) {
-        String hex = value.trim();
-        if (hex.startsWith("0x") || hex.startsWith("0X")) {
-            hex = hex.substring(2);
-        }
-        if (hex.length() != 32) {
-            return null;
-        }
         try {
-            return HexFormat.of().parseHex(hex);
+            return Units.hex(value, 16);
         } catch (IllegalArgumentException e) {
             return null;
         }
