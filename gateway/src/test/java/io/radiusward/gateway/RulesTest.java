@@ -135,11 +135,11 @@ class RulesTest {
             assertThatThrownBy(() -> parse(bad[0])).as(bad[0]).hasMessageContaining(bad[1]);
         }
         assertThat(parse("# nothing\n\n").rules()).isEmpty();
-        assertThat(parse("if User-Name == \"a \\\"b\\\"\" {\n stop\n}")
-                        .rules()
-                        .get(0)
-                        .conditions()
-                        .get(0)
+        assertThat(((Rules.Comparison) parse("if User-Name == \"a \\\"b\\\"\" {\n stop\n}")
+                                .rules()
+                                .get(0)
+                                .conditions()
+                                .get(0))
                         .value())
                 .isEqualTo("a \"b\"");
     }

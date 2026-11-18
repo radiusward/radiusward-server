@@ -50,9 +50,97 @@ final class Rules {
         boolean inGroup(String group);
     }
 
-    record Condition(String attribute, String op, String value, Pattern pattern) {}
+    /** A condition of a rule, ready to test: its operator and pattern parsed when the file was read. */
+    sealed interface Condition permits InGroup, Presence, Comparison {
+        boolean holds(Request request);
+    }
 
-    record Action(String kind, String attribute, String op, String value) {}
+    /** {@code Group == name} ({@code member}) or {@code Group != name}. */
+    record InGroup(String group, boolean member) implements Condition {
+        @Override
+        public boolean holds(Request request) {
+            return request.inGroup(group) == member;
+        }
+    }
+
+    /** {@code Attribute present} or {@code Attribute absent}. */
+    record Presence(String attribute, boolean present) implements Condition {
+        @Override
+        public boolean holds(Request request) {
+            return (request.value(attribute) != null) == present;
+        }
+    }
+
+    /** {@code Attribute <op> value} ({@link ValueComparison}); {@code pattern} for {@code =~} and {@code !~}. */
+    record Comparison(String attribute, String op, String value, Pattern pattern) implements Condition {
+        @Override
+        public boolean holds(Request request) {
+            return ValueComparison.holds(op, request.value(attribute), value, pattern);
+        }
+    }
+
+    /** What an action leaves the rest of the rules to do. */
+    enum Next {
+        GO_ON,
+        STOP,
+        REJECT
+    }
+
+    /** An action of a rule. */
+    sealed interface Action permits Reject, Stop, Remove, Reply {
+        Next apply(Request request, List<AttributeItem> reply);
+    }
+
+    record Reject() implements Action {
+        @Override
+        public Next apply(Request request, List<AttributeItem> reply) {
+            return Next.REJECT;
+        }
+    }
+
+    record Stop() implements Action {
+        @Override
+        public Next apply(Request request, List<AttributeItem> reply) {
+            return Next.STOP;
+        }
+    }
+
+    /** {@code remove Attribute}: every one of it. */
+    record Remove(String attribute) implements Action {
+        @Override
+        public Next apply(Request request, List<AttributeItem> reply) {
+            reply.removeIf(r -> r.attribute().equalsIgnoreCase(attribute));
+            return Next.GO_ON;
+        }
+    }
+
+    /** How {@code reply} adds: {@code =} if absent, {@code :=} replacing, {@code +=} in any case. */
+    enum Mode {
+        IF_ABSENT,
+        REPLACE,
+        ADD
+    }
+
+    /** {@code reply Attribute =|:=|+= value}, with {@code %{Attribute}} expanded from the request. */
+    record Reply(String attribute, Mode mode, String value) implements Action {
+        @Override
+        public Next apply(Request request, List<AttributeItem> reply) {
+            String expanded = expand(value, request);
+            switch (mode) {
+                case REPLACE -> {
+                    reply.removeIf(r -> r.attribute().equalsIgnoreCase(attribute));
+                    reply.add(new AttributeItem(attribute, "=", expanded));
+                }
+                case IF_ABSENT -> {
+                    if (reply.stream().noneMatch(r -> r.attribute().equalsIgnoreCase(attribute))) {
+                        reply.add(new AttributeItem(attribute, "=", expanded));
+                    }
+                }
+                case ADD -> reply.add(new AttributeItem(attribute, "+=", expanded));
+            }
+            return Next.GO_ON;
+        }
+    }
 
     record Rule(int line, List<Condition> conditions, List<Action> actions) {}
 
@@ -77,31 +165,9 @@ final class Rules {
                 continue;
             }
             for (Action action : rule.actions()) {
-                switch (action.kind()) {
-                    case "reject" -> {
-                        return false;
-                    }
-                    case "stop" -> {
-                        return true;
-                    }
-                    case "remove" -> reply.removeIf(r -> r.attribute().equalsIgnoreCase(action.attribute()));
-                    default -> {
-                        String value = expand(action.value(), request);
-                        boolean present =
-                                reply.stream().anyMatch(r -> r.attribute().equalsIgnoreCase(action.attribute()));
-                        switch (action.op()) {
-                            case ":=" -> {
-                                reply.removeIf(r -> r.attribute().equalsIgnoreCase(action.attribute()));
-                                reply.add(new AttributeItem(action.attribute(), "=", value));
-                            }
-                            case "=" -> {
-                                if (!present) {
-                                    reply.add(new AttributeItem(action.attribute(), "=", value));
-                                }
-                            }
-                            default -> reply.add(new AttributeItem(action.attribute(), "+=", value));
-                        }
-                    }
+                Next next = action.apply(request, reply);
+                if (next != Next.GO_ON) {
+                    return next == Next.STOP;
                 }
             }
         }
@@ -110,24 +176,11 @@ final class Rules {
 
     private static boolean matches(Rule rule, Request request) {
         for (Condition c : rule.conditions()) {
-            if (!holds(c, request)) {
+            if (!c.holds(request)) {
                 return false;
             }
         }
         return true;
-    }
-
-    private static boolean holds(Condition c, Request request) {
-        if (c.attribute().equalsIgnoreCase("Group")) {
-            boolean in = request.inGroup(c.value());
-            return c.op().equals("==") == in;
-        }
-        String actual = request.value(c.attribute());
-        return switch (c.op()) {
-            case "present" -> actual != null;
-            case "absent" -> actual == null;
-            default -> ValueComparison.holds(c.op(), actual, c.value(), c.pattern());
-        };
     }
 
     private static String expand(String value, Request request) {
@@ -203,29 +256,13 @@ final class Rules {
             String op = tokens.get(at + 1);
             if (op.equals("present") || op.equals("absent")) {
                 attribute(attribute, line, known);
-                conditions.add(new Condition(attribute, op, null, null));
+                conditions.add(new Presence(attribute, op.equals("present")));
                 at += 2;
             } else {
                 if (!COMPARISONS.contains(op) || at + 3 > tokens.size()) {
                     throw new RuleException(line, "expected: <attribute> <operator> <value>");
                 }
-                String value = unquote(tokens.get(at + 2));
-                if (attribute.equalsIgnoreCase("Group")) {
-                    if (!op.equals("==") && !op.equals("!=")) {
-                        throw new RuleException(line, "Group takes == or !=");
-                    }
-                } else {
-                    attribute(attribute, line, known);
-                }
-                Pattern pattern = null;
-                if (op.equals("=~") || op.equals("!~")) {
-                    try {
-                        pattern = Pattern.compile(value);
-                    } catch (PatternSyntaxException e) {
-                        throw new RuleException(line, "invalid pattern " + value);
-                    }
-                }
-                conditions.add(new Condition(attribute, op, value, pattern));
+                conditions.add(comparison(attribute, op, unquote(tokens.get(at + 2)), line, known));
                 at += 3;
             }
             if (at == tokens.size()) {
@@ -238,6 +275,26 @@ final class Rules {
         }
     }
 
+    private static Condition comparison(
+            String attribute, String op, String value, int line, Function<String, Boolean> known) {
+        if (attribute.equalsIgnoreCase("Group")) {
+            if (!op.equals("==") && !op.equals("!=")) {
+                throw new RuleException(line, "Group takes == or !=");
+            }
+            return new InGroup(value, op.equals("=="));
+        }
+        attribute(attribute, line, known);
+        Pattern pattern = null;
+        if (ValueComparison.isPattern(op)) {
+            try {
+                pattern = Pattern.compile(value);
+            } catch (PatternSyntaxException e) {
+                throw new RuleException(line, "invalid pattern " + value);
+            }
+        }
+        return new Comparison(attribute, op, value, pattern);
+    }
+
     private static Action action(List<String> tokens, int line, Function<String, Boolean> known) {
         String kind = tokens.get(0);
         switch (kind) {
@@ -245,21 +302,29 @@ final class Rules {
                 if (tokens.size() != 1) {
                     throw new RuleException(line, kind + " takes nothing");
                 }
-                return new Action(kind, null, null, null);
+                return kind.equals("reject") ? new Reject() : new Stop();
             }
             case "remove" -> {
                 if (tokens.size() != 2) {
                     throw new RuleException(line, "expected: remove <attribute>");
                 }
                 attribute(tokens.get(1), line, known);
-                return new Action(kind, tokens.get(1), null, null);
+                return new Remove(tokens.get(1));
             }
             case "reply" -> {
-                if (tokens.size() != 4 || !Set.of("=", ":=", "+=").contains(tokens.get(2))) {
+                Mode mode = tokens.size() != 4
+                        ? null
+                        : switch (tokens.get(2)) {
+                            case "=" -> Mode.IF_ABSENT;
+                            case ":=" -> Mode.REPLACE;
+                            case "+=" -> Mode.ADD;
+                            default -> null;
+                        };
+                if (mode == null) {
                     throw new RuleException(line, "expected: reply <attribute> =|:=|+= <value>");
                 }
                 attribute(tokens.get(1), line, known);
-                return new Action(kind, tokens.get(1), tokens.get(2), unquote(tokens.get(3)));
+                return new Reply(tokens.get(1), mode, unquote(tokens.get(3)));
             }
             default -> throw new RuleException(line, "unknown action " + kind + " (reply, remove, reject, stop)");
         }
