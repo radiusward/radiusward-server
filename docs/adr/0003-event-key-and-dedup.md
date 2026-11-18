@@ -1,6 +1,7 @@
 # ADR 0003: Logical event key and per-session deduplication
 
-Status: Accepted (2026-11-07)
+Status: Accepted (2026-11-07). Amended 2026-11-18: no per-vendor `EventKeyStrategy` was needed — one key
+(`EventKeys`) fits every vendor, checked against all vendor fixtures (`UdpAgentTest.eventKeysIgnoreIdentifierAndDelayForAllFixtures`).
 
 ## Context
 A NAS retransmits when a response is lost, possibly through another RADIUS server, possibly with a new

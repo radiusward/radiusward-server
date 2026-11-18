@@ -1,6 +1,8 @@
 # ADR 0006: Plain NIO DatagramChannel, no Netty
 
-Status: Accepted (2026-11-07); pipeline details in [ADR 0011](0011-gateway-pipeline.md)
+Status: Accepted (2026-11-07); pipeline details in [ADR 0011](0011-gateway-pipeline.md). Amended 2026-11-18: no
+`RadiusTransport` interface was needed — each agent owns its socket (`UdpReceiver`); RadSec, DTLS and TCP were built
+on `SSLEngine` and NIO without Netty ([ADR 0034](0034-radsec.md), [0038](0038-dtls.md), [0045](0045-radius-over-tcp.md)).
 
 ## Context
 The RADIUS server needs UDP at ~16k packets/s peak, small memory, and a threading model that fits Aeron's

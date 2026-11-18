@@ -90,8 +90,8 @@ SIM sequence numbers — in the cluster: [ADR 0020](adr/0020-authentication-path
   - memory scales with concurrent sessions (~80 B each), not with event volume — see ADR 0003/0004;
   - streamed snapshots; hourly automatic snapshot + log purge below
     `min(snapshot position, slowest required sink checkpoint)`.
-- Logical event key excludes `Acct-Delay-Time` and the RADIUS Identifier; per-vendor
-  `EventKeyStrategy` (Cisco, Juniper, MikroTik, Huawei, Meraki, Ruckus first).
+- Logical event key excludes `Acct-Delay-Time` and the RADIUS Identifier; one key for every vendor (`EventKeys`),
+  checked against the fixtures of Cisco, Juniper, MikroTik, Huawei, Meraki, Ruckus and the others.
 
 ### Exporter and sinks (implemented in Phase 3)
 
