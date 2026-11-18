@@ -123,6 +123,45 @@ or the reject. A test can also drive single rounds (`EapConversation.next(...)`)
 answers, and the page shows how to run a real supplicant (`eapol_test` in its container image) against the
 embedded server for interoperability.
 
+## Testing accounting
+
+Accounting is where radiusward differs from a plain RADIUS library: an Accounting-Response means the record is
+committed, retransmissions are counted once, and sessions live in the replicated state. A test sees all of it.
+
+```java
+RadiusClient nas = radius.client();
+AccountingSession s = nas.session("s-1").user("alice").callingStationId("aa-bb-cc-dd-ee-ff");
+assertThat(nas.send(s.start())).isAcknowledged();
+nas.send(s.interim(Duration.ofMinutes(5), 1_000_000, 4_000_000));     // session time, input and output octets
+nas.send(s.interim(Duration.ofMinutes(5), 1_000_000, 4_000_000).delay(3)); // a NAS retransmission: counted once
+nas.send(s.stop(Duration.ofMinutes(10), 2_000_000, 8_000_000, "User-Request"));
+
+assertThat(radius.session("s-1")).hasState(STOPPED).hasSessionTime(Duration.ofMinutes(10));
+assertThat(radius.activeSessions("alice")).isEmpty();
+assertThat(received).extracting(AccountingRecord::statusType).containsExactly(START, INTERIM, STOP);
+```
+
+- **The NAS side**: `AccountingSession` builds Start, Interim-Update, Stop, Accounting-On and -Off with the usual
+  attributes (session time, octets with Gigawords, Event-Timestamp, Acct-Delay-Time, terminate cause, NAS and device
+  identity, vendor attributes); `send` retransmits as a NAS does and verifies the Response Authenticator. Recorded
+  packets (the vendor fixtures' format, `radclient decode --fixture`) can be replayed.
+- **What the server committed**: `session(id)`, `activeSessions(user)` and `sessions()` read the replicated state as
+  the CoA API does; `onAccounting(...)` receives the exported events and session snapshots in commit order, the way
+  a sink sees them, and `awaitAccounting(n)` waits for them.
+- **Duplicates and order**: the same event retransmitted, sent with another Identifier or Acct-Delay-Time, or a Stop
+  before its Start are applied once, and the test can assert that ([accounting contract](../accounting-contract.md)).
+- **Without the cluster**: `radius.pauseCluster()` stops the member, so the NAS gets no Accounting-Response and has to
+  buffer and retry; `resumeCluster()` brings it back and the retries are applied once. This is how a developer tests
+  the NAS's or the application's behaviour when accounting is not acknowledged.
+- **Sessions ending on their own**: Accounting-On/Off from the NAS, and the idle timeout (`setting("cluster.idle.timeout",
+  "5s")` or the NAS entry's) with `awaitSessionGone(id)`.
+- **Simultaneous-Use and limits**: accounting and authentication together, as in production: a second device of a
+  user limited to one is rejected until the first one's Stop.
+- **Export to a real database**: the sink settings (`sink.<name>.*`) work as in production, e.g. PostgreSQL in a
+  test container, so an application reading `accounting_session` or `radacct` can be tested against real rows.
+- **CoA and Disconnect**: the client can listen as a NAS (`nas.listenForCoa(...)`); `radius.disconnect(user)` and
+  `radius.coa(user, attributes)` send through the embedded server's CoA path, so a test checks what its NAS receives.
+
 ## Publishing on Maven Central
 
 - **Namespace** `io.radiusward`, verified through a DNS TXT record on `radiusward.io` in the Central Portal.
@@ -137,6 +176,9 @@ embedded server for interoperability.
 
 - README: a section "Use it as a library (development and tests)" with the dependency, the server example, the JUnit
   example, the client example, an EAP example and the JVM option.
+- The page has a section "Testing accounting": sessions from Start to Stop, retransmissions counted once, the
+  committed state and the exported records, the NAS without acknowledgements, Accounting-On/Off and idle timeouts,
+  export to a database, CoA and Disconnect.
 - The page has a section "Testing EAP": methods, the throwaway CA and client certificates, checking reply items and
   keys, SIM subscribers, single rounds, and a real supplicant.
 - Website: a page `/docs/develop/embedded/` in the same shape as above, linked from the start pages.
@@ -148,9 +190,10 @@ embedded server for interoperability.
 |---|---|---|
 | E1 | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc, signing); javadoc builds for every published module | `./mvnw -Prelease verify` passes locally with a test key |
 | E2 | `radiusward-client` from `TestPacket` and `FakeNas`: client, packet builder, auth helpers | its tests; the repository's tests use it |
+| E2a | Accounting in `radiusward-client`: `AccountingSession` (Start, Interim, Stop, On, Off), retransmission, fixture replay, a CoA listener | its tests; the e2e and harness tests use it |
 | E2b | The EAP supplicant in `radiusward-client` from the test peers: every method above, results with reply items and keys, single rounds | each method against the embedded server; the repository's EAP tests use it |
 | E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |
-| E4 | `radiusward-embedded`: builder, single member, users, EAP with the throwaway CA, SIM users, callback, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
+| E4 | `radiusward-embedded`: builder, single member, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
 | E6 | `radiusward-bom`; release workflow to Central; README, website page, release doc | `0.1.0` resolvable from Central in an empty project |
 

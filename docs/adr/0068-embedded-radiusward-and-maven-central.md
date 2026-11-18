@@ -19,6 +19,9 @@ artifacts carry names such as `server` and `common` that are too generic for a p
 - **EAP is testable end to end**: the client carries an EAP supplicant for every method radiusward offers (grown from
   the repository's test peers), and the embedded server creates a throwaway CA with server and client certificates
   for the TLS-based methods, so a test checks acceptance, authorization (reply items) and the keys a NAS receives.
+- **Accounting is testable end to end**: the client acts as a NAS (sessions from Start to Stop, retransmissions,
+  Accounting-On/Off, CoA received); a test reads the committed sessions and the exported records, and can pause the
+  member to test a NAS or an application without acknowledgements.
 - **Maven Central under `io.radiusward`**, verified through `radiusward.io`; every production module is published
   with the prefix `radiusward-` because the embedded artifact depends on them. Supported API: the embedded, JUnit
   and client packages and the plug-in APIs; the rest may change in any release.
