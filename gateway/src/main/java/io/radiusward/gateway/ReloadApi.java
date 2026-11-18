@@ -8,7 +8,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.radiusward.common.config.ConfigException;
 import java.io.IOException;
-import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.function.Supplier;
@@ -38,26 +37,17 @@ final class ReloadApi implements HttpHandler {
     public void handle(HttpExchange exchange) throws IOException {
         String auth = exchange.getRequestHeaders().getFirst("Authorization");
         if (auth == null || !MessageDigest.isEqual(auth.getBytes(StandardCharsets.UTF_8), token)) {
-            respond(exchange, 401, "{\"error\":\"missing or wrong bearer token\"}");
+            HttpJson.respond(exchange, 401, "{\"error\":\"missing or wrong bearer token\"}");
             return;
         }
         if (!exchange.getRequestMethod().equals("POST")) {
-            respond(exchange, 405, "{\"error\":\"POST expected\"}");
+            HttpJson.respond(exchange, 405, "{\"error\":\"POST expected\"}");
             return;
         }
         try {
-            respond(exchange, 200, "{\"reloaded\":" + CoaApi.quote(reload.get()) + "}");
+            HttpJson.respond(exchange, 200, "{\"reloaded\":" + HttpJson.quote(reload.get()) + "}");
         } catch (ConfigException e) {
-            respond(exchange, 400, "{\"error\":" + CoaApi.quote(e.getMessage()) + "}");
-        }
-    }
-
-    private static void respond(HttpExchange exchange, int status, String body) throws IOException {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(status, bytes.length);
-        try (OutputStream out = exchange.getResponseBody()) {
-            out.write(bytes);
+            HttpJson.respond(exchange, 400, "{\"error\":" + HttpJson.quote(e.getMessage()) + "}");
         }
     }
 }

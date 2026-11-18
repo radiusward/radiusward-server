@@ -7,7 +7,6 @@ package io.radiusward.gateway;
 import static io.radiusward.radius.codec.attributes.Ietf.CALLING_STATION_ID;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
-import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
@@ -18,15 +17,11 @@ import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.VendorFormats;
 import io.radiusward.radius.dictionary.AttributeDef;
 import io.radiusward.radius.dictionary.Dictionary;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -260,41 +255,42 @@ final class Tracer {
         return exchange -> {
             String auth = exchange.getRequestHeaders().getFirst("Authorization");
             if (auth == null || !MessageDigest.isEqual(auth.getBytes(StandardCharsets.UTF_8), expected)) {
-                respond(exchange, 401, "{\"error\":\"missing or wrong bearer token\"}");
+                HttpJson.respond(exchange, 401, "{\"error\":\"missing or wrong bearer token\"}");
                 return;
             }
             switch (exchange.getRequestMethod()) {
-                case "GET" -> respond(exchange, 200, json(conditions()));
+                case "GET" -> HttpJson.respond(exchange, 200, json(conditions()));
                 case "DELETE" -> {
                     clear();
-                    respond(exchange, 200, json(conditions()));
+                    HttpJson.respond(exchange, 200, json(conditions()));
                 }
                 case "POST" -> {
-                    Map<String, String> q = query(exchange.getRequestURI().getRawQuery());
+                    Map<String, String> q =
+                            HttpJson.query(exchange.getRequestURI().getRawQuery());
                     Duration duration;
                     try {
                         duration = q.containsKey("for")
                                 ? Config.of(Map.of("for", q.get("for"))).duration("for")
                                 : Duration.ofMinutes(15);
                     } catch (RuntimeException e) {
-                        respond(exchange, 400, "{\"error\":\"for: a duration such as 10m\"}");
+                        HttpJson.respond(exchange, 400, "{\"error\":\"for: a duration such as 10m\"}");
                         return;
                     }
                     if (duration.isNegative() || duration.isZero() || duration.compareTo(MAX_FOR) > 0) {
-                        respond(exchange, 400, "{\"error\":\"for: up to 24h\"}");
+                        HttpJson.respond(exchange, 400, "{\"error\":\"for: up to 24h\"}");
                         return;
                     }
                     Kind kind = q.containsKey("user")
                             ? Kind.USER
                             : q.containsKey("nas") ? Kind.NAS : q.containsKey("station") ? Kind.STATION : null;
                     if (kind == null) {
-                        respond(exchange, 400, "{\"error\":\"user=, nas= or station=\"}");
+                        HttpJson.respond(exchange, 400, "{\"error\":\"user=, nas= or station=\"}");
                         return;
                     }
                     add(kind, q.get(kind.name().toLowerCase(Locale.ROOT)), duration);
-                    respond(exchange, 200, json(conditions()));
+                    HttpJson.respond(exchange, 200, json(conditions()));
                 }
-                default -> respond(exchange, 405, "{\"error\":\"GET, POST or DELETE\"}");
+                default -> HttpJson.respond(exchange, 405, "{\"error\":\"GET, POST or DELETE\"}");
             }
         };
     }
@@ -307,38 +303,14 @@ final class Tracer {
                     .append("{\"")
                     .append(c.kind().name().toLowerCase(Locale.ROOT))
                     .append("\":")
-                    .append(CoaApi.quote(c.value()))
+                    .append(HttpJson.quote(c.value()))
                     .append(",\"until\":")
-                    .append(CoaApi.quote(
+                    .append(HttpJson.quote(
                             c.until() == Long.MAX_VALUE
                                     ? "configured"
                                     : Instant.ofEpochMilli(c.until()).toString()))
                     .append('}');
         }
         return b.append("]}").toString();
-    }
-
-    private static Map<String, String> query(String raw) {
-        Map<String, String> q = new LinkedHashMap<>();
-        if (raw != null) {
-            for (String pair : raw.split("&")) {
-                int eq = pair.indexOf('=');
-                if (eq > 0) {
-                    q.put(
-                            URLDecoder.decode(pair.substring(0, eq), StandardCharsets.UTF_8),
-                            URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8));
-                }
-            }
-        }
-        return q;
-    }
-
-    private static void respond(HttpExchange exchange, int status, String body) throws IOException {
-        byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        exchange.getResponseHeaders().set("Content-Type", "application/json");
-        exchange.sendResponseHeaders(status, bytes.length);
-        try (OutputStream out = exchange.getResponseBody()) {
-            out.write(bytes);
-        }
     }
 }

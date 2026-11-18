@@ -196,10 +196,10 @@ final class AuthLog implements AutoCloseable {
     }
 
     static String json(Entry e) {
-        return "{\"time\":" + CoaApi.quote(e.time().toString()) + ",\"nas\":" + CoaApi.quote(e.nas())
-                + ",\"user\":" + CoaApi.quote(e.user()) + ",\"station\":" + CoaApi.quote(e.station())
+        return "{\"time\":" + HttpJson.quote(e.time().toString()) + ",\"nas\":" + HttpJson.quote(e.nas())
+                + ",\"user\":" + HttpJson.quote(e.user()) + ",\"station\":" + HttpJson.quote(e.station())
                 + ",\"result\":\"" + (e.accepted() ? "accept" : "reject") + "\""
-                + (e.reason() == null ? "" : ",\"reason\":" + CoaApi.quote(e.reason())) + "}";
+                + (e.reason() == null ? "" : ",\"reason\":" + HttpJson.quote(e.reason())) + "}";
     }
 
     long written() {
