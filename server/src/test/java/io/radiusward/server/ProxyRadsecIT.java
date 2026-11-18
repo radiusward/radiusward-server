@@ -62,6 +62,10 @@ class ProxyRadsecIT {
                 g.close();
             }
         }
+        if (listener != null) {
+            listener.close();
+            homeThread.join(10_000);
+        }
     }
 
     private int start(String expectedName) throws Exception {
@@ -202,14 +206,6 @@ class ProxyRadsecIT {
             }
         });
         return new InetSocketAddress(InetAddress.getLoopbackAddress(), listener.getLocalPort());
-    }
-
-    @AfterEach
-    void stopTlsHome() throws Exception {
-        if (listener != null) {
-            listener.close();
-            homeThread.join(10_000);
-        }
     }
 
     private TlsClient tlsClient(TestPki pki, InetSocketAddress home) throws Exception {

@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.common.config.ConfigException;
@@ -93,7 +94,7 @@ class ServerMainTest {
     @Test
     void noDrainWithoutADuration() {
         // returns before it touches the server: none is needed
-        ServerMain.drain(null, Duration.ZERO);
-        ServerMain.drain(null, Duration.ofSeconds(-1));
+        assertThatCode(() -> ServerMain.drain(null, Duration.ZERO)).doesNotThrowAnyException();
+        assertThatCode(() -> ServerMain.drain(null, Duration.ofSeconds(-1))).doesNotThrowAnyException();
     }
 }
