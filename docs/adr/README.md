@@ -69,5 +69,6 @@
 | [0065](0065-cluster-backup.md) | A continuous backup outside the cluster (Aeron ClusterBackup) and restore after a lost quorum (`cluster-restore`, automatic with `cluster.restore.from`) | Accepted |
 | [0066](0066-benchmarks.md) | Benchmarks with one harness everywhere: ladders to the ceiling, failover at load, JMH; weekly on GitHub, AWS for the ceiling | Accepted |
 | [0067](0067-the-radius-server.md) | The NAS-facing process is the RADIUS server (it was called the gateway): `radiusward server`, `server.*`, `radiusward_server_*` | Accepted |
+| [0068](0068-embedded-radiusward-and-maven-central.md) | An embedded radiusward (one member, one RADIUS server) for development and tests, published on Maven Central under `io.radiusward` | Accepted |
 
 Format: context, decision, consequences. A superseded ADR stays and links to its replacement.

@@ -9,6 +9,7 @@
 | **3b** | Generic JDBC sink with dialects for the relational databases below; Kafka sink | Docker | next |
 | **4** | Helm chart (StatefulSet, PDB, anti-affinity, UDP LB with source IP preservation), systemd units, observability dashboards, chaos and load tests, ClusterBackup / DR runbooks | Kubernetes, bare metal | ✅ done ([plan + report](phase-4.md#phase-4-report)) |
 | **5** | Authentication and authorization (identity stores, Active Directory, EAP-TLS/PEAP/TTLS/TEAP/pwd), Simultaneous-Use through the cluster, RadSec, DTLS, CoA/Disconnect, proxying; EAP-SIM/AKA/AKA′ with local SIM keys | local, Docker | ✅ done: 5.1–5.36 ([plan](phase-5-auth.md)), 5.37–5.41 ([SIM/AKA plan](eap-sim-aka.md)) |
+| **E** | radiusward as a library for development and tests: `radiusward-embedded` (one member, one RADIUS server in the developer's JVM), JUnit 5 extension, test client, BOM; every module on Maven Central under `io.radiusward` | Maven Central | designed ([plan](embedded.md), [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md)) |
 
 Alongside the phases: benchmarks ([plan](benchmarks.md), [ADR 0066](../adr/0066-benchmarks.md)) and published test reports for the integration, end-to-end, fault-injection and Kubernetes suites
 ([plan](test-reports.md), [ADR 0064](../adr/0064-test-reports.md)).
