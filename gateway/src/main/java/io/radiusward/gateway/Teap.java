@@ -75,8 +75,6 @@ final class Teap extends TlsTunnel {
     private InnerEap innerEap;
     private String user;
     private String authenticated;
-    private byte[] pendingBasic;
-    private byte[] pendingBasicUser;
 
     /**
      * @param inner the inner methods offered, first preferred: EAP types of {@link InnerEap}, and {@link #BASIC}
@@ -221,13 +219,10 @@ final class Teap extends TlsTunnel {
 
     @Override
     Step onRetry(Credentials credentials) {
-        if (state == State.BASIC_AUTH && pendingBasic != null) {
-            return checkBasic(pendingBasicUser, pendingBasic, credentials);
-        }
         if (state == State.INNER_EAP && innerEap != null) {
             return afterInner(innerEap.retry(credentials));
         }
-        return Step.FAILED;
+        return super.onRetry(credentials);
     }
 
     /** Basic-Password-Auth-Resp (§4.2.15): Userlen, Username, Passlen, Password; checked like PAP. */
@@ -251,12 +246,10 @@ final class Teap extends TlsTunnel {
     private Step checkBasic(byte[] name, byte[] password, Credentials credentials) {
         user = new String(name, StandardCharsets.UTF_8);
         EapMethod.Inner checked = credentials.inner().password(user, password);
-        if (checked.code() == AccessHandler.DROP) {
-            pendingBasicUser = name;
-            pendingBasic = password;
-            return Step.STORE_UNAVAILABLE;
-        }
-        pendingBasic = null;
+        return afterCheck(checked, again -> checkBasic(name, password, again), this::basicDecided);
+    }
+
+    private Step basicDecided(EapMethod.Inner checked) {
         if (checked.code() != AccessHandler.ACCEPT) {
             return failure();
         }

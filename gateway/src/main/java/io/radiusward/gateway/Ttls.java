@@ -37,15 +37,8 @@ final class Ttls extends TlsTunnel {
     private String user;
     private String authenticated;
     private boolean successSent;
-    private byte[][] pending; // an inner check that could not be answered: user name, and the AVP values
-    private int pendingKind;
     private final java.util.List<Integer> innerEapTypes;
     private InnerEap innerEap; // once the client sent an EAP-Message
-
-    private static final int PAP = 1;
-    private static final int CHAP = 2;
-    private static final int MS_CHAP_V1 = 3;
-    private static final int MS_CHAP_V2 = 4;
 
     Ttls(EapTlsConfig config) {
         this(config, java.util.List.of(InnerEap.MS_CHAP_V2, InnerEap.GTC, InnerEap.MD5));
@@ -186,15 +179,7 @@ final class Ttls extends TlsTunnel {
         if (innerEap != null) {
             return afterInnerEap(innerEap.retry(credentials));
         }
-        if (pending == null) {
-            return Step.FAILED;
-        }
-        return switch (pendingKind) {
-            case PAP -> pap(pending[0], credentials);
-            case CHAP -> chap(pending[0], pending[1], credentials);
-            case MS_CHAP_V1 -> msChapV1(pending[0], pending[1], credentials);
-            default -> msChapV2(pending[0], pending[1], credentials);
-        };
+        return super.onRetry(credentials);
     }
 
     /** EAP inside the tunnel (§11.2.4): the inner conversation's next request, or its outcome as the method's. */
@@ -233,7 +218,7 @@ final class Ttls extends TlsTunnel {
         Inner checked = credentials
                 .inner()
                 .chap(user, chapPassword[0] & 0xFF, challenge, Arrays.copyOfRange(chapPassword, 1, 17));
-        return decided(checked, CHAP, challenge, chapPassword);
+        return afterCheck(checked, again -> chap(challenge, chapPassword, again), this::decided);
     }
 
     /** MS-CHAPv1 (§11.2.3): the challenge is the tunnel's first 8 of 9 bytes, the ident its 9th. */
@@ -252,17 +237,11 @@ final class Ttls extends TlsTunnel {
             return Step.FAILED;
         }
         Inner checked = credentials.inner().msChapV1(user, challenge, Arrays.copyOfRange(response, 26, 50));
-        return decided(checked, MS_CHAP_V1, challenge, response);
+        return afterCheck(checked, again -> msChapV1(challenge, response, again), this::decided);
     }
 
-    /** A check that succeeds at once, or waits for the retransmission when it could not be made. */
-    private Step decided(Inner checked, int kind, byte[]... values) {
-        if (checked.code() == AccessHandler.DROP) {
-            pending = values;
-            pendingKind = kind;
-            return Step.STORE_UNAVAILABLE;
-        }
-        pending = null;
+    /** PAP, CHAP and MS-CHAPv1: accepted, the method succeeds at once. */
+    private Step decided(Inner checked) {
         if (checked.code() != AccessHandler.ACCEPT) {
             return Step.FAILED;
         }
@@ -273,18 +252,7 @@ final class Ttls extends TlsTunnel {
 
     private Step pap(byte[] password, Credentials credentials) {
         Inner checked = credentials.inner().password(user, password);
-        if (checked.code() == AccessHandler.DROP) {
-            pending = new byte[][] {password};
-            pendingKind = PAP;
-            return Step.STORE_UNAVAILABLE;
-        }
-        pending = null;
-        if (checked.code() != AccessHandler.ACCEPT) {
-            return Step.FAILED;
-        }
-        authenticated = user;
-        remember(user);
-        return Step.succeeded(msk());
+        return afterCheck(checked, again -> pap(password, again), this::decided);
     }
 
     private Step msChapV2(byte[] challenge, byte[] response, Credentials credentials) {
@@ -302,12 +270,14 @@ final class Ttls extends TlsTunnel {
         Inner checked = credentials
                 .inner()
                 .msChapV2(user, new EapMethod.MsChapV2(hash, ntResponse, challenge, peer, response[0] & 0xFF));
-        if (checked.code() == AccessHandler.DROP) {
-            pending = new byte[][] {challenge, response};
-            pendingKind = MS_CHAP_V2;
-            return Step.STORE_UNAVAILABLE;
-        }
-        pending = null;
+        return afterCheck(
+                checked,
+                again -> msChapV2(challenge, response, again),
+                answer -> msChapV2Decided(answer, response, ntResponse, hash));
+    }
+
+    /** MS-CHAPv2 accepted: MS-CHAP2-Success to the client, whose acknowledgement ends the method. */
+    private Step msChapV2Decided(Inner checked, byte[] response, byte[] ntResponse, byte[] hash) {
         if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {
             return Step.FAILED;
         }

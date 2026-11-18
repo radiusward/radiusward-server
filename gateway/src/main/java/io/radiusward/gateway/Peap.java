@@ -64,8 +64,6 @@ final class Peap extends TlsTunnel {
     private int innerId;
     private String identity;
     private String authenticated;
-    private MsChapV2 pendingExchange; // an inner check that could not be answered, for the retransmission
-    private byte[] pendingPassword;
     private final java.util.List<Integer> innerTypes;
     private int innerType;
     private boolean innerBegun;
@@ -242,11 +240,10 @@ final class Peap extends TlsTunnel {
             return result(false);
         }
         Inner checked = credentials.inner().password(identity, password);
-        if (checked.code() == AccessHandler.DROP) {
-            pendingPassword = password;
-            return Step.STORE_UNAVAILABLE;
-        }
-        pendingPassword = null;
+        return afterCheck(checked, again -> gtc(password, again), this::gtcDecided);
+    }
+
+    private Step gtcDecided(Inner checked) {
         if (checked.code() != AccessHandler.ACCEPT) {
             return result(false);
         }
@@ -293,25 +290,17 @@ final class Peap extends TlsTunnel {
                 credentials);
     }
 
-    @Override
-    Step onRetry(Credentials credentials) {
-        if (pendingPassword != null) {
-            return gtc(pendingPassword, credentials);
-        }
-        return pendingExchange == null ? Step.FAILED : check(pendingExchange, credentials);
-    }
-
     /** The inner MS-CHAPv2 check by the gateway; its outcome as Success or Failure inside the tunnel. */
     private Step check(MsChapV2 exchange, Credentials credentials) {
         if (credentials.inner() == null) {
             return Step.FAILED;
         }
         Inner checked = credentials.inner().msChapV2(identity, exchange);
-        if (checked.code() == AccessHandler.DROP) {
-            pendingExchange = exchange;
-            return Step.STORE_UNAVAILABLE;
-        }
-        pendingExchange = null;
+        return afterCheck(checked, again -> check(exchange, again), answer -> checked(exchange, answer));
+    }
+
+    /** What the inner MS-CHAPv2 check said, as Success or Failure inside the tunnel. */
+    private Step checked(MsChapV2 exchange, Inner checked) {
         byte[] ntResponse = exchange.ntResponse();
         if (checked.code() != AccessHandler.ACCEPT || !checked.keyed()) {
             state = State.FAILURE;

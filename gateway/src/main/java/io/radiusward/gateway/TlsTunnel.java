@@ -92,7 +92,33 @@ abstract class TlsTunnel implements EapMethod {
      * records cannot be decrypted twice).
      */
     Step onRetry(Credentials credentials) {
-        return Step.FAILED;
+        Step again = checkAgain(credentials);
+        return again != null ? again : Step.FAILED;
+    }
+
+    /** An inner check that could not be made, to make again on the retransmission; {@code null}: none waits. */
+    private java.util.function.Function<Credentials, Step> waiting;
+
+    /**
+     * An inner credential checked: when its store could not answer ({@link AccessHandler#DROP}), {@code again} is kept
+     * for the NAS's retransmission ({@link #onRetry}) and the request is left unanswered; otherwise {@code decide}
+     * says what the method does with the answer.
+     */
+    final Step afterCheck(
+            Inner checked,
+            java.util.function.Function<Credentials, Step> again,
+            java.util.function.Function<Inner, Step> decide) {
+        if (checked.code() == AccessHandler.DROP) {
+            waiting = again;
+            return Step.STORE_UNAVAILABLE;
+        }
+        waiting = null;
+        return decide.apply(checked);
+    }
+
+    /** The check {@link #afterCheck} kept, made again; {@code null} when none waits. */
+    final Step checkAgain(Credentials credentials) {
+        return waiting == null ? null : waiting.apply(credentials);
     }
 
     final byte[] msk() {

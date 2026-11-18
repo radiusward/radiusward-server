@@ -856,6 +856,33 @@ class EapTlsTest {
     }
 
     @Test
+    void peapGtcDuringAStoreOutage() throws Exception {
+        store.user("frank", List.of(new AttributeItem("Cleartext-Password", ":=", "Frank-Pw")), List.of());
+        StoreAccessHandler h = peapWith(List.of(Peap.MS_CHAP_V2, Peap.GTC), Map.of(), Map.of());
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        peapClient("TLSv1.3", new PeapPeer("frank", "Frank-Pw", Peap.GTC, null)),
+                        Peap.TYPE))
+                .isEqualTo(AccessHandler.ACCEPT);
+
+        // the outer identity is cached by now; the inner user is not
+        store.user("gail", List.of(new AttributeItem("Cleartext-Password", ":=", "Gail-Pw")), List.of());
+        store.down = true;
+        assertThat(converse(
+                        h,
+                        "anonymous",
+                        peapClient("TLSv1.2", new PeapPeer("gail", "Gail-Pw", Peap.GTC, null)),
+                        Peap.TYPE))
+                .as("the store cannot answer: no answer")
+                .isEqualTo(AccessHandler.DROP);
+        store.down = false;
+        assertThat(handle(h, lastResponse, lastState))
+                .as("the retransmission repeats the GTC check, which goes on to the tunnel's result")
+                .isEqualTo(AccessHandler.CHALLENGE);
+    }
+
+    @Test
     void ttlsChapWithTheImplicitChallengeAndAStoreOutage() throws Exception {
         chap = Map.of("main", true);
         store.user("gina", List.of(new AttributeItem("Cleartext-Password", ":=", "Gina-Pw")), List.of());
