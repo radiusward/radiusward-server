@@ -68,6 +68,10 @@ scripts/test-images.sh list|tag|hash|inputs|platforms|ref|build [--push] <image>
 | `test-images.yml` | when a test image's inputs change on `main`, weekly, on demand | publishes the prebuilt test images |
 | `release.yml` | pushes to `main` (`edge`) and tags | the container image, the Helm chart and the GitHub release |
 
+Every job that runs Maven sets it up with `.github/actions/setup-maven`: Temurin, the Maven repository cache (per job,
+falling back to the last one when a pom changes, our own jars left out) and Google's mirror of Maven Central asked before
+Central itself, for the build and for the wrapper's Maven download, so Central's rate limit does not fail a run. Local builds use Central as before.
+
 Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Actions and, weekly, of the Maven dependencies and plugins (minor and patch versions together, each major version on its own).
 
 ## Modules

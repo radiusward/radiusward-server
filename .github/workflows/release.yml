@@ -13,8 +13,6 @@ permissions:
   contents: read
 
 env:
-  # a download that failed once is remembered as missing in the restored Maven cache; -U makes Maven look again
-  MAVEN_ARGS: -U
   IMAGE: ghcr.io/radiusward/radiusward-server
 
 jobs:
@@ -26,11 +24,9 @@ jobs:
       packages: write   # GHCR
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: ./.github/actions/setup-maven
         with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
+          cache-name: release
       - name: Set the release version
         if: startsWith(github.ref, 'refs/tags/v')
         run: ./mvnw -B -ntp versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
