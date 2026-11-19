@@ -1,0 +1,34 @@
+# The JDK and Maven for a CI job: the downloaded dependencies and plugins from a cache that falls back to the last one
+# when a pom changes (so only what is new is downloaded), and Google's mirror of Maven Central in front of Central, so
+# Central's rate limit (HTTP 429) does not fail a run. Local builds are unchanged.
+name: Set up Java and Maven
+description: Temurin JDK, the Maven repository cache with a fallback, and Maven Central's mirror
+inputs:
+  java-version:
+    description: the JDK version
+    default: '25'
+  cache-name:
+    description: names this job's cache, so jobs that download different plugins each keep theirs
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-java@v6
+      with:
+        distribution: temurin
+        java-version: ${{ inputs.java-version }}
+    - uses: actions/cache@v6
+      with:
+        # our own jars are built in every run: they stay out of the cache
+        path: |
+          ~/.m2/repository
+          !~/.m2/repository/io/radiusward
+        key: maven-${{ runner.os }}-${{ inputs.cache-name }}-${{ hashFiles('**/pom.xml', '.mvn/wrapper/maven-wrapper.properties') }}
+        restore-keys: |
+          maven-${{ runner.os }}-${{ inputs.cache-name }}-
+          maven-${{ runner.os }}-
+    - name: Maven settings for CI
+      shell: bash
+      # -gs adds the mirror on top of the user settings setup-java writes; -U looks again for anything a failed
+      # download once marked missing
+      run: echo "MAVEN_ARGS=-B -ntp -U -gs $GITHUB_ACTION_PATH/settings.xml" >> "$GITHUB_ENV"

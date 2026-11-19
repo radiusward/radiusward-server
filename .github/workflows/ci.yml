@@ -13,11 +13,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # a download that failed once (rate limit, outage) is remembered as missing in the restored Maven cache;
-  # -U makes Maven look again instead of failing every later run on it
-  MAVEN_ARGS: -U
-
 jobs:
   build:
     # the whole suite once: unit and integration tests with coverage and the module floors, the interop tests, the
@@ -33,11 +28,10 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # Sonar needs the history to tell new code from old
-      - uses: actions/setup-java@v6
+      - uses: ./.github/actions/setup-maven
         with:
-          distribution: temurin
           java-version: ${{ matrix.java }}
-          cache: maven
+          cache-name: ci-verify
       - name: External RADIUS server for the interop tests
         timeout-minutes: 10
         # Ubuntu's server and client tools; the package starts a service on 1812/1813, which the tests do not need.
@@ -120,11 +114,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-java@v6
+      - uses: ./.github/actions/setup-maven
         with:
-          distribution: temurin
-          java-version: '25'
-          cache: maven
+          cache-name: ci-e2e
       - name: Build radiusward.jar and the published jars with sources and javadoc (the verify job runs the other tests)
         run: ./mvnw -B -ntp -Pe2e,release install -DskipTests -DskipITs -Dspotless.check.skip=true -Djacoco.skip=true
       - name: End-to-end tests (separate JVMs)
