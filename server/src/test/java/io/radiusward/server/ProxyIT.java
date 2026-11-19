@@ -9,11 +9,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -101,7 +101,7 @@ class ProxyIT {
 
     /** A PAP Access-Request as a NAS sends it: Message-Authenticator, a Proxy-State of its own, a device. */
     byte[] pap(String user, String password, String device, byte[]... extra) {
-        TestPacket request = TestPacket.accessRequest(++identifier)
+        PacketBuilder request = PacketBuilder.accessRequest(++identifier)
                 .messageAuthenticator()
                 .attribute(1, user)
                 .password(password)
@@ -124,7 +124,7 @@ class ProxyIT {
         byte[] response = new byte[17];
         response[0] = 7;
         System.arraycopy(md5.digest(), 0, response, 1, 16);
-        return TestPacket.accessRequest(++identifier)
+        return PacketBuilder.accessRequest(++identifier)
                 .authenticator(auth)
                 .messageAuthenticator()
                 .attribute(1, user)

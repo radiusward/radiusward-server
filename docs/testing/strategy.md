@@ -76,18 +76,21 @@ test of the handler goes to the class of the part it is about.
 
 ## Packets in tests
 
-Tests build RADIUS packets with `TestPacket` (`testing/test-packets`), signed as a NAS or a home server signs them:
+Tests build RADIUS packets with `PacketBuilder` from the published client (`client`, `radiusward-client`), signed as
+a NAS or a home server signs them:
 
 ```java
-TestPacket.accessRequest(1).attribute(1, "alice").password("secret").messageAuthenticator().secret(SECRET).build();
-TestPacket.accountingRequest(2).uint32(40, 1).attribute(44, "s-1").secret(SECRET).build();
-TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, request).secret(SECRET).build();
+PacketBuilder.accessRequest(1).attribute(1, "alice").password("secret").messageAuthenticator().secret(SECRET).build();
+PacketBuilder.accessRequest(2).attribute(1, "bob").msChapV2("bob", "secret").secret(SECRET).build();   // or .chap(...)
+PacketBuilder.accountingRequest(3).uint32(40, 1).attribute(44, "s-1").secret(SECRET).build();
+PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, request).secret(SECRET).build();
 ```
 
 Attributes and the Message-Authenticator go on the wire in the order they are added. Accounting-, CoA- and
 Disconnect-Requests get their Request Authenticator from the secret, Access-Requests and Status-Server a random one,
 replies are signed against their request. `AccountingRequest` (`testing/test-harness`) builds on it with the usual
-accounting attributes. Only tests of the codec itself, of an encoder, or of allocation write packets with
+accounting attributes, and `RadiusClient` sends them over UDP as a NAS does (retransmission, verified answers). Only
+tests of the codec itself, of an encoder, or of allocation write packets with
 `RadiusPacketEncoder` directly.
 
 ## Test images

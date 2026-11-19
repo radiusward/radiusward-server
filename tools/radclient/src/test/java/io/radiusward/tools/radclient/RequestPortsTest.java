@@ -7,8 +7,8 @@ package io.radiusward.tools.radclient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.IOException;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -81,19 +81,19 @@ class RequestPortsTest {
 
             server.send(new byte[] {5, 1, 0}, port); // not a RADIUS packet
             server.send(
-                    TestPacket.reply(RadiusCode.ACCESS_ACCEPT, sent)
+                    PacketBuilder.reply(RadiusCode.ACCESS_ACCEPT, sent)
                             .secret(SECRET)
                             .build(),
                     port);
             byte[] otherId = sent.clone();
             otherId[1] = (byte) (sent[1] + 1);
             server.send(
-                    TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, otherId)
+                    PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, otherId)
                             .secret(SECRET)
                             .build(),
                     port);
             server.send(
-                    TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, sent)
+                    PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, sent)
                             .secret("wrong")
                             .build(),
                     port);
@@ -101,7 +101,7 @@ class RequestPortsTest {
             assertThat(answered).isEmpty();
             assertThat(ports.inFlight()).isOne();
 
-            byte[] answer = TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, sent)
+            byte[] answer = PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, sent)
                     .secret(SECRET)
                     .build();
             server.send(answer, port);
@@ -206,7 +206,7 @@ class RequestPortsTest {
     }
 
     private static byte[] accountingRequest(RequestPorts.Outstanding r, int identifier) {
-        return TestPacket.accountingRequest(identifier)
+        return PacketBuilder.accountingRequest(identifier)
                 .attribute(44, "s-" + identifier)
                 .uint32(40, 1)
                 .secret(SECRET)

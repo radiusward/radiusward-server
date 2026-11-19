@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -19,7 +20,6 @@ import io.radiusward.server.RadiusServer;
 import io.radiusward.server.RadsecClient;
 import io.radiusward.server.RadsecConfig;
 import io.radiusward.server.TestPki;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -193,6 +193,9 @@ class RadsecAccountingIT {
     }
 
     static byte[] statusServer(int id, byte[] secret) {
-        return TestPacket.statusServer(id).messageAuthenticator().secret(secret).build();
+        return PacketBuilder.statusServer(id)
+                .messageAuthenticator()
+                .secret(secret)
+                .build();
     }
 }

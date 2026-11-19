@@ -10,6 +10,7 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.auth.Md4;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.Profile;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
@@ -18,7 +19,6 @@ import io.radiusward.server.NasClient;
 import io.radiusward.server.NasRegistry;
 import io.radiusward.server.RadiusServer;
 import io.radiusward.server.ServerConfig;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -167,7 +167,7 @@ class ServerNetlogonIT {
         System.arraycopy(peerChallenge, 0, response, 2, 16);
         byte[] nt = NtResponse.of(challengeHash(user, authChallenge, peerChallenge), NetlogonCrypto.ntHash(password));
         System.arraycopy(nt, 0, response, 26, 24);
-        return TestPacket.accessRequest((int) System.nanoTime())
+        return PacketBuilder.accessRequest((int) System.nanoTime())
                 .attribute(1, user)
                 .vendor(311, 11, authChallenge)
                 .vendor(311, 25, response)

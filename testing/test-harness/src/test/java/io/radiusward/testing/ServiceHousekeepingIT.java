@@ -8,11 +8,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.cluster.service.AccountingStateMachine;
 import io.radiusward.common.Profile;
 import io.radiusward.server.NasClient;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -113,7 +113,7 @@ class ServiceHousekeepingIT {
 
     /** An Accounting-Request Start from an access point that names itself both ways. */
     private static byte[] start(int id, String sessionId) {
-        return TestPacket.accountingRequest(id)
+        return PacketBuilder.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, sessionId)
                 .attribute(32, "ap-1")

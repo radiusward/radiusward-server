@@ -4,6 +4,7 @@
  */
 package io.radiusward.tools.radclient;
 
+import io.radiusward.client.Credentials;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.AccountingResponses;
 import io.radiusward.radius.codec.DecodeStatus;
@@ -114,7 +115,7 @@ final class LoopbackResponder implements AutoCloseable {
                         && response.length == 50
                         && Arrays.equals(
                                 Arrays.copyOfRange(response, 26, 50),
-                                AccessCredentials.ntResponse(
+                                Credentials.ntResponse(
                                         challenge, Arrays.copyOfRange(response, 2, 18), userName(data), password));
             }
             default -> false;

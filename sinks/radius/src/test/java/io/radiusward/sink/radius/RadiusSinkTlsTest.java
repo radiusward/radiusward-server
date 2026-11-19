@@ -7,11 +7,11 @@ package io.radiusward.sink.radius;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.export.SinkContext;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.DataInputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -178,7 +178,7 @@ class RadiusSinkTlsTest {
                             continue;
                         }
                         received.add(request);
-                        out.write(TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
+                        out.write(PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
                                 .secret(RADSEC)
                                 .build());
                         out.flush();

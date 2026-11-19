@@ -11,12 +11,12 @@ import io.radiusward.auth.IdentityStore;
 import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
 import io.radiusward.radius.dictionary.Dictionary;
 import io.radiusward.radius.dictionary.DictionaryLoader;
-import io.radiusward.testing.packets.TestPacket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
@@ -230,7 +230,7 @@ abstract class HandlerFixture {
     }
 
     static byte[] msChapRequest(String user, byte[] challenge, int responseType, byte[] response) {
-        return TestPacket.accessRequest(1)
+        return PacketBuilder.accessRequest(1)
                 .attribute(1, user)
                 .vendor(311, 11, challenge)
                 .vendor(311, responseType, response)
@@ -370,7 +370,7 @@ abstract class HandlerFixture {
         }
 
         static byte[] pap(String user, String password, byte[]... extra) {
-            TestPacket request = TestPacket.accessRequest(1)
+            PacketBuilder request = PacketBuilder.accessRequest(1)
                     .attribute(1, user)
                     .password(password)
                     .attribute(33, "proxy-1");
@@ -381,7 +381,7 @@ abstract class HandlerFixture {
         }
 
         static byte[] userOnly(String user) {
-            return TestPacket.accessRequest(1).attribute(1, user).build();
+            return PacketBuilder.accessRequest(1).attribute(1, user).build();
         }
 
         static byte[] chapSafe(String user, String password) {
@@ -402,7 +402,7 @@ abstract class HandlerFixture {
             byte[] response = new byte[17];
             response[0] = 7;
             System.arraycopy(md5.digest(), 0, response, 1, 16);
-            return TestPacket.accessRequest(1)
+            return PacketBuilder.accessRequest(1)
                     .authenticator(new byte[16])
                     .attribute(1, user)
                     .attribute(3, response)

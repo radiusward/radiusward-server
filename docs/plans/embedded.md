@@ -1,6 +1,6 @@
 # Plan: radiusward as a library for development and tests
 
-Status: designed 2026-11-18; E1 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
+Status: designed 2026-11-18; E1 and E2 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
 
 ## Goal
 
@@ -217,7 +217,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | # | Work | Done when |
 |---|---|---|
 | E1 ✅ | Rename artifactIds to `radiusward-*`; POM metadata; `-Prelease` profile (sources, javadoc); javadoc builds for every published module; `LICENSE` and `NOTICE` in every jar | `./mvnw -Prelease verify` passes |
-| E2 | `radiusward-client` from `TestPacket` and `FakeNas`: client, packet builder, auth helpers | its tests; the repository's tests use it |
+| E2 ✅ | `radiusward-client`: `RadiusClient` (UDP, retransmission, verified answers, PAP/CHAP/MS-CHAPv2/Status-Server helpers), `PacketBuilder` (was `TestPacket`), `Credentials` shared with radclient | its tests; the repository's tests use `PacketBuilder` |
 | E2a | Accounting in `radiusward-client`: `AccountingSession` (Start, Interim, Stop, On, Off), retransmission, fixture replay, a CoA listener | its tests; the e2e and harness tests use it |
 | E2b | The EAP supplicant in `radiusward-client` from the test peers: every method above, results with reply items and keys, single rounds | each method against the embedded server; the repository's EAP tests use it |
 | E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |

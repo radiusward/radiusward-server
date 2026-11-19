@@ -10,9 +10,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.net.InetAddress;
@@ -170,13 +170,13 @@ class ProxyTransportsIT {
     private static final Duration MAX = Duration.ofSeconds(10);
 
     private static byte[] request(int identifier) {
-        return TestPacket.accessRequest(identifier)
+        return PacketBuilder.accessRequest(identifier)
                 .attribute(1, "bob@tcp.example")
                 .build();
     }
 
     private static byte[] reply(byte[] request, String message) {
-        return TestPacket.reply(RadiusCode.ACCESS_ACCEPT, request)
+        return PacketBuilder.reply(RadiusCode.ACCESS_ACCEPT, request)
                 .secret(TCP_SECRET)
                 .attribute(18, message)
                 .build();
@@ -184,7 +184,7 @@ class ProxyTransportsIT {
 
     /** A request near the largest RADIUS packet, to fill buffers quickly. */
     private static byte[] large(int identifier) {
-        TestPacket p = TestPacket.accessRequest(identifier);
+        PacketBuilder p = PacketBuilder.accessRequest(identifier);
         for (int i = 0; i < 15; i++) {
             p.attribute(18, new byte[253]);
         }

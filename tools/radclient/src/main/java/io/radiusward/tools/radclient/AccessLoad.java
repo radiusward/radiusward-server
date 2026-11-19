@@ -7,6 +7,7 @@ package io.radiusward.tools.radclient;
 import static io.radiusward.radius.codec.attributes.Ietf.NAS_IDENTIFIER;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
+import io.radiusward.client.Credentials;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -34,7 +35,7 @@ final class AccessLoad {
             byte[] secret,
             List<String> users,
             String password,
-            List<AccessCredentials.Method> methods,
+            List<Credentials.Method> methods,
             int rate,
             double rejectRatio,
             Duration duration,
@@ -55,7 +56,7 @@ final class AccessLoad {
     private final Settings settings;
     private final PrintStream out;
     private final Random random = new java.security.SecureRandom(); // request authenticators must not be predictable
-    private final AccessCredentials credentials = new AccessCredentials(random);
+    private final Credentials credentials = new Credentials(random);
     private final RadiusAuthenticator authenticator = new RadiusAuthenticator();
     private final RadiusPacketEncoder encoder = new RadiusPacketEncoder();
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[RadiusPacket.MAX_LENGTH]);
@@ -165,7 +166,7 @@ final class AccessLoad {
     /** Request {@code n}: its user and method round-robin, the password wrong when the request is meant to fail. */
     private byte[] encode(int identifier, long n, boolean wrong) {
         String user = settings.users().get((int) (n % settings.users().size()));
-        AccessCredentials.Method method =
+        Credentials.Method method =
                 settings.methods().get((int) (n % settings.methods().size()));
         byte[] requestAuthenticator = new byte[16];
         random.nextBytes(requestAuthenticator);

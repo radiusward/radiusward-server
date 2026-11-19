@@ -4,6 +4,7 @@
  */
 package io.radiusward.tools.radclient;
 
+import io.radiusward.client.Credentials;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -173,18 +174,30 @@ public final class RadClient {
         return exchange(o, dictionary, builder.build(secret), secret);
     }
 
+    private static Credentials.Method method(String name) {
+        try {
+            return Credentials.Method.parse(name);
+        } catch (IllegalArgumentException e) {
+            throw new UsageException(e.getMessage());
+        }
+    }
+
     private int auth(Options o) throws IOException {
         Dictionary dictionary = o.dictionary();
         String user = o.required("user");
         String password = o.required("password");
-        AccessCredentials.Method method = AccessCredentials.Method.parse(o.value("method", "pap"));
+        Credentials.Method method = method(o.value("method", "pap"));
         byte[] requestAuthenticator = new byte[16];
         RANDOM.nextBytes(requestAuthenticator);
         byte[] secret = o.secret();
         PacketBuilder builder = new PacketBuilder(dictionary, RadiusCode.ACCESS_REQUEST, o.identifier());
         builder.authenticator(requestAuthenticator);
         builder.add("User-Name", user);
-        new AccessCredentials(RANDOM).write(builder.encoder(), requestAuthenticator, user, password, method, secret);
+        try {
+            new Credentials(RANDOM).write(builder.encoder(), requestAuthenticator, user, password, method, secret);
+        } catch (IllegalArgumentException e) {
+            throw new UsageException(e.getMessage());
+        }
         builder.add("NAS-IP-Address", o.value("nas-ip", "127.0.0.1"));
         if (o.has("calling-station-id")) {
             builder.add("Calling-Station-Id", o.value("calling-station-id"));
@@ -307,9 +320,9 @@ public final class RadClient {
                 servers.add(new InetSocketAddress(a.getHostString(), 1812));
             }
         }
-        List<AccessCredentials.Method> methods = new ArrayList<>();
+        List<Credentials.Method> methods = new ArrayList<>();
         for (String m : Units.list(o.value("auth-methods", "pap,chap,mschapv2"))) {
-            methods.add(AccessCredentials.Method.parse(m));
+            methods.add(method(m));
         }
         List<String> users = Units.list(o.value("auth-users", "load"));
         if (users.isEmpty()) {

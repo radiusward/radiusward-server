@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.testing.Ports;
 import io.radiusward.testing.Reports;
-import io.radiusward.testing.packets.TestPacket;
 import java.nio.file.Files;
 import java.time.Duration;
 import java.util.List;
@@ -95,7 +95,7 @@ class AuthWithoutMajorityIT extends E2eTestBase {
 
     /** A PAP Access-Request from the NAS entry, with Message-Authenticator and, if given, the device. */
     private byte[] pap(String user, String password, String station) {
-        TestPacket request = TestPacket.accessRequest(++identifier)
+        PacketBuilder request = PacketBuilder.accessRequest(++identifier)
                 .messageAuthenticator()
                 .attribute(1, user)
                 .password(password);

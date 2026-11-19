@@ -6,6 +6,7 @@ package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.Profile;
 import io.radiusward.protocol.AccountingCommandDecoder;
 import io.radiusward.protocol.AccountingCommittedEncoder;
@@ -19,7 +20,6 @@ import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.VendorFormats;
 import io.radiusward.radius.dictionary.DictionaryLoader;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -241,7 +241,7 @@ class UdpAgentTest {
     }
 
     static byte[] request(int identifier, boolean withMa, String sessionId, int status) {
-        TestPacket request = TestPacket.accountingRequest(identifier)
+        PacketBuilder request = PacketBuilder.accountingRequest(identifier)
                 .uint32(40, status)
                 .attribute(44, sessionId)
                 .attribute(33, "proxy-a")
@@ -471,7 +471,7 @@ class UdpAgentTest {
     @Test
     void sessionEventsWithoutSessionIdAreDropped() throws Exception {
         start();
-        send(TestPacket.accountingRequest(5).uint32(40, 3).secret(SECRET).build());
+        send(PacketBuilder.accountingRequest(5).uint32(40, 3).secret(SECRET).build());
         assertThat(stats.get(ServerStats.Counter.MISSING_SESSION_ID)).isEqualTo(1);
     }
 
@@ -497,7 +497,7 @@ class UdpAgentTest {
 
     /** An Accounting-Request from a device: {@code null} leaves an attribute out. */
     static byte[] deviceRequest(int identifier, int status, String sessionId, String nasIdentifier, String called) {
-        TestPacket request = TestPacket.accountingRequest(identifier).uint32(40, status);
+        PacketBuilder request = PacketBuilder.accountingRequest(identifier).uint32(40, status);
         if (sessionId != null) {
             request.attribute(44, sessionId);
         }
@@ -607,7 +607,7 @@ class UdpAgentTest {
     @Test
     void commandsCarryTheUserAndDeviceForSimultaneousUse() throws Exception {
         start();
-        send(TestPacket.accountingRequest(1)
+        send(PacketBuilder.accountingRequest(1)
                 .uint32(40, 1)
                 .attribute(44, "s-1")
                 .attribute(1, "Alice")

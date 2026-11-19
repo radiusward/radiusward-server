@@ -4,8 +4,8 @@
  */
 package io.radiusward.testing;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.server.EventKeys;
-import io.radiusward.testing.packets.TestPacket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -110,7 +110,7 @@ public final class AccountingRequest {
     }
 
     public byte[] build() {
-        TestPacket request = TestPacket.accountingRequest(id).uint32(40, status);
+        PacketBuilder request = PacketBuilder.accountingRequest(id).uint32(40, status);
         if (nasIdentifier != null) {
             request.attribute(32, nasIdentifier);
         }
