@@ -321,11 +321,11 @@ public final class EmbeddedRadiusward implements AutoCloseable {
                             java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
         }
         java.io.File dir = Files.createTempDirectory("radiusward-embedded").toFile();
-        // without POSIX permissions (Windows): readable, writable and listable by its owner only
-        boolean restricted = dir.setReadable(false, false) & dir.setReadable(true, true);
-        restricted &= dir.setWritable(false, false) & dir.setWritable(true, true);
-        restricted &= dir.setExecutable(false, false) & dir.setExecutable(true, true);
-        if (!restricted) {
+        // without POSIX permissions (Windows, where the temporary folder is the user's own): access for its owner
+        boolean readable = dir.setReadable(true, true);
+        boolean writable = dir.setWritable(true, true);
+        boolean listable = dir.setExecutable(true, true);
+        if (!readable || !writable || !listable) {
             LOG.warn("could not restrict {} to its owner", dir);
         }
         return dir.toPath();
