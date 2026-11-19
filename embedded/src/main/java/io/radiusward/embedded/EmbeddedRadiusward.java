@@ -22,6 +22,7 @@ import io.radiusward.exporter.ExportConfig;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.AuthPlugins;
 import io.radiusward.server.CoaConfig;
+import io.radiusward.server.CoaService;
 import io.radiusward.server.EventKeys;
 import io.radiusward.server.NasClient;
 import io.radiusward.server.NasRegistry;
@@ -36,14 +37,19 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.TimeoutException;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -54,10 +60,11 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 /**
- * radiusward inside this JVM, for development and tests: one cluster member and one RADIUS server, started with the
- * same code and the same settings as in production, with the developer's own identity stores, credential verifiers and
- * sinks; ports chosen at start; everything gone on {@link #close()}. <b>Not for production</b>: one member replicates
- * nothing and nothing is synced to disk.
+ * radiusward inside this JVM, for development and tests: one cluster member and one RADIUS server by default (or a
+ * whole cluster: {@link Builder#members}, {@link Builder#radiusServers}), started with the same code and the same
+ * settings as in production, with the developer's own identity stores, credential verifiers and sinks; ports chosen at
+ * start; everything gone on {@link #close()}. <b>Not for production</b>: all members share one machine and nothing is
+ * synced to disk.
  *
  * <pre>{@code
  * try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
@@ -82,34 +89,61 @@ public final class EmbeddedRadiusward implements AutoCloseable {
 
     static final String JVM_OPTION = "--add-exports java.base/jdk.internal.misc=ALL-UNNAMED";
     private static final Duration START_TIMEOUT = Duration.ofSeconds(30);
+    private static final Set<String> TLS_METHODS = Set.of("tls", "peap", "ttls", "teap");
 
     private final Config config;
     private final Path directory;
     private final boolean deleteDirectory;
-    private final ClusterNodeConfig nodeConfig;
+    private final ClusterNodeConfig[] memberConfigs;
+    private final ClusterNode[] members;
+    private final Config[] serverConfigs;
+    private final RadiusServer[] servers;
+    private final AuthPlugins plugins;
     private final NasRegistry registry;
     private final RecordingSink recorder;
     private final List<AutoCloseable> owned;
+    private final ThrowawayPki pki;
     private final String host;
     private final String defaultSecret;
     private final String defaultNas;
-    private ClusterNode member;
-    private RadiusServer server;
     private AdminClient admin;
 
-    private EmbeddedRadiusward(Builder b, Config config, Path directory, boolean deleteDirectory) {
+    private EmbeddedRadiusward(Builder b, Config config, Path directory, boolean deleteDirectory, ThrowawayPki pki) {
         this.config = config;
         this.directory = directory;
         this.deleteDirectory = deleteDirectory;
+        this.pki = pki;
         this.recorder = b.recorder;
         this.owned = b.owned();
+        this.plugins = b.plugins();
         this.host = config.string("server.listen.host");
         this.defaultSecret =
                 b.nas.isEmpty() ? DEFAULT_SECRET : b.nas.values().iterator().next()[1];
         this.defaultNas =
                 b.nas.isEmpty() ? DEFAULT_NAS : b.nas.keySet().iterator().next();
-        ClusterNodeConfig fromSettings = ClusterNodeConfig.from(config);
-        this.nodeConfig = withExport(fromSettings, fromSettings.export().withProviders(b.sinkProviders()));
+        SinkProvider[] sinkProviders = b.sinkProviders();
+        memberConfigs = new ClusterNodeConfig[b.members];
+        for (int i = 0; i < b.members; i++) {
+            ClusterNodeConfig c = ClusterNodeConfig.from(config.with(Map.of(
+                    "cluster.node.id", Integer.toString(i),
+                    "cluster.aeron.dir", directory.resolve("aeron/member-" + i).toString())));
+            memberConfigs[i] = withExport(c, c.export().withProviders(sinkProviders));
+        }
+        members = new ClusterNode[b.members];
+        serverConfigs = new Config[b.radiusServers];
+        for (int i = 0; i < b.radiusServers; i++) {
+            Map<String, String> own = new LinkedHashMap<>();
+            own.put("server.id", Integer.toString(i + 1));
+            own.put(
+                    "server.aeron.dir",
+                    directory.resolve("aeron/server-" + (i + 1)).toString());
+            if (i > 0) { // fixed ports are the first server's; the others take free ones
+                own.put("server.listen.port", "0");
+                own.put("server.auth.port", "0");
+            }
+            serverConfigs[i] = config.with(own);
+        }
+        servers = new RadiusServer[b.radiusServers];
         this.registry = NasRegistry.from(config);
     }
 
@@ -117,32 +151,52 @@ public final class EmbeddedRadiusward implements AutoCloseable {
         return new Builder();
     }
 
-    /** The port that answers Access-Requests. */
+    // ---- where to send requests -------------------------------------------------------------------------------
+
+    /** The port of the first RADIUS server that answers Access-Requests. */
     public int authPort() {
-        return server.authPort();
+        return authPort(0);
     }
 
-    /** The port that answers Accounting-Requests. */
+    /** The Access-Request port of RADIUS server {@code i} (0 is the first). */
+    public int authPort(int i) {
+        return running(i).authPort();
+    }
+
+    /** The port of the first RADIUS server that answers Accounting-Requests. */
     public int accountingPort() {
-        return server.radiusPort();
+        return accountingPort(0);
     }
 
-    /** The address both ports listen on ({@code 127.0.0.1} unless {@code server.listen.host} says otherwise). */
+    public int accountingPort(int i) {
+        return running(i).radiusPort();
+    }
+
+    /** The address the ports listen on ({@code 127.0.0.1} unless {@code server.listen.host} says otherwise). */
     public String host() {
         return host;
     }
 
     /** A client of {@link #authPort()} with the first NAS entry's secret; close it after use. */
     public RadiusClient client() {
-        return RadiusClient.udp(host, authPort(), defaultSecret);
+        return client(0);
+    }
+
+    /** A client of RADIUS server {@code i}'s Access-Request port. */
+    public RadiusClient client(int i) {
+        return RadiusClient.udp(host, authPort(i), defaultSecret);
     }
 
     /** A client of {@link #accountingPort()} with the first NAS entry's secret; close it after use. */
     public RadiusClient accountingClient() {
-        return RadiusClient.udp(host, accountingPort(), defaultSecret);
+        return accountingClient(0);
     }
 
-    /** Where the member and the RADIUS server keep their files. */
+    public RadiusClient accountingClient(int i) {
+        return RadiusClient.udp(host, accountingPort(i), defaultSecret);
+    }
+
+    /** Where the members and the RADIUS servers keep their files. */
     public Path directory() {
         return directory;
     }
@@ -152,14 +206,54 @@ public final class EmbeddedRadiusward implements AutoCloseable {
         return config;
     }
 
-    /** The RADIUS server, for what this class does not offer (statistics, CoA, reload). */
+    /** The first RADIUS server, for what this class does not offer (statistics, reload). */
     public RadiusServer server() {
-        return server;
+        return server(0);
     }
 
-    /** The cluster member, {@code null} while paused. */
+    /** RADIUS server {@code i}, {@code null} while stopped. */
+    public synchronized RadiusServer server(int i) {
+        return servers[i];
+    }
+
+    /** The first cluster member, {@code null} while stopped. */
     public ClusterNode member() {
-        return member;
+        return member(0);
+    }
+
+    public synchronized ClusterNode member(int i) {
+        return members[i];
+    }
+
+    private synchronized RadiusServer running(int i) {
+        RadiusServer s = servers[i];
+        if (s == null) {
+            throw new IllegalStateException("RADIUS server " + i + " is stopped");
+        }
+        return s;
+    }
+
+    // ---- EAP --------------------------------------------------------------------------------------------------
+
+    /**
+     * The throwaway CA that signed the server's certificate (for {@code EapLogin.trust(...)}) and every {@link
+     * #clientCertificate}; only when a TLS-based EAP method is on and no certificate is configured.
+     */
+    public X509Certificate ca() {
+        return pki().ca();
+    }
+
+    /** A client certificate for EAP-TLS with {@code name} as its common name, signed by {@link #ca()}. */
+    public ClientCertificate clientCertificate(String name) {
+        return pki().client(name);
+    }
+
+    private ThrowawayPki pki() {
+        if (pki == null) {
+            throw new IllegalStateException("no throwaway CA: turn on tls, peap, ttls or teap with eap(...), without a"
+                    + " certificate of your own (auth.eap.tls.certificate)");
+        }
+        return pki;
     }
 
     // ---- accounting --------------------------------------------------------------------------------------------
@@ -217,77 +311,211 @@ public final class EmbeddedRadiusward implements AutoCloseable {
         return Integer.toString(nasId);
     }
 
-    private AdminClient admin() {
-        if (member == null) {
-            throw new IllegalStateException("the cluster is paused");
+    private synchronized AdminClient admin() {
+        if (leader() < 0) {
+            throw new IllegalStateException("the cluster has no leader (paused, or too few members running)");
         }
         if (admin == null) {
-            admin = new AdminClient(nodeConfig.members(), nodeConfig.basePort());
+            admin = new AdminClient(memberConfigs[0].members(), memberConfigs[0].basePort());
         }
         return admin;
     }
 
-    // ---- the cluster ------------------------------------------------------------------------------------------
+    // ---- CoA and Disconnect -----------------------------------------------------------------------------------
 
     /**
-     * Stops the member: Accounting-Requests get no Accounting-Response (the NAS has to keep and resend them), and
+     * Sends a Disconnect-Request for every active session of {@code user} to the NAS it is on, through the first
+     * RADIUS server's CoA path, and waits for the answers ({@code nas.<name>.coa.port}, or {@link Builder#coaPort}).
+     */
+    public List<CoaResult> disconnect(String user) {
+        return coaResults(coa -> coa.disconnectUser(user));
+    }
+
+    /** Sends a CoA-Request with {@code items} (users-file syntax, e.g. {@code "Session-Timeout = 600"}) to every
+     * active session of {@code user}. */
+    public List<CoaResult> coa(String user, String... items) {
+        List<AttributeItem> attributes = new ArrayList<>();
+        for (String item : items) {
+            attributes.addAll(ItemParser.parse(item, "CoA attribute"));
+        }
+        return coaResults(coa -> coa.changeUser(user, attributes));
+    }
+
+    private interface CoaCall {
+        List<CoaService.SessionResult> call(CoaService coa) throws TimeoutException;
+    }
+
+    private List<CoaResult> coaResults(CoaCall call) {
+        CoaService coa = running(0).coa();
+        if (coa == null) {
+            throw new IllegalStateException("CoA is off (coa.enabled=false)");
+        }
+        try {
+            List<CoaResult> results = new ArrayList<>();
+            for (CoaService.SessionResult r : call.call(coa)) {
+                results.add(new CoaResult(
+                        r.nas(),
+                        r.acctSessionId(),
+                        r.user(),
+                        CoaResult.Outcome.valueOf(r.outcome().name()),
+                        r.errorCause()));
+            }
+            return results;
+        } catch (TimeoutException e) {
+            throw new IllegalStateException("the cluster did not list the user's sessions in time", e);
+        }
+    }
+
+    // ---- the cluster ------------------------------------------------------------------------------------------
+
+    /** The index of the member that leads, or -1 without a leader. */
+    public synchronized int leader() {
+        for (int i = 0; i < members.length; i++) {
+            if (members[i] != null && "LEADER".equals(members[i].stats().role())) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** Waits for a leader among the running members and returns its index. */
+    public int awaitLeader() {
+        await(START_TIMEOUT, "a leader", () -> leader() >= 0);
+        return leader();
+    }
+
+    /**
+     * Stops member {@code i} (it closes, as a member that is shut down; a crash is what the process-based tests
+     * cover). With three members, the other two go on; with fewer than a majority, nothing is acknowledged until one
+     * is back.
+     */
+    public synchronized void stopMember(int i) {
+        if (members[i] == null) {
+            return;
+        }
+        if (admin != null) {
+            CloseHelper.quietClose(admin);
+            admin = null;
+        }
+        CloseHelper.close(members[i]);
+        members[i] = null;
+    }
+
+    /** Starts member {@code i} again from its files; it catches up from the others. */
+    public synchronized void startMember(int i) {
+        if (members[i] == null) {
+            members[i] = ClusterNode.launch(memberConfigs[i], null);
+        }
+    }
+
+    /** Stops the member that leads and returns its index; the others elect a new leader. */
+    public int stopLeader() {
+        int leader = awaitLeader();
+        stopMember(leader);
+        return leader;
+    }
+
+    /**
+     * Stops every member: Accounting-Requests get no Accounting-Response (the NAS has to keep and resend them), and
      * logins that need the cluster (Simultaneous-Use, SIM sequence numbers) are not answered.
      */
     public synchronized void pauseCluster() {
-        if (member == null) {
-            return;
+        for (int i = 0; i < members.length; i++) {
+            stopMember(i);
         }
-        CloseHelper.quietClose(admin);
-        admin = null;
-        CloseHelper.close(member);
-        member = null;
-        await(START_TIMEOUT, "the RADIUS server noticed", () -> !server.stats().connected());
-    }
-
-    /** Starts the member again from its files; what the NAS resends is applied once. */
-    public synchronized void resumeCluster() {
-        if (member != null) {
-            return;
-        }
-        startMember();
-        await(START_TIMEOUT, "the RADIUS server connected", () -> server.stats().connected());
-    }
-
-    public synchronized boolean paused() {
-        return member == null;
-    }
-
-    private void startMember() {
-        member = ClusterNode.launch(nodeConfig, null);
         await(
                 START_TIMEOUT,
-                "the member leads",
-                () -> "LEADER".equals(member.stats().role()));
+                "the RADIUS servers noticed",
+                () -> runningServers().noneMatch(s -> s.stats().connected()));
     }
 
-    private void start(AuthPlugins plugins) {
-        startMember();
-        ServerConfig serverConfig = ServerConfig.from(config);
-        AuthConfig auth = AuthConfig.from(config);
-        server = RadiusServer.builder(serverConfig, registry)
+    /** Starts every stopped member again from its files; what the NAS resends is applied once. */
+    public void resumeCluster() {
+        synchronized (this) {
+            for (int i = 0; i < members.length; i++) {
+                startMember(i);
+            }
+        }
+        awaitLeader();
+        awaitServersConnected();
+    }
+
+    /** Whether no member runs. */
+    public synchronized boolean paused() {
+        return Stream.of(members).allMatch(Objects::isNull);
+    }
+
+    /** Stops RADIUS server {@code i}: its ports stop answering, as when a server goes away behind a NAS. */
+    public synchronized void stopServer(int i) {
+        CloseHelper.quietClose(servers[i]);
+        servers[i] = null;
+    }
+
+    /** Starts RADIUS server {@code i} again on the ports it had. */
+    public void startServer(int i) {
+        synchronized (this) {
+            if (servers[i] != null) {
+                return;
+            }
+            servers[i] = launchServer(serverConfigs[i]);
+        }
+        await(
+                START_TIMEOUT,
+                "RADIUS server " + i + " connected",
+                () -> running(i).stats().connected());
+    }
+
+    private Stream<RadiusServer> runningServers() {
+        synchronized (this) {
+            return Stream.of(servers.clone()).filter(Objects::nonNull);
+        }
+    }
+
+    private void awaitServersConnected() {
+        await(
+                START_TIMEOUT,
+                "the RADIUS servers connected",
+                () -> runningServers().allMatch(s -> s.stats().connected()));
+    }
+
+    private RadiusServer launchServer(Config c) {
+        ServerConfig serverConfig = ServerConfig.from(c);
+        AuthConfig auth = AuthConfig.from(c);
+        RadiusServer server = RadiusServer.builder(serverConfig, registry)
                 .auth(auth)
-                .handlerFactory(auth.enabled() ? RadiusServer.storeHandler(config, auth, plugins) : dictionary -> null)
-                .radsec(RadsecConfig.from(config, serverConfig.listenHost()))
-                .coa(CoaConfig.from(config))
-                .proxy(ProxyConfig.from(config))
+                .handlerFactory(auth.enabled() ? RadiusServer.storeHandler(c, auth, plugins) : dictionary -> null)
+                .radsec(RadsecConfig.from(c, serverConfig.listenHost()))
+                .coa(CoaConfig.from(c))
+                .proxy(ProxyConfig.from(c))
                 .start();
-        server.rejectDelay(RadiusServer.rejectDelay(config));
-        await(START_TIMEOUT, "the RADIUS server connected", () -> server.stats().connected());
+        server.rejectDelay(RadiusServer.rejectDelay(c));
+        return server;
+    }
+
+    private void start() {
+        for (int i = 0; i < members.length; i++) {
+            startMember(i);
+        }
+        awaitLeader();
+        for (int i = 0; i < servers.length; i++) {
+            servers[i] = launchServer(serverConfigs[i]);
+            // a restart takes the same ports, so a NAS keeps sending to the server it knows
+            serverConfigs[i] = serverConfigs[i].with(Map.of(
+                    "server.listen.port", Integer.toString(servers[i].radiusPort()),
+                    "server.auth.port", Integer.toString(servers[i].authPort())));
+        }
+        awaitServersConnected();
         // the newest state version (Simultaneous-Use, session identities, SIM sequence numbers) from the start: the
-        // member reports what it supports every log.purge.interval and the cluster activates it (ADR 0005)
-        int newest = nodeConfig.serviceSettings().supportedVersion();
+        // members report what they support every log.purge.interval and the cluster activates it (ADR 0005)
+        int newest = memberConfigs[0].serviceSettings().supportedVersion();
         await(
                 START_TIMEOUT,
                 "state version " + newest + " active",
                 () -> admin().state().activeVersion() >= newest);
         LOG.warn(
-                "embedded radiusward for development and tests, NOT for production: one member, nothing replicated or"
-                        + " synced to disk; Access-Requests on {}:{}, Accounting-Requests on {}:{}, files in {}",
+                "embedded radiusward for development and tests, NOT for production: {} member(s) on one machine,"
+                        + " nothing synced to disk; Access-Requests on {}:{}, Accounting-Requests on {}:{}, files in {}",
+                members.length,
                 host,
                 authPort(),
                 host,
@@ -299,9 +527,14 @@ public final class EmbeddedRadiusward implements AutoCloseable {
     public synchronized void close() {
         CloseHelper.quietClose(admin);
         admin = null;
-        CloseHelper.quietClose(server);
-        CloseHelper.quietClose(member);
-        member = null;
+        for (int i = 0; i < servers.length; i++) {
+            CloseHelper.quietClose(servers[i]);
+            servers[i] = null;
+        }
+        for (int i = 0; i < members.length; i++) {
+            CloseHelper.quietClose(members[i]);
+            members[i] = null;
+        }
         owned.forEach(CloseHelper::quietClose);
         if (deleteDirectory) {
             delete(directory);
@@ -399,9 +632,14 @@ public final class EmbeddedRadiusward implements AutoCloseable {
         private final List<CredentialVerifier> verifiers = new ArrayList<>();
         private final Map<String, AccountingSink> sinks = new LinkedHashMap<>();
         private final RecordingSink recorder = new RecordingSink();
+        private final List<String> eap = new ArrayList<>();
+        private Map<String, String> generated = Map.of();
         private Path directory;
         private int authPort;
         private int accountingPort;
+        private int coaPort;
+        private int members = 1;
+        private int radiusServers = 1;
 
         private Builder() {}
 
@@ -411,15 +649,46 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             return this;
         }
 
-        /** The port for Access-Requests; by default a free one. */
+        /**
+         * How many cluster members (1 by default): 3 or 5 to test what a NAS or an application sees when a member
+         * stops ({@link EmbeddedRadiusward#stopMember}, {@link EmbeddedRadiusward#stopLeader}). An even number is
+         * refused: two members survive no failure, four no more than three.
+         */
+        public Builder members(int members) {
+            if (members < 1 || members > 7 || members % 2 == 0) {
+                throw new IllegalArgumentException("members: 1, 3, 5 or 7, got " + members);
+            }
+            this.members = members;
+            return this;
+        }
+
+        /** How many RADIUS servers (1 by default), each with its own ports ({@link EmbeddedRadiusward#authPort(int)}). */
+        public Builder radiusServers(int radiusServers) {
+            if (radiusServers < 1 || radiusServers > 8) {
+                throw new IllegalArgumentException("radiusServers: 1 to 8, got " + radiusServers);
+            }
+            this.radiusServers = radiusServers;
+            return this;
+        }
+
+        /** The first RADIUS server's port for Access-Requests; by default a free one. */
         public Builder authPort(int port) {
             this.authPort = port;
             return this;
         }
 
-        /** The port for Accounting-Requests; by default a free one. */
+        /** The first RADIUS server's port for Accounting-Requests; by default a free one. */
         public Builder accountingPort(int port) {
             this.accountingPort = port;
+            return this;
+        }
+
+        /**
+         * Where the NAS entries listen for CoA and Disconnect-Requests ({@code nas.<name>.coa.port}, 3799 otherwise),
+         * e.g. a {@code CoaListener}'s port.
+         */
+        public Builder coaPort(int port) {
+            this.coaPort = port;
             return this;
         }
 
@@ -442,14 +711,46 @@ public final class EmbeddedRadiusward implements AutoCloseable {
          * "Session-Timeout = 3600"}. PAP, CHAP, MS-CHAP and every EAP method that needs a password work with it.
          */
         public Builder user(String name, String password, String... replyItems) {
+            return user(name, List.of(new AttributeItem("Cleartext-Password", ":=", password)), replyItems);
+        }
+
+        /**
+         * A SIM subscriber for EAP-SIM, EAP-AKA and EAP-AKA′ ({@code eap("sim", "aka", "aka-prime")}): its IMSI, the
+         * key Ki and the operator's OPc (16 bytes each, as the SIM card holds them); sequence numbers come from the
+         * cluster as in production.
+         */
+        public Builder simUser(String imsi, byte[] ki, byte[] opc, String... replyItems) {
+            if (ki.length != 16 || opc.length != 16) {
+                throw new IllegalArgumentException("Ki and OPc are 16 bytes each");
+            }
+            HexFormat hex = HexFormat.of();
+            return user(
+                    imsi,
+                    List.of(
+                            new AttributeItem("SIM-Ki", ":=", "0x" + hex.formatHex(ki)),
+                            new AttributeItem("SIM-OPc", ":=", "0x" + hex.formatHex(opc))),
+                    replyItems);
+        }
+
+        private Builder user(String name, List<AttributeItem> check, String... replyItems) {
             List<AttributeItem> reply = new ArrayList<>();
             for (String item : replyItems) {
                 reply.addAll(ItemParser.parse(item, "reply item of " + name));
             }
-            users.put(
-                    name.toLowerCase(java.util.Locale.ROOT),
-                    new UserRecord(
-                            name, List.of(new AttributeItem("Cleartext-Password", ":=", password)), reply, List.of()));
+            users.put(name.toLowerCase(Locale.ROOT), new UserRecord(name, check, reply, List.of()));
+            return this;
+        }
+
+        /**
+         * EAP methods to offer, in order of preference ({@code auth.eap.methods}): {@code tls}, {@code peap}, {@code
+         * ttls}, {@code teap}, {@code pwd}, {@code sim}, {@code aka}, {@code aka-prime}, {@code md5}. With a TLS-based
+         * one and no certificate of your own, a throwaway CA signs the server's certificate ({@link
+         * EmbeddedRadiusward#ca()}).
+         */
+        public Builder eap(String... methods) {
+            for (String m : methods) {
+                eap.add(m.trim().toLowerCase(Locale.ROOT));
+            }
             return this;
         }
 
@@ -490,7 +791,8 @@ public final class EmbeddedRadiusward implements AutoCloseable {
 
         /**
          * The developer's own sink (export-api): gets every committed batch with the contract production sinks have
-         * (at least once, in commit order; its stored position decides where it resumes).
+         * (at least once, in commit order; its stored position decides where it resumes). With several members, the
+         * one that holds the sink's lease writes, as in production.
          */
         public Builder sink(AccountingSink sink) {
             return sink("sink-" + (sinks.size() + 1), sink);
@@ -514,9 +816,16 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             return this;
         }
 
-        /** Starts the member and the RADIUS server; returns once the member leads and the RADIUS server is connected. */
+        /**
+         * Starts the members and the RADIUS servers; returns once a member leads, every RADIUS server is connected and
+         * the newest state version is active.
+         */
         public EmbeddedRadiusward start() {
             checkJvmOption();
+            // as the server's main does: TLS sessions the server keeps, so EAP resumption works and is checked again
+            if (System.getProperty("jdk.tls.server.enableSessionTicketExtension") == null) {
+                System.setProperty("jdk.tls.server.enableSessionTicketExtension", "false");
+            }
             boolean temporary = directory == null;
             Path dir;
             try {
@@ -524,11 +833,13 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             } catch (IOException e) {
                 throw new UncheckedIOException(e);
             }
-            int basePort = Ports.reserveBase();
+            int basePort = Ports.reserveBase(members);
             EmbeddedRadiusward radius = null;
             try {
-                radius = new EmbeddedRadiusward(this, Config.of(values(dir, basePort)), dir, temporary);
-                radius.start(plugins());
+                ThrowawayPki pki = needsPki() ? ThrowawayPki.create(dir.resolve("pki")) : null;
+                generated = pki == null ? Map.of() : pki.settings();
+                radius = new EmbeddedRadiusward(this, Config.of(values(dir, basePort)), dir, temporary, pki);
+                radius.start();
                 return radius;
             } catch (RuntimeException | Error e) {
                 if (radius != null) {
@@ -542,24 +853,28 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             }
         }
 
+        private boolean needsPki() {
+            return eap.stream().anyMatch(TLS_METHODS::contains) && !settings.containsKey("auth.eap.tls.certificate");
+        }
+
         /** The embedded defaults, then what the builder's methods say, then {@link #setting}s. */
         Map<String, String> values(Path dir, int basePort) {
             Map<String, String> v = new LinkedHashMap<>();
             v.put("profile", "small");
             v.put("cluster.node.id", "0");
-            v.put("cluster.members", "localhost");
+            v.put("cluster.members", String.join(", ", java.util.Collections.nCopies(members, "localhost")));
             v.put("cluster.base.port", Integer.toString(basePort));
             v.put("cluster.data.dir", dir.resolve("data").toString());
-            v.put("cluster.aeron.dir", dir.resolve("aeron/member").toString());
+            v.put("cluster.aeron.dir", dir.resolve("aeron/member-0").toString());
             v.put("cluster.disk.min.free", "0");
-            v.put("log.purge.interval", "1s"); // the member reports its state version this often
             v.put("archive.file.sync.level", "0"); // nothing to survive: no fsync
             v.put("archive.segment.length", "8m"); // instead of 128 MB preallocated on disk
+            v.put("log.purge.interval", "1s"); // the members report their state version this often
             v.put("service.max.sessions", "10000");
             v.put("server.id", "1");
             v.put("server.listen.host", "127.0.0.1");
             v.put("server.listen.port", Integer.toString(accountingPort));
-            v.put("server.aeron.dir", dir.resolve("aeron/server").toString());
+            v.put("server.aeron.dir", dir.resolve("aeron/server-1").toString());
             v.put("server.pending.capacity", "1024");
             v.put("server.auth.enabled", "true");
             v.put("server.auth.port", Integer.toString(authPort));
@@ -568,6 +883,7 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             v.put("auth.plugins.dir", dir.resolve("plugins").toString());
             v.put("export.plugins.dir", dir.resolve("plugins").toString());
             v.put("dictionary.dir", dir.resolve("dictionary.d").toString());
+            v.put("coa.enabled", "true");
             if (nas.isEmpty()) {
                 v.put("nas." + DEFAULT_NAS + ".address", "127.0.0.1");
                 v.put("nas." + DEFAULT_NAS + ".secret", DEFAULT_SECRET);
@@ -576,6 +892,18 @@ public final class EmbeddedRadiusward implements AutoCloseable {
                 v.put("nas." + name + ".address", entry[0]);
                 v.put("nas." + name + ".secret", entry[1]);
             });
+            if (coaPort > 0) {
+                for (String name : nas.isEmpty() ? List.of(DEFAULT_NAS) : List.copyOf(nas.keySet())) {
+                    v.put("nas." + name + ".coa.port", Integer.toString(coaPort));
+                }
+            }
+            if (!eap.isEmpty()) {
+                v.put("auth.eap.methods", String.join(", ", eap));
+                if (eap.contains("teap")) {
+                    v.put("auth.eap.teap.inner", "mschapv2, gtc, basic");
+                }
+            }
+            v.putAll(generated);
             List<String> storeNames = new ArrayList<>();
             if (!users.isEmpty()) {
                 storeNames.add("users");
@@ -621,7 +949,7 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             providers.add(IdentityStoreProvider.of("embedded-users", context -> new IdentityStore() {
                 @Override
                 public Optional<UserRecord> lookup(String userName) {
-                    return Optional.ofNullable(byName.get(userName.toLowerCase(java.util.Locale.ROOT)));
+                    return Optional.ofNullable(byName.get(userName.toLowerCase(Locale.ROOT)));
                 }
 
                 @Override

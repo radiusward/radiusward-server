@@ -47,6 +47,17 @@
             <artifactId>radiusward-client</artifactId>
         </dependency>
         <dependency>
+            <!-- the throwaway CA for EAP (ThrowawayPki): certificates the JDK cannot build itself -->
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>radiusward-test-support</artifactId>
             <scope>test</scope>
