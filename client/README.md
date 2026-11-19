@@ -62,12 +62,24 @@ r.serverProved();  r.cryptoBound();                               // MS-CHAPv2's
 | `EapLogin.ttls(user, password)` | EAP-TTLS with PAP, CHAP, MS-CHAP or MS-CHAPv2 inside |
 | `EapLogin.teap(user, password)` | TEAP with Basic-Password-Auth or an inner EAP-GTC, every Crypto-Binding checked and answered |
 | `EapLogin.pwd(user, password)` | EAP-pwd (group 19): the server's Confirm checked first, so a wrong password stops the device with an exception |
+| `EapLogin.sim(card)`, `aka(card)`, `akaPrime(card)` | EAP-SIM, EAP-AKA and EAP-AKA′ with a simulated `SimCard`: the permanent identity (`1`, `0` or `6` before the IMSI, `realm(...)` after it), MILENAGE, the network checked (AUTN, the server's AT_MAC) |
 
 A request of another method is answered with a Nak naming the login's. `trust(...)` sets the CAs the server must chain
 to (or a self-signed server certificate itself); every TLS-based login needs it. TLS 1.2 or 1.3 (`tlsProtocol`), fragments of `fragmentSize`.
-EAP-SIM/AKA follows ([plan](../docs/plans/embedded.md), E2b-3).
+
+A `SimCard` holds the IMSI, Ki and OPc (or `SimCard.withOp(imsi, ki, op)`), and like a USIM the highest sequence number
+it accepted: reuse the card across logins to see fresh sequence numbers, set `sqn(...)` ahead of the network to see a
+resynchronisation. A card that does not trust the network answers with Authentication-Reject or Client-Error, so the
+login ends rejected. AKA needs the cluster's sequence numbers (state version 8), so test it on a cluster.
+
+```java
+SimCard card = new SimCard("262011000000001", ki, opc);
+EapResult r = client.eap(EapLogin.aka(card));
+r.serverProved();  card.sqn();                                    // the network's AUTN and MAC; the SQN accepted
+```
 
 | Class | Role |
 |---|---|
+| `SimCard` | a simulated SIM or USIM: IMSI, Ki, OPc and the SQN it accepted |
 | `EapLogin`, `EapResult` | what the device logs in with; how it ended, with rounds, reply, keys and the checks of the server |
 | `EapSupplicant`, `TlsPeer` | the conversation; the JDK's TLS client in RFC 5216 framing (package-private) |

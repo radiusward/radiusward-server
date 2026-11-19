@@ -1,6 +1,6 @@
 # Plan: radiusward as a library for development and tests
 
-Status: designed 2026-11-18; E1, E2, E2a, E2b-1 and E2b-2 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
+Status: designed 2026-11-18; E1, E2, E2a and E2b (the EAP supplicant) done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
 
 ## Goal
 
@@ -221,7 +221,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | E2a ✅ | Accounting in `radiusward-client`: `AccountingSession` (Start, Interim, Stop, On, Off), retransmission, fixture replay, a CoA listener | its tests; the e2e and harness tests use it |
 | E2b-1 ✅ | `radiusward-eap` (EAP primitives moved from the server, shared); the EAP supplicant in `radiusward-client`: EAP-MD5, EAP-TLS, PEAP (MS-CHAPv2, GTC, crypto-binding), TTLS (PAP, CHAP, MS-CHAP, MS-CHAPv2), results with reply items and keys | each method against the server (`EapSupplicantIT`); `ServerAuthIT`'s EAP-TLS uses it |
 | E2b-2 ✅ | TEAP (Basic-Password-Auth, inner EAP-GTC, crypto-binding) and EAP-pwd in the supplicant; `TeapTlv` and `EapPwdKeys` shared in `radiusward-eap` | each method against the server (`EapSupplicantIT`) |
-| E2b-3 | EAP-SIM, EAP-AKA and EAP-AKA′ with a simulated SIM | each method against the server, sequence numbers through a member |
+| E2b-3 ✅ | EAP-SIM, EAP-AKA and EAP-AKA′ with a simulated SIM (`SimCard`: IMSI, Ki, OPc, its SQN) | each method against a server on a cluster, sequence numbers and a resynchronisation (`SimSupplicantIT`) |
 | E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |
 | E4 | `radiusward-embedded`: builder, one or three members and one or more RADIUS servers with failover controls, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
