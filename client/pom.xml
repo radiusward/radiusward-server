@@ -8,24 +8,22 @@
         <groupId>io.radiusward</groupId>
         <artifactId>radiusward-parent</artifactId>
         <version>0.1.0-SNAPSHOT</version>
-        <relativePath>../../pom.xml</relativePath>
+        <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>radiusward-test-packets</artifactId>
-    <name>radiusward :: test packets</name>
-    <description>Signed RADIUS requests and replies for every module's tests; test infrastructure, never shipped</description>
-
-    <properties>
-        <!-- not published (ADR 0068) -->
-        <maven.deploy.skip>true</maven.deploy.skip>
-        <maven.source.skip>true</maven.source.skip>
-        <maven.javadoc.skip>true</maven.javadoc.skip>
-    </properties>
+    <artifactId>radiusward-client</artifactId>
+    <name>radiusward :: client</name>
+    <description>A RADIUS client for development and tests: Access-Requests with PAP, CHAP and MS-CHAPv2, accounting, Status-Server, retransmission and verified answers, and a builder for signed packets</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>radiusward-codec</artifactId>
+        </dependency>
+        <dependency>
+            <!-- Md4 for MS-CHAP -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
     </dependencies>
 

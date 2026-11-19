@@ -4,11 +4,11 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -109,7 +109,7 @@ final class FakeHomeServer implements AutoCloseable {
     }
 
     private byte[] answer(RadiusPacket request, byte[] bytes, int code, boolean withMa) {
-        TestPacket answer = TestPacket.reply(code, bytes);
+        PacketBuilder answer = PacketBuilder.reply(code, bytes);
         if (withMa) {
             answer.messageAuthenticator();
         }

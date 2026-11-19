@@ -18,7 +18,7 @@
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radiusward-test-packets</artifactId>
+            <artifactId>radiusward-client</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

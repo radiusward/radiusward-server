@@ -9,12 +9,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.exporter.ExportConfig;
 import io.radiusward.exporter.SinkConfig;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -118,7 +118,7 @@ class ProxyAccountingIT {
                 if (forwarded.stream().noneMatch(r -> Arrays.equals(r, request))) {
                     forwarded.add(request);
                 }
-                byte[] out = TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
+                byte[] out = PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
                         .secret(HOME_SECRET)
                         .build();
                 home.send(new DatagramPacket(out, out.length, in.getSocketAddress()));

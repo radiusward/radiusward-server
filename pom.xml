@@ -51,7 +51,6 @@
         <module>radius-dictionary-freeradius</module>
         <module>radius-codegen</module>
         <module>radius-codec</module>
-        <module>testing/test-packets</module>
         <module>protocol</module>
         <module>common</module>
         <module>cluster-service</module>
@@ -62,6 +61,7 @@
         <module>sinks/radius</module>
         <module>cluster-node</module>
         <module>auth-api</module>
+        <module>client</module>
         <module>stores/file</module>
         <module>stores/sql</module>
         <module>testing/test-images</module>
@@ -207,7 +207,7 @@
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>radiusward-test-packets</artifactId>
+                <artifactId>radiusward-client</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

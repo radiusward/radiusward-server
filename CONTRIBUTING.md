@@ -92,7 +92,6 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `distribution` | `radiusward.jar`: `cluster-node`, `server`, `cluster-backup`, `cluster-restore`, `radclient`, `admin`, `probe`, `cluster-tool` |
 | `testing/test-harness` | `LocalCluster` (and its builder), `DevCluster`; `FakeNas` and `AccountingRequest` for tests that send accounting |
 | `testing/test-support` | `Reports` (steps for the published reports), `Await`, `Ports`: for every module's integration tests, without dependencies on radiusward |
-| `testing/test-packets` | `TestPacket`: signed RADIUS requests and replies for every module's tests ([strategy](docs/testing/strategy.md#packets-in-tests)) |
 | `testing/test-images` | `TestImages`: the prebuilt test images from GHCR, built locally when not published |
 | `testing/interop-debs` | the interop tests' server packages as `.deb` files for CI, installed without a package mirror |
 | `testing/e2e-tests` | Process-based end-to-end tests (`-Pe2e`) |
@@ -101,6 +100,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `radius-dictionary-freeradius` | Bundled FreeRADIUS dictionaries (CC BY 4.0, unmodified, pinned commit) — resources only |
 | `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder, Access-Request credentials (PAP, CHAP) and Access replies; generated `io.radiusward.radius.codec.attributes` |
+| `client` | `radiusward-client`: `RadiusClient` (UDP, retransmission, verified answers; PAP, CHAP, MS-CHAPv2, accounting, Status-Server), `PacketBuilder` (signed requests and replies) and `Credentials`, for developers' tests and every module's tests ([strategy](docs/testing/strategy.md#packets-in-tests)) |
 | `tools/radclient` | CLI test client (`acct`, `auth`, `replay`, `decode [--fixture]`, `load` with an optional Access-Request mix), executable jar |
 | `tools/admin-cli` | `AdminClient`; `admin state`, `verify-acks` (acknowledged events vs replicated state), `sinks`, `resync`, `activate-version`, `export-schema`, `verify-export`, `disconnect`, `coa` |
 | `testing/benchmarks` | JMH, only with `-Pbench` |

@@ -10,9 +10,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -158,13 +158,13 @@ class ProxyRadsecIT {
     private static final Duration MAX = Duration.ofSeconds(10);
 
     private static byte[] request(int identifier) {
-        return TestPacket.accessRequest(identifier)
+        return PacketBuilder.accessRequest(identifier)
                 .attribute(1, "alice@partner.example")
                 .build();
     }
 
     private static byte[] reply(byte[] request, String message) {
-        return TestPacket.reply(RadiusCode.ACCESS_ACCEPT, request)
+        return PacketBuilder.reply(RadiusCode.ACCESS_ACCEPT, request)
                 .secret("radsec")
                 .attribute(18, message)
                 .build();
@@ -327,7 +327,7 @@ class ProxyRadsecIT {
         try (HomePeers.Loop loop = new HomePeers.Loop()) {
             TlsClient tls = tlsClient(pki, home);
             tls.connect(loop.selector);
-            byte[] early = TestPacket.accessRequest(4)
+            byte[] early = PacketBuilder.accessRequest(4)
                     .attribute(18, new byte[253])
                     .attribute(18, new byte[253])
                     .build();
@@ -339,7 +339,7 @@ class ProxyRadsecIT {
                     .as("what waits for the handshake is bounded: then requests are dropped")
                     .isBetween(1, 999);
             loop.until(tls::established, MAX);
-            byte[] packet = TestPacket.accessRequest(3)
+            byte[] packet = PacketBuilder.accessRequest(3)
                     .attribute(18, new byte[253])
                     .attribute(18, new byte[253])
                     .attribute(18, new byte[253])

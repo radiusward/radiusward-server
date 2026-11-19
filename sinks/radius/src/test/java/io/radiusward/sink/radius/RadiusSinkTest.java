@@ -7,13 +7,13 @@ package io.radiusward.sink.radius;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.export.Batch;
 import io.radiusward.export.ExportEvent;
 import io.radiusward.export.SinkContext;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.ByteArrayOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -66,7 +66,7 @@ class RadiusSinkTest {
                     if (silent.get()) {
                         continue;
                     }
-                    byte[] out = TestPacket.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
+                    byte[] out = PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, request)
                             .secret(SECRET)
                             .build();
                     socket.send(new DatagramPacket(out, out.length, in.getSocketAddress()));

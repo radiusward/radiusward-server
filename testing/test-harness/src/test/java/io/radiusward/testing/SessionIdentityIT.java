@@ -9,8 +9,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.server.UserKeys;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -114,7 +114,7 @@ class SessionIdentityIT {
     }
 
     static byte[] start(int id, String sessionId, String user, String mac) {
-        return TestPacket.accountingRequest(id)
+        return PacketBuilder.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, sessionId)
                 .attribute(1, user)

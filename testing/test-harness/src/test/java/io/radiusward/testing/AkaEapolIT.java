@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.CoaConfig;
@@ -18,7 +19,6 @@ import io.radiusward.server.ProxyConfig;
 import io.radiusward.server.RadiusServer;
 import io.radiusward.server.RadsecConfig;
 import io.radiusward.testing.images.TestImages;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -295,7 +295,7 @@ class AkaEapolIT {
 
     /** One Accounting-Request, so the log has a recording and members report their state versions. */
     static void warmUp(int port) throws Exception {
-        byte[] request = TestPacket.accountingRequest(1)
+        byte[] request = PacketBuilder.accountingRequest(1)
                 .uint32(40, 1)
                 .attribute(44, "warm-up")
                 .attribute(1, "nobody")

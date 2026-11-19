@@ -7,6 +7,7 @@ package io.radiusward.tools.radclient;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.radiusward.client.Credentials;
 import io.radiusward.radius.dictionary.DictionaryLoader;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -468,16 +469,16 @@ class RadClientTest {
         HexFormat hex = HexFormat.of();
         assertThat(io.radiusward.auth.Md4.digest("clientPass".getBytes(StandardCharsets.UTF_16LE)))
                 .isEqualTo(hex.parseHex("44ebba8d5312b8d611474411f56989ae"));
-        assertThat(AccessCredentials.ntResponse(
+        assertThat(Credentials.ntResponse(
                         hex.parseHex("5b5d7c7d7b3f2f3e3c2c602132262628"),
                         hex.parseHex("21402324255e262a28295f2b3a337c7e"),
                         "User",
                         "clientPass"))
                 .isEqualTo(hex.parseHex("82309ecd8d708b5ea08faa3981cd83544233114a3d85d6df"));
-        assertThat(AccessCredentials.chapPassword(1, "p".getBytes(StandardCharsets.US_ASCII), new byte[16]))
+        assertThat(Credentials.chapPassword(1, "p".getBytes(StandardCharsets.US_ASCII), new byte[16]))
                 .hasSize(17)
                 .startsWith((byte) 1);
-        assertThat(AccessCredentials.Method.parse("MS-CHAPv2")).isEqualTo(AccessCredentials.Method.MSCHAPV2);
+        assertThat(Credentials.Method.parse("MS-CHAPv2")).isEqualTo(Credentials.Method.MSCHAPV2);
     }
 
     @Test
@@ -523,8 +524,7 @@ class RadClientTest {
         assertThat(defaults.users()).containsExactly("load");
         assertThat(defaults.password()).isEqualTo("load");
         assertThat(defaults.methods())
-                .containsExactly(
-                        AccessCredentials.Method.PAP, AccessCredentials.Method.CHAP, AccessCredentials.Method.MSCHAPV2);
+                .containsExactly(Credentials.Method.PAP, Credentials.Method.CHAP, Credentials.Method.MSCHAPV2);
         assertThat(defaults.rejectRatio()).isEqualTo(0.05);
         AccessLoad.Settings given = RadClient.accessLoad(
                 RadClient.Options.parse(new String[] {
@@ -537,7 +537,7 @@ class RadClientTest {
                 .extracting(java.net.InetSocketAddress::getPort)
                 .containsExactly(11812, 1812);
         assertThat(given.users()).containsExactly("alice", "bob");
-        assertThat(given.methods()).containsExactly(AccessCredentials.Method.CHAP);
+        assertThat(given.methods()).containsExactly(Credentials.Method.CHAP);
         for (String[] bad : List.of(
                 new String[] {"load", "--secret", "s", "--access-rate", "x"},
                 new String[] {"load", "--secret", "s", "--access-rate", "1", "--reject-ratio", "2"},

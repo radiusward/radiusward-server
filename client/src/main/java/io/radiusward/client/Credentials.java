@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.tools.radclient;
+package io.radiusward.client;
 
 import io.radiusward.auth.Md4;
 import io.radiusward.radius.codec.AccessRequests;
@@ -20,21 +20,24 @@ import org.agrona.concurrent.UnsafeBuffer;
 
 /**
  * The credential attributes of an Access-Request, as a NAS writes them: PAP (RFC 2865 §5.2), CHAP (RFC 1994, RFC 2865
- * §5.3) and MS-CHAPv2 (RFC 2759, RFC 2548 §2.3). The MD4 and DES of MS-CHAP are fixed by the protocol.
+ * §5.3) and MS-CHAPv2 (RFC 2759, RFC 2548 §2.3). The MD4 and DES of MS-CHAP are fixed by the protocol. Used by
+ * {@link PacketBuilder} and by radclient, which writes them into its own encoder.
  */
-final class AccessCredentials {
+public final class Credentials {
 
-    enum Method {
+    /** The ways an Access-Request can carry a password. */
+    public enum Method {
         PAP,
         CHAP,
         MSCHAPV2;
 
-        static Method parse(String name) {
+        /** {@code pap}, {@code chap} or {@code mschapv2} (also {@code mschap2}, {@code ms-chapv2}), in any case. */
+        public static Method parse(String name) {
             return switch (name.trim().toLowerCase(Locale.ROOT)) {
                 case "pap" -> PAP;
                 case "chap" -> CHAP;
                 case "mschapv2", "mschap2", "ms-chapv2" -> MSCHAPV2;
-                default -> throw new UsageException("unknown method " + name + " (pap|chap|mschapv2)");
+                default -> throw new IllegalArgumentException("unknown method " + name + " (pap|chap|mschapv2)");
             };
         }
     }
@@ -44,12 +47,12 @@ final class AccessCredentials {
     private final UnsafeBuffer encrypted = new UnsafeBuffer(new byte[AccessRequests.MAX_PASSWORD]);
 
     /** @param random the source of challenges; a {@link java.security.SecureRandom} outside tests and load */
-    AccessCredentials(Random random) {
+    public Credentials(Random random) {
         this.random = random;
     }
 
     /** Writes User-Password, CHAP-Password and CHAP-Challenge, or MS-CHAP-Challenge and MS-CHAP2-Response. */
-    void write(
+    public void write(
             RadiusPacketEncoder encoder,
             byte[] requestAuthenticator,
             String user,
@@ -69,7 +72,8 @@ final class AccessCredentials {
                         encrypted,
                         0);
                 if (length < 0) {
-                    throw new UsageException("a PAP password is at most " + AccessRequests.MAX_PASSWORD + " bytes");
+                    throw new IllegalArgumentException(
+                            "a PAP password is at most " + AccessRequests.MAX_PASSWORD + " bytes");
                 }
                 encoder.attribute(AccessRequests.USER_PASSWORD, encrypted, 0, length);
             }
@@ -100,7 +104,7 @@ final class AccessCredentials {
     }
 
     /** CHAP Identifier, then {@code MD5(Identifier + password + challenge)}. */
-    static byte[] chapPassword(int identifier, byte[] password, byte[] challenge) {
+    public static byte[] chapPassword(int identifier, byte[] password, byte[] challenge) {
         MessageDigest md5 = digest("MD5");
         md5.update((byte) identifier);
         md5.update(password);
@@ -112,7 +116,7 @@ final class AccessCredentials {
     }
 
     /** RFC 2759 GenerateNTResponse: ChallengeHash, then ChallengeResponse with the NT password hash. */
-    static byte[] ntResponse(byte[] authenticatorChallenge, byte[] peerChallenge, String user, String password) {
+    public static byte[] ntResponse(byte[] authenticatorChallenge, byte[] peerChallenge, String user, String password) {
         MessageDigest sha = digest("SHA-1");
         sha.update(peerChallenge);
         sha.update(authenticatorChallenge);

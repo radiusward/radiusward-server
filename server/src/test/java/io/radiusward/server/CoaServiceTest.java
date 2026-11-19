@@ -9,10 +9,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.management.PrometheusWriter;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.ByteArrayOutputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -180,7 +180,9 @@ class CoaServiceTest {
 
     private void answer(Received r, int code) throws Exception {
         nas.send(
-                ByteBuffer.wrap(TestPacket.reply(code, r.bytes()).secret(SECRET).build()), r.from());
+                ByteBuffer.wrap(
+                        PacketBuilder.reply(code, r.bytes()).secret(SECRET).build()),
+                r.from());
     }
 
     private DynamicAuthorization.Result await(CompletableFuture<DynamicAuthorization.Result> f) throws Exception {

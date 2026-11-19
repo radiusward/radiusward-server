@@ -147,7 +147,7 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radiusward-test-packets</artifactId>
+            <artifactId>radiusward-client</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>

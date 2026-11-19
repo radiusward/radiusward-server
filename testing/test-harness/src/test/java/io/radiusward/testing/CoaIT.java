@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.ManagementServer;
@@ -23,7 +24,6 @@ import io.radiusward.server.RadiusServer;
 import io.radiusward.server.RadsecClient;
 import io.radiusward.server.RadsecConfig;
 import io.radiusward.server.TestPki;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminMain;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -179,7 +179,7 @@ class CoaIT {
     }
 
     static byte[] ack(byte[] request, byte[] secret) {
-        return TestPacket.reply(request[0] + 1, request).secret(secret).build();
+        return PacketBuilder.reply(request[0] + 1, request).secret(secret).build();
     }
 
     private HttpResponse<String> post(String path, String body, String token) throws Exception {
@@ -436,7 +436,7 @@ class CoaIT {
 
     /** A CoA or Disconnect-Request from a home server: user, session, its Proxy-State, Message-Authenticator. */
     static byte[] homeRequest(int id, int code, String user, String sessionId, byte[] secret) {
-        return TestPacket.request(code, id)
+        return PacketBuilder.request(code, id)
                 .attribute(1, user)
                 .attribute(44, sessionId)
                 .attribute(33, "home-state")
@@ -459,7 +459,7 @@ class CoaIT {
     }
 
     static byte[] accounting(int id, String sessionId, String user, byte[] secret) {
-        return TestPacket.accountingRequest(id)
+        return PacketBuilder.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, sessionId)
                 .attribute(1, user)

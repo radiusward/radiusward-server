@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.testing.packets;
+package io.radiusward.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -16,7 +16,7 @@ import java.util.Arrays;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.Test;
 
-class TestPacketTest {
+class PacketBuilderTest {
 
     private static final byte[] SECRET = "testing123".getBytes(StandardCharsets.US_ASCII);
 
@@ -29,7 +29,7 @@ class TestPacketTest {
 
     @Test
     void accountingRequestsAreSignedWithTheSecret() {
-        byte[] bytes = TestPacket.accountingRequest(300)
+        byte[] bytes = PacketBuilder.accountingRequest(300)
                 .uint32(40, 1)
                 .attribute(44, "s-1")
                 .messageAuthenticator()
@@ -49,7 +49,7 @@ class TestPacketTest {
     @Test
     void coaAndDisconnectRequestsAreSignedLikeAccounting() {
         for (int code : new int[] {RadiusCode.COA_REQUEST, RadiusCode.DISCONNECT_REQUEST}) {
-            RadiusPacket p = wrap(TestPacket.request(code, 1)
+            RadiusPacket p = wrap(PacketBuilder.request(code, 1)
                     .attribute(1, "alice")
                     .secret("testing123")
                     .build());
@@ -63,7 +63,7 @@ class TestPacketTest {
     void accessRequestsHideThePasswordAndCarryAValidMessageAuthenticator() {
         byte[] fixed = new byte[16];
         Arrays.fill(fixed, (byte) 7);
-        RadiusPacket p = wrap(TestPacket.accessRequest(9)
+        RadiusPacket p = wrap(PacketBuilder.accessRequest(9)
                 .authenticator(fixed)
                 .messageAuthenticator()
                 .attribute(1, "alice")
@@ -85,16 +85,18 @@ class TestPacketTest {
 
     @Test
     void anAccessRequestWithoutSignatureNeedsNoSecretAndGetsARandomAuthenticator() {
-        byte[] a = TestPacket.accessRequest(1).attribute(1, "bob").build();
-        byte[] b = TestPacket.accessRequest(1).attribute(1, "bob").build();
+        byte[] a = PacketBuilder.accessRequest(1).attribute(1, "bob").build();
+        byte[] b = PacketBuilder.accessRequest(1).attribute(1, "bob").build();
         assertThat(wrap(a).hasMessageAuthenticator()).isFalse();
         assertThat(Arrays.copyOfRange(a, 4, 20)).isNotEqualTo(Arrays.copyOfRange(b, 4, 20));
     }
 
     @Test
     void statusServerIsSignedByItsMessageAuthenticator() {
-        RadiusPacket p = wrap(
-                TestPacket.statusServer(4).messageAuthenticator().secret(SECRET).build());
+        RadiusPacket p = wrap(PacketBuilder.statusServer(4)
+                .messageAuthenticator()
+                .secret(SECRET)
+                .build());
         assertThat(p.code()).isEqualTo(RadiusCode.STATUS_SERVER);
         assertThat(new RadiusAuthenticator().verifyRequestMessageAuthenticator(p, SECRET))
                 .isTrue();
@@ -102,8 +104,8 @@ class TestPacketTest {
 
     @Test
     void repliesAreSignedAgainstTheirRequest() {
-        byte[] request = TestPacket.accessRequest(77).attribute(1, "alice").build();
-        RadiusPacket reply = wrap(TestPacket.reply(RadiusCode.ACCESS_ACCEPT, request)
+        byte[] request = PacketBuilder.accessRequest(77).attribute(1, "alice").build();
+        RadiusPacket reply = wrap(PacketBuilder.reply(RadiusCode.ACCESS_ACCEPT, request)
                 .attribute(18, "welcome")
                 .messageAuthenticator()
                 .secret(SECRET)
@@ -116,7 +118,7 @@ class TestPacketTest {
 
     @Test
     void valuesOfEveryKindAreEncoded() {
-        RadiusPacket p = wrap(TestPacket.accessRequest(1)
+        RadiusPacket p = wrap(PacketBuilder.accessRequest(1)
                 .uint32(27, 600)
                 .ipv4(8, "10.9.0.1")
                 .vendor(311, 11, new byte[] {1, 2})
@@ -132,18 +134,18 @@ class TestPacketTest {
 
     @Test
     void mistakesAreReportedWhenTheyAreMade() {
-        assertThatThrownBy(() -> TestPacket.accountingRequest(1).build())
+        assertThatThrownBy(() -> PacketBuilder.accountingRequest(1).build())
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("secret");
-        assertThatThrownBy(() -> TestPacket.accessRequest(1).password("p").build())
+        assertThatThrownBy(() -> PacketBuilder.accessRequest(1).password("p").build())
                 .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> TestPacket.accountingRequest(1).authenticator(new byte[16]))
+        assertThatThrownBy(() -> PacketBuilder.accountingRequest(1).authenticator(new byte[16]))
                 .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> TestPacket.reply(2, new byte[20]).authenticator(new byte[16]))
+        assertThatThrownBy(() -> PacketBuilder.reply(2, new byte[20]).authenticator(new byte[16]))
                 .isInstanceOf(IllegalStateException.class);
-        assertThatThrownBy(() -> TestPacket.accessRequest(1).raw(new byte[] {1, 5, 'a'}))
+        assertThatThrownBy(() -> PacketBuilder.accessRequest(1).raw(new byte[] {1, 5, 'a'}))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> TestPacket.accessRequest(1).ipv4(4, "10.0.1"))
+        assertThatThrownBy(() -> PacketBuilder.accessRequest(1).ipv4(4, "10.0.1"))
                 .isInstanceOf(IllegalArgumentException.class);
     }
 }

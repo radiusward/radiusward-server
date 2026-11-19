@@ -8,10 +8,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.protocol.SessionStatus;
 import io.radiusward.server.NasRegistry;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import io.radiusward.tools.radclient.LoadGenerator;
 import java.io.IOException;
@@ -278,8 +278,8 @@ class LocalClusterIT {
     }
 
     static byte[] accountingOn(int id, String nasIdentifier) {
-        TestPacket request =
-                TestPacket.accountingRequest(id).uint32(40, 7).uint32(55, System.currentTimeMillis() / 1000);
+        PacketBuilder request =
+                PacketBuilder.accountingRequest(id).uint32(40, 7).uint32(55, System.currentTimeMillis() / 1000);
         if (nasIdentifier != null) {
             request.attribute(32, nasIdentifier);
         }

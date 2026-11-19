@@ -6,11 +6,11 @@ package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
-import io.radiusward.testing.packets.TestPacket;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -100,7 +100,7 @@ class AuthAgentTest {
     }
 
     static byte[] accessRequest(int identifier, String password, boolean withMa, boolean withEap, byte[] secret) {
-        TestPacket request = TestPacket.accessRequest(identifier)
+        PacketBuilder request = PacketBuilder.accessRequest(identifier)
                 .attribute(1, "nemo")
                 .password(password)
                 .attribute(33, "proxy-1");
@@ -257,7 +257,7 @@ class AuthAgentTest {
 
     /** A Status-Server (RFC 5997): random authenticator, Message-Authenticator computed as for an Access-Request. */
     static byte[] statusServer(int identifier, boolean withMa, byte[] secret) {
-        TestPacket request = TestPacket.statusServer(identifier);
+        PacketBuilder request = PacketBuilder.statusServer(identifier);
         if (withMa) {
             request.messageAuthenticator();
         }

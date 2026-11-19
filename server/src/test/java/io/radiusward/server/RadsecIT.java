@@ -10,9 +10,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -298,7 +298,7 @@ class RadsecIT {
     }
 
     static byte[] statusServer(int identifier) {
-        return TestPacket.statusServer(identifier)
+        return PacketBuilder.statusServer(identifier)
                 .messageAuthenticator()
                 .secret(RADSEC)
                 .build();

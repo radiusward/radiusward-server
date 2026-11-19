@@ -26,9 +26,9 @@
 
     <dependencies>
         <dependency>
-            <!-- TestPacket: signed requests under AccountingRequest -->
+            <!-- PacketBuilder: signed requests under AccountingRequest -->
             <groupId>io.radiusward</groupId>
-            <artifactId>radiusward-test-packets</artifactId>
+            <artifactId>radiusward-client</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>

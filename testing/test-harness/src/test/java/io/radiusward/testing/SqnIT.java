@@ -9,13 +9,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.cluster.node.ClusterNode;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.server.AccessHandler;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.RadiusServer;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -112,7 +112,7 @@ class SqnIT {
     }
 
     private long sqn(RadiusServer radiusServer, String imsi, long floor) throws Exception {
-        byte[] request = TestPacket.accessRequest(++identifier)
+        byte[] request = PacketBuilder.accessRequest(++identifier)
                 .attribute(1, imsi)
                 .password(Long.toString(floor))
                 .messageAuthenticator()
@@ -128,7 +128,7 @@ class SqnIT {
     }
 
     private byte[] warmUp() {
-        return TestPacket.accountingRequest(++identifier)
+        return PacketBuilder.accountingRequest(++identifier)
                 .uint32(40, 1)
                 .attribute(44, "warm-up")
                 .attribute(1, "nobody")

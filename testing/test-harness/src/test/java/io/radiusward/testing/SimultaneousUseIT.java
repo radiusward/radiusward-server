@@ -9,11 +9,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.server.AuthConfig;
 import io.radiusward.server.RadiusServer;
-import io.radiusward.testing.packets.TestPacket;
 import io.radiusward.tools.admin.AdminClient;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -201,8 +201,8 @@ class SimultaneousUseIT {
     }
 
     private int access(RadiusServer radiusServer, String user, String password, String station) throws Exception {
-        TestPacket request =
-                TestPacket.accessRequest(++identifier).attribute(1, user).password(password);
+        PacketBuilder request =
+                PacketBuilder.accessRequest(++identifier).attribute(1, user).password(password);
         if (!station.isEmpty()) {
             request.attribute(31, station);
         }
@@ -211,7 +211,7 @@ class SimultaneousUseIT {
     }
 
     private byte[] accounting(int status, String sessionId, String user, String station) {
-        TestPacket request = TestPacket.accountingRequest(++identifier)
+        PacketBuilder request = PacketBuilder.accountingRequest(++identifier)
                 .uint32(40, status)
                 .attribute(44, sessionId)
                 .attribute(1, user)

@@ -6,10 +6,10 @@ package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.attributes.Ietf;
-import io.radiusward.testing.packets.TestPacket;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
@@ -78,7 +78,7 @@ class DynamicAuthorizationTest {
 
     /** Answers like a NAS: code, optional Error-Cause, signed with the request's authenticator. */
     private void answer(Received r, int code, int errorCause, byte[] secret) throws Exception {
-        TestPacket reply = TestPacket.reply(code, r.bytes());
+        PacketBuilder reply = PacketBuilder.reply(code, r.bytes());
         if (errorCause != 0) {
             reply.uint32(Ietf.ERROR_CAUSE, errorCause);
         }
@@ -193,7 +193,7 @@ class DynamicAuthorizationTest {
         Received r = receive();
         byte[] shortErrorCause = {(byte) Ietf.ERROR_CAUSE, 4, 503 >> 8, (byte) 503}; // two octets, not four
         nas.send(
-                ByteBuffer.wrap(TestPacket.reply(DynamicAuthorization.COA_NAK, r.bytes())
+                ByteBuffer.wrap(PacketBuilder.reply(DynamicAuthorization.COA_NAK, r.bytes())
                         .raw(shortErrorCause)
                         .secret(SECRET)
                         .build()),
@@ -227,7 +227,7 @@ class DynamicAuthorizationTest {
         assertThat(nasIndex[0]).isZero();
         assertThat(request[0][0]).isEqualTo((byte) DynamicAuthorization.DISCONNECT_REQUEST);
 
-        byte[] ack = TestPacket.reply(DynamicAuthorization.DISCONNECT_ACK, request[0])
+        byte[] ack = PacketBuilder.reply(DynamicAuthorization.DISCONNECT_ACK, request[0])
                 .secret(SECRET)
                 .build();
         UnsafeBuffer reply = new UnsafeBuffer(new byte[4 + ack.length]); // the link's index, then the packet

@@ -9,9 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.RadiusCode;
-import io.radiusward.testing.packets.TestPacket;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.File;
@@ -197,7 +197,7 @@ class RadiusTcpIT {
     }
 
     static byte[] accounting(int id) {
-        return TestPacket.accountingRequest(id)
+        return PacketBuilder.accountingRequest(id)
                 .uint32(40, 1)
                 .attribute(44, "tcp-1")
                 .secret(AuthAgentTest.SECRET)

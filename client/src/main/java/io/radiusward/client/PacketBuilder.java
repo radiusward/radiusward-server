@@ -2,9 +2,8 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.testing.packets;
+package io.radiusward.client;
 
-import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
@@ -18,7 +17,7 @@ import org.agrona.concurrent.UnsafeBuffer;
 
 /**
  * RADIUS packets for tests, signed as a NAS or a home server signs them:
- * {@code TestPacket.accessRequest(1).attribute(1, "alice").password("secret").messageAuthenticator().secret(s)
+ * {@code PacketBuilder.accessRequest(1).attribute(1, "alice").password("secret").messageAuthenticator().secret(s)
  * .build()}.
  *
  * <p>Attributes and the Message-Authenticator are written in the order they are added. Accounting-, CoA- and
@@ -27,7 +26,7 @@ import org.agrona.concurrent.UnsafeBuffer;
  * they carry a Message-Authenticator or a User-Password. Replies are signed against their request (RFC 2865 §3).
  * The secret is needed only when something is signed or hidden.
  */
-public final class TestPacket {
+public final class PacketBuilder {
 
     private interface Op {
         void write(RadiusPacketEncoder encoder, Context context);
@@ -55,45 +54,45 @@ public final class TestPacket {
     private byte[] authenticator;
     private byte[] secret;
 
-    private TestPacket(int code, int identifier, byte[] request) {
+    private PacketBuilder(int code, int identifier, byte[] request) {
         this.code = code;
         this.identifier = identifier;
         this.request = request;
     }
 
-    public static TestPacket accessRequest(int identifier) {
+    public static PacketBuilder accessRequest(int identifier) {
         return request(RadiusCode.ACCESS_REQUEST, identifier);
     }
 
-    public static TestPacket accountingRequest(int identifier) {
+    public static PacketBuilder accountingRequest(int identifier) {
         return request(RadiusCode.ACCOUNTING_REQUEST, identifier);
     }
 
-    public static TestPacket statusServer(int identifier) {
+    public static PacketBuilder statusServer(int identifier) {
         return request(RadiusCode.STATUS_SERVER, identifier);
     }
 
     /** A request with this code, such as CoA-Request or Disconnect-Request. */
-    public static TestPacket request(int code, int identifier) {
-        return new TestPacket(code, identifier & 0xFF, null);
+    public static PacketBuilder request(int code, int identifier) {
+        return new PacketBuilder(code, identifier & 0xFF, null);
     }
 
     /** A reply with this code to {@code request}: its identifier, and signed against its Request Authenticator. */
-    public static TestPacket reply(int code, byte[] request) {
-        return new TestPacket(code, request[1] & 0xFF, request.clone());
+    public static PacketBuilder reply(int code, byte[] request) {
+        return new PacketBuilder(code, request[1] & 0xFF, request.clone());
     }
 
-    public TestPacket secret(byte[] secret) {
+    public PacketBuilder secret(byte[] secret) {
         this.secret = secret.clone();
         return this;
     }
 
-    public TestPacket secret(String secret) {
+    public PacketBuilder secret(String secret) {
         return secret(secret.getBytes(StandardCharsets.UTF_8));
     }
 
     /** The Request Authenticator of an Access-Request or Status-Server, instead of a random one. */
-    public TestPacket authenticator(byte[] authenticator) {
+    public PacketBuilder authenticator(byte[] authenticator) {
         if (computed() || request != null) {
             throw new IllegalStateException("the authenticator of this packet is computed from the secret");
         }
@@ -101,23 +100,23 @@ public final class TestPacket {
         return this;
     }
 
-    public TestPacket attribute(int type, String value) {
+    public PacketBuilder attribute(int type, String value) {
         return attribute(type, value.getBytes(StandardCharsets.UTF_8));
     }
 
-    public TestPacket attribute(int type, byte[] value) {
+    public PacketBuilder attribute(int type, byte[] value) {
         byte[] v = value.clone();
         ops.add((e, c) -> e.attribute(type, v));
         return this;
     }
 
-    public TestPacket uint32(int type, long value) {
+    public PacketBuilder uint32(int type, long value) {
         ops.add((e, c) -> e.uint32(type, value));
         return this;
     }
 
     /** An address attribute such as NAS-IP-Address or Framed-IP-Address, from dotted text. */
-    public TestPacket ipv4(int type, String address) {
+    public PacketBuilder ipv4(int type, String address) {
         String[] parts = address.split("\\.", -1);
         if (parts.length != 4) {
             throw new IllegalArgumentException("not an IPv4 address: " + address);
@@ -131,18 +130,18 @@ public final class TestPacket {
         return this;
     }
 
-    public TestPacket vendor(int vendorId, int vendorType, byte[] value) {
+    public PacketBuilder vendor(int vendorId, int vendorType, byte[] value) {
         byte[] v = value.clone();
         ops.add((e, c) -> e.vendorAttribute(vendorId, vendorType, v));
         return this;
     }
 
-    public TestPacket vendor(int vendorId, int vendorType, String value) {
+    public PacketBuilder vendor(int vendorId, int vendorType, String value) {
         return vendor(vendorId, vendorType, value.getBytes(StandardCharsets.UTF_8));
     }
 
     /** A whole attribute as it goes on the wire: type, length, value. */
-    public TestPacket raw(byte[] attribute) {
+    public PacketBuilder raw(byte[] attribute) {
         if (attribute.length < 2 || (attribute[1] & 0xFF) != attribute.length) {
             throw new IllegalArgumentException("not one attribute: its length octet must equal its size");
         }
@@ -152,27 +151,42 @@ public final class TestPacket {
     }
 
     /** User-Password, hidden with the secret and the Request Authenticator (RFC 2865 §5.2). */
-    public TestPacket password(String password) {
-        byte[] plain = password.getBytes(StandardCharsets.UTF_8);
-        ops.add((e, c) -> {
-            UnsafeBuffer hidden = new UnsafeBuffer(new byte[RadiusPacketEncoder.MAX_VALUE_LENGTH]);
-            int n = new AccessRequests()
-                    .encryptUserPassword(
-                            new UnsafeBuffer(plain),
-                            0,
-                            plain.length,
-                            new UnsafeBuffer(c.authenticator),
-                            0,
-                            required(c.secret),
-                            hidden,
-                            0);
-            e.attribute(2, hidden, 0, n);
-        });
+    public PacketBuilder password(String password) {
+        return credentials(Credentials.Method.PAP, "", password);
+    }
+
+    /** CHAP-Password and CHAP-Challenge for {@code password} (RFC 2865 §5.3), with a random challenge. */
+    public PacketBuilder chap(String password) {
+        return credentials(Credentials.Method.CHAP, "", password);
+    }
+
+    /**
+     * MS-CHAP-Challenge and MS-CHAP2-Response for {@code user} and {@code password} (RFC 2759, RFC 2548), with random
+     * challenges; a domain prefix (DOMAIN&#92;user) is left out of the hash, as Windows does.
+     */
+    public PacketBuilder msChapV2(String user, String password) {
+        return credentials(Credentials.Method.MSCHAPV2, user, password);
+    }
+
+    private PacketBuilder credentials(Credentials.Method method, String user, String password) {
+        ops.add((e, c) -> new Credentials(RANDOM)
+                .write(
+                        e,
+                        c.authenticator,
+                        user,
+                        password,
+                        method,
+                        method == Credentials.Method.PAP ? required(c.secret) : null));
         return this;
     }
 
+    /** Whether a secret is set; {@link RadiusClient} sets its own otherwise. */
+    boolean hasSecret() {
+        return secret != null;
+    }
+
     /** Message-Authenticator at this position (RFC 3579 §3.2), filled in when the packet is built. */
-    public TestPacket messageAuthenticator() {
+    public PacketBuilder messageAuthenticator() {
         ops.add((e, c) -> c.messageAuthenticator = e.messageAuthenticator());
         return this;
     }
