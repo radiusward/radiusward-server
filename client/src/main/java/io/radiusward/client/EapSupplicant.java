@@ -14,8 +14,6 @@ import io.radiusward.radius.codec.attributes.Microsoft;
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
-import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.List;
@@ -134,20 +132,12 @@ final class EapSupplicant {
         return tls;
     }
 
-    /** EAP-MD5 (RFC 3748 §5.4): MD5 of the identifier, the password and the challenge. */
+    /** EAP-MD5 (RFC 3748 §5.4): the value size, then CHAP's MD5 of the identifier, the password and the challenge. */
     static byte[] md5(int identifier, byte[] data, String password) {
-        try {
-            MessageDigest md5 = MessageDigest.getInstance("MD5");
-            md5.update((byte) identifier);
-            md5.update(password.getBytes(StandardCharsets.UTF_8));
-            md5.update(data, 1, data[0] & 0xFF);
-            byte[] out = new byte[17];
-            out[0] = 16;
-            System.arraycopy(md5.digest(), 0, out, 1, 16);
-            return out;
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException("MD5 is part of every JDK", e);
-        }
+        byte[] challenge = Arrays.copyOfRange(data, 1, 1 + (data[0] & 0xFF));
+        byte[] chap = Credentials.chapPassword(identifier, password.getBytes(StandardCharsets.UTF_8), challenge);
+        chap[0] = 16; // CHAP's identifier byte becomes EAP-MD5's value size
+        return chap;
     }
 
     private EapResult result(EapResult.Outcome outcome, Response response, int rounds, byte[] serverMsk) {

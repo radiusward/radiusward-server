@@ -176,10 +176,11 @@ class EapSupplicantIT {
         assertThatThrownBy(() -> client.eap(EapLogin.peap("alice", "secret").trust(other.ca.certificate())))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("TLS");
-        assertThat(client.eap(EapLogin.peap("alice", "secret").trustAnyServer()).accepted())
-                .as("only when asked for")
+        assertThat(client.eap(EapLogin.peap("alice", "secret").trust(pki.server.certificate()))
+                        .accepted())
+                .as("a server's own certificate trusted, as for a self-signed one")
                 .isTrue();
-        assertThatThrownBy(() -> client.eap(EapLogin.peap("alice", "secret"))).hasMessageContaining("trust(ca...)");
+        assertThatThrownBy(() -> client.eap(EapLogin.peap("alice", "secret"))).hasMessageContaining("needs trust(...)");
     }
 
     @Test

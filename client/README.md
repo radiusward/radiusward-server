@@ -62,7 +62,7 @@ r.serverProved();  r.cryptoBound();                               // MS-CHAPv2's
 | `EapLogin.ttls(user, password)` | EAP-TTLS with PAP, CHAP, MS-CHAP or MS-CHAPv2 inside |
 
 A request of another method is answered with a Nak naming the login's. `trust(...)` sets the CAs the server must chain
-to; `trustAnyServer()` exists for experiments only. TLS 1.2 or 1.3 (`tlsProtocol`), fragments of `fragmentSize`.
+to (or a self-signed server certificate itself); every TLS-based login needs it. TLS 1.2 or 1.3 (`tlsProtocol`), fragments of `fragmentSize`.
 TEAP, EAP-pwd and EAP-SIM/AKA follow ([plan](../docs/plans/embedded.md), E2b-2 and E2b-3).
 
 | Class | Role |

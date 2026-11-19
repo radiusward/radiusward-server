@@ -14,7 +14,6 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.TrustManagerFactory;
-import javax.net.ssl.X509TrustManager;
 
 /**
  * What a device logs in with over EAP: the method, the user and credential, and for the TLS-based methods the CAs it
@@ -57,7 +56,6 @@ public final class EapLogin {
     Inner inner;
     String outerIdentity;
     List<X509Certificate> trusted;
-    boolean trustAny;
     PrivateKey key;
     X509Certificate[] chain;
     String tlsProtocol;
@@ -109,15 +107,12 @@ public final class EapLogin {
         return this;
     }
 
-    /** The CAs the server's certificate must chain to (TLS-based methods). */
+    /**
+     * The CAs the server's certificate must chain to (TLS-based methods); for a server with a self-signed certificate,
+     * that certificate itself. Every TLS-based login needs it: a device must check the server it gives its password to.
+     */
     public EapLogin trust(X509Certificate... cas) {
         this.trusted = List.of(cas);
-        return this;
-    }
-
-    /** Accept any server certificate: only for experiments, a real device must check the server. */
-    public EapLogin trustAnyServer() {
-        this.trustAny = true;
         return this;
     }
 
@@ -157,23 +152,19 @@ public final class EapLogin {
 
     /** The TLS context: the trusted CAs (or any), and the client certificate if there is one. */
     SSLContext sslContext() {
-        if (!trustAny && (trusted == null || trusted.isEmpty())) {
-            throw new IllegalStateException(method + " needs trust(ca...) to check the server, or trustAnyServer()");
+        if (trusted == null || trusted.isEmpty()) {
+            throw new IllegalStateException(method
+                    + " needs trust(...): the CA of the server's certificate, or a self-signed certificate itself");
         }
         try {
-            TrustManager[] trust;
-            if (trustAny) {
-                trust = new TrustManager[] {new AnyServer()};
-            } else {
-                KeyStore cas = KeyStore.getInstance("PKCS12");
-                cas.load(null, null);
-                for (int i = 0; i < trusted.size(); i++) {
-                    cas.setCertificateEntry("ca-" + i, trusted.get(i));
-                }
-                TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-                tmf.init(cas);
-                trust = tmf.getTrustManagers();
+            KeyStore cas = KeyStore.getInstance("PKCS12");
+            cas.load(null, null);
+            for (int i = 0; i < trusted.size(); i++) {
+                cas.setCertificateEntry("ca-" + i, trusted.get(i));
             }
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(cas);
+            TrustManager[] trust = tmf.getTrustManagers();
             javax.net.ssl.KeyManager[] keys = null;
             if (key != null) {
                 char[] none = new char[0];
@@ -189,24 +180,6 @@ public final class EapLogin {
             return context;
         } catch (GeneralSecurityException | java.io.IOException e) {
             throw new IllegalStateException("cannot set up TLS: " + e.getMessage(), e);
-        }
-    }
-
-    /** Trusts every server: for {@link #trustAnyServer()} only. */
-    private static final class AnyServer implements X509TrustManager {
-        @Override
-        public void checkClientTrusted(X509Certificate[] chain, String authType) {
-            // a client never checks clients
-        }
-
-        @Override
-        public void checkServerTrusted(X509Certificate[] chain, String authType) {
-            // asked for explicitly: no check
-        }
-
-        @Override
-        public X509Certificate[] getAcceptedIssuers() {
-            return new X509Certificate[0];
         }
     }
 }
