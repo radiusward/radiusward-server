@@ -109,6 +109,7 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `eap` | `radiusward-eap`: EAP primitives shared by the server and the client's supplicant: `EapPacket`, MS-CHAP, PEAP crypto-binding, TTLS AVPs, TEAP keys, P-256, MILENAGE and SIM/AKA |
 | `embedded` | `radiusward-embedded`: `EmbeddedRadiusward`, radiusward inside a JVM for development and tests (one member, one RADIUS server, the developer's own stores and sinks); not for production |
 | `junit` | `radiusward-junit`: `@Radiusward` and `RadiuswardExtension`, an embedded radiusward per test class or test with the server and its clients as parameters |
+| `bom` | `radiusward-bom`: the versions of every published artifact; no parent, so it pins only radiusward's own artifacts |
 | `testing/embedded-consumer` | a developer's Maven project outside the build that uses the published `radiusward-embedded` and `radiusward-junit` (CI's e2e job) |
 | `tools/radclient` | CLI test client (`acct`, `auth`, `replay`, `decode [--fixture]`, `load` with an optional Access-Request mix), executable jar |
 | `tools/admin-cli` | `AdminClient`; `admin state`, `verify-acks` (acknowledged events vs replicated state), `sinks`, `resync`, `activate-version`, `export-schema`, `verify-export`, `disconnect`, `coa` |

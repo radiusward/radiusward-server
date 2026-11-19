@@ -1,9 +1,11 @@
 name: release
 
 # main  -> ghcr.io/radiusward/radiusward-server:edge
+#          and the Maven artifacts X.Y.Z-SNAPSHOT to GitHub Packages
 # vX.Y.Z[-rc.N] -> :X.Y.Z[-rc.N] (+ :X.Y and :latest for final releases), SBOM and provenance attached,
 #                  Helm chart oci://ghcr.io/radiusward/charts/radiusward:X.Y.Z[-rc.N],
-#                  GitHub Release with radiusward.jar and radclient.jar (see docs/operations/release.md)
+#                  GitHub Release with radiusward.jar and radclient.jar, the Maven artifacts X.Y.Z[-rc.N] to GitHub
+#                  Packages (see docs/operations/release.md)
 on:
   push:
     branches: [main]
@@ -29,7 +31,8 @@ jobs:
           cache-name: release
       - name: Set the release version
         if: startsWith(github.ref, 'refs/tags/v')
-        run: ./mvnw -B -ntp versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DgenerateBackupPoms=false
+        # processAllModules: the BOM has no parent, so it is not reached through inheritance
+        run: ./mvnw -B -ntp versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DprocessAllModules=true -DgenerateBackupPoms=false
       - name: Build, unit and end-to-end tests
         run: ./mvnw -B -ntp -Pe2e verify -Dradiusward.require.docker=true
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
@@ -80,3 +83,26 @@ jobs:
           gh release create "$GITHUB_REF_NAME" $prerelease --verify-tag --generate-notes \
             --title "radiusward ${GITHUB_REF_NAME#v}" \
             distribution/target/radiusward.jar tools/radclient/target/radclient.jar
+
+  maven:
+    # the published jars (ADR 0068) to GitHub Packages, with sources and javadoc: after the image job's tests passed,
+    # in a job of their own, so a failing upload never holds up the image, the chart or the GitHub Release
+    needs: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write   # GitHub Packages (Maven)
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-maven
+        with:
+          cache-name: release-maven
+      - name: Set the release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: ./mvnw -B -ntp versions:set -DnewVersion="${GITHUB_REF_NAME#v}" -DprocessAllModules=true -DgenerateBackupPoms=false
+      - name: Deploy to GitHub Packages
+        env:
+          # setup-java's settings.xml has the server "github" with GITHUB_ACTOR and GITHUB_TOKEN
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./mvnw -B -ntp -Prelease deploy -DskipTests -DskipITs -Dspotless.check.skip=true -Djacoco.skip=true

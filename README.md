@@ -164,6 +164,53 @@ auth.eap.tls.ca = /etc/radiusward/ca.pem
 
 Stores, methods, RadSec, proxying and policies: [docs/configuration.md](docs/configuration.md#identity-stores).
 
+## Use it as a library (development and tests)
+
+Applications and devices that speak RADIUS can test against radiusward inside their own JVM: one cluster member and
+one RADIUS server (or three members) with authentication, EAP and accounting, gone when the test ends. It is for
+development and tests, not for production.
+
+```xml
+<dependencyManagement>
+    <dependencies>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-bom</artifactId>
+            <version>0.1.0-SNAPSHOT</version>
+            <type>pom</type>
+            <scope>import</scope>
+        </dependency>
+    </dependencies>
+</dependencyManagement>
+<dependencies>
+    <dependency>
+        <groupId>io.radiusward</groupId>
+        <artifactId>radiusward-junit</artifactId>  <!-- or radiusward-embedded without JUnit -->
+        <scope>test</scope>
+    </dependency>
+</dependencies>
+```
+
+```java
+@Radiusward(users = "alice:secret", eap = "peap")
+class NasTest {
+    @Test
+    void login(RadiusClient nas, EmbeddedRadiusward radius) {
+        assertThat(nas.pap("alice", "secret").orElseThrow().isAccept()).isTrue();
+        assertThat(nas.eap(EapLogin.peap("alice", "secret").trust(radius.ca())).accepted()).isTrue();
+    }
+}
+```
+
+- Java 25 and the JVM option `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED` (Surefire's `argLine`).
+- The packages are on GitHub Packages, which needs a GitHub token with `read:packages` even for public packages:
+  add the repository `https://maven.pkg.github.com/radiusward/radiusward-server` with id `github` and the token in
+  `~/.m2/settings.xml` ([release.md](docs/operations/release.md#maven-artifacts)). Maven Central follows.
+- The developer's own identity store, credential verifier and accounting sink plug in through the same interfaces
+  as in production: [embedded](embedded/README.md), [JUnit](junit/README.md), the [client](client/README.md) with its
+  EAP supplicant (PEAP, TTLS, TEAP, TLS, pwd, SIM, AKA), and a complete project:
+  [testing/embedded-consumer](testing/embedded-consumer).
+
 ## Modules
 
 | Module | What it is |

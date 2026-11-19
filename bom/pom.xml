@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The versions of every published radiusward artifact, imported once:
+
+    <dependencyManagement><dependencies><dependency>
+        <groupId>io.radiusward</groupId><artifactId>radiusward-bom</artifactId><version>…</version>
+        <type>pom</type><scope>import</scope>
+    </dependency></dependencies></dependencyManagement>
+
+  No parent on purpose: importing a BOM imports its parent's dependency management too, and radiusward's parent pins
+  the versions of JUnit, Aeron and others, which must not reach the developer's project. The list is checked against
+  the published modules (scripts/tests/test_bom.py).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.radiusward</groupId>
+    <artifactId>radiusward-bom</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>radiusward :: bom</name>
+    <description>The versions of every published radiusward artifact, to import once</description>
+    <url>https://radiusward.com</url>
+    <inceptionYear>2026</inceptionYear>
+
+    <licenses>
+        <license>
+            <name>Apache-2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>viktor-gema</id>
+            <name>Viktor Gema</name>
+            <url>https://github.com/viktor-gema</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:https://github.com/radiusward/radiusward-server.git</connection>
+        <developerConnection>scm:git:git@github.com:radiusward/radiusward-server.git</developerConnection>
+        <url>https://github.com/radiusward/radiusward-server</url>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/radiusward/radiusward-server/issues</url>
+    </issueManagement>
+
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/radiusward/radiusward-server</url>
+        </repository>
+        <snapshotRepository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/radiusward/radiusward-server</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <!-- nothing to format here; declared so that ./mvnw spotless:apply over the whole build (and the
+                     pre-commit hook) finds the plugin in this module without a parent; the same version as the
+                     parent's spotless.version (scripts/tests/test_bom.py) -->
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>3.11.0</version>
+                <configuration>
+                    <skip>true</skip>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-units</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-dictionary</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-dictionaries</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-codec</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-protocol</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-cluster-service</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-export-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-exporter</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-sink-file</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-sink-postgres</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-sink-radius</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-cluster-node</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-auth-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-eap</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-store-file</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-store-sql</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-store-ldap</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-verifier-netlogon</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-server</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-radclient</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-admin-cli</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-embedded</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-junit</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>

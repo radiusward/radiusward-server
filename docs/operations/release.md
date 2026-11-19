@@ -4,9 +4,9 @@ Workflow: [.github/workflows/release.yml](../../.github/workflows/release.yml).
 
 | Trigger | Result |
 |---|---|
-| push to `main` | `ghcr.io/radiusward/radiusward-server:edge` |
-| tag `vX.Y.Z-rc.N` | `:X.Y.Z-rc.N`, Helm chart `X.Y.Z-rc.N`, GitHub pre-release |
-| tag `vX.Y.Z` | `:X.Y.Z`, `:X.Y`, `:latest`, Helm chart `X.Y.Z`, GitHub release |
+| push to `main` | `ghcr.io/radiusward/radiusward-server:edge`; the Maven artifacts `X.Y.Z-SNAPSHOT` |
+| tag `vX.Y.Z-rc.N` | `:X.Y.Z-rc.N`, Helm chart `X.Y.Z-rc.N`, GitHub pre-release; the Maven artifacts `X.Y.Z-rc.N` |
+| tag `vX.Y.Z` | `:X.Y.Z`, `:X.Y`, `:latest`, Helm chart `X.Y.Z`, GitHub release; the Maven artifacts `X.Y.Z` |
 
 Every image is built for `linux/amd64` and `linux/arm64` with an SBOM and provenance attestation. A release
 runs the full build with JDK 25, unit and end-to-end tests, then publishes the image, the Helm chart
@@ -26,7 +26,43 @@ only). Check locally:
 ./mvnw -Prelease,quick install -DskipTests
 ```
 
-Publishing them (GitHub Packages, later Maven Central) is planned in [embedded.md](../plans/embedded.md) (E6, E7).
+`radiusward-bom` lists the versions of all of them; it has no parent, so importing it pins only radiusward's own
+artifacts, not the libraries radiusward builds with (`scripts/tests/test_bom.py` keeps its list equal to the
+published modules).
+
+**Publishing.** The `maven` job of `release.yml` deploys them to GitHub Packages
+(`https://maven.pkg.github.com/radiusward/radiusward-server`) with the workflow's `GITHUB_TOKEN`: snapshots on every
+push to `main`, the release version on a tag (set in every pom, the BOM included, with `versions:set
+-DprocessAllModules=true`). It runs after the image job's tests and on its own, so a failed upload never holds up the
+image, the chart or the GitHub Release. A version, once published, cannot be published again. Maven Central for
+releases follows ([embedded.md](../plans/embedded.md), E7).
+
+**Using them.** GitHub Packages asks for a token even for public packages: a personal access token (classic) with
+`read:packages`, in `~/.m2/settings.xml`:
+
+```xml
+<settings>
+  <servers>
+    <server><id>github</id><username>YOUR_GITHUB_USER</username><password>YOUR_TOKEN</password></server>
+  </servers>
+  <profiles>
+    <profile>
+      <id>radiusward</id>
+      <repositories>
+        <repository>
+          <id>github</id>
+          <url>https://maven.pkg.github.com/radiusward/radiusward-server</url>
+          <snapshots><enabled>true</enabled></snapshots>
+        </repository>
+      </repositories>
+    </profile>
+  </profiles>
+  <activeProfiles><activeProfile>radiusward</activeProfile></activeProfiles>
+</settings>
+```
+
+With Gradle: `maven { url = uri("https://maven.pkg.github.com/radiusward/radiusward-server"); credentials { username =
+providers.gradleProperty("gpr.user").get(); password = providers.gradleProperty("gpr.key").get() } }`.
 
 ## Public packages
 

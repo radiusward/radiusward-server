@@ -19,17 +19,28 @@
         <radiusward.version>0.1.0-SNAPSHOT</radiusward.version>
     </properties>
 
+    <!-- the BOM pins every radiusward artifact's version once -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-bom</artifactId>
+                <version>${radiusward.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>radiusward-embedded</artifactId>
-            <version>${radiusward.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>radiusward-junit</artifactId>
-            <version>${radiusward.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
