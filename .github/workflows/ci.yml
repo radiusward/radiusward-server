@@ -121,6 +121,8 @@ jobs:
         run: ./mvnw -B -ntp -Pe2e,release install -DskipTests -DskipITs -Dspotless.check.skip=true -Djacoco.skip=true
       - name: End-to-end tests (separate JVMs)
         run: ./mvnw -B -ntp -Pe2e,reports verify -pl testing/e2e-tests -Dradiusward.require.docker=true
+      - name: The embedded server from a developer's project (only the published jars, outside the build)
+        run: ./mvnw -B -ntp -f testing/embedded-consumer/pom.xml verify
       - name: Upload test reports
         if: failure()
         uses: actions/upload-artifact@v7

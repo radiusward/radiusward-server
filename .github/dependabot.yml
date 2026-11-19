@@ -12,7 +12,7 @@ updates:
       actions:
         patterns: ["*"]
   - package-ecosystem: maven
-    directory: /
+    directories: ["/", "/testing/embedded-consumer"] # the build, and the developer's project outside it
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

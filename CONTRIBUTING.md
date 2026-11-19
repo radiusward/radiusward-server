@@ -36,6 +36,7 @@ see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Pli
                                                 # rewrite fixture packet: lines after editing a fixture
 ./mvnw -Pbench -pl testing/benchmarks -am package -DskipTests && java -jar testing/benchmarks/target/benchmarks.jar
 ./mvnw -Pe2e verify                             # end-to-end tests against separate radiusward processes
+./mvnw -f testing/embedded-consumer/pom.xml verify   # radiusward-embedded from a project outside the build (after ./mvnw install)
 ./mvnw -Preports verify                         # also Allure results of the *IT tests (labels, steps) for the test reports
 ./mvnw -Pinterop verify                         # also runs against a local FreeRADIUS (brew install freeradius-server)
 scripts/run-local.sh start|status|demo-failover # local 3-node cluster + 2 servers (docs/operations/local-cluster.md)
@@ -106,6 +107,8 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder, Access-Request credentials (PAP, CHAP) and Access replies; generated `io.radiusward.radius.codec.attributes` |
 | `client` | `radiusward-client`: `RadiusClient` (UDP, retransmission, verified answers; PAP, CHAP, MS-CHAPv2, EAP, accounting, Status-Server), `PacketBuilder` (signed requests and replies) and `Credentials`, for developers' tests and every module's tests ([strategy](docs/testing/strategy.md#packets-in-tests)) |
 | `eap` | `radiusward-eap`: EAP primitives shared by the server and the client's supplicant: `EapPacket`, MS-CHAP, PEAP crypto-binding, TTLS AVPs, TEAP keys, P-256, MILENAGE and SIM/AKA |
+| `embedded` | `radiusward-embedded`: `EmbeddedRadiusward`, radiusward inside a JVM for development and tests (one member, one RADIUS server, the developer's own stores and sinks); not for production |
+| `testing/embedded-consumer` | a developer's Maven project outside the build that uses the published `radiusward-embedded` (CI's e2e job) |
 | `tools/radclient` | CLI test client (`acct`, `auth`, `replay`, `decode [--fixture]`, `load` with an optional Access-Request mix), executable jar |
 | `tools/admin-cli` | `AdminClient`; `admin state`, `verify-acks` (acknowledged events vs replicated state), `sinks`, `resync`, `activate-version`, `export-schema`, `verify-export`, `disconnect`, `coa` |
 | `testing/benchmarks` | JMH, only with `-Pbench` |

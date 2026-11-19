@@ -71,6 +71,7 @@
         <module>server</module>
         <module>tools/radclient</module>
         <module>tools/admin-cli</module>
+        <module>embedded</module>
         <module>distribution</module>
         <module>testing/test-harness</module>
     </modules>
@@ -209,6 +210,11 @@
             <dependency>
                 <groupId>io.radiusward</groupId>
                 <artifactId>radiusward-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-embedded</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
