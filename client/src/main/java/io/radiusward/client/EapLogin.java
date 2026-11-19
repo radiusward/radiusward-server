@@ -33,15 +33,20 @@ public final class EapLogin {
         MD5,
         TLS,
         PEAP,
-        TTLS
+        TTLS,
+        TEAP,
+        /** EAP-pwd with group 19: mutual authentication with a password, no certificate. */
+        PWD
     }
 
     /** The method inside a PEAP or TTLS tunnel. */
     public enum Inner {
         /** PEAP and TTLS: MS-CHAPv2, the server's authenticator response checked. */
         MSCHAPV2,
-        /** PEAP: EAP-GTC with the password. */
+        /** PEAP and TEAP: EAP-GTC with the password. */
         GTC,
+        /** TEAP: Basic-Password-Auth, the user and password in a TLV. */
+        BASIC,
         /** TTLS: the password in a User-Password AVP. */
         PAP,
         /** TTLS: CHAP with the tunnel's implicit challenge. */
@@ -81,6 +86,16 @@ public final class EapLogin {
         return new EapLogin(Method.TTLS, user, password).inner(Inner.PAP);
     }
 
+    /** TEAP (RFC 7170), Basic-Password-Auth inside unless {@link #inner} says GTC; crypto-binding always. */
+    public static EapLogin teap(String user, String password) {
+        return new EapLogin(Method.TEAP, user, password).inner(Inner.BASIC);
+    }
+
+    /** EAP-pwd (RFC 5931): the server proves it knows the password too; no certificate, no trust to set. */
+    public static EapLogin pwd(String user, String password) {
+        return new EapLogin(Method.PWD, user, password);
+    }
+
     /** EAP-TLS with a client certificate; {@code identity} is the EAP identity, matched against the certificate. */
     public static EapLogin tls(String identity, PrivateKey key, X509Certificate... chain) {
         EapLogin login = new EapLogin(Method.TLS, identity, null);
@@ -91,9 +106,12 @@ public final class EapLogin {
 
     /** The method inside the tunnel. */
     public EapLogin inner(Inner inner) {
-        boolean fits = method == Method.PEAP
-                ? inner == Inner.MSCHAPV2 || inner == Inner.GTC
-                : method == Method.TTLS && inner != Inner.GTC;
+        boolean fits = switch (method) {
+            case PEAP -> inner == Inner.MSCHAPV2 || inner == Inner.GTC;
+            case TTLS -> inner == Inner.PAP || inner == Inner.CHAP || inner == Inner.MSCHAP || inner == Inner.MSCHAPV2;
+            case TEAP -> inner == Inner.BASIC || inner == Inner.GTC;
+            default -> false;
+        };
         if (!fits) {
             throw new IllegalArgumentException(inner + " is not an inner method of " + method);
         }
@@ -143,11 +161,13 @@ public final class EapLogin {
     }
 
     String identity() {
-        return outerIdentity != null && (method == Method.PEAP || method == Method.TTLS) ? outerIdentity : user;
+        return outerIdentity != null && (method == Method.PEAP || method == Method.TTLS || method == Method.TEAP)
+                ? outerIdentity
+                : user;
     }
 
     boolean tlsBased() {
-        return method == Method.TLS || method == Method.PEAP || method == Method.TTLS;
+        return method == Method.TLS || method == Method.PEAP || method == Method.TTLS || method == Method.TEAP;
     }
 
     /** The TLS context: the trusted CAs (or any), and the client certificate if there is one. */

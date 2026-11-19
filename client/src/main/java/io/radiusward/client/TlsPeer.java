@@ -24,6 +24,8 @@ final class TlsPeer {
     static final int FLAG_LENGTH = 0x80;
     static final int FLAG_MORE = 0x40;
     static final int FLAG_START = 0x20;
+    /** TEAP: the Start carries Outer TLVs, their length before the TLS data. */
+    static final int FLAG_OUTER_TLVS = 0x10;
 
     private final SSLEngine engine;
     private final int fragmentSize;
@@ -33,8 +35,16 @@ final class TlsPeer {
     private byte[] outgoing;
     private int sent;
     private boolean tunnelStarted;
+    private final int version;
+    private byte[] serverOuterTlvs = new byte[0];
 
     TlsPeer(SSLContext context, String protocol, int fragmentSize, UnaryOperator<byte[]> tunnel) {
+        this(context, protocol, fragmentSize, tunnel, 0);
+    }
+
+    /** {@code version}: the method's version in the low flag bits of every answer (TEAP 1; PEAP and TTLS 0). */
+    TlsPeer(SSLContext context, String protocol, int fragmentSize, UnaryOperator<byte[]> tunnel, int version) {
+        this.version = version;
         engine = context.createSSLEngine();
         engine.setUseClientMode(true);
         if (protocol != null) {
@@ -42,6 +52,16 @@ final class TlsPeer {
         }
         this.fragmentSize = fragmentSize;
         this.tunnel = tunnel;
+    }
+
+    /** The Outer TLVs of the server's Start (TEAP), empty without. */
+    byte[] serverOuterTlvs() {
+        return serverOuterTlvs.clone();
+    }
+
+    /** The negotiated cipher suite (TEAP's key hierarchy follows its hash). */
+    String cipherSuite() {
+        return engine.getSession().getCipherSuite();
     }
 
     /** Keying material of the TLS session: TTLS's implicit challenge. */
@@ -60,6 +80,10 @@ final class TlsPeer {
         int flags = request.length == 0 ? 0 : request[0] & 0xFF;
         int offset = (flags & FLAG_LENGTH) != 0 ? 5 : 1;
         if ((flags & FLAG_START) != 0) {
+            if ((flags & FLAG_OUTER_TLVS) != 0 && request.length >= offset + 4) {
+                int n = java.nio.ByteBuffer.wrap(request, offset, 4).getInt();
+                serverOuterTlvs = Arrays.copyOfRange(request, request.length - n, request.length);
+            }
             engine.beginHandshake();
             outgoing = drive(new byte[0]);
             sent = 0;
@@ -72,7 +96,7 @@ final class TlsPeer {
             incoming.write(request, offset, request.length - offset);
         }
         if ((flags & FLAG_MORE) != 0) {
-            return new byte[] {0}; // acknowledge the server's fragment
+            return new byte[] {(byte) version}; // acknowledge the server's fragment
         }
         byte[] message = incoming.toByteArray();
         incoming.reset();
@@ -96,7 +120,7 @@ final class TlsPeer {
             }
         }
         sent = 0;
-        return outgoing.length == 0 ? new byte[] {0} : fragment();
+        return outgoing.length == 0 ? new byte[] {(byte) version} : fragment();
     }
 
     private byte[] fragment() {
@@ -104,7 +128,7 @@ final class TlsPeer {
         boolean more = sent + length < outgoing.length;
         boolean announce = sent == 0 && more;
         byte[] data = new byte[1 + (announce ? 4 : 0) + length];
-        data[0] = (byte) ((announce ? FLAG_LENGTH : 0) | (more ? FLAG_MORE : 0));
+        data[0] = (byte) ((announce ? FLAG_LENGTH : 0) | (more ? FLAG_MORE : 0) | version);
         int at = 1;
         if (announce) {
             ByteBuffer.wrap(data, 1, 4).putInt(outgoing.length);
