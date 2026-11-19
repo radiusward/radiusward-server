@@ -120,4 +120,26 @@ public record EapPacket(int code, int identifier, int type, byte[] data) {
             out.attribute(EAP_MESSAGE, Arrays.copyOfRange(p, off, Math.min(p.length, off + 253)));
         }
     }
+
+    /** Equal when code, identifier, type and the data's content are (a record compares arrays by reference). */
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof EapPacket p
+                && code == p.code
+                && identifier == p.identifier
+                && type == p.type
+                && Arrays.equals(data, p.data);
+    }
+
+    @Override
+    public int hashCode() {
+        return 31 * (31 * (31 * code + identifier) + type) + Arrays.hashCode(data);
+    }
+
+    /** The header and the data's length, not its content: it may carry a password or key material. */
+    @Override
+    public String toString() {
+        return "EapPacket[code=" + code + ", identifier=" + identifier + ", type=" + type + ", data="
+                + (data == null ? 0 : data.length) + " bytes]";
+    }
 }
