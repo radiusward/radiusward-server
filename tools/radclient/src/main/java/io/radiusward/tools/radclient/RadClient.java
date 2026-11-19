@@ -5,6 +5,7 @@
 package io.radiusward.tools.radclient;
 
 import io.radiusward.client.Credentials;
+import io.radiusward.client.RecordedPacket;
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
@@ -411,17 +412,10 @@ public final class RadClient {
 
     /** Reads the {@code packet:} line of a fixture, or a file containing only hex. */
     static byte[] readPacket(String file) throws IOException {
-        String text = Files.readString(Path.of(file), StandardCharsets.UTF_8);
-        String hex = text;
-        for (String line : text.split("\n")) {
-            if (line.startsWith("packet:")) {
-                hex = line.substring("packet:".length());
-            }
-        }
         try {
-            return hex(hex);
+            return RecordedPacket.read(Path.of(file));
         } catch (IllegalArgumentException e) {
-            throw new UsageException(file + ": no packet hex found");
+            throw new UsageException(e.getMessage());
         }
     }
 

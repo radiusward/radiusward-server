@@ -4,7 +4,7 @@
  */
 package io.radiusward.testing;
 
-import io.radiusward.client.PacketBuilder;
+import io.radiusward.client.AccountingEvent;
 import io.radiusward.server.EventKeys;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -12,7 +12,7 @@ import java.util.List;
 import org.agrona.concurrent.UnsafeBuffer;
 
 /**
- * Accounting-Requests for tests, signed with the shared secret: {@code AccountingRequest.of(1, START).session("s-1")
+ * Accounting-Requests for tests, built as {@link AccountingEvent}s and signed with the shared secret: {@code AccountingRequest.of(1, START).session("s-1")
  * .build()}. Event-Timestamp is a fixed 2026 date unless set; Interim-Update and Stop carry Acct-Session-Time and
  * Acct-Input-Octets (a thousand per second).
  */
@@ -92,42 +92,47 @@ public final class AccountingRequest {
 
     /** Another text attribute. */
     public AccountingRequest attribute(int type, String value) {
-        byte[] v = value.getBytes(StandardCharsets.UTF_8);
-        byte[] a = new byte[2 + v.length];
-        a[0] = (byte) type;
-        a[1] = (byte) a.length;
-        System.arraycopy(v, 0, a, 2, v.length);
-        extra.add(a);
+        extra.add(text(type, value));
         return this;
     }
 
     /** Another 32-bit attribute, such as NAS-IP-Address. */
     public AccountingRequest uint32(int type, long value) {
-        extra.add(new byte[] {
-            (byte) type, 6, (byte) (value >>> 24), (byte) (value >>> 16), (byte) (value >>> 8), (byte) value
-        });
+        extra.add(word(type, value));
         return this;
     }
 
+    private static byte[] text(int type, String value) {
+        byte[] v = value.getBytes(StandardCharsets.UTF_8);
+        byte[] a = new byte[2 + v.length];
+        a[0] = (byte) type;
+        a[1] = (byte) a.length;
+        System.arraycopy(v, 0, a, 2, v.length);
+        return a;
+    }
+
+    private static byte[] word(int type, long value) {
+        return new byte[] {
+            (byte) type, 6, (byte) (value >>> 24), (byte) (value >>> 16), (byte) (value >>> 8), (byte) value
+        };
+    }
+
     public byte[] build() {
-        PacketBuilder request = PacketBuilder.accountingRequest(id).uint32(40, status);
+        List<byte[]> attributes = new ArrayList<>();
         if (nasIdentifier != null) {
-            request.attribute(32, nasIdentifier);
+            attributes.add(text(32, nasIdentifier));
         }
         if (sessionId != null) {
-            request.attribute(44, sessionId);
+            attributes.add(text(44, sessionId));
         }
-        request.uint32(55, eventTimestamp);
+        attributes.add(word(55, eventTimestamp));
         if (status == STOP || status == INTERIM) {
-            request.uint32(46, sessionTime).uint32(42, sessionTime * 1000);
+            attributes.add(word(46, sessionTime));
+            attributes.add(word(42, sessionTime * 1000));
         }
-        if (delay > 0) {
-            request.uint32(41, delay);
-        }
-        for (byte[] attribute : extra) {
-            request.raw(attribute);
-        }
-        return request.secret(secret).build();
+        attributes.addAll(extra);
+        AccountingEvent event = AccountingEvent.of(status, attributes);
+        return (delay > 0 ? event.delay(delay) : event).build(id, secret);
     }
 
     /** The cluster's key of a session of {@link LocalCluster}'s NAS entry. */

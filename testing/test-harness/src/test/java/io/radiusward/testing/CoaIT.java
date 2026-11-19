@@ -9,7 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.CoaListener;
 import io.radiusward.client.PacketBuilder;
+import io.radiusward.client.ReceivedPacket;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.management.Health;
 import io.radiusward.common.management.ManagementServer;
@@ -41,8 +43,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
 import org.agrona.concurrent.UnsafeBuffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -69,20 +69,17 @@ class CoaIT {
 
     private LocalCluster cluster;
     private ManagementServer management;
-    private DatagramChannel fakeNas;
-    private final AtomicBoolean answering = new AtomicBoolean(true);
-    private final List<byte[]> requests = new CopyOnWriteArrayList<>();
+    private CoaListener coaNas; // the NAS entry's CoA port: acknowledges every request
     private final FakeNas nas = new FakeNas();
 
     @AfterEach
     void close() throws Exception {
-        answering.set(false);
         nas.close();
         if (management != null) {
             management.close();
         }
-        if (fakeNas != null) {
-            fakeNas.close();
+        if (coaNas != null) {
+            coaNas.close();
         }
         if (cluster != null) {
             cluster.close();
@@ -95,9 +92,8 @@ class CoaIT {
 
     /** @param proxy {@code proxy.*}, {@code home.*}, ... settings: proxying, with authentication from an empty store */
     private RadiusServer start(RadsecConfig radsec, Map<String, String> proxy) throws Exception {
-        fakeNas = DatagramChannel.open().bind(new InetSocketAddress("127.0.0.1", 0));
-        int nasPort = ((InetSocketAddress) fakeNas.getLocalAddress()).getPort();
-        CompletableFuture.runAsync(this::answer);
+        coaNas = CoaListener.bind(0, UDP_SECRET);
+        int nasPort = coaNas.port();
         cluster = LocalCluster.builder(dir.resolve("cluster").toFile())
                 .members(3)
                 .radiusServers(0)
@@ -153,29 +149,9 @@ class CoaIT {
         return radiusServer;
     }
 
-    /** The fake NAS: acknowledges every Disconnect- and CoA-Request, signed with the NAS's secret. */
-    private void answer() {
-        ByteBuffer in = ByteBuffer.allocate(4096);
-        RadiusAuthenticator authenticator = new RadiusAuthenticator();
-        while (answering.get()) {
-            try {
-                in.clear();
-                InetSocketAddress from = (InetSocketAddress) fakeNas.receive(in);
-                if (from == null) {
-                    continue;
-                }
-                byte[] request = Arrays.copyOf(in.array(), in.position());
-                RadiusPacket p = new RadiusPacket();
-                p.wrap(new UnsafeBuffer(request), 0, request.length);
-                if (!authenticator.verifyAccountingRequest(p, UDP_SECRET)) {
-                    continue;
-                }
-                requests.add(request);
-                fakeNas.send(ByteBuffer.wrap(ack(request, UDP_SECRET)), from);
-            } catch (Exception e) {
-                return; // closed
-            }
-        }
+    /** What the NAS received over UDP, in order. */
+    private List<byte[]> requests() {
+        return coaNas.received().stream().map(ReceivedPacket::bytes).toList();
     }
 
     static byte[] ack(byte[] request, byte[] secret) {
@@ -218,7 +194,7 @@ class CoaIT {
                 .doesNotContain("s-bob")
                 .contains("\"result\":\"ack\"")
                 .doesNotContain("timeout");
-        assertThat(requests).hasSize(2).allSatisfy(r -> {
+        assertThat(requests()).hasSize(2).allSatisfy(r -> {
             assertThat(r[0]).isEqualTo((byte) 40);
             assertThat(attribute(r, 1)).isEqualTo("alice");
             assertThat(attribute(r, 4))
@@ -227,15 +203,15 @@ class CoaIT {
             assertThat(attribute(r, 80)).as("Message-Authenticator").isNotNull();
         });
 
-        requests.clear();
+        coaNas.clear();
         HttpResponse<String> change = post("/coa/update?user=alice", "Session-Timeout = 600", TOKEN);
         assertThat(change.body()).contains("\"result\":\"ack\"");
-        assertThat(requests).hasSize(2).allSatisfy(r -> {
+        assertThat(requests()).hasSize(2).allSatisfy(r -> {
             assertThat(r[0]).isEqualTo((byte) 43);
             assertThat(attribute(r, 27)).as("Session-Timeout").isNotNull();
         });
 
-        requests.clear();
+        coaNas.clear();
         assertThat(post("/coa/disconnect?nas=local&session=s-bob", "", TOKEN).body())
                 .contains("\"user\":\"bob\"")
                 .contains("\"result\":\"ack\"");
@@ -300,7 +276,7 @@ class CoaIT {
             client.send(ack(request, radsec));
             assertThat(call.join().body()).contains("\"session\":\"s-carol\"").contains("\"result\":\"ack\"");
         }
-        assertThat(requests).as("nothing over UDP").isEmpty();
+        assertThat(requests()).as("nothing over UDP").isEmpty();
     }
 
     @Test
@@ -347,7 +323,7 @@ class CoaIT {
             client.send(ack(request, dtls));
             assertThat(call.join().body()).contains("\"session\":\"s-dave\"").contains("\"result\":\"ack\"");
         }
-        assertThat(requests).as("nothing over UDP").isEmpty();
+        assertThat(requests()).as("nothing over UDP").isEmpty();
     }
 
     /**
@@ -388,8 +364,8 @@ class CoaIT {
             assertThat(attribute(answer, 33))
                     .as("the home server's Proxy-State")
                     .isEqualTo("home-state");
-            assertThat(requests).hasSize(1);
-            byte[] atNas = requests.get(0);
+            assertThat(requests()).hasSize(1);
+            byte[] atNas = requests().get(0);
             assertThat(attribute(atNas, 1)).isEqualTo("erin@partner.example");
             assertThat(attribute(atNas, 44)).isEqualTo("s-erin");
             assertThat(attribute(atNas, 33))
@@ -398,7 +374,7 @@ class CoaIT {
 
             home.send(ByteBuffer.wrap(request), relay); // retransmitted
             assertThat(receive(home)).isEqualTo(answer);
-            assertThat(requests).as("not sent to the NAS again").hasSize(1);
+            assertThat(requests()).as("not sent to the NAS again").hasSize(1);
 
             byte[] unknown =
                     homeRequest(12, DynamicAuthorization.COA_REQUEST, "nobody@partner.example", "s-none", homeSecret);
