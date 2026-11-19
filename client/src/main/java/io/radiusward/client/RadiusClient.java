@@ -6,6 +6,7 @@ package io.radiusward.client;
 
 import io.radiusward.radius.codec.DecodeStatus;
 import io.radiusward.radius.codec.RadiusAuthenticator;
+import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -129,6 +130,36 @@ public final class RadiusClient implements AutoCloseable {
         return send(PacketBuilder.statusServer(nextIdentifier())
                 .messageAuthenticator()
                 .secret(secret));
+    }
+
+    /** Sends an accounting event (or the NAS's retransmission of one, {@link AccountingEvent#delay}). */
+    public Optional<Response> send(AccountingEvent event) {
+        return send(event.build(nextIdentifier(), secret));
+    }
+
+    /**
+     * Sends a recorded Accounting-, CoA- or Disconnect-Request again ({@link RecordedPacket}): with the next identifier
+     * and signed with the client's secret, its attributes unchanged. Access-Requests cannot be replayed: their
+     * password was hidden with the recording's secret.
+     */
+    public Optional<Response> replay(byte[] recorded) {
+        RadiusPacket view = new RadiusPacket();
+        byte[] packet = recorded.clone();
+        UnsafeBuffer buffer = new UnsafeBuffer(packet);
+        if (view.wrap(buffer, 0, packet.length) != DecodeStatus.OK) {
+            throw new IllegalArgumentException("not a RADIUS packet: " + view.status());
+        }
+        int code = view.code();
+        if (code != RadiusCode.ACCOUNTING_REQUEST
+                && code != RadiusCode.COA_REQUEST
+                && code != RadiusCode.DISCONNECT_REQUEST) {
+            throw new IllegalArgumentException(
+                    "only Accounting-, CoA- and Disconnect-Requests can be replayed, not code " + code);
+        }
+        packet[1] = (byte) nextIdentifier();
+        new RadiusAuthenticator()
+                .signAccountingRequest(buffer, 0, view.length(), view.messageAuthenticatorOffset(), secret);
+        return send(Arrays.copyOf(packet, view.length()));
     }
 
     /** Builds {@code request} (with the client's secret unless it has its own) and {@link #send(byte[]) sends} it. */

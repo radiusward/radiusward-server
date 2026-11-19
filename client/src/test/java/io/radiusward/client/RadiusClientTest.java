@@ -30,7 +30,7 @@ class RadiusClientTest {
     private static final byte[] SECRET = "testing123".getBytes(StandardCharsets.US_ASCII);
 
     /** A RADIUS server on loopback that answers each datagram with what {@code answer} returns (null: silence). */
-    private static final class Server implements AutoCloseable {
+    static final class Server implements AutoCloseable {
         final DatagramSocket socket;
         final List<byte[]> received = new ArrayList<>();
         final Thread thread;

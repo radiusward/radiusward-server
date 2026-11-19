@@ -89,7 +89,8 @@ PacketBuilder.reply(RadiusCode.ACCOUNTING_RESPONSE, request).secret(SECRET).buil
 Attributes and the Message-Authenticator go on the wire in the order they are added. Accounting-, CoA- and
 Disconnect-Requests get their Request Authenticator from the secret, Access-Requests and Status-Server a random one,
 replies are signed against their request. `AccountingRequest` (`testing/test-harness`) builds on it with the usual
-accounting attributes, and `RadiusClient` sends them over UDP as a NAS does (retransmission, verified answers). Only
+accounting attributes as an `AccountingEvent`, `RadiusClient` sends requests over UDP as a NAS does (retransmission,
+verified answers), and `CoaListener` plays the NAS that receives CoA and Disconnect. Only
 tests of the codec itself, of an encoder, or of allocation write packets with
 `RadiusPacketEncoder` directly.
 
