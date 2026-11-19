@@ -4,6 +4,7 @@
  */
 package io.radiusward.exporter;
 
+import io.aeron.Aeron;
 import io.aeron.cluster.client.AeronCluster;
 import io.aeron.cluster.client.EgressListener;
 import io.aeron.logbuffer.Header;
@@ -38,7 +39,7 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
     /** The cluster's answer. */
     public record Ack(LeaseResult result, int owner, long epoch, long checkpoint, boolean detached, boolean resync) {}
 
-    private final String aeronDir;
+    private final Aeron aeron;
     private final String ingressEndpoints;
     private final String egressHost;
     private final UnsafeBuffer buffer = new UnsafeBuffer(new byte[256]);
@@ -48,12 +49,17 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
     private final ExportCheckpointAckDecoder ackDecoder = new ExportCheckpointAckDecoder();
     private final byte[] name = new byte[32];
     private AeronCluster cluster;
+    /** A connect under way: it goes on at the next call, so no call waits longer than its own timeout. */
+    private AeronCluster.AsyncConnect connecting;
+
     private long correlationId;
     private Ack ack;
     private long ackCorrelation;
 
-    public LeaseClient(String aeronDir, String ingressEndpoints, String egressHost) {
-        this.aeronDir = aeronDir;
+    /** @param aeron the sink's Aeron client, shared and not closed here (a client of its own would wait for the
+     *     member's media driver on connecting, longer than a renewal may take while the member stops) */
+    public LeaseClient(Aeron aeron, String ingressEndpoints, String egressHost) {
+        this.aeron = aeron;
         this.ingressEndpoints = ingressEndpoints;
         this.egressHost = egressHost;
     }
@@ -63,7 +69,9 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
             SinkConfig sink, int memberId, long epoch, long position, long lastEventTime, Duration timeout) {
         long deadline = System.nanoTime() + timeout.toNanos();
         try {
-            connect();
+            if (!connect(deadline)) {
+                return null; // not connected in time; the caller retries
+            }
             long id = ++correlationId;
             byte[] ascii = sink.name().getBytes(StandardCharsets.US_ASCII);
             java.util.Arrays.fill(name, (byte) 0);
@@ -108,18 +116,37 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
         }
     }
 
-    private void connect() {
+    /**
+     * Connects to the cluster until {@code deadline} at most: a synchronous connect waits up to its message timeout (5 s),
+     * longer than a renewal may take, so a member stopping could close its exporter while a renewal still connects.
+     */
+    private boolean connect(long deadline) {
         if (cluster != null && !cluster.isClosed()) {
-            return;
+            return true;
         }
-        cluster = AeronCluster.connect(new AeronCluster.Context()
-                .aeronDirectoryName(aeronDir)
-                .errorHandler(LOG_ERRORS)
-                .ingressChannel("aeron:udp")
-                .ingressEndpoints(ingressEndpoints)
-                .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")
-                .messageTimeoutNs(Duration.ofSeconds(5).toNanos())
-                .egressListener(this));
+        if (connecting == null) {
+            connecting = AeronCluster.asyncConnect(new AeronCluster.Context()
+                    .aeron(aeron)
+                    .ownsAeronClient(false)
+                    .errorHandler(LOG_ERRORS)
+                    .ingressChannel("aeron:udp")
+                    .ingressEndpoints(ingressEndpoints)
+                    .egressChannel("aeron:udp?endpoint=" + egressHost + ":0")
+                    .messageTimeoutNs(Duration.ofSeconds(5).toNanos())
+                    .egressListener(this));
+        }
+        while (true) {
+            AeronCluster connected = connecting.poll();
+            if (connected != null) {
+                cluster = connected;
+                connecting = null;
+                return true;
+            }
+            if (System.nanoTime() >= deadline) {
+                return false;
+            }
+            java.util.concurrent.locks.LockSupport.parkNanos(1_000_000);
+        }
     }
 
     @Override
@@ -141,6 +168,8 @@ public final class LeaseClient implements AutoCloseable, EgressListener {
 
     @Override
     public void close() {
+        CloseHelper.quietClose(connecting);
+        connecting = null;
         CloseHelper.quietClose(cluster);
         cluster = null;
     }
