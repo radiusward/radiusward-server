@@ -336,7 +336,8 @@ class StoreSweepTest extends HandlerFixture {
                         mschap,
                         verifiers,
                         storeVerifiers,
-                        eapConfig),
+                        eapConfig,
+                        AuthPlugins.NONE),
                 DICTIONARY,
                 () -> now[0]);
     }

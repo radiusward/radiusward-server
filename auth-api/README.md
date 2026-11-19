@@ -16,3 +16,9 @@ Stores contain no RADIUS logic: the RADIUS server verifies passwords, evaluates 
 **Credential verifiers** (`CredentialVerifierProvider`, `CredentialVerifier`, ADR 0025) check a password or an MS-CHAP
 response elsewhere — a directory, a domain controller — for users whose store holds no password; registered in
 `META-INF/services/io.radiusward.auth.CredentialVerifierProvider`. `ItemParser` reads items in the users-file syntax.
+
+**Given in code.** A RADIUS server started in code (an embedded one, a test) also takes providers that are not
+plug-ins: `IdentityStoreProvider.of(type, context -> store)` and `CredentialVerifierProvider.of(type, context ->
+verifier)`, handed over as `AuthPlugins` (`RadiusServer.storeHandler(config, auth, plugins)`). The settings name their
+type as they name a plug-in's, and the server creates, reloads and closes their stores and verifiers alike, so a class
+written for a test runs unchanged as a plug-in. A type given in code must not also be a plug-in's.

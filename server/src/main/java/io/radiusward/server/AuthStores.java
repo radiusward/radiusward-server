@@ -46,6 +46,7 @@ import org.agrona.collections.Object2ObjectHashMap;
  *     rejected instead of occupying a worker for seconds
  * @param replyVendors per NAS entry, the vendors whose attributes its replies may carry ({@code nas.<name>.reply.vendors},
  *     by default from {@code nas.<name>.vendor}); a NAS entry without one gets every reply item
+ * @param plugins the providers given in code (an embedded server), kept for the next reload
  */
 record AuthStores(
         Map<String, IdentityStore> stores,
@@ -59,7 +60,8 @@ record AuthStores(
         Map<String, Boolean> mschap,
         Map<String, CredentialVerifier> verifiers,
         Map<String, String> storeVerifiers,
-        EapConfig eap)
+        EapConfig eap,
+        AuthPlugins plugins)
         implements AutoCloseable {
 
     /** Vendors whose attributes a NAS of this vendor also understands (Juniper's E-series / ERX attributes). */
@@ -74,12 +76,18 @@ record AuthStores(
      *     {@code null} skips both (tests)
      */
     static AuthStores from(Config config, int workers, Dictionary dictionary) {
+        return from(config, workers, dictionary, AuthPlugins.NONE);
+    }
+
+    /** As {@link #from(Config, int, Dictionary)}, with providers given in code next to the plug-ins. */
+    static AuthStores from(Config config, int workers, Dictionary dictionary, AuthPlugins plugins) {
         List<String> names = config.list("auth.stores", List.of());
         if (names.isEmpty()) {
             throw new ConfigException("auth.stores: name at least one identity store (auth.store.<name>.type)");
         }
-        ClassLoader plugins = plugins(config);
-        Map<String, IdentityStoreProvider> providers = providers(IdentityStoreProvider.class, plugins);
+        ClassLoader loader = plugins(config);
+        Map<String, IdentityStoreProvider> providers = providers(IdentityStoreProvider.class, loader);
+        inCode(providers, plugins.stores(), IdentityStoreProvider::type, "identity store");
         Map<String, IdentityStore> stores = new Object2ObjectHashMap<>();
         Map<String, Boolean> chap = new Object2ObjectHashMap<>();
         Map<String, Boolean> mschap = new Object2ObjectHashMap<>();
@@ -112,7 +120,8 @@ record AuthStores(
                 }
             }
             Map<String, CredentialVerifierProvider> verifierProviders =
-                    providers(CredentialVerifierProvider.class, plugins);
+                    providers(CredentialVerifierProvider.class, loader);
+            inCode(verifierProviders, plugins.verifiers(), CredentialVerifierProvider::type, "credential verifier");
             for (String name : config.list("auth.verifiers", List.of())) {
                 String prefix = "auth.verifier." + name + ".";
                 String type = config.string(prefix + "type");
@@ -164,7 +173,8 @@ record AuthStores(
                 mschap,
                 verifiers,
                 storeVerifiers,
-                EapConfig.from(config));
+                EapConfig.from(config),
+                plugins);
     }
 
     /** Why {@code item} cannot be sent in a reply, or {@code null}. */
@@ -247,6 +257,18 @@ record AuthStores(
             throw new ConfigException("auth.plugins.dir: cannot read " + dir, e);
         }
         return new URLClassLoader(jars.toArray(URL[]::new), AuthStores.class.getClassLoader());
+    }
+
+    /** Adds the providers given in code; a type that is also a plug-in's is refused rather than one silently winning. */
+    private static <P> void inCode(
+            Map<String, P> providers, List<P> given, java.util.function.Function<P, String> type, String kind) {
+        for (P p : given) {
+            String name = type.apply(p);
+            if (providers.containsKey(name)) {
+                throw new ConfigException("the " + kind + " type " + name + " given in code is also a plug-in's type");
+            }
+            providers.put(name, p);
+        }
     }
 
     /** Providers by type: the class path first, then the plug-in jars. */

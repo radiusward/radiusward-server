@@ -219,6 +219,7 @@ public final class ClusterNode implements AutoCloseable {
         if (config.export().enabled()) {
             node.exporter = Exporter.start(
                     config.export().sinks(),
+                    config.export().providers(),
                     new ExporterContext(
                             id,
                             config.aeronDir(),

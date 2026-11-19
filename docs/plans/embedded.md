@@ -1,6 +1,6 @@
 # Plan: radiusward as a library for development and tests
 
-Status: designed 2026-11-18; E1, E2, E2a and E2b (the EAP supplicant) done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
+Status: designed 2026-11-18; E1, E2, E2a, E2b (the EAP supplicant) and E3 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
 
 ## Goal
 
@@ -222,7 +222,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | E2b-1 ✅ | `radiusward-eap` (EAP primitives moved from the server, shared); the EAP supplicant in `radiusward-client`: EAP-MD5, EAP-TLS, PEAP (MS-CHAPv2, GTC, crypto-binding), TTLS (PAP, CHAP, MS-CHAP, MS-CHAPv2), results with reply items and keys | each method against the server (`EapSupplicantIT`); `ServerAuthIT`'s EAP-TLS uses it |
 | E2b-2 ✅ | TEAP (Basic-Password-Auth, inner EAP-GTC, crypto-binding) and EAP-pwd in the supplicant; `TeapTlv` and `EapPwdKeys` shared in `radiusward-eap` | each method against the server (`EapSupplicantIT`) |
 | E2b-3 ✅ | EAP-SIM, EAP-AKA and EAP-AKA′ with a simulated SIM (`SimCard`: IMSI, Ki, OPc, its SQN) | each method against a server on a cluster, sequence numbers and a resynchronisation (`SimSupplicantIT`) |
-| E3 | Sink and identity-store instances besides plug-ins (exporter, auth-api) | unit tests |
+| E3 ✅ | Identity stores, credential verifiers and sinks given in code besides plug-ins: `IdentityStoreProvider.of`, `CredentialVerifierProvider.of`, `SinkProvider.of`; `AuthPlugins` for the RADIUS server (kept across reloads), `ExportConfig.withProviders` for the member; a type also a plug-in's refused | unit tests; `InCodePluginsIT` (a store, a verifier and a sink in code on a member and a RADIUS server) |
 | E4 | `radiusward-embedded`: builder, one or three members and one or more RADIUS servers with failover controls, users, EAP with the throwaway CA, SIM users, accounting callback and state queries, pausing the member, CoA, settings, lifecycle, the JVM-option check | an IT from a plain Maven project outside the reactor; startup and memory measured |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
 | E6 | `radiusward-bom`; release workflow and snapshots to GitHub Packages; README, website page, release doc | `0.1.0` and a snapshot resolvable from GitHub Packages in an empty project with a token |
