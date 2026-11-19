@@ -5,27 +5,29 @@
 package io.radiusward.embedded;
 
 import java.net.DatagramSocket;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * The member's six UDP ports (ingress, consensus, log, catch-up, archive and its replication) need a free range: a
+ * Each member's six UDP ports (ingress, consensus, log, catch-up, archive and its replication) need a free range: a
  * base below the ephemeral ports (Linux from 32768, macOS from 49152), where a port checked free is not taken by a
  * client's ephemeral socket before the member binds it. Bases handed out in this JVM are held until the member binds
  * them, so embedded servers started in parallel never share one.
  */
 final class Ports {
 
-    private static final Set<Integer> RESERVED = new HashSet<>();
+    /** Bases handed out and not yet bound, with their number of members. */
+    private static final Map<Integer, Integer> RESERVED = new HashMap<>();
 
     private Ports() {}
 
-    static synchronized int reserveBase() {
+    /** A base where every member's ports ({@code base + 100 * member + 0..5}) are free. */
+    static synchronized int reserveBase(int members) {
         for (int attempt = 0; attempt < 200; attempt++) {
-            int base = 20_000 + ThreadLocalRandom.current().nextInt(120) * 100; // highest port 31_905
-            if (!RESERVED.contains(base) && free(base)) {
-                RESERVED.add(base);
+            int base = 20_000 + ThreadLocalRandom.current().nextInt(120 - members) * 100; // below 32_000
+            if (!overlaps(base, members) && free(base, members)) {
+                RESERVED.put(base, members);
                 return base;
             }
         }
@@ -36,12 +38,25 @@ final class Ports {
         RESERVED.remove(base);
     }
 
-    private static boolean free(int base) {
-        for (int o = 0; o < 6; o++) {
-            try (DatagramSocket s = new DatagramSocket(base + o)) {
-                s.setReuseAddress(false);
-            } catch (Exception e) {
-                return false;
+    private static boolean overlaps(int base, int members) {
+        for (Map.Entry<Integer, Integer> r : RESERVED.entrySet()) {
+            int start = r.getKey();
+            int end = start + 100 * r.getValue();
+            if (base < end && start < base + 100 * members) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean free(int base, int members) {
+        for (int m = 0; m < members; m++) {
+            for (int o = 0; o < 6; o++) {
+                try (DatagramSocket s = new DatagramSocket(base + 100 * m + o)) {
+                    s.setReuseAddress(false);
+                } catch (Exception e) {
+                    return false;
+                }
             }
         }
         return true;

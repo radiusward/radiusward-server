@@ -85,6 +85,46 @@ class BuilderTest {
     }
 
     @Test
+    void membersEapSimUsersAndCoa() {
+        Map<String, String> v = EmbeddedRadiusward.builder()
+                .members(3)
+                .radiusServers(2)
+                .eap("PEAP", " teap ")
+                .simUser("262011000000001", new byte[16], new byte[16])
+                .coaPort(13799)
+                .values(DIR, 23_000);
+        assertThat(v)
+                .containsEntry("cluster.members", "localhost, localhost, localhost")
+                .containsEntry("auth.eap.methods", "peap, teap")
+                .containsEntry("auth.eap.teap.inner", "mschapv2, gtc, basic")
+                .containsEntry("nas.local.coa.port", "13799")
+                .containsEntry("coa.enabled", "true")
+                .containsEntry("auth.stores", "users");
+        assertThatThrownBy(() -> EmbeddedRadiusward.builder().simUser("1", new byte[15], new byte[16]))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> EmbeddedRadiusward.builder().members(4)).isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> EmbeddedRadiusward.builder().radiusServers(9))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void theThrowawayCaSignsTheServerAndClientCertificates(@org.junit.jupiter.api.io.TempDir Path dir)
+            throws Exception {
+        ThrowawayPki pki = ThrowawayPki.create(dir);
+        assertThat(pki.settings()).containsKeys("auth.eap.tls.certificate", "auth.eap.tls.key", "auth.eap.tls.ca");
+        String chain = java.nio.file.Files.readString(dir.resolve("server.pem"));
+        assertThat(chain.split("-----BEGIN CERTIFICATE-----", -1))
+                .as("the chain: the server's certificate, then the CA's")
+                .hasSize(3);
+        ClientCertificate laptop = pki.client("laptop-1");
+        laptop.certificate().verify(pki.ca().getPublicKey());
+        pki.ca().verify(pki.ca().getPublicKey());
+        assertThat(laptop.certificate().getSubjectX500Principal().getName()).isEqualTo("CN=laptop-1");
+        assertThat(laptop.certificate().getExtendedKeyUsage()).containsExactly("1.3.6.1.5.5.7.3.2");
+        assertThat(pki.ca().getBasicConstraints()).as("a CA").isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
     void theJvmOptionIsThereInTheBuildsTests() {
         EmbeddedRadiusward.checkJvmOption();
     }

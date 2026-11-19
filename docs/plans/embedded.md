@@ -1,6 +1,6 @@
 # Plan: radiusward as a library for development and tests
 
-Status: designed 2026-11-18; E1, E2, E2a, E2b (the EAP supplicant), E3 and E4a done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
+Status: designed 2026-11-18; E1, E2, E2a, E2b (the EAP supplicant), E3 and E4 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
 
 ## Goal
 
@@ -69,7 +69,7 @@ page). Until 1.0, minor versions may change the public API too, with a note in t
 - **One member and one RADIUS server by default, more when a test needs them.** `members(3)` and `radiusServers(2)`
   start a whole cluster in the JVM, as the repository's `LocalCluster` does, each RADIUS server with its own ports
   (`radius.server(1).authPort()`). With them a developer tests what their NAS or application does in a failover:
-  `radius.stopMember(i)`, `radius.killLeader()` (the member stops without closing), `radius.startMember(i)`,
+  `radius.stopMember(i)`, `radius.stopLeader()` (members in one JVM stop by closing; a crash is what the process-based e2e tests cover), `radius.startMember(i)`,
   `radius.stopServer(i)`; with three members, losing one keeps acknowledging, losing two stops it until one is back.
   Even numbers of members are refused (two members survive no failure). `pauseCluster()` remains the shortcut for
   "no acknowledgements" with any number of members.
@@ -224,7 +224,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | E2b-3 ✅ | EAP-SIM, EAP-AKA and EAP-AKA′ with a simulated SIM (`SimCard`: IMSI, Ki, OPc, its SQN) | each method against a server on a cluster, sequence numbers and a resynchronisation (`SimSupplicantIT`) |
 | E3 ✅ | Identity stores, credential verifiers and sinks given in code besides plug-ins: `IdentityStoreProvider.of`, `CredentialVerifierProvider.of`, `SinkProvider.of`; `AuthPlugins` for the RADIUS server (kept across reloads), `ExportConfig.withProviders` for the member; a type also a plug-in's refused | unit tests; `InCodePluginsIT` (a store, a verifier and a sink in code on a member and a RADIUS server) |
 | E4a ✅ | `radiusward-embedded`: builder, one member and one RADIUS server, users, the developer's store, verifier and sinks, accounting callback and state queries, pausing the member, settings, lifecycle, the JVM-option check | `EmbeddedRadiuswardIT`; a plain Maven project outside the reactor (`testing/embedded-consumer`, CI's e2e job); startup and memory measured (`FootprintIT`, about 1.1 s, 30 MB heap) |
-| E4b | Three members and more RADIUS servers with failover controls, EAP with the throwaway CA and client certificates, SIM users, CoA and Disconnect | an IT per feature |
+| E4b ✅ | `members(3)`, `radiusServers(2)` with `stopMember`, `startMember`, `stopLeader`, `stopServer`, `startServer`; EAP with the throwaway CA (Bouncy Castle) and client certificates; SIM users; CoA and Disconnect (`coaPort`, `coa`, `disconnect`) | `EmbeddedClusterIT`, `EmbeddedEapAndCoaIT` |
 | E5 | `radiusward-junit` | tests per class and per test, parallel |
 | E6 | `radiusward-bom`; release workflow and snapshots to GitHub Packages; README, website page, release doc | `0.1.0` and a snapshot resolvable from GitHub Packages in an empty project with a token |
 | E7 | Releases to Maven Central: an (empty) javadoc jar for `radiusward-dictionaries`, which has no Java; GPG signing, the Central Portal's plugin in the release job; GitHub Packages keeps the snapshots | `0.x` resolvable from Central in an empty project without any repository setting |

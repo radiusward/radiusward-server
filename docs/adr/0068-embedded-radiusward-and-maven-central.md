@@ -39,5 +39,8 @@ artifacts carry names such as `server` and `common` that are too generic for a p
   repository's own modules (directories and packages stay).
 - The exporter and the identity stores accept instances besides `ServiceLoader` plug-ins; `export-api` and `auth-api`
   become the interfaces developers implement for both embedded use and production, so they stay compatible.
+- `radiusward-embedded` depends on Bouncy Castle (bcprov, bcpkix, MIT licence) to make its throwaway CA and
+  certificates for the TLS-based EAP methods: the JDK has no public API to build X.509 certificates, and hand-written
+  certificate encoding would be ours to keep right. The server, the image and the chart do not depend on it.
 - Snapshots need a GitHub token with `read:packages` to download; releases on Central need nothing. Publishing to
   Central needs the Central Portal token and the GPG key as repository secrets.

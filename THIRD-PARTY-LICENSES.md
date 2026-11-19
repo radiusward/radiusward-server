@@ -21,6 +21,7 @@
 | [Apache Log4j 2](https://logging.apache.org/log4j/2.x/) (api, core) | Apache-2.0 |
 | [LMAX Disruptor](https://github.com/LMAX-Exchange/disruptor) 4.x (used by Log4j2 async loggers) | Apache-2.0 |
 | [PostgreSQL JDBC driver (pgjdbc)](https://jdbc.postgresql.org/) (PostgreSQL sink) | BSD-2-Clause |
+| [Bouncy Castle](https://www.bouncycastle.org/) (bcprov, bcpkix; `radiusward-embedded` only, for its throwaway CA; not in the image) | MIT (Bouncy Castle Licence) |
 
 ## Container image
 
