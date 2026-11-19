@@ -240,7 +240,7 @@ class AkaEapolIT {
             for (int i = 1; i <= 3; i++) {
                 byte[] rand = new byte[16];
                 rand[15] = (byte) i;
-                byte[][] t = io.radiusward.server.SimVectors.gsm(k, opc, rand);
+                byte[][] t = io.radiusward.eap.SimVectors.gsm(k, opc, rand);
                 b.append(i == 1 ? "" : ", ")
                         .append("EAP-Sim-Rand")
                         .append(i)

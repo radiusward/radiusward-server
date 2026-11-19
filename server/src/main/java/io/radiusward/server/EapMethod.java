@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.eap.MsChap;
 import java.util.List;
 
 /**

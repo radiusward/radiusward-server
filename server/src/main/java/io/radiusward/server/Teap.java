@@ -4,6 +4,8 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.TeapKeys;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -28,7 +30,7 @@ import javax.net.ssl.SSLException;
  */
 final class Teap extends TlsTunnel {
 
-    static final int TYPE = 55;
+    static final int TYPE = EapPacket.TYPE_TEAP;
     static final int TEAP_VERSION = 1;
 
     static final int TLV_AUTHORITY_ID = 1;

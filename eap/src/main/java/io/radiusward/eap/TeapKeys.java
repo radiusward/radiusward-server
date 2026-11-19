@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 import java.nio.charset.StandardCharsets;
 import java.security.GeneralSecurityException;
@@ -23,24 +23,24 @@ import javax.crypto.spec.SecretKeySpec;
  * MSK       = TLS-PRF(S-IMCK[n], "Session Key Generating Function", 64)
  * </pre>
  */
-final class TeapKeys {
+public final class TeapKeys {
 
-    static final int SIMCK_LENGTH = 40;
-    static final int CMK_LENGTH = 20;
-    static final int MAC_LENGTH = 20;
+    public static final int SIMCK_LENGTH = 40;
+    public static final int CMK_LENGTH = 20;
+    public static final int MAC_LENGTH = 20;
 
     private final String prfAlgorithm;
     private final String macAlgorithm;
 
     /** @param cipherSuite the negotiated TLS cipher suite's standard name */
-    TeapKeys(String cipherSuite) {
+    public TeapKeys(String cipherSuite) {
         boolean sha384 = cipherSuite.endsWith("_SHA384");
         this.prfAlgorithm = sha384 ? "HmacSHA384" : "HmacSHA256";
         this.macAlgorithm = sha384 ? "HmacSHA384" : cipherSuite.endsWith("_SHA") ? "HmacSHA1" : "HmacSHA256";
     }
 
     /** S-IMCK[j] and CMK[j] after an inner method. */
-    record Compound(byte[] simck, byte[] cmk) {}
+    public record Compound(byte[] simck, byte[] cmk) {}
 
     /**
      * The next S-IMCK and CMK from the previous S-IMCK and the inner method's keys.
@@ -48,7 +48,7 @@ final class TeapKeys {
      * @param msk the inner method's MSK, {@code null} if it has none (EAP-GTC, EAP-MD5, Basic-Password-Auth)
      * @param emsk the inner method's EMSK, {@code null} if it has none: then the MSK-based IMSK is used
      */
-    Compound next(byte[] previousSimck, byte[] msk, byte[] emsk) {
+    public Compound next(byte[] previousSimck, byte[] msk, byte[] emsk) {
         byte[] imsk = new byte[32];
         if (emsk != null) {
             imsk = Arrays.copyOf(prf(emsk, "TEAPbindkey@ietf.org", new byte[] {0, 0, 64}, 64), 32);
@@ -61,7 +61,7 @@ final class TeapKeys {
     }
 
     /** The MSK at the end of the conversation. */
-    byte[] msk(byte[] simck) {
+    public byte[] msk(byte[] simck) {
         return prf(simck, "Session Key Generating Function", new byte[0], 64);
     }
 
@@ -71,14 +71,14 @@ final class TeapKeys {
      *
      * @param binding the whole Crypto-Binding TLV (header and value), MAC fields as they are; zeroed in a copy
      */
-    byte[] compoundMac(byte[] cmk, byte[] binding, byte[] serverOuterTlvs, byte[] peerOuterTlvs) {
+    public byte[] compoundMac(byte[] cmk, byte[] binding, byte[] serverOuterTlvs, byte[] peerOuterTlvs) {
         byte[] zeroed = binding.clone();
         Arrays.fill(zeroed, 4 + 4 + 32, zeroed.length, (byte) 0); // EMSK and MSK Compound MAC
         try {
             Mac mac = Mac.getInstance(macAlgorithm);
             mac.init(new SecretKeySpec(cmk, macAlgorithm));
             mac.update(zeroed);
-            mac.update((byte) Teap.TYPE);
+            mac.update((byte) EapPacket.TYPE_TEAP);
             mac.update(serverOuterTlvs);
             mac.update(peerOuterTlvs);
             return Arrays.copyOf(mac.doFinal(), MAC_LENGTH);
@@ -88,7 +88,7 @@ final class TeapKeys {
     }
 
     /** The TLS 1.2 PRF (RFC 5246 §5): P_hash(secret, label + seed). */
-    byte[] prf(byte[] secret, String label, byte[] seed, int length) {
+    public byte[] prf(byte[] secret, String label, byte[] seed, int length) {
         try {
             Mac mac = Mac.getInstance(prfAlgorithm);
             mac.init(new SecretKeySpec(secret.length == 0 ? new byte[1] : secret, prfAlgorithm));

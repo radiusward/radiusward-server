@@ -4,6 +4,10 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.Milenage;
+import io.radiusward.eap.SimKeys;
+import io.radiusward.eap.SimMessage;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;

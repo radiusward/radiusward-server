@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
@@ -13,34 +13,34 @@ import org.agrona.collections.Int2ObjectHashMap;
  * reserved bytes and attributes, each a type, a length in 4-byte units and a value. Building and reading; a message
  * that does not parse yields {@code null}, never an exception.
  */
-final class SimMessage {
+public final class SimMessage {
 
-    static final int AT_RAND = 1;
-    static final int AT_AUTN = 2;
-    static final int AT_RES = 3;
-    static final int AT_AUTS = 4;
-    static final int AT_PADDING = 6;
-    static final int AT_NONCE_MT = 7;
-    static final int AT_PERMANENT_ID_REQ = 10;
-    static final int AT_MAC = 11;
-    static final int AT_NOTIFICATION = 12;
-    static final int AT_ANY_ID_REQ = 13;
-    static final int AT_IDENTITY = 14;
-    static final int AT_VERSION_LIST = 15;
-    static final int AT_SELECTED_VERSION = 16;
-    static final int AT_FULLAUTH_ID_REQ = 17;
-    static final int AT_COUNTER = 19;
-    static final int AT_COUNTER_TOO_SMALL = 20;
-    static final int AT_NONCE_S = 21;
-    static final int AT_CLIENT_ERROR_CODE = 22;
-    static final int AT_KDF_INPUT = 23;
-    static final int AT_KDF = 24;
-    static final int AT_IV = 129;
-    static final int AT_ENCR_DATA = 130;
-    static final int AT_NEXT_PSEUDONYM = 132;
-    static final int AT_NEXT_REAUTH_ID = 133;
-    static final int AT_CHECKCODE = 134;
-    static final int AT_RESULT_IND = 135;
+    public static final int AT_RAND = 1;
+    public static final int AT_AUTN = 2;
+    public static final int AT_RES = 3;
+    public static final int AT_AUTS = 4;
+    public static final int AT_PADDING = 6;
+    public static final int AT_NONCE_MT = 7;
+    public static final int AT_PERMANENT_ID_REQ = 10;
+    public static final int AT_MAC = 11;
+    public static final int AT_NOTIFICATION = 12;
+    public static final int AT_ANY_ID_REQ = 13;
+    public static final int AT_IDENTITY = 14;
+    public static final int AT_VERSION_LIST = 15;
+    public static final int AT_SELECTED_VERSION = 16;
+    public static final int AT_FULLAUTH_ID_REQ = 17;
+    public static final int AT_COUNTER = 19;
+    public static final int AT_COUNTER_TOO_SMALL = 20;
+    public static final int AT_NONCE_S = 21;
+    public static final int AT_CLIENT_ERROR_CODE = 22;
+    public static final int AT_KDF_INPUT = 23;
+    public static final int AT_KDF = 24;
+    public static final int AT_IV = 129;
+    public static final int AT_ENCR_DATA = 130;
+    public static final int AT_NEXT_PSEUDONYM = 132;
+    public static final int AT_NEXT_REAUTH_ID = 133;
+    public static final int AT_CHECKCODE = 134;
+    public static final int AT_RESULT_IND = 135;
 
     private final int subtype;
 
@@ -53,21 +53,21 @@ final class SimMessage {
         this.macOffset = macOffset;
     }
 
-    int subtype() {
+    public int subtype() {
         return subtype;
     }
 
     /** The value of an attribute (after its type and length bytes), or {@code null}. */
-    byte[] get(int type) {
+    public byte[] get(int type) {
         return attributes.get(type);
     }
 
-    boolean has(int type) {
+    public boolean has(int type) {
         return attributes.containsKey(type);
     }
 
     /** Offset of AT_MAC's MAC within the type data, -1 if absent. */
-    int macOffset() {
+    public int macOffset() {
         return macOffset;
     }
 
@@ -75,7 +75,7 @@ final class SimMessage {
      * Parses type data; {@code null} if an attribute is truncated, has length 0, or appears twice. Unknown attributes
      * below 128 are not skippable (RFC 4187 §8.1): a message with one is refused; 128 and above are skipped.
      */
-    static SimMessage parse(byte[] data) {
+    public static SimMessage parse(byte[] data) {
         if (data.length < 3) {
             return null;
         }
@@ -136,7 +136,7 @@ final class SimMessage {
     }
 
     /** The value of a variable-length attribute that starts with its actual length in bytes (AT_IDENTITY, …). */
-    static byte[] lengthPrefixed(byte[] value) {
+    public static byte[] lengthPrefixed(byte[] value) {
         if (value == null || value.length < 2) {
             return null;
         }
@@ -145,18 +145,18 @@ final class SimMessage {
     }
 
     /** Builds type data: a subtype, then attributes in order. */
-    static final class Builder {
+    public static final class Builder {
         private final ByteArrayOutputStream out = new ByteArrayOutputStream();
         private int macOffset = -1;
 
-        Builder(int subtype) {
+        public Builder(int subtype) {
             out.write(subtype);
             out.write(0);
             out.write(0);
         }
 
         /** An attribute whose value (after type and length) is {@code value}, padded with zeros to 4 bytes. */
-        Builder add(int type, byte[] value) {
+        public Builder add(int type, byte[] value) {
             int length = (2 + value.length + 3) / 4 * 4;
             out.write(type);
             out.write(length / 4);
@@ -166,14 +166,14 @@ final class SimMessage {
         }
 
         /** Two reserved bytes, then {@code value}: AT_RAND (several RANDs), AT_AUTN, AT_NONCE_*, AT_IV. */
-        Builder reserved(int type, byte[] value) {
+        public Builder reserved(int type, byte[] value) {
             byte[] v = new byte[2 + value.length];
             System.arraycopy(value, 0, v, 2, value.length);
             return add(type, v);
         }
 
         /** Its actual length in bytes, then {@code value}: AT_IDENTITY, AT_KDF_INPUT, AT_NEXT_PSEUDONYM, … */
-        Builder lengthPrefixed(int type, byte[] value) {
+        public Builder lengthPrefixed(int type, byte[] value) {
             byte[] v = new byte[2 + value.length];
             v[0] = (byte) (value.length >>> 8);
             v[1] = (byte) value.length;
@@ -182,21 +182,21 @@ final class SimMessage {
         }
 
         /** A 16-bit value: AT_KDF, AT_NOTIFICATION, AT_COUNTER, AT_SELECTED_VERSION, … */
-        Builder uint16(int type, int value) {
+        public Builder uint16(int type, int value) {
             return add(type, new byte[] {(byte) (value >>> 8), (byte) value});
         }
 
-        /** AT_MAC with zeros, its position remembered for {@link #sign}. */
-        Builder mac() {
+        /** AT_MAC with zeros, its position remembered for signing it afterwards. */
+        public Builder mac() {
             macOffset = out.size() + 4;
             return add(AT_MAC, new byte[18]);
         }
 
-        byte[] build() {
+        public byte[] build() {
             return out.toByteArray();
         }
 
-        int macOffset() {
+        public int macOffset() {
             return macOffset;
         }
     }
@@ -205,7 +205,7 @@ final class SimMessage {
      * The whole EAP packet over which AT_MAC is computed: code, identifier, length, type, then the type data with the
      * MAC zeroed (RFC 4186 §10.14).
      */
-    static byte[] packet(int code, int identifier, int type, byte[] data, int macOffset) {
+    public static byte[] packet(int code, int identifier, int type, byte[] data, int macOffset) {
         byte[] p = new byte[5 + data.length];
         p[0] = (byte) code;
         p[1] = (byte) identifier;

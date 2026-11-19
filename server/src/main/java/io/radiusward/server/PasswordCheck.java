@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.auth.Md4;
+import io.radiusward.eap.MsChap;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CodingErrorAction;

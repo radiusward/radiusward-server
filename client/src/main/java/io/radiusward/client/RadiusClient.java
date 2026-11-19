@@ -125,6 +125,14 @@ public final class RadiusClient implements AutoCloseable {
         return send(accessRequest().messageAuthenticator().attribute(1, user).msChapV2(user, password));
     }
 
+    /**
+     * An EAP login as a device runs it through a NAS: Access-Requests with EAP-Message and the server's State until an
+     * Access-Accept or Access-Reject ({@link EapLogin} says the method and credentials).
+     */
+    public EapResult eap(EapLogin login) {
+        return new EapSupplicant(this, secret, login).run();
+    }
+
     /** Status-Server (RFC 5997): whether the server is there, without a login. */
     public Optional<Response> statusServer() {
         return send(PacketBuilder.statusServer(nextIdentifier())

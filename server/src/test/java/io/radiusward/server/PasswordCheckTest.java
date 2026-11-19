@@ -6,6 +6,7 @@ package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.eap.MsChap;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

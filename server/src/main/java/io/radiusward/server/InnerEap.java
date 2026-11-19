@@ -4,6 +4,8 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
 import io.radiusward.server.EapMethod.Credentials;
 import io.radiusward.server.EapMethod.Inner;
 import io.radiusward.server.EapMethod.Step;

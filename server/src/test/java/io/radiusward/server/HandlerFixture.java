@@ -12,6 +12,8 @@ import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
 import io.radiusward.auth.UserRecord;
 import io.radiusward.client.PacketBuilder;
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.codec.RadiusPacketEncoder;
@@ -206,8 +208,8 @@ abstract class HandlerFixture {
         }
     }
 
-    static final byte[] AUTH_CHALLENGE = MsChapTest.hex("5B5D7C7D7B3F2F3E3C2C602132262628");
-    static final byte[] PEER_CHALLENGE = MsChapTest.hex("21402324255E262A28295F2B3A337C7E");
+    static final byte[] AUTH_CHALLENGE = TestHex.bytes("5B5D7C7D7B3F2F3E3C2C602132262628");
+    static final byte[] PEER_CHALLENGE = TestHex.bytes("21402324255E262A28295F2B3A337C7E");
 
     /** An MS-CHAPv2 request as a client computes it (RFC 2759), for {@code user} with {@code password}. */
     static byte[] msChap2(String user, String password) {
@@ -221,7 +223,7 @@ abstract class HandlerFixture {
     }
 
     static byte[] msChap1(String user, String password, boolean useNt) {
-        byte[] challenge = MsChapTest.hex("102DB5DF085D3041");
+        byte[] challenge = TestHex.bytes("102DB5DF085D3041");
         byte[] response = new byte[50];
         response[0] = 3;
         response[1] = (byte) (useNt ? 1 : 0);

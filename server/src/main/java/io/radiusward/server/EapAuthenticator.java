@@ -8,6 +8,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.STATE;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.StoreUnavailableException;
+import io.radiusward.eap.EapPacket;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.nio.charset.StandardCharsets;

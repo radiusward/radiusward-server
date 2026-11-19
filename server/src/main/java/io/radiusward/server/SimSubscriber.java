@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.eap.Milenage;
 import io.radiusward.units.Units;
 import java.util.List;
 import java.util.Locale;

@@ -10,6 +10,7 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
+import io.radiusward.eap.EapPacket;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.Dictionary;
 import io.radiusward.radius.dictionary.DictionaryLoader;

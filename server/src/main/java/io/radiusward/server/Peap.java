@@ -4,6 +4,9 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
+import io.radiusward.eap.PeapCryptoBinding;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Arrays;
@@ -26,7 +29,7 @@ import java.util.Locale;
  */
 final class Peap extends TlsTunnel {
 
-    static final int TYPE = 25;
+    static final int TYPE = EapPacket.TYPE_PEAP;
     static final int MS_CHAP_V2 = 26;
     static final int TLV = 33;
     static final int GTC = 6;
@@ -310,7 +313,7 @@ final class Peap extends TlsTunnel {
             return sendApplication(msChap(OP_FAILURE, failure.getBytes(StandardCharsets.US_ASCII)));
         }
         authenticated = identity;
-        isk = PeapCryptoBinding.msChapV2Isk(checked, ntResponse);
+        isk = msChapV2Isk(checked, ntResponse);
         state = State.SUCCESS;
         String success =
                 checked.authenticatorResponse(ntResponse, exchange.challengeHash()) + " M=Authentication succeeded";
@@ -423,5 +426,13 @@ final class Peap extends TlsTunnel {
         m[4] = (byte) msLength;
         System.arraycopy(body, 0, m, 5, body.length);
         return m;
+    }
+
+    /** The ISK of an inner MS-CHAPv2 the RADIUS server or a home server accepted: receive key, then send key. */
+    private static byte[] msChapV2Isk(EapMethod.Inner checked, byte[] ntResponse) {
+        byte[] isk = new byte[32];
+        System.arraycopy(checked.serverKey(ntResponse, false), 0, isk, 0, 16);
+        System.arraycopy(checked.serverKey(ntResponse, true), 0, isk, 16, 16);
+        return isk;
     }
 }

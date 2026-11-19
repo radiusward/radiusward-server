@@ -22,6 +22,11 @@
 
     <dependencies>
         <dependency>
+            <!-- EAP primitives shared with the client's supplicant -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-eap</artifactId>
+        </dependency>
+        <dependency>
             <groupId>io.radiusward</groupId>
             <artifactId>radiusward-client</artifactId>
             <scope>test</scope>

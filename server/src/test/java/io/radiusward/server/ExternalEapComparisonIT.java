@@ -11,6 +11,7 @@ import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.common.config.Config;
+import io.radiusward.eap.Milenage;
 import io.radiusward.testing.images.TestImages;
 import java.io.File;
 import java.nio.charset.StandardCharsets;

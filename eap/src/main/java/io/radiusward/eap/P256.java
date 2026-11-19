@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 import java.math.BigInteger;
 import java.security.SecureRandom;
@@ -13,16 +13,19 @@ import java.security.SecureRandom;
  * coordinates with a fixed double-and-add ladder over all 256 bits, so its sequence of operations does not depend on
  * the scalar; {@link BigInteger} itself is not constant-time (see ADR 0042).
  */
-final class P256 {
+public final class P256 {
 
-    static final BigInteger P = new BigInteger("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", 16);
-    static final BigInteger A = P.subtract(BigInteger.valueOf(3));
-    static final BigInteger B = new BigInteger("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b", 16);
-    static final BigInteger N = new BigInteger("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 16);
-    static final Point G = new Point(
+    public static final BigInteger P =
+            new BigInteger("ffffffff00000001000000000000000000000000ffffffffffffffffffffffff", 16);
+    public static final BigInteger A = P.subtract(BigInteger.valueOf(3));
+    public static final BigInteger B =
+            new BigInteger("5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b", 16);
+    public static final BigInteger N =
+            new BigInteger("ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551", 16);
+    public static final Point G = new Point(
             new BigInteger("6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296", 16),
             new BigInteger("4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5", 16));
-    static final int FIELD_BYTES = 32;
+    public static final int FIELD_BYTES = 32;
 
     private static final BigInteger TWO = BigInteger.TWO;
     private static final BigInteger THREE = BigInteger.valueOf(3);
@@ -33,10 +36,10 @@ final class P256 {
     private P256() {}
 
     /** An affine point. */
-    record Point(BigInteger x, BigInteger y) {
+    public record Point(BigInteger x, BigInteger y) {
 
         /** x and y, 32 bytes each. */
-        byte[] encode() {
+        public byte[] encode() {
             byte[] out = new byte[2 * FIELD_BYTES];
             System.arraycopy(bytes(x), 0, out, 0, FIELD_BYTES);
             System.arraycopy(bytes(y), 0, out, FIELD_BYTES, FIELD_BYTES);
@@ -45,7 +48,7 @@ final class P256 {
     }
 
     /** A number as exactly 32 big-endian bytes. */
-    static byte[] bytes(BigInteger v) {
+    public static byte[] bytes(BigInteger v) {
         byte[] raw = v.toByteArray();
         byte[] out = new byte[FIELD_BYTES];
         int n = Math.min(raw.length, FIELD_BYTES);
@@ -54,7 +57,7 @@ final class P256 {
     }
 
     /** A point from x and y (32 bytes each), or {@code null} if a coordinate is out of range or it is off the curve. */
-    static Point decode(byte[] data, int offset) {
+    public static Point decode(byte[] data, int offset) {
         BigInteger x = new BigInteger(1, java.util.Arrays.copyOfRange(data, offset, offset + FIELD_BYTES));
         BigInteger y =
                 new BigInteger(1, java.util.Arrays.copyOfRange(data, offset + FIELD_BYTES, offset + 2 * FIELD_BYTES));
@@ -66,34 +69,34 @@ final class P256 {
     }
 
     /** y² for x: x³ + ax + b mod p. */
-    static BigInteger ySquared(BigInteger x) {
+    public static BigInteger ySquared(BigInteger x) {
         return x.pow(3).add(A.multiply(x)).add(B).mod(P);
     }
 
-    static boolean onCurve(Point q) {
+    public static boolean onCurve(Point q) {
         return q != null && q.y.multiply(q.y).mod(P).equals(ySquared(q.x));
     }
 
     /** Whether v is a non-zero quadratic residue mod p (Euler's criterion). */
-    static boolean isQuadraticResidue(BigInteger v) {
+    public static boolean isQuadraticResidue(BigInteger v) {
         return v.signum() != 0 && v.modPow(LEGENDRE_EXPONENT, P).equals(BigInteger.ONE);
     }
 
     /** A square root mod p of a quadratic residue. */
-    static BigInteger sqrt(BigInteger v) {
+    public static BigInteger sqrt(BigInteger v) {
         return v.modPow(SQRT_EXPONENT, P);
     }
 
-    static Point negate(Point q) {
+    public static Point negate(Point q) {
         return q == null ? null : new Point(q.x, P.subtract(q.y).mod(P));
     }
 
-    static Point add(Point a, Point b) {
+    public static Point add(Point a, Point b) {
         return toAffine(addJ(toJacobian(a), toJacobian(b)));
     }
 
     /** k·Q: a ladder over all 256 bits, one doubling and one addition each. */
-    static Point multiply(Point q, BigInteger k) {
+    public static Point multiply(Point q, BigInteger k) {
         BigInteger[] r0 = null; // infinity
         BigInteger[] r1 = toJacobian(q);
         for (int i = 255; i >= 0; i--) {
@@ -109,7 +112,7 @@ final class P256 {
     }
 
     /** A random scalar in [1, n). */
-    static BigInteger randomScalar(SecureRandom random) {
+    public static BigInteger randomScalar(SecureRandom random) {
         BigInteger k;
         do {
             k = new BigInteger(256, random);

@@ -6,6 +6,9 @@ package io.radiusward.server;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.Md4;
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
+import io.radiusward.eap.P256;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -26,7 +29,7 @@ import javax.crypto.spec.SecretKeySpec;
  */
 final class EapPwd implements EapMethod {
 
-    static final int TYPE = 52;
+    static final int TYPE = EapPacket.TYPE_PWD;
     static final int GROUP = 19;
     private static final int RAND_FUNC = 1;
     private static final int PRF = 1;

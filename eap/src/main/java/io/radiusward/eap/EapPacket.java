@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 import static io.radiusward.radius.codec.attributes.Ietf.EAP_MESSAGE;
 
@@ -15,17 +15,27 @@ import org.agrona.DirectBuffer;
  * An EAP packet (RFC 3748 §4): code, identifier, and for requests and responses a type and its data. Carried in RADIUS
  * as one or more {@code EAP-Message} attributes whose values are joined in order (RFC 3579 §3.1).
  */
-record EapPacket(int code, int identifier, int type, byte[] data) {
+public record EapPacket(int code, int identifier, int type, byte[] data) {
 
-    static final int CODE_REQUEST = 1;
-    static final int CODE_RESPONSE = 2;
-    static final int CODE_SUCCESS = 3;
-    static final int CODE_FAILURE = 4;
+    public static final int CODE_REQUEST = 1;
+    public static final int CODE_RESPONSE = 2;
+    public static final int CODE_SUCCESS = 3;
+    public static final int CODE_FAILURE = 4;
 
-    static final int TYPE_IDENTITY = 1;
-    static final int TYPE_NOTIFICATION = 2;
-    static final int TYPE_NAK = 3;
-    static final int TYPE_MD5 = 4;
+    public static final int TYPE_IDENTITY = 1;
+    public static final int TYPE_NOTIFICATION = 2;
+    public static final int TYPE_NAK = 3;
+    public static final int TYPE_MD5 = 4;
+    public static final int TYPE_GTC = 6;
+    public static final int TYPE_TLS = 13;
+    public static final int TYPE_SIM = 18;
+    public static final int TYPE_TTLS = 21;
+    public static final int TYPE_AKA = 23;
+    public static final int TYPE_PEAP = 25;
+    public static final int TYPE_MSCHAPV2 = 26;
+    public static final int TYPE_AKA_PRIME = 50;
+    public static final int TYPE_PWD = 52;
+    public static final int TYPE_TEAP = 55;
 
     private static final int MAX_LENGTH = 4096;
 
@@ -33,7 +43,7 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
      * The EAP packet of a RADIUS request, or {@code null} if there is none or it is malformed (the request is then
      * discarded, RFC 3579 §2.6.2).
      */
-    static EapPacket from(RadiusPacket request) {
+    public static EapPacket from(RadiusPacket request) {
         DirectBuffer b = request.buffer();
         byte[] joined = new byte[MAX_LENGTH];
         int n = 0;
@@ -54,7 +64,7 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
         return n == 0 ? null : parse(Arrays.copyOf(joined, n));
     }
 
-    static EapPacket parse(byte[] p) {
+    public static EapPacket parse(byte[] p) {
         if (p.length < 4) {
             return null;
         }
@@ -72,7 +82,7 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
         return new EapPacket(code, p[1] & 0xFF, p[4] & 0xFF, Arrays.copyOfRange(p, 5, length));
     }
 
-    byte[] encode() {
+    public byte[] encode() {
         boolean typed = code == CODE_REQUEST || code == CODE_RESPONSE;
         byte[] p = new byte[(typed ? 5 : 4) + data.length];
         p[0] = (byte) code;
@@ -86,20 +96,25 @@ record EapPacket(int code, int identifier, int type, byte[] data) {
         return p;
     }
 
-    static EapPacket request(int identifier, int type, byte[] data) {
+    public static EapPacket request(int identifier, int type, byte[] data) {
         return new EapPacket(CODE_REQUEST, identifier & 0xFF, type, data);
     }
 
-    static EapPacket success(int identifier) {
+    /** A peer's response to request {@code identifier}. */
+    public static EapPacket response(int identifier, int type, byte[] data) {
+        return new EapPacket(CODE_RESPONSE, identifier & 0xFF, type, data);
+    }
+
+    public static EapPacket success(int identifier) {
         return new EapPacket(CODE_SUCCESS, identifier & 0xFF, 0, new byte[0]);
     }
 
-    static EapPacket failure(int identifier) {
+    public static EapPacket failure(int identifier) {
         return new EapPacket(CODE_FAILURE, identifier & 0xFF, 0, new byte[0]);
     }
 
     /** Writes the packet as {@code EAP-Message} attributes of at most 253 bytes each. */
-    void writeTo(RadiusPacketEncoder out) {
+    public void writeTo(RadiusPacketEncoder out) {
         byte[] p = encode();
         for (int off = 0; off < p.length; off += 253) {
             out.attribute(EAP_MESSAGE, Arrays.copyOfRange(p, off, Math.min(p.length, off + 253)));

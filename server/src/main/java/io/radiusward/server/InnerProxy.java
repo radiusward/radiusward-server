@@ -13,6 +13,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.STATE;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
 
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.AttributeCursor;
 import io.radiusward.radius.codec.DecodeStatus;

@@ -4,6 +4,8 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.TeapKeys;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;

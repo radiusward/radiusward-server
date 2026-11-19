@@ -6,6 +6,7 @@ package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.eap.EapPacket;
 import java.util.List;
 import java.util.Map;
 import org.agrona.concurrent.UnsafeBuffer;

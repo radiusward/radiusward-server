@@ -8,6 +8,7 @@ import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.CredentialVerifier;
 import io.radiusward.auth.Md4;
 import io.radiusward.auth.StoreUnavailableException;
+import io.radiusward.eap.MsChap;
 import java.nio.charset.StandardCharsets;
 import java.util.function.Supplier;
 

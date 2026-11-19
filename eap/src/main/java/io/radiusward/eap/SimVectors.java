@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 /** GSM-MILENAGE for tools and tests outside this package: SRES and Kc of a challenge (ADR 0061). */
 public final class SimVectors {

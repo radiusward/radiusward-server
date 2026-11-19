@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.eap.EapPacket;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;

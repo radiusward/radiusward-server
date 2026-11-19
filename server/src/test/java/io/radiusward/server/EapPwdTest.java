@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.Md4;
+import io.radiusward.eap.MsChap;
+import io.radiusward.eap.P256;
 import io.radiusward.server.EapMethod.Credentials;
 import io.radiusward.server.EapMethod.Step;
 import java.math.BigInteger;

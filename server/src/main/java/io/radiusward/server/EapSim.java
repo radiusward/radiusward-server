@@ -4,6 +4,10 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.Milenage;
+import io.radiusward.eap.SimKeys;
+import io.radiusward.eap.SimMessage;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -20,7 +24,7 @@ import java.util.Arrays;
  */
 final class EapSim implements EapMethod {
 
-    static final int TYPE = 18;
+    static final int TYPE = EapPacket.TYPE_SIM;
     static final int START = 10;
     static final int CHALLENGE = 11;
     static final int REAUTHENTICATION = 13;

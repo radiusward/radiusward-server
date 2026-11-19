@@ -7,6 +7,7 @@ package io.radiusward.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.common.config.Config;
+import io.radiusward.eap.MsChap;
 import java.net.DatagramSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;

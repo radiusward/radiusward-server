@@ -4,6 +4,7 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
 import java.security.cert.X509Certificate;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,7 +16,7 @@ import org.apache.logging.log4j.Logger;
  */
 final class EapTls extends TlsTunnel {
 
-    static final int TYPE = 13;
+    static final int TYPE = EapPacket.TYPE_TLS;
     private static final Logger LOG = LogManager.getLogger(EapTls.class);
     static final int FLAG_LENGTH = TlsTunnel.FLAG_LENGTH;
     static final int FLAG_MORE = TlsTunnel.FLAG_MORE;
