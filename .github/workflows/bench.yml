@@ -16,6 +16,11 @@ on:
 permissions:
   contents: read
 
+env:
+  # a download that failed once (rate limit, outage) is remembered as missing in the restored Maven cache;
+  # -U makes Maven look again instead of failing every later run on it
+  MAVEN_ARGS: -U
+
 jobs:
   bench:
     runs-on: ubuntu-24.04
