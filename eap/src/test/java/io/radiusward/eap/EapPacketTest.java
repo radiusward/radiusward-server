@@ -71,4 +71,16 @@ class EapPacketTest {
                 .isNull();
         assertThat(EapPacket.parse(new byte[] {2, 1, 0, 6, 1, 'a'}).data()).containsExactly('a');
     }
+
+    @Test
+    void packetsAreEqualByTheirDataNotItsArrayAndPrintNoData() {
+        EapPacket a = EapPacket.response(7, EapPacket.TYPE_MD5, new byte[] {1, 2, 3});
+        EapPacket b = EapPacket.response(7, EapPacket.TYPE_MD5, new byte[] {1, 2, 3});
+        assertThat(a).isEqualTo(b).hasSameHashCodeAs(b);
+        assertThat(a).isNotEqualTo(EapPacket.response(7, EapPacket.TYPE_MD5, new byte[] {1, 2, 4}));
+        assertThat(a).isNotEqualTo(EapPacket.response(8, EapPacket.TYPE_MD5, new byte[] {1, 2, 3}));
+        assertThat(a).isNotEqualTo(EapPacket.success(7)).isNotEqualTo("EapPacket");
+        assertThat(a.toString()).contains("identifier=7", "3 bytes").doesNotContain("[1, 2, 3]");
+        assertThat(EapPacket.success(7).toString()).contains("code=3");
+    }
 }
