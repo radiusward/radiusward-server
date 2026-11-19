@@ -309,9 +309,9 @@ public final class EmbeddedRadiusward implements AutoCloseable {
     }
 
     /**
-     * A new directory only this user can read and write ({@code rwx------} where the file system has POSIX permissions;
-     * elsewhere the JDK's default, which is the user's own temporary directory): other users of the machine must not
-     * read the member's files or put their own there.
+     * A new directory only this user can read and write ({@code rwx------} where the file system has POSIX permissions,
+     * owner-only access flags elsewhere): other users of the machine must not read the member's files or put their own
+     * there.
      */
     static Path temporaryDirectory() throws IOException {
         if (java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
@@ -320,7 +320,15 @@ public final class EmbeddedRadiusward implements AutoCloseable {
                     java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
                             java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
         }
-        return Files.createTempDirectory("radiusward-embedded");
+        java.io.File dir = Files.createTempDirectory("radiusward-embedded").toFile();
+        // without POSIX permissions (Windows): readable, writable and listable by its owner only
+        boolean restricted = dir.setReadable(false, false) & dir.setReadable(true, true);
+        restricted &= dir.setWritable(false, false) & dir.setWritable(true, true);
+        restricted &= dir.setExecutable(false, false) & dir.setExecutable(true, true);
+        if (!restricted) {
+            LOG.warn("could not restrict {} to its owner", dir);
+        }
+        return dir.toPath();
     }
 
     private static void delete(Path dir) {
