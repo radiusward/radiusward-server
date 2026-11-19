@@ -11,23 +11,23 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>sink-radius</artifactId>
+    <artifactId>radiusward-sink-radius</artifactId>
     <name>radiusward :: sink :: radius</name>
     <description>Forwards committed accounting of proxied realms to their home servers (UDP or RadSec)</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-packets</artifactId>
+            <artifactId>radiusward-test-packets</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>export-api</artifactId>
+            <artifactId>radiusward-export-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-codec</artifactId>
+            <artifactId>radiusward-codec</artifactId>
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>

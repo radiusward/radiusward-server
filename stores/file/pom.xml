@@ -11,14 +11,14 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>store-file</artifactId>
+    <artifactId>radiusward-store-file</artifactId>
     <name>radiusward :: store :: file</name>
     <description>Identity store from a FreeRADIUS-style users file, reloaded on change</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>

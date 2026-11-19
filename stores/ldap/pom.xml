@@ -11,19 +11,19 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>store-ldap</artifactId>
+    <artifactId>radiusward-store-ldap</artifactId>
     <name>radiusward :: store :: ldap</name>
     <description>Identity store and password verifier over LDAP (Active Directory and others), with the JDK's LDAP client</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-images</artifactId>
+            <artifactId>radiusward-test-images</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>

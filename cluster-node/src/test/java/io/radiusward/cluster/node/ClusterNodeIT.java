@@ -72,6 +72,19 @@ class ClusterNodeIT {
                 purge);
     }
 
+    /** Whether {@code thread} sleeps in ClusterNode itself (the wait between two attempts), not in a library. */
+    private static boolean sleepsIn(Thread thread) {
+        StackTraceElement[] stack = thread.getStackTrace();
+        int i = 0;
+        while (i < stack.length && stack[i].getClassName().equals(Thread.class.getName())) {
+            i++;
+        }
+        return i > 0
+                && i < stack.length
+                && stack[i - 1].getMethodName().startsWith("sleep")
+                && stack[i].getClassName().equals(ClusterNode.class.getName());
+    }
+
     private static void awaitLeader(ClusterNode node) {
         Await.until(
                 Duration.ofSeconds(30),
@@ -156,7 +169,8 @@ class ClusterNodeIT {
             }
         });
         interrupted.start();
-        Thread.sleep(1500);
+        // only while it waits for the next attempt: an interrupt during an attempt ends inside Aeron instead
+        Await.until(Duration.ofSeconds(30), "the second instance waits for the mark file", () -> sleepsIn(interrupted));
         interrupted.interrupt();
         interrupted.join(30_000);
         assertThat(interrupted.isAlive()).isFalse();

@@ -11,18 +11,18 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>cluster-service</artifactId>
+    <artifactId>radiusward-cluster-service</artifactId>
     <name>radiusward :: cluster service</name>
     <description>Deterministic accounting state machine running inside Aeron Cluster</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>protocol</artifactId>
+            <artifactId>radiusward-protocol</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>common</artifactId>
+            <artifactId>radiusward-common</artifactId>
         </dependency>
         <dependency>
             <groupId>io.aeron</groupId>

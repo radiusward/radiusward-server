@@ -120,8 +120,8 @@ jobs:
           distribution: temurin
           java-version: '25'
           cache: maven
-      - name: Build radiusward.jar (the verify job runs the other tests)
-        run: ./mvnw -B -ntp -Pe2e install -DskipTests -DskipITs -Dspotless.check.skip=true -Djacoco.skip=true
+      - name: Build radiusward.jar and the published jars with sources and javadoc (the verify job runs the other tests)
+        run: ./mvnw -B -ntp -Pe2e,release install -DskipTests -DskipITs -Dspotless.check.skip=true -Djacoco.skip=true
       - name: End-to-end tests (separate JVMs)
         run: ./mvnw -B -ntp -Pe2e,reports verify -pl testing/e2e-tests -Dradiusward.require.docker=true
       - name: Upload test reports

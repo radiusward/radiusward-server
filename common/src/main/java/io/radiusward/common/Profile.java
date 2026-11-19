@@ -12,14 +12,10 @@ import org.agrona.concurrent.IdleStrategy;
 import org.agrona.concurrent.SleepingMillisIdleStrategy;
 
 /**
- * Resource profiles (ADR 0004). {@link #SMALL} is the default and fits a cluster node in 1 GiB.
- *
- * @param termLength Aeron term length for UDP channels (log, ingress, egress, replication)
- * @param ipcTermLength term length for IPC channels (service log replay, snapshots)
- * @param threadingMode Aeron media driver threading mode name
- * @param loggingRingSize Log4j2 async logger ring buffer slots (power of two)
- * @param maxSessions session store capacity per cluster
- * @param pendingRequests in-flight requests per RADIUS server
+ * Resource profiles (ADR 0004). {@link #SMALL} is the default and fits a cluster node in 1 GiB. Each sets the Aeron
+ * term length for UDP channels (log, ingress, egress, replication), the term length for IPC channels (service log
+ * replay, snapshots), the media driver's threading mode, the Log4j2 async logger's ring buffer slots (a power of
+ * two), the session store's capacity per cluster and the in-flight requests per RADIUS server.
  */
 public enum Profile {
     SMALL(2 << 20, 2 << 20, "SHARED", 8192, 2_000_000, 16_384),
@@ -78,7 +74,7 @@ public enum Profile {
 
     /**
      * Name of the default idle strategy: backoff parking at most 100 µs in small/standard (measured in Phase 2:
-     * p50 2.7 → 1.6 ms at 2k requests/s against a 1 ms sleep, < 1 % more idle CPU), busy-spin only in large.
+     * p50 2.7 → 1.6 ms at 2k requests/s against a 1 ms sleep, under 1 % more idle CPU), busy-spin only in large.
      */
     public String idleStrategyName() {
         return switch (this) {

@@ -30,6 +30,7 @@ see the [roadmap](docs/plans/roadmap.md). The Linux fault-injection tests (`-Pli
 ./mvnw -Pquick -pl server -am verify            # the same for one module and what it depends on
 ./mvnw -Pcoverage verify -Dradiusward.require.docker=true   # unit + integration coverage, module floors
 ./mvnw spotless:apply                           # format (palantir-java-format) + license headers
+./mvnw -Prelease,quick install -DskipTests      # the published jars with sources and javadoc (docs/operations/release.md)
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dsurefire.failIfNoSpecifiedTests=false
 ./mvnw -pl radius-codec -am test -Dtest=VendorFixtureTest -Dfixtures.update=true -Dsurefire.failIfNoSpecifiedTests=false
                                                 # rewrite fixture packet: lines after editing a fixture

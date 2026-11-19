@@ -11,7 +11,7 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>radius-dictionary-freeradius</artifactId>
+    <artifactId>radiusward-dictionaries</artifactId>
     <name>radiusward :: FreeRADIUS dictionaries</name>
 
     <description>Bundled FreeRADIUS dictionary files (CC BY 4.0, unmodified)</description>

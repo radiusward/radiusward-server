@@ -14,6 +14,20 @@ runs the full build with JDK 25, unit and end-to-end tests, then publishes the i
 a GitHub Release with `radiusward.jar` and `radclient.jar`. The fault-injection tests (`linux-tests.yml`) run
 for the same tag in parallel; check them before announcing a release.
 
+## Maven artifacts
+
+The modules are named `io.radiusward:radiusward-<module>` (e.g. `radiusward-server`, `radiusward-codec`,
+`radiusward-auth-api`; the bundled dictionaries are `radiusward-dictionaries`). The `release` profile adds a sources
+and a javadoc jar to each published module; every jar carries `META-INF/LICENSE` and `META-INF/NOTICE`. Not
+published: `testing/*`, `distribution` (the runnable jars are on the GitHub release) and `radius-codegen` (build time
+only). Check locally:
+
+```bash
+./mvnw -Prelease,quick install -DskipTests
+```
+
+Publishing them (GitHub Packages, later Maven Central) is planned in [embedded.md](../plans/embedded.md) (E6, E7).
+
 ## Public packages
 
 GitHub creates new organization packages as private. Once per package an organization owner makes it public:

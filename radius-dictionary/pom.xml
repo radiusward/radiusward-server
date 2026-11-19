@@ -11,7 +11,7 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>radius-dictionary</artifactId>
+    <artifactId>radiusward-dictionary</artifactId>
     <name>radiusward :: RADIUS dictionary</name>
 
     <description>Dictionary model and FreeRADIUS-format dictionary parser</description>
@@ -27,7 +27,7 @@
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radius-dictionary-freeradius</artifactId>
+            <artifactId>radiusward-dictionaries</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

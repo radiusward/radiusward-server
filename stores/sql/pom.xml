@@ -11,14 +11,14 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>store-sql</artifactId>
+    <artifactId>radiusward-store-sql</artifactId>
     <name>radiusward :: store :: sql</name>
     <description>Identity store over JDBC with FreeRADIUS radcheck/radreply/radusergroup tables; bounded connection pool</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>auth-api</artifactId>
+            <artifactId>radiusward-auth-api</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>

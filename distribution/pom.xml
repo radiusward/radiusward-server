@@ -11,42 +11,49 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>distribution</artifactId>
+    <artifactId>radiusward-distribution</artifactId>
     <name>radiusward :: distribution</name>
     <description>Single runnable radiusward.jar (cluster-node | server)</description>
+
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>cluster-node</artifactId>
+            <artifactId>radiusward-cluster-node</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>server</artifactId>
+            <artifactId>radiusward-server</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-file</artifactId>
+            <artifactId>radiusward-store-file</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-sql</artifactId>
+            <artifactId>radiusward-store-sql</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>store-ldap</artifactId>
+            <artifactId>radiusward-store-ldap</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>verifier-netlogon</artifactId>
+            <artifactId>radiusward-verifier-netlogon</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>radclient</artifactId>
+            <artifactId>radiusward-radclient</artifactId>
         </dependency>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>admin-cli</artifactId>
+            <artifactId>radiusward-admin-cli</artifactId>
         </dependency>
     </dependencies>
 

@@ -11,14 +11,14 @@
         <relativePath>../pom.xml</relativePath>
     </parent>
 
-    <artifactId>common</artifactId>
+    <artifactId>radiusward-common</artifactId>
     <name>radiusward :: common</name>
     <description>Configuration, profiles, management HTTP server, logging</description>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>units</artifactId>
+            <artifactId>radiusward-units</artifactId>
         </dependency>
         <dependency>
             <groupId>org.agrona</groupId>

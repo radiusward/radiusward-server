@@ -11,20 +11,27 @@
         <relativePath>../../pom.xml</relativePath>
     </parent>
 
-    <artifactId>e2e-tests</artifactId>
+    <artifactId>radiusward-e2e-tests</artifactId>
     <name>radiusward :: e2e tests</name>
     <description>End-to-end tests against separately started radiusward JVMs (-Pe2e)</description>
+
+    <properties>
+        <!-- not published (ADR 0068) -->
+        <maven.deploy.skip>true</maven.deploy.skip>
+        <maven.source.skip>true</maven.source.skip>
+        <maven.javadoc.skip>true</maven.javadoc.skip>
+    </properties>
 
     <dependencies>
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>test-harness</artifactId>
+            <artifactId>radiusward-test-harness</artifactId>
             <scope>test</scope>
         </dependency>
         <!-- builds radiusward.jar before these tests run -->
         <dependency>
             <groupId>io.radiusward</groupId>
-            <artifactId>distribution</artifactId>
+            <artifactId>radiusward-distribution</artifactId>
             <version>${project.version}</version>
             <scope>test</scope>
             <exclusions>

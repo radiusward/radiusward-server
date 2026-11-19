@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd"
+         child.project.url.inherit.append.path="false">
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>io.radiusward</groupId>
@@ -10,7 +11,8 @@
     <packaging>pom</packaging>
 
     <name>radiusward</name>
-    <description>Replicated RADIUS accounting server built on Aeron Cluster</description>
+    <description>Replicated RADIUS server built on Aeron Cluster: authentication, EAP and accounting acknowledged only after a majority commit</description>
+    <url>https://radiusward.com</url>
     <inceptionYear>2026</inceptionYear>
 
     <licenses>
@@ -20,6 +22,27 @@
             <distribution>repo</distribution>
         </license>
     </licenses>
+
+    <developers>
+        <developer>
+            <id>viktor-gema</id>
+            <name>Viktor Gema</name>
+            <url>https://github.com/viktor-gema</url>
+        </developer>
+    </developers>
+
+    <scm child.scm.connection.inherit.append.path="false"
+         child.scm.developerConnection.inherit.append.path="false"
+         child.scm.url.inherit.append.path="false">
+        <connection>scm:git:https://github.com/radiusward/radiusward-server.git</connection>
+        <developerConnection>scm:git:git@github.com:radiusward/radiusward-server.git</developerConnection>
+        <url>https://github.com/radiusward/radiusward-server</url>
+    </scm>
+
+    <issueManagement>
+        <system>GitHub</system>
+        <url>https://github.com/radiusward/radiusward-server/issues</url>
+    </issueManagement>
 
     <modules>
         <module>units</module>
@@ -89,6 +112,8 @@
         <install-plugin.version>3.2.0</install-plugin.version>
         <clean-plugin.version>3.5.0</clean-plugin.version>
         <deploy-plugin.version>3.2.0</deploy-plugin.version>
+        <source-plugin.version>3.4.0</source-plugin.version>
+        <javadoc-plugin.version>3.12.0</javadoc-plugin.version>
         <site-plugin.version>3.22.0</site-plugin.version>
         <enforcer.version>3.7.0</enforcer.version>
         <jacoco.version>0.8.16</jacoco.version>
@@ -126,103 +151,103 @@
         <dependencies>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>radius-dictionary</artifactId>
+                <artifactId>radiusward-dictionary</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>radius-dictionary-freeradius</artifactId>
+                <artifactId>radiusward-dictionaries</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>radius-codegen</artifactId>
+                <artifactId>radiusward-codegen</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>radius-codec</artifactId>
+                <artifactId>radiusward-codec</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>protocol</artifactId>
+                <artifactId>radiusward-protocol</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>common</artifactId>
+                <artifactId>radiusward-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>cluster-service</artifactId>
+                <artifactId>radiusward-cluster-service</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>export-api</artifactId>
+                <artifactId>radiusward-export-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>auth-api</artifactId>
+                <artifactId>radiusward-auth-api</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>units</artifactId>
+                <artifactId>radiusward-units</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>test-support</artifactId>
+                <artifactId>radiusward-test-support</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>test-packets</artifactId>
+                <artifactId>radiusward-test-packets</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>store-file</artifactId>
+                <artifactId>radiusward-store-file</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>store-sql</artifactId>
+                <artifactId>radiusward-store-sql</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>store-ldap</artifactId>
+                <artifactId>radiusward-store-ldap</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>verifier-netlogon</artifactId>
+                <artifactId>radiusward-verifier-netlogon</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>exporter</artifactId>
+                <artifactId>radiusward-exporter</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>sink-file</artifactId>
+                <artifactId>radiusward-sink-file</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>sink-radius</artifactId>
+                <artifactId>radiusward-sink-radius</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>sink-postgres</artifactId>
+                <artifactId>radiusward-sink-postgres</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -255,32 +280,32 @@
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>cluster-node</artifactId>
+                <artifactId>radiusward-cluster-node</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>server</artifactId>
+                <artifactId>radiusward-server</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>test-images</artifactId>
+                <artifactId>radiusward-test-images</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>radclient</artifactId>
+                <artifactId>radiusward-radclient</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>admin-cli</artifactId>
+                <artifactId>radiusward-admin-cli</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.radiusward</groupId>
-                <artifactId>test-harness</artifactId>
+                <artifactId>radiusward-test-harness</artifactId>
                 <version>${project.version}</version>
             </dependency>
 
@@ -394,6 +419,20 @@
     </dependencies>
 
     <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <!-- every jar carries the licence and the notices it is distributed under -->
+            <resource>
+                <directory>${maven.multiModuleProjectDirectory}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                    <include>NOTICE</include>
+                </includes>
+            </resource>
+        </resources>
         <pluginManagement>
             <plugins>
                 <plugin>
@@ -621,6 +660,51 @@
     </build>
 
     <profiles>
+        <profile>
+            <!-- published artifacts (ADR 0068): sources and javadoc jars beside each jar; modules that are not published
+                 (testing/*, distribution, radius-codegen) set maven.deploy.skip, maven.source.skip, maven.javadoc.skip -->
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${source-plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar-no-fork</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${javadoc-plugin.version}</version>
+                        <configuration>
+                            <release>25</release>
+                            <quiet>true</quiet>
+                            <!-- every error is checked; a missing comment is not one -->
+                            <doclint>all,-missing</doclint>
+                            <failOnWarnings>false</failOnWarnings>
+                            <links>
+                                <link>https://docs.oracle.com/en/java/javase/25/docs/api/</link>
+                            </links>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <!-- the fast local loop: compile and unit tests only, no integration tests, coverage, format check or
                  enforcer; ./mvnw -Pquick -T1C verify, or -pl <module> -am for one module -->
