@@ -7,17 +7,15 @@ package io.radiusward.server;
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.Md4;
 import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.EapPwdKeys;
 import io.radiusward.eap.MsChap;
 import io.radiusward.eap.P256;
 import java.io.ByteArrayOutputStream;
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
-import java.security.GeneralSecurityException;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Arrays;
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 /**
  * EAP-pwd (RFC 5931; ADR 0042): mutual authentication with a password and no certificate, group 19 (P-256) with
@@ -218,12 +216,7 @@ final class EapPwd implements EapMethod {
         if (d.length != 32 || !MessageDigest.isEqual(expected, d)) {
             return Step.FAILED;
         }
-        byte[] sessionId = new byte[33];
-        sessionId[0] = (byte) TYPE;
-        System.arraycopy(h(CIPHERSUITE, P256.bytes(peerScalar), P256.bytes(scalar)), 0, sessionId, 1, 32);
-        byte[] mk = h(P256.bytes(k), d, confirmServer);
-        byte[] keys = kdf(mk, sessionId, 128 * 8);
-        return Step.succeeded(Arrays.copyOf(keys, 64));
+        return Step.succeeded(EapPwdKeys.msk(k, d, confirmServer, peerScalar, scalar));
     }
 
     private Step message(int exchange, byte[] body) {
@@ -233,76 +226,15 @@ final class EapPwd implements EapMethod {
         return Step.next(m);
     }
 
-    /**
-     * The password element (§2.8.4.1, hunting and pecking): pwd-seed = H(token | peer-id | server-id | password |
-     * counter); pwd-value = KDF(pwd-seed, "EAP-pwd Hunting And Pecking", 256); the first value below p whose y² is a
-     * quadratic residue gives x, and y has the parity of pwd-seed's last bit. All 40 rounds always run.
-     */
     static P256.Point passwordElement(byte[] password, byte[] serverId, byte[] peerId, byte[] token) {
-        BigInteger x = null;
-        boolean odd = false;
-        for (int counter = 1; counter <= 40; counter++) {
-            byte[] seed = h(token, peerId, serverId, password, new byte[] {(byte) counter});
-            BigInteger value = new BigInteger(
-                    1, kdf(seed, "EAP-pwd Hunting And Pecking".getBytes(StandardCharsets.US_ASCII), 256));
-            boolean residue = value.compareTo(P256.P) < 0 && P256.isQuadraticResidue(P256.ySquared(value.mod(P256.P)));
-            if (residue && x == null) {
-                x = value;
-                odd = (seed[31] & 1) == 1;
-            }
-        }
-        if (x == null) {
-            return null;
-        }
-        BigInteger y = P256.sqrt(P256.ySquared(x));
-        if (y.testBit(0) != odd) {
-            y = P256.P.subtract(y);
-        }
-        P256.Point point = new P256.Point(x, y);
-        return P256.onCurve(point) ? point : null;
+        return EapPwdKeys.passwordElement(password, serverId, peerId, token);
     }
 
-    /** H: HMAC-SHA256 with a zero key over the parts (§2.4). */
     static byte[] h(byte[]... parts) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(new byte[32], "HmacSHA256"));
-            for (byte[] part : parts) {
-                mac.update(part);
-            }
-            return mac.doFinal();
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException(e);
-        }
+        return EapPwdKeys.h(parts);
     }
 
-    /**
-     * The KDF (§2.5): K(i) = HMAC-SHA256(key, K(i-1) | i | label | L), i and L 16-bit, L the length in bits; the
-     * result truncated to L bits.
-     */
     static byte[] kdf(byte[] key, byte[] label, int bits) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(key, "HmacSHA256"));
-            int bytes = (bits + 7) / 8;
-            byte[] out = new byte[bytes];
-            byte[] previous = new byte[0];
-            for (int i = 1, at = 0; at < bytes; i++) {
-                mac.update(previous);
-                mac.update(new byte[] {(byte) (i >>> 8), (byte) i});
-                mac.update(label);
-                mac.update(new byte[] {(byte) (bits >>> 8), (byte) bits});
-                previous = mac.doFinal();
-                int n = Math.min(previous.length, bytes - at);
-                System.arraycopy(previous, 0, out, at, n);
-                at += n;
-            }
-            if (bits % 8 != 0) {
-                out[bytes - 1] &= (byte) (0xFF << (8 - bits % 8));
-            }
-            return out;
-        } catch (GeneralSecurityException e) {
-            throw new IllegalStateException(e);
-        }
+        return EapPwdKeys.kdf(key, label, bits);
     }
 }

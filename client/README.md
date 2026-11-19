@@ -60,10 +60,12 @@ r.serverProved();  r.cryptoBound();                               // MS-CHAPv2's
 | `EapLogin.tls(identity, key, certificate)` | EAP-TLS with a client certificate |
 | `EapLogin.peap(user, password)` | PEAPv0 with MS-CHAPv2 or GTC inside, crypto-binding answered when the server sends it |
 | `EapLogin.ttls(user, password)` | EAP-TTLS with PAP, CHAP, MS-CHAP or MS-CHAPv2 inside |
+| `EapLogin.teap(user, password)` | TEAP with Basic-Password-Auth or an inner EAP-GTC, every Crypto-Binding checked and answered |
+| `EapLogin.pwd(user, password)` | EAP-pwd (group 19): the server's Confirm checked first, so a wrong password stops the device with an exception |
 
 A request of another method is answered with a Nak naming the login's. `trust(...)` sets the CAs the server must chain
 to (or a self-signed server certificate itself); every TLS-based login needs it. TLS 1.2 or 1.3 (`tlsProtocol`), fragments of `fragmentSize`.
-TEAP, EAP-pwd and EAP-SIM/AKA follow ([plan](../docs/plans/embedded.md), E2b-2 and E2b-3).
+EAP-SIM/AKA follows ([plan](../docs/plans/embedded.md), E2b-3).
 
 | Class | Role |
 |---|---|

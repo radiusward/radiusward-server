@@ -13,6 +13,8 @@ permissions:
   contents: read
 
 env:
+  # a download that failed once is remembered as missing in the restored Maven cache; -U makes Maven look again
+  MAVEN_ARGS: -U
   IMAGE: ghcr.io/radiusward/radiusward-server
 
 jobs:

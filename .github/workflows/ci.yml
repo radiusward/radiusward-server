@@ -13,6 +13,11 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # a download that failed once (rate limit, outage) is remembered as missing in the restored Maven cache;
+  # -U makes Maven look again instead of failing every later run on it
+  MAVEN_ARGS: -U
+
 jobs:
   build:
     # the whole suite once: unit and integration tests with coverage and the module floors, the interop tests, the

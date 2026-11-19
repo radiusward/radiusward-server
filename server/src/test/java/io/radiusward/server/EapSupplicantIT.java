@@ -56,7 +56,8 @@ class EapSupplicantIT {
                 Map.entry("auth.store.local.chap", "true"),
                 Map.entry("auth.store.local.mschap", "true"),
                 Map.entry("auth.plugins.dir", dir.resolve("no-plugins").toString()),
-                Map.entry("auth.eap.methods", "peap, ttls, tls, md5"),
+                Map.entry("auth.eap.methods", "peap, ttls, tls, teap, pwd, md5"),
+                Map.entry("auth.eap.teap.inner", "basic, gtc"),
                 Map.entry("auth.eap.peap.inner", "mschapv2, gtc"),
                 Map.entry("auth.eap.tls.certificate", pki.serverPem.toString()),
                 Map.entry("auth.eap.tls.key", pki.serverKey.toString()),
@@ -161,6 +162,39 @@ class EapSupplicantIT {
     }
 
     @Test
+    void teapWithBasicPasswordAuthIsCryptoBound() {
+        EapResult r = client.eap(EapLogin.teap("alice", "secret").trust(pki.ca.certificate()));
+        acceptedWithKeys(r);
+        assertThat(r.cryptoBound())
+                .as("the server's Crypto-Binding checked and answered")
+                .isTrue();
+        assertThat(client.eap(EapLogin.teap("alice", "wrong").trust(pki.ca.certificate()))
+                        .rejected())
+                .isTrue();
+    }
+
+    @Test
+    void teapWithAnInnerGtcAfterRefusingBasic() {
+        EapResult r = client.eap(EapLogin.teap("alice", "secret")
+                .inner(EapLogin.Inner.GTC)
+                .trust(pki.ca.certificate())
+                .tlsProtocol("TLSv1.2"));
+        acceptedWithKeys(r);
+        assertThat(r.cryptoBound()).isTrue();
+    }
+
+    @Test
+    void pwdProvesBothSides() {
+        EapResult r = client.eap(EapLogin.pwd("alice", "secret"));
+        acceptedWithKeys(r);
+        assertThat(r.serverProved()).as("the server's Confirm").isTrue();
+        assertThatThrownBy(() -> client.eap(EapLogin.pwd("alice", "wrong")))
+                .as("the server's Confirm cannot match a wrong password: the device stops")
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Confirm does not verify");
+    }
+
+    @Test
     void tlsWithAClientCertificate() throws Exception {
         TestPki.Issued laptop = pki.client("laptop-1");
         EapResult r = client.eap(EapLogin.tls("laptop-1", laptop.keys().getPrivate(), laptop.certificate())
@@ -188,6 +222,10 @@ class EapSupplicantIT {
         assertThatThrownBy(() -> EapLogin.ttls("a", "b").inner(EapLogin.Inner.GTC))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> EapLogin.peap("a", "b").inner(EapLogin.Inner.PAP))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> EapLogin.teap("a", "b").inner(EapLogin.Inner.MSCHAPV2))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> EapLogin.pwd("a", "b").inner(EapLogin.Inner.GTC))
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> EapLogin.md5("a", "b").fragmentSize(10)).isInstanceOf(IllegalArgumentException.class);
         assertThat(EapLogin.md5("a", "b").method()).isEqualTo(EapLogin.Method.MD5);

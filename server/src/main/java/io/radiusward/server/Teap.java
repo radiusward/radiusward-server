@@ -6,6 +6,7 @@ package io.radiusward.server;
 
 import io.radiusward.eap.EapPacket;
 import io.radiusward.eap.TeapKeys;
+import io.radiusward.eap.TeapTlv;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -31,21 +32,21 @@ import javax.net.ssl.SSLException;
 final class Teap extends TlsTunnel {
 
     static final int TYPE = EapPacket.TYPE_TEAP;
-    static final int TEAP_VERSION = 1;
+    static final int TEAP_VERSION = TeapTlv.VERSION;
 
-    static final int TLV_AUTHORITY_ID = 1;
-    static final int TLV_IDENTITY_TYPE = 2;
-    static final int TLV_RESULT = 3;
-    static final int TLV_NAK = 4;
-    static final int TLV_ERROR = 5;
-    static final int TLV_EAP_PAYLOAD = 9;
-    static final int TLV_INTERMEDIATE_RESULT = 10;
-    static final int TLV_CRYPTO_BINDING = 12;
-    static final int TLV_BASIC_PASSWORD_AUTH_REQ = 13;
-    static final int TLV_BASIC_PASSWORD_AUTH_RESP = 14;
-    static final int MANDATORY = 0x8000;
-    static final int SUCCESS = 1;
-    static final int FAILURE = 2;
+    static final int TLV_AUTHORITY_ID = TeapTlv.AUTHORITY_ID;
+    static final int TLV_IDENTITY_TYPE = TeapTlv.IDENTITY_TYPE;
+    static final int TLV_RESULT = TeapTlv.RESULT;
+    static final int TLV_NAK = TeapTlv.NAK;
+    static final int TLV_ERROR = TeapTlv.ERROR;
+    static final int TLV_EAP_PAYLOAD = TeapTlv.EAP_PAYLOAD;
+    static final int TLV_INTERMEDIATE_RESULT = TeapTlv.INTERMEDIATE_RESULT;
+    static final int TLV_CRYPTO_BINDING = TeapTlv.CRYPTO_BINDING;
+    static final int TLV_BASIC_PASSWORD_AUTH_REQ = TeapTlv.BASIC_PASSWORD_AUTH_REQ;
+    static final int TLV_BASIC_PASSWORD_AUTH_RESP = TeapTlv.BASIC_PASSWORD_AUTH_RESP;
+    static final int MANDATORY = TeapTlv.MANDATORY;
+    static final int SUCCESS = TeapTlv.SUCCESS;
+    static final int FAILURE = TeapTlv.FAILURE;
     static final int BASIC = -1; // in the inner list: Basic-Password-Auth instead of an EAP type
     static final int IDENTITY_USER = 1;
     static final int IDENTITY_MACHINE = 2;
@@ -361,13 +362,7 @@ final class Teap extends TlsTunnel {
     }
 
     static byte[] tlv(int type, byte[] value) {
-        byte[] t = new byte[4 + value.length];
-        t[0] = (byte) (type >>> 8);
-        t[1] = (byte) type;
-        t[2] = (byte) (value.length >>> 8);
-        t[3] = (byte) value.length;
-        System.arraycopy(value, 0, t, 4, value.length);
-        return t;
+        return TeapTlv.encode(type, value);
     }
 
     /** The TLVs of a Phase 2 message that matter here; {@code null} if malformed or an unknown TLV is mandatory. */
