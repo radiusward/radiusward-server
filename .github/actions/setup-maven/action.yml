@@ -22,6 +22,7 @@ runs:
         # our own jars are built in every run: they stay out of the cache
         path: |
           ~/.m2/repository
+          ~/.m2/wrapper
           !~/.m2/repository/io/radiusward
         key: maven-${{ runner.os }}-${{ inputs.cache-name }}-${{ hashFiles('**/pom.xml', '.mvn/wrapper/maven-wrapper.properties') }}
         restore-keys: |
@@ -30,5 +31,7 @@ runs:
     - name: Maven settings for CI
       shell: bash
       # -gs adds the mirror on top of the user settings setup-java writes; -U looks again for anything a failed
-      # download once marked missing
-      run: echo "MAVEN_ARGS=-B -ntp -U -gs $GITHUB_ACTION_PATH/settings.xml" >> "$GITHUB_ENV"
+      # download once marked missing; MVNW_REPOURL: the wrapper fetches Maven itself from the mirror too
+      run: |
+        echo "MAVEN_ARGS=-B -ntp -U -gs $GITHUB_ACTION_PATH/settings.xml" >> "$GITHUB_ENV"
+        echo "MVNW_REPOURL=https://maven-central.storage-download.googleapis.com/maven2" >> "$GITHUB_ENV"
