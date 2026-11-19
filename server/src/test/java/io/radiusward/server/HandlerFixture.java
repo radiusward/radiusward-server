@@ -102,7 +102,8 @@ abstract class HandlerFixture {
                 mschap,
                 verifiers,
                 storeVerifiers,
-                eapConfig);
+                eapConfig,
+                AuthPlugins.NONE);
     }
 
     StoreAccessHandler handler() {

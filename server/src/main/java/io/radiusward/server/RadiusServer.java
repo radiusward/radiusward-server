@@ -176,10 +176,21 @@ public final class RadiusServer implements AutoCloseable {
      */
     public static java.util.function.Function<Dictionary, AccessHandler> storeHandler(
             io.radiusward.common.config.Config config, AuthConfig auth) {
+        return storeHandler(config, auth, AuthPlugins.NONE);
+    }
+
+    /**
+     * As {@link #storeHandler(io.radiusward.common.config.Config, AuthConfig)}, with identity stores and credential
+     * verifiers given in code next to the plug-ins: an embedded server's or a test's own.
+     */
+    public static java.util.function.Function<Dictionary, AccessHandler> storeHandler(
+            io.radiusward.common.config.Config config, AuthConfig auth, AuthPlugins plugins) {
         return dictionary -> {
             AccessPolicies policies = AccessPolicies.from(config, dictionary);
             StoreAccessHandler handler = new StoreAccessHandler(
-                    AuthStores.from(config, auth.workers(), dictionary), dictionary, System::currentTimeMillis);
+                    AuthStores.from(config, auth.workers(), dictionary, plugins),
+                    dictionary,
+                    System::currentTimeMillis);
             handler.policies(policies);
             return handler;
         };
@@ -333,7 +344,8 @@ public final class RadiusServer implements AutoCloseable {
         AuthStores nextStores = null;
         AccessPolicies policies = null;
         if (stores != null) {
-            nextStores = AuthStores.from(raw, workers.size(), dictionary);
+            nextStores = AuthStores.from(
+                    raw, workers.size(), dictionary, stores.stores().plugins());
             try {
                 policies = AccessPolicies.from(raw, dictionary);
             } catch (RuntimeException e) {

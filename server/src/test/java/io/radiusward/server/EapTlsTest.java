@@ -109,7 +109,8 @@ class EapTlsTest {
                         teapInner,
                         EapConfig.DEFAULT_AUTHORITY_ID,
                         List.of(),
-                        EapConfig.DEFAULT_AUTHORITY_ID));
+                        EapConfig.DEFAULT_AUTHORITY_ID),
+                AuthPlugins.NONE);
         return new StoreAccessHandler(auth, HandlerFixture.DICTIONARY, System::currentTimeMillis);
     }
 

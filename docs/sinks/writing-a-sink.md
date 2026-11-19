@@ -67,6 +67,11 @@ Build the plug-in against `export-api` only and put the jar (with its driver) in
 radiusward image is Apache-2.0 and bundles a driver only when its licence allows it; drivers under GPL or
 proprietary licences (MySQL Connector/J, Oracle, Db2) ship with the plug-in, installed by the operator.
 
+A member started in code (an embedded one, a test) also takes sinks that are not plug-ins:
+`SinkProvider.of("mine", () -> new MySink())` in its `ExportConfig` (`withProviders(...)`), with `sink.<name>.type =
+mine` as for a plug-in. The exporter runs it with the same contract, position and lease, so the class runs unchanged
+as a plug-in later. A type given in code must not also be a plug-in's.
+
 ## Testing
 
 Use the file sink (`sinks/file`) and the PostgreSQL sink (`sinks/postgres`, `PostgresSinkTest`) as references:

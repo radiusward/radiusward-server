@@ -42,11 +42,25 @@ public final class Exporter implements AutoCloseable {
     private Exporter() {}
 
     public static Exporter start(List<SinkConfig> sinks, ExporterContext context) {
+        return start(sinks, List.of(), context);
+    }
+
+    /**
+     * @param inCode sink providers given in code besides the plug-ins; a type that is also a plug-in's is refused rather
+     *     than one silently winning
+     */
+    public static Exporter start(List<SinkConfig> sinks, List<SinkProvider> inCode, ExporterContext context) {
         Exporter exporter = new Exporter();
         if (sinks.isEmpty()) {
             return exporter;
         }
         Map<String, SinkProvider> providers = providers(context.pluginsDir());
+        for (SinkProvider provider : inCode) {
+            if (providers.putIfAbsent(provider.type(), provider) != null) {
+                throw new ConfigException(
+                        "the sink type " + provider.type() + " given in code is also a plug-in's type");
+            }
+        }
         DictionaryLoader.Builder dictionaries = DictionaryLoader.builder().addBundledFreeRadius(ParseMode.LENIENT);
         if (context.dictionaryDir() != null && Files.isDirectory(context.dictionaryDir())) {
             dictionaries.addDirectory(context.dictionaryDir(), ParseMode.LENIENT);

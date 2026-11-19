@@ -7,13 +7,20 @@ package io.radiusward.server;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.radiusward.auth.CredentialVerifier;
+import io.radiusward.auth.CredentialVerifierProvider;
+import io.radiusward.auth.IdentityStore;
+import io.radiusward.auth.IdentityStoreProvider;
+import io.radiusward.auth.UserRecord;
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -50,6 +57,57 @@ class AuthStoresTest {
             assertThat(stores.bcryptMaxCost()).isEqualTo(14);
             assertThat(stores.stores().get("staff").lookup("alice")).isPresent();
         }
+    }
+
+    @Test
+    void storesAndVerifiersGivenInCodeAreUsedAsPluginsAreAndKeptForTheNextReload() throws Exception {
+        Map<String, String> values = new HashMap<>();
+        values.put("auth.stores", "mine");
+        values.put("auth.store.mine.type", "in-code");
+        values.put("auth.store.mine.colour", "blue");
+        values.put("auth.store.mine.verifier", "check");
+        values.put("auth.verifiers", "check");
+        values.put("auth.verifier.check.type", "in-code-check");
+        values.put("auth.plugins.dir", dir.resolve("plugins").toString());
+        String[] colour = new String[1];
+        AuthPlugins plugins = AuthPlugins.stores(IdentityStoreProvider.of("in-code", context -> {
+                    colour[0] = context.settings().get("colour");
+                    return new IdentityStore() {
+                        @Override
+                        public Optional<UserRecord> lookup(String userName) {
+                            return Optional.of(new UserRecord(userName, List.of(), List.of(), List.of()));
+                        }
+
+                        @Override
+                        public void close() {}
+                    };
+                }))
+                .withVerifiers(CredentialVerifierProvider.of("in-code-check", context -> new CredentialVerifier() {
+                    @Override
+                    public void close() {}
+                }));
+        try (AuthStores stores = AuthStores.from(Config.of(values), 2, null, plugins)) {
+            assertThat(stores.stores().get("mine").lookup("alice")).isPresent();
+            assertThat(colour[0]).as("the store's own settings").isEqualTo("blue");
+            assertThat(stores.verifiers()).containsKey("check");
+            assertThat(stores.storeVerifiers()).containsEntry("mine", "check");
+            assertThat(stores.plugins()).isSameAs(plugins);
+        }
+
+        values.put("auth.store.mine.type", "file");
+        values.put("auth.store.mine.path", dir.resolve("users").toString());
+        Files.writeString(dir.resolve("users"), "alice Cleartext-Password := \"a\"\n");
+        assertThatThrownBy(() -> AuthStores.from(
+                        Config.of(values),
+                        2,
+                        null,
+                        AuthPlugins.stores(IdentityStoreProvider.of("file", context -> null))))
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("identity store type file given in code is also a plug-in's type");
+        assertThatThrownBy(() -> AuthStores.from(Config.of(values), 2, null, AuthPlugins.NONE))
+                .as("without the providers given in code their types are unknown")
+                .isInstanceOf(ConfigException.class)
+                .hasMessageContaining("no credential verifier of type in-code-check");
     }
 
     @Test
