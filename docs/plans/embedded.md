@@ -1,6 +1,6 @@
 # Plan: radiusward as a library for development and tests
 
-Status: designed 2026-11-18; E1, E2, E2a, E2b (the EAP supplicant), E3 and E4 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
+Status: designed 2026-11-18; E1–E5 done. Decision: [ADR 0068](../adr/0068-embedded-radiusward-and-maven-central.md).
 
 ## Goal
 
@@ -225,7 +225,7 @@ assertThat(received).extracting(AccountingRecord::statusType).containsExactly(ST
 | E3 ✅ | Identity stores, credential verifiers and sinks given in code besides plug-ins: `IdentityStoreProvider.of`, `CredentialVerifierProvider.of`, `SinkProvider.of`; `AuthPlugins` for the RADIUS server (kept across reloads), `ExportConfig.withProviders` for the member; a type also a plug-in's refused | unit tests; `InCodePluginsIT` (a store, a verifier and a sink in code on a member and a RADIUS server) |
 | E4a ✅ | `radiusward-embedded`: builder, one member and one RADIUS server, users, the developer's store, verifier and sinks, accounting callback and state queries, pausing the member, settings, lifecycle, the JVM-option check | `EmbeddedRadiuswardIT`; a plain Maven project outside the reactor (`testing/embedded-consumer`, CI's e2e job); startup and memory measured (`FootprintIT`, about 1.1 s, 30 MB heap) |
 | E4b ✅ | `members(3)`, `radiusServers(2)` with `stopMember`, `startMember`, `stopLeader`, `stopServer`, `startServer`; EAP with the throwaway CA (Bouncy Castle) and client certificates; SIM users; CoA and Disconnect (`coaPort`, `coa`, `disconnect`) | `EmbeddedClusterIT`, `EmbeddedEapAndCoaIT` |
-| E5 | `radiusward-junit` | tests per class and per test, parallel |
+| E5 ✅ | `radiusward-junit`: `@Radiusward` (users, EAP, members, settings, per class or per test), `RadiuswardExtension.configure(...)` for the builder in code, `EmbeddedRadiusward` and `RadiusClient` (`@Accounting`) parameters | `RadiuswardExtensionIT` (per class, per test, in code, a failing test, a mistake, parallel classes); the consumer project uses it |
 | E6 | `radiusward-bom`; release workflow and snapshots to GitHub Packages; README, website page, release doc | `0.1.0` and a snapshot resolvable from GitHub Packages in an empty project with a token |
 | E7 | Releases to Maven Central: an (empty) javadoc jar for `radiusward-dictionaries`, which has no Java; GPG signing, the Central Portal's plugin in the release job; GitHub Packages keeps the snapshots | `0.x` resolvable from Central in an empty project without any repository setting |
 
