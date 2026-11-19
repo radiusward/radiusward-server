@@ -67,7 +67,7 @@ public final class EapResult {
         return rounds;
     }
 
-    /** The MSK the device derived (TLS-based methods; with PEAP crypto-binding the compound one), else empty. */
+    /** The MSK the device derived (with PEAP's or TEAP's crypto-binding the compound one); empty for EAP-MD5. */
     public Optional<byte[]> msk() {
         return Optional.ofNullable(msk).map(byte[]::clone);
     }
@@ -80,12 +80,15 @@ public final class EapResult {
         return Optional.ofNullable(serverMsk).map(byte[]::clone);
     }
 
-    /** MS-CHAPv2 inside PEAP or TTLS: the server's authenticator response proved it knew the password. */
+    /**
+     * The server proved it holds the secret too: MS-CHAPv2's authenticator response (PEAP, TTLS), EAP-pwd's Confirm,
+     * or for EAP-SIM/AKA the network's AUTN and AT_MAC.
+     */
     public boolean serverProved() {
         return serverProved;
     }
 
-    /** PEAP: the server's Crypto-Binding verified and was answered, binding the inner method to the tunnel. */
+    /** PEAP or TEAP: the server's Crypto-Binding verified and was answered, binding the inner method to the tunnel. */
     public boolean cryptoBound() {
         return cryptoBound;
     }

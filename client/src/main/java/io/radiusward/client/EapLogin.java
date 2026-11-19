@@ -36,7 +36,13 @@ public final class EapLogin {
         TTLS,
         TEAP,
         /** EAP-pwd with group 19: mutual authentication with a password, no certificate. */
-        PWD
+        PWD,
+        /** EAP-SIM (RFC 4186) with a simulated SIM. */
+        SIM,
+        /** EAP-AKA (RFC 4187) with a simulated USIM. */
+        AKA,
+        /** EAP-AKA′ (RFC 9048) with a simulated USIM. */
+        AKA_PRIME
     }
 
     /** The method inside a PEAP or TTLS tunnel. */
@@ -64,6 +70,8 @@ public final class EapLogin {
     PrivateKey key;
     X509Certificate[] chain;
     String tlsProtocol;
+    SimCard card;
+    String realm;
     int fragmentSize = 1000;
 
     private EapLogin(Method method, String user, String password) {
@@ -94,6 +102,33 @@ public final class EapLogin {
     /** EAP-pwd (RFC 5931): the server proves it knows the password too; no certificate, no trust to set. */
     public static EapLogin pwd(String user, String password) {
         return new EapLogin(Method.PWD, user, password);
+    }
+
+    /** EAP-SIM with {@code card}: the permanent identity {@code 1<IMSI>}, GSM triplets from MILENAGE. */
+    public static EapLogin sim(SimCard card) {
+        return simLogin(Method.SIM, card);
+    }
+
+    /** EAP-AKA with {@code card}: the permanent identity {@code 0<IMSI>}, the network checked by its AUTN. */
+    public static EapLogin aka(SimCard card) {
+        return simLogin(Method.AKA, card);
+    }
+
+    /** EAP-AKA′ with {@code card}: the permanent identity {@code 6<IMSI>}, keys bound to the network name it sends. */
+    public static EapLogin akaPrime(SimCard card) {
+        return simLogin(Method.AKA_PRIME, card);
+    }
+
+    private static EapLogin simLogin(Method method, SimCard card) {
+        EapLogin login = new EapLogin(method, null, null);
+        login.card = card;
+        return login;
+    }
+
+    /** The realm after the SIM's identity, e.g. {@code wlan.mnc001.mcc262.3gppnetwork.org}. */
+    public EapLogin realm(String realm) {
+        this.realm = realm;
+        return this;
     }
 
     /** EAP-TLS with a client certificate; {@code identity} is the EAP identity, matched against the certificate. */
@@ -161,6 +196,10 @@ public final class EapLogin {
     }
 
     String identity() {
+        if (card != null) {
+            String prefix = method == Method.SIM ? "1" : method == Method.AKA ? "0" : "6";
+            return prefix + card.imsi() + (realm == null ? "" : "@" + realm);
+        }
         return outerIdentity != null && (method == Method.PEAP || method == Method.TTLS || method == Method.TEAP)
                 ? outerIdentity
                 : user;
