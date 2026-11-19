@@ -139,6 +139,11 @@
             <artifactId>radiusward-test-harness</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-embedded</artifactId>
+            <version>${project.version}</version>
+        </dependency>
         <!-- test infrastructure, without floors; listed so that every analysed module finds its files in the report -->
         <dependency>
             <groupId>io.radiusward</groupId>

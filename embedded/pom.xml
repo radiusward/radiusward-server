@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>io.radiusward</groupId>
+        <artifactId>radiusward-parent</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>radiusward-embedded</artifactId>
+    <name>radiusward :: embedded</name>
+    <description>radiusward inside a JVM for development and tests, not for production: one cluster member and one RADIUS server with authentication and accounting, the developer's own identity stores and sinks, gone on close</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-server</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-cluster-node</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-exporter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-export-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-auth-api</artifactId>
+        </dependency>
+        <dependency>
+            <!-- session queries, as the admin tool asks them -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-admin-cli</artifactId>
+        </dependency>
+        <dependency>
+            <!-- client() and accountingClient() -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+</project>

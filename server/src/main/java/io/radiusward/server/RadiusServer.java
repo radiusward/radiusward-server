@@ -277,7 +277,7 @@ public final class RadiusServer implements AutoCloseable {
     }
 
     /** {@code auth.reject.delay} (ADR 0057): 1 s by default, at most 5 s. */
-    static java.time.Duration rejectDelay(io.radiusward.common.config.Config raw) {
+    public static java.time.Duration rejectDelay(io.radiusward.common.config.Config raw) {
         java.time.Duration d = raw.duration("auth.reject.delay", java.time.Duration.ofSeconds(1));
         if (d.isNegative() || d.compareTo(java.time.Duration.ofSeconds(5)) > 0) {
             throw new io.radiusward.common.config.ConfigException("auth.reject.delay: 0s to 5s");

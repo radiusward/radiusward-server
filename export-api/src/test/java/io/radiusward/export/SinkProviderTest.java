@@ -40,4 +40,17 @@ class SinkProviderTest {
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("none");
     }
+
+    @Test
+    void aSinkAsAFunctionGetsEveryBatchAndStoresNoPosition() throws Exception {
+        java.util.List<Batch> got = new java.util.ArrayList<>();
+        AccountingSink sink = AccountingSink.of(got::add);
+        sink.open(null);
+        Batch batch = new Batch("s", 1, 0, 10, 0, java.util.List.of(), java.util.List.of());
+        sink.write(batch);
+        assertThat(got).containsExactly(batch);
+        assertThat(sink.storedPosition()).isEqualTo(-1);
+        assertThat(sink.checkpointStyle()).isEqualTo(AccountingSink.CheckpointStyle.IDEMPOTENT_REPLAY);
+        sink.close();
+    }
 }

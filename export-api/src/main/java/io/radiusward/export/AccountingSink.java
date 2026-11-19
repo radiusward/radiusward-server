@@ -44,4 +44,34 @@ public interface AccountingSink extends AutoCloseable {
 
     @Override
     void close();
+
+    /**
+     * A sink as a function, for tests: {@code writer} gets every batch; no position is stored, so after a restart the
+     * exporter replays from the start (write idempotently, or count on it in the test).
+     */
+    static AccountingSink of(java.util.function.Consumer<Batch> writer) {
+        java.util.Objects.requireNonNull(writer, "writer");
+        return new AccountingSink() {
+            @Override
+            public void open(SinkContext context) {}
+
+            @Override
+            public CheckpointStyle checkpointStyle() {
+                return CheckpointStyle.IDEMPOTENT_REPLAY;
+            }
+
+            @Override
+            public long storedPosition() {
+                return -1;
+            }
+
+            @Override
+            public void write(Batch batch) {
+                writer.accept(batch);
+            }
+
+            @Override
+            public void close() {}
+        };
+    }
 }
