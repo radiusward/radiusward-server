@@ -89,6 +89,22 @@ class BuilderTest {
         EmbeddedRadiusward.checkJvmOption();
     }
 
+    @Test
+    void theTemporaryDirectoryIsTheUsersOnly() throws Exception {
+        Path dir = EmbeddedRadiusward.temporaryDirectory();
+        try {
+            if (java.nio.file.FileSystems.getDefault()
+                    .supportedFileAttributeViews()
+                    .contains("posix")) {
+                assertThat(java.nio.file.attribute.PosixFilePermissions.toString(
+                                java.nio.file.Files.getPosixFilePermissions(dir)))
+                        .isEqualTo("rwx------");
+            }
+        } finally {
+            java.nio.file.Files.delete(dir);
+        }
+    }
+
     private static AccountingSink sink() {
         return new AccountingSink() {
             @Override
