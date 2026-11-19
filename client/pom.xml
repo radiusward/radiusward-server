@@ -21,6 +21,11 @@
             <artifactId>radiusward-codec</artifactId>
         </dependency>
         <dependency>
+            <!-- EAP primitives shared with the server: packets, MS-CHAP, PEAP crypto-binding, TTLS AVPs -->
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-eap</artifactId>
+        </dependency>
+        <dependency>
             <!-- Md4 for MS-CHAP -->
             <groupId>io.radiusward</groupId>
             <artifactId>radiusward-auth-api</artifactId>

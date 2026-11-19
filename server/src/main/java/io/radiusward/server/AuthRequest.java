@@ -4,6 +4,7 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.EapPacket;
 import io.radiusward.radius.codec.AccessRequests;
 import java.util.Arrays;
 import org.agrona.concurrent.UnsafeBuffer;

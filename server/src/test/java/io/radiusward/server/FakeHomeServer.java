@@ -5,6 +5,7 @@
 package io.radiusward.server;
 
 import io.radiusward.client.PacketBuilder;
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;

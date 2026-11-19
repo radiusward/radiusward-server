@@ -100,7 +100,8 @@ Dependabot (`.github/dependabot.yml`) proposes updates of the pinned GitHub Acti
 | `radius-dictionary-freeradius` | Bundled FreeRADIUS dictionaries (CC BY 4.0, unmodified, pinned commit) — resources only |
 | `radius-codegen` | Generates constants classes and `AccountingAttributeExtractor` from the dictionaries |
 | `radius-codec` | Zero-allocation packet view, attribute cursor, encoder, authenticators, Accounting-Response builder, Access-Request credentials (PAP, CHAP) and Access replies; generated `io.radiusward.radius.codec.attributes` |
-| `client` | `radiusward-client`: `RadiusClient` (UDP, retransmission, verified answers; PAP, CHAP, MS-CHAPv2, accounting, Status-Server), `PacketBuilder` (signed requests and replies) and `Credentials`, for developers' tests and every module's tests ([strategy](docs/testing/strategy.md#packets-in-tests)) |
+| `client` | `radiusward-client`: `RadiusClient` (UDP, retransmission, verified answers; PAP, CHAP, MS-CHAPv2, EAP, accounting, Status-Server), `PacketBuilder` (signed requests and replies) and `Credentials`, for developers' tests and every module's tests ([strategy](docs/testing/strategy.md#packets-in-tests)) |
+| `eap` | `radiusward-eap`: EAP primitives shared by the server and the client's supplicant: `EapPacket`, MS-CHAP, PEAP crypto-binding, TTLS AVPs, TEAP keys, P-256, MILENAGE and SIM/AKA |
 | `tools/radclient` | CLI test client (`acct`, `auth`, `replay`, `decode [--fixture]`, `load` with an optional Access-Request mix), executable jar |
 | `tools/admin-cli` | `AdminClient`; `admin state`, `verify-acks` (acknowledged events vs replicated state), `sinks`, `resync`, `activate-version`, `export-schema`, `verify-export`, `disconnect`, `coa` |
 | `testing/benchmarks` | JMH, only with `-Pbench` |

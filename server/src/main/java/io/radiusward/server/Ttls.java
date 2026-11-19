@@ -10,8 +10,10 @@ import static io.radiusward.radius.codec.attributes.Ietf.EAP_MESSAGE;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 import static io.radiusward.radius.codec.attributes.Ietf.USER_PASSWORD;
 
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
+import io.radiusward.eap.TtlsAvp;
 import io.radiusward.radius.codec.attributes.Microsoft;
-import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -29,9 +31,9 @@ import javax.net.ssl.SSLException;
  */
 final class Ttls extends TlsTunnel {
 
-    static final int TYPE = 21;
-    static final int FLAG_VENDOR = 0x80;
-    static final int FLAG_MANDATORY = 0x40;
+    static final int TYPE = EapPacket.TYPE_TTLS;
+    static final int FLAG_VENDOR = TtlsAvp.FLAG_VENDOR;
+    static final int FLAG_MANDATORY = TtlsAvp.FLAG_MANDATORY;
 
     private byte[] implicitChallenge;
     private String user;
@@ -304,28 +306,7 @@ final class Ttls extends TlsTunnel {
 
     /** A Diameter AVP, vendor-specific when {@code vendor} is set, padded to 4 bytes. */
     static byte[] avp(int code, int vendor, byte[] value) {
-        int header = vendor != 0 ? 12 : 8;
-        int length = header + value.length;
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        out.write(code >>> 24);
-        out.write(code >>> 16);
-        out.write(code >>> 8);
-        out.write(code);
-        out.write((vendor != 0 ? FLAG_VENDOR : 0) | FLAG_MANDATORY);
-        out.write(length >>> 16);
-        out.write(length >>> 8);
-        out.write(length);
-        if (vendor != 0) {
-            out.write(vendor >>> 24);
-            out.write(vendor >>> 16);
-            out.write(vendor >>> 8);
-            out.write(vendor);
-        }
-        out.writeBytes(value);
-        while (out.size() % 4 != 0) {
-            out.write(0);
-        }
-        return out.toByteArray();
+        return TtlsAvp.encode(code, vendor, value);
     }
 
     /** A PAP password may be padded with zero bytes to a multiple of 16 (§11.2.5). */

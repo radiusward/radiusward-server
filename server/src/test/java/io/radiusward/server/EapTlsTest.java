@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.IdentityStore;
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

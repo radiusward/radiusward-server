@@ -6,6 +6,7 @@ package io.radiusward.server;
 
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.eap.EapPacket;
 import java.time.Duration;
 import java.util.List;
 import java.util.Locale;

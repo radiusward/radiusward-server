@@ -7,6 +7,8 @@ package io.radiusward.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.Md4;
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.MsChap;
 import io.radiusward.server.EapMethod.Credentials;
 import io.radiusward.server.EapMethod.Inner;
 import io.radiusward.server.EapMethod.Step;

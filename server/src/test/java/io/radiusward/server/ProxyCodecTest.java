@@ -6,6 +6,7 @@ package io.radiusward.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.AttributeCursor;
 import io.radiusward.radius.codec.RadiusAuthenticator;

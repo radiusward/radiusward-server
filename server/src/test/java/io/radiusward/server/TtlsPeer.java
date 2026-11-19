@@ -4,6 +4,7 @@
  */
 package io.radiusward.server;
 
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.attributes.Ietf;
 import io.radiusward.radius.codec.attributes.Microsoft;
 import java.nio.ByteBuffer;

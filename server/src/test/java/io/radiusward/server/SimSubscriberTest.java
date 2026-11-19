@@ -4,16 +4,24 @@
  */
 package io.radiusward.server;
 
-import static io.radiusward.server.MilenageTest.hex;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.eap.SimMessage;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 /** SIM keys from store check items under both naming schemes (ADR 0061), and the SIM message codec. */
 class SimSubscriberTest {
+
+    static byte[] hex(String s) {
+        return java.util.HexFormat.of().parseHex(s.replace(" ", ""));
+    }
+
+    static String hex(byte[] b) {
+        return java.util.HexFormat.of().formatHex(b);
+    }
 
     static AttributeItem item(String name, String value) {
         return new AttributeItem(name, ":=", value);

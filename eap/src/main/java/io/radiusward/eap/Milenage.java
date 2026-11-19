@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 import java.security.GeneralSecurityException;
 import javax.crypto.Cipher;
@@ -13,7 +13,7 @@ import javax.crypto.spec.SecretKeySpec;
  * from the subscriber key K and the operator variant OPc (ADR 0061), and GSM-MILENAGE (TS 55.205), its GSM triplets.
  * Written from the specification; checked against the test sets of TS 35.207/35.208.
  */
-final class Milenage {
+public final class Milenage {
 
     /** f1 rotation and constants (TS 35.206 §4.1): r1..r5 in bytes, c1..c5 in their last byte. */
     private static final int[] ROTATE = {8, 0, 4, 8, 12};
@@ -27,7 +27,7 @@ final class Milenage {
      * @param k the 16-byte subscriber key
      * @param opc the 16-byte OPc ({@link #opc} derives it from OP)
      */
-    Milenage(byte[] k, byte[] opc) {
+    public Milenage(byte[] k, byte[] opc) {
         if (k.length != 16 || opc.length != 16) {
             throw new IllegalArgumentException("K and OPc are 16 bytes");
         }
@@ -39,22 +39,22 @@ final class Milenage {
      * Zeroes this instance's copy of OPc. The AES key schedule lives inside the JCE cipher, which has no way to clear
      * it; it goes with the instance.
      */
-    void erase() {
+    public void erase() {
         java.util.Arrays.fill(opc, (byte) 0);
     }
 
     /** OPc = E_K(OP) ⊕ OP. */
-    static byte[] opc(byte[] k, byte[] op) {
+    public static byte[] opc(byte[] k, byte[] op) {
         byte[] out = encrypt(aes(k), op);
         xor(out, op);
         return out;
     }
 
     /** A UMTS vector for a challenge: RES, CK, IK and AK (f2–f5), plus f5* for resynchronisation. */
-    record Quintet(byte[] res, byte[] ck, byte[] ik, byte[] ak, byte[] akStar) {}
+    public record Quintet(byte[] res, byte[] ck, byte[] ik, byte[] ak, byte[] akStar) {}
 
     /** f2, f3, f4, f5 and f5* for {@code rand}. */
-    Quintet f2345(byte[] rand) {
+    public Quintet f2345(byte[] rand) {
         byte[] temp = temp(rand);
         byte[] out2 = out(temp, 1);
         byte[] out3 = out(temp, 2);
@@ -72,7 +72,7 @@ final class Milenage {
      * f1 and f1*: the network authentication code MAC-A (bytes 0–7) and the resynchronisation code MAC-S (8–15) over
      * SQN and AMF.
      */
-    byte[] f1(byte[] rand, byte[] sqn, byte[] amf) {
+    public byte[] f1(byte[] rand, byte[] sqn, byte[] amf) {
         if (sqn.length != 6 || amf.length != 2) {
             throw new IllegalArgumentException("SQN is 6 bytes, AMF 2");
         }
@@ -91,7 +91,7 @@ final class Milenage {
     }
 
     /** AUTN = SQN ⊕ AK ‖ AMF ‖ MAC-A (TS 33.102 §6.3.2). */
-    byte[] autn(byte[] rand, byte[] sqn, byte[] amf) {
+    public byte[] autn(byte[] rand, byte[] sqn, byte[] amf) {
         byte[] ak = f2345(rand).ak();
         byte[] mac = f1(rand, sqn, amf);
         byte[] autn = new byte[16];
@@ -107,7 +107,7 @@ final class Milenage {
      * The SQN of a USIM that rejected a challenge as out of step, from its AUTS = SQN_MS ⊕ AK* ‖ MAC-S, or
      * {@code null} if MAC-S does not verify (TS 33.102 §6.3.5; the AMF of the check is zero).
      */
-    byte[] resync(byte[] rand, byte[] auts) {
+    public byte[] resync(byte[] rand, byte[] auts) {
         if (auts.length != 14) {
             return null;
         }
@@ -121,10 +121,10 @@ final class Milenage {
     }
 
     /** A GSM triplet's SRES (4 bytes) and Kc (8 bytes). */
-    record Triplet(byte[] rand, byte[] sres, byte[] kc) {}
+    public record Triplet(byte[] rand, byte[] sres, byte[] kc) {}
 
     /** GSM-MILENAGE (TS 55.205, conversion functions c2 and c3 of TS 33.102): SRES and Kc for {@code rand}. */
-    Triplet gsm(byte[] rand) {
+    public Triplet gsm(byte[] rand) {
         Quintet q = f2345(rand);
         byte[] sres = new byte[4];
         for (int i = 0; i < 4; i++) {

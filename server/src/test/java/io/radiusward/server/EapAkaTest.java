@@ -4,10 +4,13 @@
  */
 package io.radiusward.server;
 
-import static io.radiusward.server.MilenageTest.hex;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.AttributeItem;
+import io.radiusward.eap.EapPacket;
+import io.radiusward.eap.Milenage;
+import io.radiusward.eap.SimKeys;
+import io.radiusward.eap.SimMessage;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
@@ -20,6 +23,14 @@ import org.junit.jupiter.api.Test;
  */
 class EapAkaTest {
 
+    static byte[] hex(String s) {
+        return java.util.HexFormat.of().parseHex(s.replace(" ", ""));
+    }
+
+    static String hex(byte[] b) {
+        return java.util.HexFormat.of().formatHex(b);
+    }
+
     static final byte[] KI = hex("465b5ce8b199b49faa5f0a2ee238a6bc");
     static final byte[] OPC = hex("cd63cb71954a9f4e48a5994e37a02baf");
     static final String IMSI = "262011000000001";
@@ -27,6 +38,7 @@ class EapAkaTest {
 
     /** The RADIUS server side: one subscriber, sequence numbers from a counter, or answers set by the test. */
     static class Side implements EapMethod.InnerAuth {
+
         int subscriberCode = AccessHandler.ACCEPT;
         long sqn = 0;
         long forced = 0; // non-zero: nextSqn answers this

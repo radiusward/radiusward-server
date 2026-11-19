@@ -8,6 +8,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.Md4;
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.AttributeCursor;
 import io.radiusward.radius.codec.RadiusPacket;

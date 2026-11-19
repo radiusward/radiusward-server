@@ -2,7 +2,7 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
 import io.radiusward.auth.Md4;
 import io.radiusward.units.Units;
@@ -19,7 +19,7 @@ import javax.crypto.spec.SecretKeySpec;
  * The calculations of MS-CHAP: version 1 (RFC 2433), version 2 (RFC 2759), its MPPE keys (RFC 3079) and the encryption
  * of key attributes in RADIUS (RFC 2548). Verification only, from the NT password hash.
  */
-final class MsChap {
+public final class MsChap {
 
     private static final byte[] MAGIC_SIGN = ascii("Magic server to client signing constant");
     private static final byte[] MAGIC_PAD = ascii("Pad to make it do more than one iteration");
@@ -34,12 +34,12 @@ final class MsChap {
     private MsChap() {}
 
     /** NtPasswordHash: MD4 of the password in UTF-16LE. */
-    static byte[] ntHash(String password) {
+    public static byte[] ntHash(String password) {
         return Md4.digest(password.getBytes(StandardCharsets.UTF_16LE));
     }
 
     /** {@code NT-Password} as stored: 32 hex digits, optionally with {@code 0x}; {@code null} if malformed. */
-    static byte[] parseNtPassword(String value) {
+    public static byte[] parseNtPassword(String value) {
         try {
             return Units.hex(value, 16);
         } catch (IllegalArgumentException e) {
@@ -48,7 +48,7 @@ final class MsChap {
     }
 
     /** ChallengeResponse: three DES encryptions of the 8-byte challenge with keys from the zero-padded hash. */
-    static byte[] challengeResponse(byte[] challenge, byte[] ntHash) {
+    public static byte[] challengeResponse(byte[] challenge, byte[] ntHash) {
         byte[] z = Arrays.copyOf(ntHash, 21);
         byte[] out = new byte[24];
         for (int i = 0; i < 3; i++) {
@@ -58,7 +58,7 @@ final class MsChap {
     }
 
     /** MS-CHAPv2 ChallengeHash: SHA-1 of peer challenge, authenticator challenge and user name (no domain). */
-    static byte[] challengeHash(byte[] peerChallenge, byte[] authenticatorChallenge, byte[] userName) {
+    public static byte[] challengeHash(byte[] peerChallenge, byte[] authenticatorChallenge, byte[] userName) {
         MessageDigest sha = sha1();
         sha.update(peerChallenge);
         sha.update(authenticatorChallenge);
@@ -67,7 +67,7 @@ final class MsChap {
     }
 
     /** The user name as MS-CHAPv2 hashes it: without a {@code DOMAIN\} prefix. */
-    static byte[] v2UserName(byte[] userName) {
+    public static byte[] v2UserName(byte[] userName) {
         for (int i = userName.length - 1; i >= 0; i--) {
             if (userName[i] == '\\') {
                 return Arrays.copyOfRange(userName, i + 1, userName.length);
@@ -77,12 +77,12 @@ final class MsChap {
     }
 
     /** MS-CHAPv2 GenerateAuthenticatorResponse: {@code S=} and 40 upper-case hex digits. */
-    static String authenticatorResponse(byte[] ntHash, byte[] ntResponse, byte[] challengeHash) {
+    public static String authenticatorResponse(byte[] ntHash, byte[] ntResponse, byte[] challengeHash) {
         return authenticatorResponseFromKey(Md4.digest(ntHash), ntResponse, challengeHash);
     }
 
     /** As above, from the hash of the NT hash (the user session key a domain controller returns). */
-    static String authenticatorResponseFromKey(byte[] ntHashHash, byte[] ntResponse, byte[] challengeHash) {
+    public static String authenticatorResponseFromKey(byte[] ntHashHash, byte[] ntResponse, byte[] challengeHash) {
         MessageDigest sha = sha1();
         sha.update(ntHashHash);
         sha.update(ntResponse);
@@ -95,12 +95,12 @@ final class MsChap {
     }
 
     /** RFC 3079 MasterKey of an MS-CHAPv2 exchange. */
-    static byte[] masterKey(byte[] ntHash, byte[] ntResponse) {
+    public static byte[] masterKey(byte[] ntHash, byte[] ntResponse) {
         return masterKeyFromKey(Md4.digest(ntHash), ntResponse);
     }
 
     /** As above, from the hash of the NT hash. */
-    static byte[] masterKeyFromKey(byte[] ntHashHash, byte[] ntResponse) {
+    public static byte[] masterKeyFromKey(byte[] ntHashHash, byte[] ntResponse) {
         MessageDigest sha = sha1();
         sha.update(ntHashHash);
         sha.update(ntResponse);
@@ -109,7 +109,7 @@ final class MsChap {
     }
 
     /** RFC 3079 GetAsymmetricStartKey for the server (the NAS): its send or its receive key, 128 bits. */
-    static byte[] serverKey(byte[] masterKey, boolean send) {
+    public static byte[] serverKey(byte[] masterKey, boolean send) {
         MessageDigest sha = sha1();
         sha.update(masterKey);
         sha.update(PAD_ZEROS);
@@ -124,7 +124,7 @@ final class MsChap {
      *
      * @param salt two bytes, the first with its high bit set, unique within the packet
      */
-    static byte[] encryptKey(byte[] key, byte[] secret, byte[] requestAuthenticator, byte[] salt) {
+    public static byte[] encryptKey(byte[] key, byte[] secret, byte[] requestAuthenticator, byte[] salt) {
         byte[] plain = new byte[((key.length + 1 + 15) / 16) * 16];
         plain[0] = (byte) key.length;
         System.arraycopy(key, 0, plain, 1, key.length);
@@ -139,7 +139,7 @@ final class MsChap {
      * {@link #encryptKey} in reverse, as the receiving side does it: the key, of the length its first byte gives;
      * {@code null} if {@code value} is not a salt and whole blocks or that length does not fit.
      */
-    static byte[] decryptKey(byte[] value, byte[] secret, byte[] requestAuthenticator) {
+    public static byte[] decryptKey(byte[] value, byte[] secret, byte[] requestAuthenticator) {
         if (value.length < 2 + 16 || (value.length - 2) % 16 != 0) {
             return null;
         }
@@ -166,7 +166,7 @@ final class MsChap {
      * RFC 2548 §2.4.1 (MS-CHAP-MPPE-Keys of MS-CHAPv1): the 8-byte LAN Manager key, the 16-byte NT key and 8 zero
      * bytes, hidden like User-Password (RFC 2865 §5.2) with the request authenticator.
      */
-    static byte[] encryptV1Keys(byte[] lmKey, byte[] ntKey, byte[] secret, byte[] requestAuthenticator) {
+    public static byte[] encryptV1Keys(byte[] lmKey, byte[] ntKey, byte[] secret, byte[] requestAuthenticator) {
         byte[] plain = new byte[32];
         System.arraycopy(lmKey, 0, plain, 0, 8);
         System.arraycopy(ntKey, 0, plain, 8, 16);
@@ -196,7 +196,7 @@ final class MsChap {
     }
 
     /** DES with a 56-bit key (7 bytes spread over 8, parity bits left to the cipher). */
-    static byte[] des(byte[] key7, byte[] block) {
+    public static byte[] des(byte[] key7, byte[] block) {
         byte[] key = new byte[8];
         key[0] = (byte) (key7[0] & 0xFE);
         key[1] = (byte) ((key7[0] << 7 | (key7[1] & 0xFF) >>> 1) & 0xFE);

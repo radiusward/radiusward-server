@@ -7,6 +7,7 @@ package io.radiusward.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import io.radiusward.auth.Md4;
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacket;
 import java.nio.charset.StandardCharsets;
@@ -163,8 +164,8 @@ class MsChapAuthenticatorTest extends HandlerFixture {
         byte[] recv = microsoft(17).get(0);
         assertThat(send[0] & 0x80).as("salt high bit").isNotZero();
         assertThat(new byte[] {send[0], send[1]}).isNotEqualTo(new byte[] {recv[0], recv[1]});
-        assertThat(MsChapTest.hex(decryptKey(send, auth))).isEqualTo("8B7CDC149B993A1BA118CB153F56DCCB");
-        byte[] master = MsChapTest.hex("FDECE3717A8C838CB388E527AE3CDD31");
+        assertThat(TestHex.upper(decryptKey(send, auth))).isEqualTo("8B7CDC149B993A1BA118CB153F56DCCB");
+        byte[] master = TestHex.bytes("FDECE3717A8C838CB388E527AE3CDD31");
         assertThat(decryptKey(recv, auth)).isEqualTo(MsChap.serverKey(master, false));
         assertThat(reply().findAttribute(27)).as("reply items too").isPositive();
     }

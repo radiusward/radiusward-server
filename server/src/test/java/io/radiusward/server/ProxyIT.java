@@ -11,6 +11,7 @@ import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
 import io.radiusward.client.PacketBuilder;
 import io.radiusward.common.config.Config;
+import io.radiusward.eap.MsChap;
 import io.radiusward.radius.codec.RadiusAuthenticator;
 import io.radiusward.radius.codec.RadiusCode;
 import io.radiusward.radius.codec.RadiusPacket;

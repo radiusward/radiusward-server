@@ -2,9 +2,9 @@
  * Copyright 2026 The radiusward Authors
  * SPDX-License-Identifier: Apache-2.0
  */
-package io.radiusward.server;
+package io.radiusward.eap;
 
-import static io.radiusward.server.MilenageTest.hex;
+import static io.radiusward.eap.MilenageTest.hex;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;

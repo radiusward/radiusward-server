@@ -61,6 +61,7 @@
         <module>sinks/radius</module>
         <module>cluster-node</module>
         <module>auth-api</module>
+        <module>eap</module>
         <module>client</module>
         <module>stores/file</module>
         <module>stores/sql</module>
@@ -208,6 +209,11 @@
             <dependency>
                 <groupId>io.radiusward</groupId>
                 <artifactId>radiusward-client</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.radiusward</groupId>
+                <artifactId>radiusward-eap</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>

@@ -8,6 +8,7 @@ import static io.radiusward.radius.codec.attributes.Ietf.USER_NAME;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.common.management.PrometheusWriter;
+import io.radiusward.eap.EapPacket;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusPacket;
 import io.radiusward.radius.dictionary.Dictionary;

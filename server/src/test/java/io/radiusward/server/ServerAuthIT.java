@@ -9,6 +9,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.qameta.allure.Epic;
 import io.qameta.allure.Feature;
 import io.qameta.allure.Link;
+import io.radiusward.client.EapLogin;
+import io.radiusward.client.EapResult;
+import io.radiusward.client.RadiusClient;
 import io.radiusward.common.config.Config;
 import io.radiusward.radius.codec.AccessRequests;
 import io.radiusward.radius.codec.RadiusCode;
@@ -172,51 +175,28 @@ class ServerAuthIT {
                 .auth(auth)
                 .handlerFactory(RadiusServer.storeHandler(settings, auth))
                 .start()) {
-            int port = radiusServer.authPort();
-            EapTlsClient client =
-                    new EapTlsClient(TestPki.clientContext(pki.client("laptop-1"), pki.ca), "TLSv1.3", 1024);
-            assertThat(eapOverUdp(port, "laptop-1", client)[0]).isEqualTo((byte) RadiusCode.ACCESS_ACCEPT);
-            EapTlsClient blocked =
-                    new EapTlsClient(TestPki.clientContext(pki.client("laptop-7"), pki.ca), "TLSv1.2", 1024);
-            assertThat(eapOverUdp(port, "laptop-7", blocked)[0])
-                    .as("a valid certificate, but the store rejects the user")
-                    .isEqualTo((byte) RadiusCode.ACCESS_REJECT);
-        }
-    }
-
-    private static byte[] eapOverUdp(int port, String identity, EapTlsClient client) throws Exception {
-        EapPacket eap = HandlerFixture.identity(1, identity);
-        byte[] state = null;
-        for (int round = 0; round < 100; round++) {
-            byte[] auth = new byte[16];
-            java.util.concurrent.ThreadLocalRandom.current().nextBytes(auth);
-            UnsafeBuffer buffer = new UnsafeBuffer(new byte[io.radiusward.radius.codec.RadiusPacket.MAX_LENGTH]);
-            io.radiusward.radius.codec.RadiusPacketEncoder enc = new io.radiusward.radius.codec.RadiusPacketEncoder()
-                    .wrap(buffer, 0)
-                    .header(RadiusCode.ACCESS_REQUEST, round & 0xFF)
-                    .authenticator(auth);
-            int ma = enc.messageAuthenticator();
-            enc.attribute(1, identity);
-            eap.writeTo(enc);
-            if (state != null) {
-                enc.attribute(24, state);
+            try (RadiusClient client = RadiusClient.udp(
+                    new InetSocketAddress("127.0.0.1", radiusServer.authPort()), AuthAgentTest.SECRET)) {
+                TestPki.Issued laptop = pki.client("laptop-1");
+                EapResult accepted =
+                        client.eap(EapLogin.tls("laptop-1", laptop.keys().getPrivate(), laptop.certificate())
+                                .trust(pki.ca.certificate())
+                                .tlsProtocol("TLSv1.3")
+                                .fragmentSize(1024));
+                assertThat(accepted.accepted()).isTrue();
+                assertThat(accepted.serverMsk().orElseThrow())
+                        .as("keys in the Accept")
+                        .isEqualTo(accepted.msk().orElseThrow());
+                TestPki.Issued blocked = pki.client("laptop-7");
+                assertThat(client.eap(EapLogin.tls("laptop-7", blocked.keys().getPrivate(), blocked.certificate())
+                                        .trust(pki.ca.certificate())
+                                        .tlsProtocol("TLSv1.2")
+                                        .fragmentSize(1024))
+                                .rejected())
+                        .as("a valid certificate, but the store rejects the user")
+                        .isTrue();
             }
-            int length = enc.finish();
-            new io.radiusward.radius.codec.RadiusAuthenticator()
-                    .signAccessRequest(buffer, 0, length, ma, AuthAgentTest.SECRET);
-            byte[] reply = send(port, java.util.Arrays.copyOf(buffer.byteArray(), length));
-            if (reply[0] != (byte) RadiusCode.ACCESS_CHALLENGE) {
-                return reply;
-            }
-            io.radiusward.radius.codec.RadiusPacket view = new io.radiusward.radius.codec.RadiusPacket();
-            view.wrap(new UnsafeBuffer(reply), 0, reply.length);
-            EapPacket request = EapPacket.from(view);
-            int at = view.findAttribute(24);
-            state = java.util.Arrays.copyOfRange(reply, at + 2, at + (reply[at + 1] & 0xFF));
-            eap = new EapPacket(
-                    EapPacket.CODE_RESPONSE, request.identifier(), EapTls.TYPE, client.answer(request.data()));
         }
-        throw new AssertionError("no end to the conversation");
     }
 
     private static byte[] send(int port, byte[] request) throws Exception {

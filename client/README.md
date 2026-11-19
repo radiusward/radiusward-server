@@ -39,4 +39,33 @@ try (CoaListener nas = CoaListener.bind(0, "testing123")) {      // its port is 
 }
 ```
 
-An EAP supplicant follows ([plan](../docs/plans/embedded.md), E2b).
+## EAP
+
+`RadiusClient.eap(EapLogin)` runs a whole EAP login as a device does through a NAS: EAP-Message in Access-Requests, the
+server's State, Access-Challenges until an Access-Accept or Access-Reject.
+
+```java
+EapResult r = client.eap(EapLogin.peap("alice", "secret")          // inner MS-CHAPv2; .inner(Inner.GTC)
+        .trust(caCertificate)                                     // the server must chain to it
+        .outerIdentity("anonymous@example.org"));
+r.accepted();                                                     // or rejected(), or NO_ANSWER
+r.response().orElseThrow().string(25);                            // the Accept's reply items
+r.msk().equals(r.serverMsk());                                    // the keys a Wi-Fi access point gets
+r.serverProved();  r.cryptoBound();                               // MS-CHAPv2's proof, PEAP's crypto-binding
+```
+
+| Login | Methods |
+|---|---|
+| `EapLogin.md5(user, password)` | EAP-MD5 |
+| `EapLogin.tls(identity, key, certificate)` | EAP-TLS with a client certificate |
+| `EapLogin.peap(user, password)` | PEAPv0 with MS-CHAPv2 or GTC inside, crypto-binding answered when the server sends it |
+| `EapLogin.ttls(user, password)` | EAP-TTLS with PAP, CHAP, MS-CHAP or MS-CHAPv2 inside |
+
+A request of another method is answered with a Nak naming the login's. `trust(...)` sets the CAs the server must chain
+to (or a self-signed server certificate itself); every TLS-based login needs it. TLS 1.2 or 1.3 (`tlsProtocol`), fragments of `fragmentSize`.
+TEAP, EAP-pwd and EAP-SIM/AKA follow ([plan](../docs/plans/embedded.md), E2b-2 and E2b-3).
+
+| Class | Role |
+|---|---|
+| `EapLogin`, `EapResult` | what the device logs in with; how it ended, with rounds, reply, keys and the checks of the server |
+| `EapSupplicant`, `TlsPeer` | the conversation; the JDK's TLS client in RFC 5216 framing (package-private) |

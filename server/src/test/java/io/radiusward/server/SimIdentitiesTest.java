@@ -9,6 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.common.config.Config;
 import io.radiusward.common.config.ConfigException;
+import io.radiusward.eap.SimMessage;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;

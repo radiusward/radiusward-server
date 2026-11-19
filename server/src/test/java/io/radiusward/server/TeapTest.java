@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.radiusward.common.config.Config;
+import io.radiusward.eap.EapPacket;
 import io.radiusward.server.EapMethod.Credentials;
 import io.radiusward.server.EapMethod.Step;
 import java.io.ByteArrayOutputStream;
