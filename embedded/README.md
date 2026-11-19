@@ -24,7 +24,8 @@ try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
 
 The JVM needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED` (Agrona and Aeron): Surefire's or Failsafe's
 `argLine`, Gradle's `jvmArgs`, the IDE's run configuration. `start()` fails with that text when it is missing.
-[`testing/embedded-consumer`](../testing/embedded-consumer) is a complete Maven project that uses it.
+[`testing/embedded-consumer`](../testing/embedded-consumer) is a complete Maven project that uses it. With JUnit,
+[`radiusward-junit`](../junit/README.md) starts and closes it for a test class or a test.
 
 ## Builder
 

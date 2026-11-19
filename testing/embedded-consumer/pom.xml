@@ -27,6 +27,12 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>io.radiusward</groupId>
+            <artifactId>radiusward-junit</artifactId>
+            <version>${radiusward.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <version>6.1.3</version>
