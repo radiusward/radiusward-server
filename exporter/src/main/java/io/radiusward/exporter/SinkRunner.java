@@ -39,8 +39,8 @@ final class SinkRunner implements Runnable {
     private final SinkContext context;
     private final ExporterContext exporter;
     private final int streamBase;
-    private final LeaseClient lease;
-    private final LeaseClient renewalLease;
+    private LeaseClient lease; // made in run(), on the sink's Aeron client
+    private LeaseClient renewalLease; // used by the renewal thread, started after it is set
     private final SinkStatus status;
     private volatile boolean running = true;
 
@@ -69,8 +69,6 @@ final class SinkRunner implements Runnable {
         this.context = context;
         this.exporter = exporter;
         this.streamBase = streamBase;
-        this.lease = new LeaseClient(exporter.aeronDir(), exporter.ingressEndpoints(), exporter.egressHost());
-        this.renewalLease = new LeaseClient(exporter.aeronDir(), exporter.ingressEndpoints(), exporter.egressHost());
         this.status = new SinkStatus(config.name(), config.type());
     }
 
@@ -88,6 +86,8 @@ final class SinkRunner implements Runnable {
             aeron = Aeron.connect(new Aeron.Context()
                     .aeronDirectoryName(exporter.aeronDir())
                     .errorHandler(LeaseClient.LOG_ERRORS)); // never Aeron's default, which exits the JVM
+            lease = new LeaseClient(aeron, exporter.ingressEndpoints(), exporter.egressHost());
+            renewalLease = new LeaseClient(aeron, exporter.ingressEndpoints(), exporter.egressHost());
             archive = AeronArchive.connect(new AeronArchive.Context()
                     .aeron(aeron)
                     .controlRequestChannel(exporter.archiveControlChannel())
