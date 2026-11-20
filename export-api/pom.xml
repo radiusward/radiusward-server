@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-export-api</artifactId>
     <name>radiusward :: export api</name>
-    <description>Sink plug-in API: batches of applied events and session snapshots, canonical attribute encoding</description>
+    <description>The interfaces for your own accounting sinks, which receive radiusward's committed events and sessions as plug-ins or in tests; public API</description>
 
     <dependencies>
         <dependency>

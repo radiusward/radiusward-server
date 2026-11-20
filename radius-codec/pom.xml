@@ -14,7 +14,7 @@
     <artifactId>radiusward-codec</artifactId>
     <name>radiusward :: RADIUS codec</name>
 
-    <description>Zero-allocation RADIUS packet codec</description>
+    <description>Zero-allocation RADIUS packet codec: validation, attributes, authenticators, PAP/CHAP credentials and replies, for the server and the client; internal to radiusward, may change in any release.</description>
 
     <properties>
         <jacoco.minimum.coverage>0.90</jacoco.minimum.coverage>

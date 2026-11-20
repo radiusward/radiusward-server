@@ -14,7 +14,7 @@
     <artifactId>radiusward-dictionary</artifactId>
     <name>radiusward :: RADIUS dictionary</name>
 
-    <description>Dictionary model and FreeRADIUS-format dictionary parser</description>
+    <description>Parses RADIUS dictionary files into an attribute tree for the codec, the code generator and the RADIUS server; internal to radiusward, may change in any release.</description>
 
     <properties>
         <jacoco.minimum.coverage>0.90</jacoco.minimum.coverage>

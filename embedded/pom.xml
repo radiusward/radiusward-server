@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-embedded</artifactId>
     <name>radiusward :: embedded</name>
-    <description>radiusward inside a JVM for development and tests, not for production: one cluster member and one RADIUS server with authentication and accounting, the developer's own identity stores and sinks, gone on close</description>
+    <description>radiusward inside a JVM for development and tests, not for production: a member and a RADIUS server (or a cluster) with your own stores and sinks, gone on close; public API</description>
 
     <dependencies>
         <dependency>

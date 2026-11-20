@@ -1,12 +1,30 @@
-# embedded
+# radiusward-embedded
 
-`radiusward-embedded`: radiusward inside a JVM for development and tests ([ADR 0068](../docs/adr/0068-embedded-radiusward-and-maven-central.md),
-[plan](../docs/plans/embedded.md)). One cluster member and one RADIUS server by default, or a whole cluster of three
-members and several RADIUS servers, started with the same code and settings
-as in production, the developer's own identity stores, credential verifiers and sinks, ports chosen at start,
-everything gone on `close()`.
+radiusward inside a JVM, for development and tests of applications and devices that speak RADIUS. One cluster member
+and one RADIUS server by default, or a cluster of three members and several RADIUS servers, started with the same
+code and settings as in production; the developer's own identity stores, credential verifiers and sinks plug in
+through the same interfaces as in a cluster; ports are chosen at start and everything is gone on `close()`.
+`radiusward-embedded` is the library; [radiusward-junit](../junit/README.md) wraps it for JUnit tests.
 
 **Not for production**: all members share one machine and nothing is synced to disk; it says so in the log at start.
+
+**Stability:** Public API: kept compatible within a minor version (until 1.0, a minor version may change it, with a
+note in the release).
+
+## Use it
+
+```xml
+<dependency>
+    <groupId>io.radiusward</groupId>
+    <artifactId>radiusward-embedded</artifactId>
+    <!-- version from radiusward-bom; see the main README -->
+    <scope>test</scope>
+</dependency>
+```
+
+Gradle: `testImplementation("io.radiusward:radiusward-embedded")` (version from the BOM platform).
+
+## Example
 
 ```java
 try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
@@ -22,12 +40,12 @@ try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
 }
 ```
 
-The JVM needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED` (Agrona and Aeron): Surefire's or Failsafe's
-`argLine`, Gradle's `jvmArgs`, the IDE's run configuration. `start()` fails with that text when it is missing.
 [`testing/embedded-consumer`](../testing/embedded-consumer) is a complete Maven project that uses it. With JUnit,
 [`radiusward-junit`](../junit/README.md) starts and closes it for a test class or a test.
 
-## Builder
+## What's inside
+
+### Builder
 
 | Method | What it does |
 |---|---|
@@ -43,12 +61,12 @@ The JVM needs `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED` (Agrona an
 | `eap(methods...)` | EAP methods to offer (`peap`, `ttls`, `teap`, `tls`, `pwd`, `sim`, `aka`, `aka-prime`, `md5`); with a TLS-based one and no certificate of your own, a throwaway CA signs the server's certificate |
 | `simUser(imsi, ki, opc, replyItems...)` | a SIM subscriber for EAP-SIM, EAP-AKA and EAP-AKA′; sequence numbers from the cluster |
 | `coaPort(port)` | where the NAS entries listen for CoA and Disconnect-Requests (e.g. a `CoaListener`) |
-| `setting(key, value)` | any key of [configuration.md](../docs/configuration.md); it overrides the methods above. Unknown keys are ignored, as in a configuration file |
+| `setting(key, value)` | any key of [configuration.md](../docs/configuration.md); it overrides the methods above. Unknown keys are ignored, as in a configuration file. A built-in sink (file, PostgreSQL, RADIUS forwarding) comes with `setting("export.sinks", "embedded, <name>")` and its `sink.<name>.*` keys: keep `embedded` in the list, it is the sink behind `accounting()` |
 
 The developer's stores, verifier and sinks run through the same plug-in APIs as in a cluster (`IdentityStoreProvider.of`
 and friends, E3), so a class written for a test runs unchanged as a plug-in. They are closed once, on `close()`.
 
-## Running server
+### Running server
 
 | Method | What it does |
 |---|---|
@@ -97,3 +115,23 @@ one JVM side by side, each with its own directory and ports.
 10 MB of direct buffers, the process's resident memory 170 MB larger, about 200 MB of files in its directory. Aeron's
 memory-mapped files (term buffers, counters) reserve more address space than that; only what is touched becomes
 resident.
+
+## Requirements
+
+- Java 25 and the JVM option `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED` (Agrona and Aeron): Surefire's
+  or Failsafe's `argLine`, Gradle's `jvmArgs`, the IDE's run configuration. `start()` fails with that text when it is
+  missing.
+- Runtime dependencies: the radiusward server, a cluster member and the exporter (Aeron, Agrona, Log4j 2, all
+  Apache-2.0), and Bouncy Castle (`bcpkix`, `bcprov`, MIT) for the throwaway CA.
+
+## Learn more
+
+- [radiusward-junit](../junit/README.md), [radiusward-client](../client/README.md) (the NAS and the device side, with the EAP supplicant)
+- [radiusward-auth-api](../auth-api/README.md) and [radiusward-export-api](../export-api/README.md): your own stores, verifiers and sinks
+- [Configuration reference](../docs/configuration.md): every key `setting(...)` takes
+- [ADR 0068](../docs/adr/0068-embedded-radiusward-and-maven-central.md) and the [plan](../docs/plans/embedded.md)
+- [testing/embedded-consumer](../testing/embedded-consumer): a complete Maven project that uses it
+
+## License
+
+Apache-2.0.

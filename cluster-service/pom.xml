@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-cluster-service</artifactId>
     <name>radiusward :: cluster service</name>
-    <description>Deterministic accounting state machine running inside Aeron Cluster</description>
+    <description>The deterministic accounting state machine inside Aeron Cluster: dedup, sessions, reservations, export checkpoints, snapshots; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

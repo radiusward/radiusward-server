@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-server</artifactId>
     <name>radiusward :: server</name>
-    <description>The RADIUS server in front of the cluster: UDP, TCP, RadSec and DTLS</description>
+    <description>The RADIUS server in front of the cluster (accounting, authentication, EAP, RadSec, DTLS, proxying, CoA) that radiusward.jar and the image run; internal to radiusward, may change in any release.</description>
 
     <properties>
         <!-- test classes start their own clusters, ports and directories: two JVMs at a time -->

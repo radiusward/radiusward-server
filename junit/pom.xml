@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-junit</artifactId>
     <name>radiusward :: junit</name>
-    <description>A JUnit extension for tests against radiusward in the test's JVM: an embedded server per test class or per test, closed afterwards, with the server and its clients as test parameters</description>
+    <description>A JUnit extension that starts an embedded radiusward per test class or test and gives the tests the server and its clients as parameters; public API</description>
 
     <dependencies>
         <dependency>

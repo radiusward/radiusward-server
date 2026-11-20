@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-protocol</artifactId>
     <name>radiusward :: protocol</name>
-    <description>SBE messages between RADIUS servers, cluster and tools</description>
+    <description>SBE messages between RADIUS servers, cluster members and tools, and the snapshot format of the replicated state; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

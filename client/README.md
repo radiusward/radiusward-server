@@ -1,7 +1,27 @@
-# client
+# radiusward-client
 
-`radiusward-client`: a RADIUS client for development and tests, behaving as a NAS
-([ADR 0068](../docs/adr/0068-embedded-radiusward-and-maven-central.md)).
+A RADIUS client for development and tests that behaves as a NAS and as the devices behind it. It sends
+Access-Requests (PAP, CHAP, MS-CHAPv2, and whole EAP logins with a built-in supplicant), Accounting-Requests from Start
+to Stop, and Status-Server; retransmits as a NAS does; and accepts only answers whose authenticators verify. It also
+listens for CoA and Disconnect-Requests. `radiusward-client` works against any RADIUS server, not only radiusward.
+
+**Stability:** Public API: kept compatible within a minor version (until 1.0, a minor version may change it, with a
+note in the release).
+
+## Use it
+
+```xml
+<dependency>
+    <groupId>io.radiusward</groupId>
+    <artifactId>radiusward-client</artifactId>
+    <!-- version from radiusward-bom; see the main README -->
+    <scope>test</scope>
+</dependency>
+```
+
+Gradle: `testImplementation("io.radiusward:radiusward-client")` (version from the BOM platform).
+
+## Example
 
 ```java
 try (RadiusClient client = RadiusClient.udp("127.0.0.1", 1812, "testing123")) {
@@ -13,6 +33,8 @@ try (RadiusClient client = RadiusClient.udp("127.0.0.1", 1812, "testing123")) {
     assert acct.isAcknowledgement();
 }
 ```
+
+## What's inside
 
 | Class | Role |
 |---|---|
@@ -83,3 +105,19 @@ r.serverProved();  card.sqn();                                    // the network
 | `SimCard` | a simulated SIM or USIM: IMSI, Ki, OPc and the SQN it accepted |
 | `EapLogin`, `EapResult` | what the device logs in with; how it ended, with rounds, reply, keys and the checks of the server |
 | `EapSupplicant`, `TlsPeer` | the conversation; the JDK's TLS client in RFC 5216 framing (package-private) |
+
+## Requirements
+
+Java 25 and the JVM option `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED` (the client and the codec read
+packets with Agrona's buffers): Surefire's or Failsafe's `argLine`, Gradle's `jvmArgs`. Depends on `radiusward-codec`,
+`radiusward-eap` and `radiusward-auth-api`.
+
+## Learn more
+
+- [radiusward-embedded](../embedded/README.md) and [radiusward-junit](../junit/README.md): a server to point it at, in the same JVM
+- [ADR 0068: embedded radiusward and Maven Central](../docs/adr/0068-embedded-radiusward-and-maven-central.md)
+- [Packets in tests](../docs/testing/strategy.md#packets-in-tests) and the vendor fixtures it replays
+
+## License
+
+Apache-2.0.

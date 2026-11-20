@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-common</artifactId>
     <name>radiusward :: common</name>
-    <description>Configuration, profiles, management HTTP server, logging</description>
+    <description>Configuration, resource profiles, the management HTTP server and non-blocking logging shared by every radiusward process; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

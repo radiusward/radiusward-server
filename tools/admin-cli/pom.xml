@@ -14,7 +14,7 @@
     <artifactId>radiusward-admin-cli</artifactId>
     <name>radiusward :: admin cli</name>
 
-    <description>Queries the replicated state through the cluster log; verifies acknowledgement logs</description>
+    <description>Command-line administration of a cluster: replicated state, sinks, export checks, state versions, CoA and Disconnect; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

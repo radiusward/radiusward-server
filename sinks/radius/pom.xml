@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-sink-radius</artifactId>
     <name>radiusward :: sink :: radius</name>
-    <description>Forwards committed accounting of proxied realms to their home servers (UDP or RadSec)</description>
+    <description>Built-in sink that forwards committed accounting of proxied realms to their home servers over UDP or RadSec; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

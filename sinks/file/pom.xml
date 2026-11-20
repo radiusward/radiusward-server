@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-sink-file</artifactId>
     <name>radiusward :: sink :: file</name>
-    <description>JSON-lines sink: archive and reference implementation of the sink API</description>
+    <description>Built-in sink that writes committed accounting as JSON lines, an archive and the reference sink for plug-in writers; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

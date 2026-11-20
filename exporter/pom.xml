@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-exporter</artifactId>
     <name>radiusward :: exporter</name>
-    <description>Reads the committed cluster log, replays the state machine and feeds sinks</description>
+    <description>Exports the committed cluster log to sinks from every member, under a lease, by replaying the state machine; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

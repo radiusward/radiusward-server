@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-auth-api</artifactId>
     <name>radiusward :: auth api</name>
-    <description>Identity store plug-in API: look up a user's credentials, check items and reply attributes</description>
+    <description>The interfaces for your own identity stores and credential verifiers, used by radiusward as plug-ins and by radiusward-embedded in tests; public API</description>
 
     <dependencies>
         <dependency>

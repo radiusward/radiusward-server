@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-store-ldap</artifactId>
     <name>radiusward :: store :: ldap</name>
-    <description>Identity store and password verifier over LDAP (Active Directory and others), with the JDK's LDAP client</description>
+    <description>Built-in identity store and PAP verifier over LDAP, for Active Directory and other directories; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

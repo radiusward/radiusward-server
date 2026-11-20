@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-verifier-netlogon</artifactId>
     <name>radiusward :: verifier :: netlogon</name>
-    <description>Credential verifier for Active Directory over Netlogon (MS-NRPC), pure Java</description>
+    <description>Built-in credential verifier that checks MS-CHAP and PAP against Active Directory over Netlogon, in pure Java; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

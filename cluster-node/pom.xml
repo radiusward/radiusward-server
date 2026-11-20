@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-cluster-node</artifactId>
     <name>radiusward :: cluster node</name>
-    <description>Launches a cluster member: media driver, archive, consensus module and the accounting service</description>
+    <description>Launches a radiusward cluster member with exporter, log purge and seeding, plus continuous backup and restore; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

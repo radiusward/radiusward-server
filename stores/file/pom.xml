@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-store-file</artifactId>
     <name>radiusward :: store :: file</name>
-    <description>Identity store from a FreeRADIUS-style users file, reloaded on change</description>
+    <description>Built-in identity store that reads users from a text file in the users file format, reloaded on change; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

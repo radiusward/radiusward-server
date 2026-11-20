@@ -22,7 +22,7 @@
     <packaging>pom</packaging>
 
     <name>radiusward :: bom</name>
-    <description>The versions of every published radiusward artifact, to import once</description>
+    <description>The versions of every published radiusward artifact, imported once; pins only radiusward's own artifacts, not the libraries in your build</description>
     <url>https://radiusward.com</url>
     <inceptionYear>2026</inceptionYear>
 
