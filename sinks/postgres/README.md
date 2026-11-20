@@ -11,7 +11,7 @@ cluster's settings, no code needed.
 
 You normally do not depend on it directly: every cluster member (`radiusward.jar cluster-node`, the image) has it,
 and it comes with [`radiusward-embedded`](../../embedded/README.md), where `setting(...)` enables it with the keys
-below. In the embedded server keep its own sink first, `setting("export.sinks", "embedded, pg")`: the setting replaces the whole list, and `embedded` is the sink behind `accounting()` and `awaitAccounting(...)`. To write a sink for another database, use [`radiusward-export-api`](../../export-api/README.md).
+below. In the embedded server, `setting("export.sinks", "pg")` runs it beside the embedded server's own sink, which it always keeps for `accounting()` and `awaitAccounting(...)`. To write a sink for another database, use [`radiusward-export-api`](../../export-api/README.md).
 
 ## What's inside
 

@@ -10,7 +10,7 @@ enabled with `sink.<name>.type = file`; operators set it up in a cluster's setti
 
 You normally do not depend on it directly: every cluster member (`radiusward.jar cluster-node`, the image) has it,
 and it comes with [`radiusward-embedded`](../../embedded/README.md), where `setting(...)` enables it with the keys
-below. In the embedded server keep its own sink first, `setting("export.sinks", "embedded, archive")`: the setting replaces the whole list, and `embedded` is the sink behind `accounting()` and `awaitAccounting(...)`. To write a sink of your own, use [`radiusward-export-api`](../../export-api/README.md) and read this module's
+below. In the embedded server, `setting("export.sinks", "archive")` runs it beside the embedded server's own sink, which it always keeps for `accounting()` and `awaitAccounting(...)`. To write a sink of your own, use [`radiusward-export-api`](../../export-api/README.md) and read this module's
 two classes as an example.
 
 ## What's inside
