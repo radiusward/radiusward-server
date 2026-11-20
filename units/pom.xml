@@ -13,6 +13,6 @@
 
     <artifactId>radiusward-units</artifactId>
     <name>radiusward :: units</name>
-    <description>Durations, sizes, lists, hex and PEM files in settings, read the same way by every module; no dependencies</description>
+    <description>Reads durations, sizes, lists, hex and PEM certificates and keys in settings the same way for every radiusward module and plug-in; internal to radiusward, may change in any release.</description>
 
 </project>

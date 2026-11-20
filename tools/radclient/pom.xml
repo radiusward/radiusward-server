@@ -14,7 +14,7 @@
     <artifactId>radiusward-radclient</artifactId>
     <name>radiusward :: radclient</name>
 
-    <description>Command-line RADIUS accounting client for testing</description>
+    <description>Command-line RADIUS client for testing: accounting, authentication, replay, decoding and load, shipped in radiusward.jar; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

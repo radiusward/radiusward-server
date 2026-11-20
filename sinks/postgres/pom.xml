@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-sink-postgres</artifactId>
     <name>radiusward :: sink :: postgres</name>
-    <description>PostgreSQL sink: sessions (radacct-like) and optional event history, COPY + ON CONFLICT</description>
+    <description>Built-in sink that writes committed accounting sessions and optional event history into PostgreSQL; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-client</artifactId>
     <name>radiusward :: client</name>
-    <description>A RADIUS client for development and tests: Access-Requests with PAP, CHAP and MS-CHAPv2, accounting, Status-Server, retransmission and verified answers, and a builder for signed packets</description>
+    <description>A RADIUS client for development and tests that acts as a NAS and its devices: PAP, CHAP, MS-CHAPv2, an EAP supplicant for every method, accounting, Status-Server and CoA; public API</description>
 
     <dependencies>
         <dependency>

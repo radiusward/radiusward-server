@@ -1,9 +1,29 @@
-# junit
+# radiusward-junit
 
-`radiusward-junit`: a JUnit extension for tests against radiusward in the test's JVM ([ADR 0068](../docs/adr/0068-embedded-radiusward-and-maven-central.md),
-[plan](../docs/plans/embedded.md)). It starts an [embedded radiusward](../embedded/README.md) for a test class or a
-test, closes it afterwards (also after a failure) and gives the tests what they ask for as parameters. Only for tests:
-the server, the image and the chart do not use it.
+A JUnit 5 extension for tests against radiusward in the test's JVM. It starts an
+[embedded radiusward](../embedded/README.md) for a test class or a single test, closes it afterwards (also after a
+failure) and hands the tests what they ask for as parameters: the server and ready RADIUS clients.
+`radiusward-junit` is only for tests; the server, the image and the chart do not use it.
+
+**Stability:** Public API: kept compatible within a minor version (until 1.0, a minor version may change it, with a
+note in the release).
+
+## Use it
+
+```xml
+<dependency>
+    <groupId>io.radiusward</groupId>
+    <artifactId>radiusward-junit</artifactId>
+    <!-- version from radiusward-bom; see the main README -->
+    <scope>test</scope>
+</dependency>
+```
+
+Gradle: `testImplementation("io.radiusward:radiusward-junit")` (version from the BOM platform).
+
+It brings `radiusward-embedded` and `radiusward-client`; your build brings the JUnit engine.
+
+## Example
 
 ```java
 @Radiusward(users = "alice:secret")                   // one server for the class
@@ -21,6 +41,8 @@ class LoginTest {
     }
 }
 ```
+
+## What's inside
 
 | `@Radiusward` | |
 |---|---|
@@ -46,5 +68,19 @@ static RadiuswardExtension radius = RadiuswardExtension.configure(b -> b
         .sink(new MyBillingSink()));
 ```
 
-Test classes that JUnit runs in parallel each get their own server, directory and ports. The JVM needs
-`--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`, as for the embedded server.
+Test classes that JUnit runs in parallel each get their own server, directory and ports.
+
+## Requirements
+
+Java 25, JUnit Jupiter 6 (built and tested against 6.1), and the JVM option `--add-exports java.base/jdk.internal.misc=ALL-UNNAMED`
+as for [radiusward-embedded](../embedded/README.md).
+
+## Learn more
+
+- [radiusward-embedded](../embedded/README.md): everything the server parameter offers
+- [radiusward-client](../client/README.md): logins, accounting, EAP and CoA from the test
+- [testing/embedded-consumer](../testing/embedded-consumer): a project that uses the extension
+
+## License
+
+Apache-2.0.

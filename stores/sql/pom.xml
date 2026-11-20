@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-store-sql</artifactId>
     <name>radiusward :: store :: sql</name>
-    <description>Identity store over JDBC with FreeRADIUS radcheck/radreply/radusergroup tables; bounded connection pool</description>
+    <description>Built-in identity store that reads users over JDBC from tables in the radcheck/radreply schema; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>

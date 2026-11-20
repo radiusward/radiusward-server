@@ -14,5 +14,5 @@
     <artifactId>radiusward-dictionaries</artifactId>
     <name>radiusward :: FreeRADIUS dictionaries</name>
 
-    <description>Bundled FreeRADIUS dictionary files (CC BY 4.0, unmodified)</description>
+    <description>The bundled FreeRADIUS RADIUS dictionary files (CC BY 4.0, unmodified) that radiusward decodes vendor attributes with; internal to radiusward, may change in any release.</description>
 </project>

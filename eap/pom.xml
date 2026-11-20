@@ -13,7 +13,7 @@
 
     <artifactId>radiusward-eap</artifactId>
     <name>radiusward :: eap</name>
-    <description>EAP protocol primitives shared by the RADIUS server and the client's supplicant: the EAP packet, MS-CHAP, PEAP crypto-binding, TEAP keys, EAP-pwd's P-256, MILENAGE and the EAP-SIM/AKA keys and messages</description>
+    <description>EAP primitives shared by the RADIUS server and the client's supplicant: EAP packets, MS-CHAP, PEAP, TTLS, TEAP, EAP-pwd, SIM/AKA; internal to radiusward, may change in any release.</description>
 
     <dependencies>
         <dependency>
