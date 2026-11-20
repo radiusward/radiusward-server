@@ -61,7 +61,7 @@ try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
 | `eap(methods...)` | EAP methods to offer (`peap`, `ttls`, `teap`, `tls`, `pwd`, `sim`, `aka`, `aka-prime`, `md5`); with a TLS-based one and no certificate of your own, a throwaway CA signs the server's certificate |
 | `simUser(imsi, ki, opc, replyItems...)` | a SIM subscriber for EAP-SIM, EAP-AKA and EAP-AKA′; sequence numbers from the cluster |
 | `coaPort(port)` | where the NAS entries listen for CoA and Disconnect-Requests (e.g. a `CoaListener`) |
-| `setting(key, value)` | any key of [configuration.md](../docs/configuration.md); it overrides the methods above. Unknown keys are ignored, as in a configuration file. A built-in sink (file, PostgreSQL, RADIUS forwarding) comes with `setting("export.sinks", "embedded, <name>")` and its `sink.<name>.*` keys: keep `embedded` in the list, it is the sink behind `accounting()` |
+| `setting(key, value)` | any key of [configuration.md](../docs/configuration.md); it overrides the methods above. Unknown keys are ignored, as in a configuration file. A built-in sink (file, PostgreSQL, RADIUS forwarding) comes with `setting("export.sinks", "<name>")` and its `sink.<name>.*` keys; the embedded server always keeps its own sink, the one behind `accounting()` |
 
 The developer's stores, verifier and sinks run through the same plug-in APIs as in a cluster (`IdentityStoreProvider.of`
 and friends, E3), so a class written for a test runs unchanged as a plug-in. They are closed once, on `close()`.

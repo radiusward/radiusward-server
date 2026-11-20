@@ -940,7 +940,25 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             });
             v.put("export.sinks", String.join(", ", sinkNames));
             v.putAll(settings);
+            v.put("export.sinks", withOwnSink(v.get("export.sinks")));
             return v;
+        }
+
+        /**
+         * The sink list with the embedded server's own sink first: a {@code setting("export.sinks", ...)} replaces the
+         * whole list, and without {@value RecordingSink#NAME} {@code accounting()} and {@code awaitAccounting(...)}
+         * would silently see nothing.
+         */
+        static String withOwnSink(String sinks) {
+            List<String> names = new ArrayList<>();
+            names.add(RecordingSink.NAME);
+            for (String name : sinks == null ? new String[0] : sinks.split(",")) {
+                String trimmed = name.trim();
+                if (!trimmed.isEmpty() && !trimmed.equals(RecordingSink.NAME)) {
+                    names.add(trimmed);
+                }
+            }
+            return String.join(", ", names);
         }
 
         private AuthPlugins plugins() {
