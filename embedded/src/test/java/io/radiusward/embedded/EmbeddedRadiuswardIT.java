@@ -244,4 +244,37 @@ class EmbeddedRadiuswardIT {
             assertThat(radius.server()).isNotNull();
         }
     }
+
+    @Test
+    void aBuiltInSinkFromTheSettingsWritesBesideTheEmbeddedOne() throws Exception {
+        Path archive = dir.resolve("archive");
+        try (EmbeddedRadiusward radius = EmbeddedRadiusward.builder()
+                        .setting("export.sinks", "archive")
+                        .setting("sink.archive.type", "file")
+                        .setting("sink.archive.dir", archive.toString())
+                        .setting("sink.archive.mode", "sessions+events")
+                        .start();
+                RadiusClient acct = radius.accountingClient()) {
+            assertThat(acct.send(new AccountingSession("s-file").user("erin").start())
+                            .orElseThrow()
+                            .isAcknowledgement())
+                    .isTrue();
+            assertThat(radius.awaitAccounting(1))
+                    .as("the embedded sink still records, though the setting named only the file sink")
+                    .hasSize(1);
+            EmbeddedRadiusward.await(Duration.ofSeconds(10), "the file sink wrote the Start", () -> {
+                try (var files = Files.walk(archive)) {
+                    return files.filter(Files::isRegularFile).anyMatch(f -> {
+                        try {
+                            return Files.readString(f).contains("s-file");
+                        } catch (java.io.IOException e) {
+                            return false;
+                        }
+                    });
+                } catch (java.io.IOException e) {
+                    return false;
+                }
+            });
+        }
+    }
 }
