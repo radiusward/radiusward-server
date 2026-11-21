@@ -19,6 +19,13 @@ import java.util.function.LongSupplier;
  */
 final class Restrictions {
 
+    /** No end from this restriction. */
+    private static final long NO_LIMIT = Long.MAX_VALUE;
+    /** The user is rejected. */
+    private static final long REJECTED = -1;
+    /** The request stays unanswered: what decides it cannot be read now. */
+    private static final long DROPPED = -2;
+
     private final CheckItems checkItems;
     private final LongSupplier clockMillis;
     private final OnceLogger once;
@@ -56,108 +63,148 @@ final class Restrictions {
         if (a.restrictions().isEmpty()) {
             return AccessHandler.ACCEPT;
         }
-        UsageCounters counters = p.counters();
         Instant now = Instant.ofEpochMilli(clockMillis.getAsLong());
         java.time.ZonedDateTime local = now.atZone(p.zone());
-        long cap = Long.MAX_VALUE;
+        long cap = NO_LIMIT;
         for (AttributeItem item : a.restrictions()) {
-            String name = item.attribute();
-            if (name.equalsIgnoreCase("Expiration")) {
-                Instant expires = checkItems.date(item.value(), p.zone());
-                if (expires == null || !now.isBefore(expires)) {
-                    StoreAccessHandler.because(context, "expired: ", item.value());
-                    return AccessHandler.REJECT;
-                }
-                cap = Math.min(
-                        cap,
-                        Math.max(1, java.time.Duration.between(now, expires).getSeconds()));
-            } else if (name.equalsIgnoreCase("Expire-After")) {
-                long after = expireAfter(context, user, item, now, counters);
-                if (after < 0) {
-                    return after == -2 ? AccessHandler.DROP : AccessHandler.REJECT;
-                }
-                cap = Math.min(cap, Math.max(1, after));
-            } else if (name.equalsIgnoreCase("Pool-Name") || name.equalsIgnoreCase(TotpFactor.SECRET)) {
-                continue; // #assignAddress, #totp
-            } else if (name.equalsIgnoreCase("Login-Time")) {
-                LoginTime window = LoginTime.parse(item.value());
-                if (window == null) {
-                    once.warn(
-                            "login-time:" + item.value(),
-                            "Login-Time {}: not understood, the user is rejected",
-                            item.value());
-                    StoreAccessHandler.because(context, "Login-Time not understood: ", item.value());
-                    return AccessHandler.REJECT;
-                }
-                long left = window.secondsLeft(local);
-                if (left < 0) {
-                    StoreAccessHandler.because(context, "outside Login-Time ", item.value());
-                    return AccessHandler.REJECT;
-                }
-                cap = Math.min(cap, Math.max(1, left));
-            } else {
-                for (UsageCounters.Counter counter : counters.counters()) {
-                    if (!counter.check().equalsIgnoreCase(name)) {
-                        continue;
-                    }
-                    long limit;
-                    try {
-                        limit = Long.parseLong(item.value().trim());
-                    } catch (NumberFormatException e) {
-                        once.warn(
-                                "counter:" + name, "{}: {} is not a number, the user is rejected", name, item.value());
-                        StoreAccessHandler.because(context, name + " is not a number: ", item.value());
-                        return AccessHandler.REJECT;
-                    }
-                    long used;
-                    try {
-                        used = counters.usage(counter, user, UsageCounters.periodStart(counter.reset(), local));
-                    } catch (Exception e) {
-                        once.warn(
-                                "counter-unavailable:" + counter.name(),
-                                "usage counter {} unavailable, requests are not answered: {}",
-                                counter.name(),
-                                e.toString());
-                        StoreAccessHandler.because(context, "usage counter unavailable: ", counter.name());
-                        return AccessHandler.DROP;
-                    }
-                    StoreAccessHandler.note(context, counter.name() + ": used " + used + " of ", item.value());
-                    if (used >= limit) {
-                        StoreAccessHandler.because(context, "usage limit reached: ", counter.name());
-                        return AccessHandler.REJECT;
-                    }
-                    if (counter.kind() == UsageCounters.Kind.TIME) {
-                        cap = Math.min(cap, limit - used);
-                        Instant end = UsageCounters.periodEnd(counter.reset(), local);
-                        if (end != null) {
-                            cap = Math.min(
-                                    cap,
-                                    Math.max(
-                                            1,
-                                            java.time.Duration.between(now, end).getSeconds()));
-                        }
-                    } else if (counter.reply() != null) {
-                        replace(a.reply(), counter.reply(), Long.toString(limit - used));
-                    }
-                }
+            long left = check(context, user, item, a, p, now, local);
+            if (left < 0) {
+                return left == DROPPED ? AccessHandler.DROP : AccessHandler.REJECT;
             }
+            cap = Math.min(cap, left);
         }
-        if (cap != Long.MAX_VALUE) {
-            long timeout = cap;
-            for (AttributeItem r : a.reply()) {
-                if (r.attribute().equalsIgnoreCase("Session-Timeout")) {
-                    try {
-                        timeout = Math.min(timeout, Long.parseLong(r.value().trim()));
-                    } catch (NumberFormatException e) {
-                        // a malformed value is replaced
-                    }
-                }
-            }
-            replace(a.reply(), "Session-Timeout", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
-            StoreAccessHandler.note(
-                    context, "Session-Timeout capped to ", Long.toString(Math.min(timeout, 0xFFFFFFFFL)));
+        if (cap != NO_LIMIT) {
+            capSessionTimeout(context, a.reply(), cap);
         }
         return AccessHandler.ACCEPT;
+    }
+
+    /** One restriction: the seconds it leaves the session ({@link #NO_LIMIT} for none), or REJECTED or DROPPED. */
+    private long check(
+            AccessContext context,
+            String user,
+            AttributeItem item,
+            UserDirectory.Authorization a,
+            AccessPolicies p,
+            Instant now,
+            java.time.ZonedDateTime local) {
+        String name = item.attribute();
+        if (name.equalsIgnoreCase("Expiration")) {
+            return expiration(context, item, now, p.zone());
+        }
+        if (name.equalsIgnoreCase("Expire-After")) {
+            long after = expireAfter(context, user, item, now, p.counters());
+            return after < 0 ? after : Math.max(1, after);
+        }
+        if (name.equalsIgnoreCase("Pool-Name") || name.equalsIgnoreCase(TotpFactor.SECRET)) {
+            return NO_LIMIT; // #assignAddress, #totp
+        }
+        if (name.equalsIgnoreCase("Login-Time")) {
+            return loginTime(context, item, local);
+        }
+        return counters(context, user, item, a, p.counters(), now, local);
+    }
+
+    /** {@code Expiration}: rejected from that date on, else the seconds until then. */
+    private long expiration(AccessContext context, AttributeItem item, Instant now, java.time.ZoneId zone) {
+        Instant expires = checkItems.date(item.value(), zone);
+        if (expires == null || !now.isBefore(expires)) {
+            StoreAccessHandler.because(context, "expired: ", item.value());
+            return REJECTED;
+        }
+        return Math.max(1, java.time.Duration.between(now, expires).getSeconds());
+    }
+
+    /** {@code Login-Time}: rejected outside its windows (or when it cannot be read), else the seconds to the end. */
+    private long loginTime(AccessContext context, AttributeItem item, java.time.ZonedDateTime local) {
+        LoginTime window = LoginTime.parse(item.value());
+        if (window == null) {
+            once.warn(
+                    "login-time:" + item.value(), "Login-Time {}: not understood, the user is rejected", item.value());
+            StoreAccessHandler.because(context, "Login-Time not understood: ", item.value());
+            return REJECTED;
+        }
+        long left = window.secondsLeft(local);
+        if (left < 0) {
+            StoreAccessHandler.because(context, "outside Login-Time ", item.value());
+            return REJECTED;
+        }
+        return Math.max(1, left);
+    }
+
+    /**
+     * The usage counters that check this item: rejected at the limit, dropped when the usage cannot be read; a time
+     * counter leaves the time to its limit or its period's end, another kind puts what is left into its reply item.
+     */
+    private long counters(
+            AccessContext context,
+            String user,
+            AttributeItem item,
+            UserDirectory.Authorization a,
+            UsageCounters counters,
+            Instant now,
+            java.time.ZonedDateTime local) {
+        String name = item.attribute();
+        long cap = NO_LIMIT;
+        for (UsageCounters.Counter counter : counters.counters()) {
+            if (!counter.check().equalsIgnoreCase(name)) {
+                continue;
+            }
+            long limit;
+            try {
+                limit = Long.parseLong(item.value().trim());
+            } catch (NumberFormatException e) {
+                once.warn("counter:" + name, "{}: {} is not a number, the user is rejected", name, item.value());
+                StoreAccessHandler.because(context, name + " is not a number: ", item.value());
+                return REJECTED;
+            }
+            long used;
+            try {
+                used = counters.usage(counter, user, UsageCounters.periodStart(counter.reset(), local));
+            } catch (Exception e) {
+                once.warn(
+                        "counter-unavailable:" + counter.name(),
+                        "usage counter {} unavailable, requests are not answered: {}",
+                        counter.name(),
+                        e.toString());
+                StoreAccessHandler.because(context, "usage counter unavailable: ", counter.name());
+                return DROPPED;
+            }
+            StoreAccessHandler.note(context, counter.name() + ": used " + used + " of ", item.value());
+            if (used >= limit) {
+                StoreAccessHandler.because(context, "usage limit reached: ", counter.name());
+                return REJECTED;
+            }
+            if (counter.kind() == UsageCounters.Kind.TIME) {
+                cap = Math.min(cap, limit - used);
+                Instant end = UsageCounters.periodEnd(counter.reset(), local);
+                if (end != null) {
+                    cap = Math.min(
+                            cap,
+                            Math.max(1, java.time.Duration.between(now, end).getSeconds()));
+                }
+            } else if (counter.reply() != null) {
+                replace(a.reply(), counter.reply(), Long.toString(limit - used));
+            }
+        }
+        return cap;
+    }
+
+    /** The Accept's Session-Timeout cut to {@code cap}, or set to it; a malformed value is replaced. */
+    private static void capSessionTimeout(AccessContext context, List<AttributeItem> reply, long cap) {
+        long timeout = cap;
+        for (AttributeItem r : reply) {
+            if (r.attribute().equalsIgnoreCase("Session-Timeout")) {
+                try {
+                    timeout = Math.min(timeout, Long.parseLong(r.value().trim()));
+                } catch (NumberFormatException e) {
+                    // a malformed value is replaced
+                }
+            }
+        }
+        String value = Long.toString(Math.min(timeout, 0xFFFFFFFFL));
+        replace(reply, "Session-Timeout", value);
+        StoreAccessHandler.note(context, "Session-Timeout capped to ", value);
     }
 
     static String simultaneousUse(List<AttributeItem> check) {
