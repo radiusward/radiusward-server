@@ -6,6 +6,7 @@ package io.radiusward.junit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 import static org.junit.platform.engine.discovery.DiscoverySelectors.selectClass;
 
 import io.radiusward.auth.AttributeItem;
@@ -86,7 +87,7 @@ class RadiuswardExtensionIT {
         @Test
         void fails(EmbeddedRadiusward radius) {
             SEEN.add(radius);
-            throw new AssertionError("a failing test");
+            fail("a failing test: the extension must still close the server");
         }
     }
 
@@ -94,7 +95,9 @@ class RadiuswardExtensionIT {
     static class Misconfigured {
 
         @Test
-        void neverRuns() {}
+        void neverRuns() {
+            fail("the malformed annotation must stop the class before any test runs");
+        }
     }
 
     @Test
