@@ -105,6 +105,7 @@ r.serverProved();  card.sqn();                                    // the network
 | `SimCard` | a simulated SIM or USIM: IMSI, Ki, OPc and the SQN it accepted |
 | `EapLogin`, `EapResult` | what the device logs in with; how it ended, with rounds, reply, keys and the checks of the server |
 | `EapSupplicant`, `TlsPeer` | the conversation; the JDK's TLS client in RFC 5216 framing (package-private) |
+| `PeapInner`, `TtlsInner`, `TeapInner`, `PwdPeer`, `SimPeer` | one method's side of the conversation each, inside the tunnel or on its own (package-private) |
 
 ## Requirements
 
