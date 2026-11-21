@@ -140,8 +140,11 @@ demo_failover() {
     echo; echo "== cluster ready"; status
     local acks="$LOCAL/demo-acks.csv"
     echo; echo "== load: 20 NAS x 50 sessions, 1000 req/s for 30s through both RADIUS servers (ack log: .local/demo-acks.csv)"
+    # sessions of their own for every run (as deploy/compose/demo-failover.sh): a rerun would otherwise repeat the same
+    # sessions, counted as duplicates instead of applied
+    local first=$(( $(date +%s) % 21474 * 100000 ))
     "$JAVA" -jar "$RADCLIENT" load --server 127.0.0.1:1813,127.0.0.1:1814 --secret testing123 \
-        --nas 20 --sessions 1000 --rate 1000 --duration 30s --interim 5s --ack-log "$acks" &
+        --nas 20 --sessions 1000 --first-session "$first" --rate 1000 --duration 30s --interim 5s --ack-log "$acks" &
     local load=$!
     sleep 10
     local l
