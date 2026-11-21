@@ -31,9 +31,15 @@ leader() {
     done
 }
 
+# Sessions of their own for every run: a second run on the same stack would otherwise send the same sessions with the
+# same timestamps, the cluster would rightly find some of them older than what it holds, and the check below would
+# count those as lost. 100,000 apart (one run uses 10,000), from the clock; they repeat only for runs a multiple of
+# about six hours apart to the second.
+first=$(( $(date +%s) % 21474 * 100000 ))
 echo "load: 10,000 sessions, 2,000 requests/s for 25 s"
 docker exec "$tools" radiusward radclient load --server 172.28.0.20:1813,172.28.0.21:1813 --secret "$secret" \
-    --sessions 10000 --rate 2000 --duration 25s --interim 5s --retry-other-server --ack-log /tmp/acks.csv \
+    --sessions 10000 --first-session "$first" --rate 2000 --duration 25s --interim 5s --retry-other-server \
+    --ack-log /tmp/acks.csv \
     > /tmp/radiusward-demo-load.txt 2>&1 &
 load=$!
 sleep 10

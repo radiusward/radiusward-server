@@ -91,7 +91,8 @@ docker compose -f deploy/compose/compose.yaml run --rm --entrypoint sh tools -c 
     'radiusward admin sinks --members 172.28.0.10,172.28.0.11,172.28.0.12 --egress-host $(hostname -i)'
 ```
 
-`demo-failover.sh` also verifies that every acknowledged session reached PostgreSQL. Event history:
+`demo-failover.sh` also verifies that every acknowledged session reached PostgreSQL. Each run sends sessions of its
+own (`radclient load --first-session`), so it can run again on the same stack. Event history:
 `sink.pg.mode=sessions+events`; no export: `RADIUSWARD_EXPORT_SINKS=` (empty). Details:
 [export.md](export.md).
 
