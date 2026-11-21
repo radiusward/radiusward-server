@@ -131,10 +131,9 @@ class BuilderTest {
                         .values(DIR, 23_000))
                 .as("a built-in sink from the settings, the embedded one kept first")
                 .containsEntry("export.sinks", "embedded, archive");
-        assertThat(EmbeddedRadiusward.Builder.withOwnSink("archive, embedded , pg"))
-                .isEqualTo("embedded, archive, pg");
-        assertThat(EmbeddedRadiusward.Builder.withOwnSink(" ")).isEqualTo("embedded");
-        assertThat(EmbeddedRadiusward.Builder.withOwnSink(null)).isEqualTo("embedded");
+        assertThat(EmbeddedSettings.withOwnSink("archive, embedded , pg")).isEqualTo("embedded, archive, pg");
+        assertThat(EmbeddedSettings.withOwnSink(" ")).isEqualTo("embedded");
+        assertThat(EmbeddedSettings.withOwnSink(null)).isEqualTo("embedded");
     }
 
     @Test
