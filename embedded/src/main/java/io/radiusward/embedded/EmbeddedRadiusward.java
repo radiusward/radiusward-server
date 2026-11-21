@@ -6,9 +6,7 @@ package io.radiusward.embedded;
 
 import io.radiusward.auth.AttributeItem;
 import io.radiusward.auth.CredentialVerifier;
-import io.radiusward.auth.CredentialVerifierProvider;
 import io.radiusward.auth.IdentityStore;
-import io.radiusward.auth.IdentityStoreProvider;
 import io.radiusward.auth.ItemParser;
 import io.radiusward.auth.UserRecord;
 import io.radiusward.client.RadiusClient;
@@ -114,14 +112,14 @@ public final class EmbeddedRadiusward implements AutoCloseable {
         this.deleteDirectory = deleteDirectory;
         this.pki = pki;
         this.recorder = b.recorder;
-        this.owned = b.owned();
-        this.plugins = b.plugins();
+        this.owned = EmbeddedSettings.owned(b);
+        this.plugins = EmbeddedSettings.plugins(b);
         this.host = config.string("server.listen.host");
         this.defaultSecret =
                 b.nas.isEmpty() ? DEFAULT_SECRET : b.nas.values().iterator().next()[1];
         this.defaultNas =
                 b.nas.isEmpty() ? DEFAULT_NAS : b.nas.keySet().iterator().next();
-        SinkProvider[] sinkProviders = b.sinkProviders();
+        SinkProvider[] sinkProviders = EmbeddedSettings.sinkProviders(b);
         memberConfigs = new ClusterNodeConfig[b.members];
         for (int i = 0; i < b.members; i++) {
             ClusterNodeConfig c = ClusterNodeConfig.from(config.with(Map.of(
@@ -625,21 +623,21 @@ public final class EmbeddedRadiusward implements AutoCloseable {
     /** What to start; {@link #start()} starts it. Every method may be called several times. */
     public static final class Builder {
 
-        private final Map<String, String> settings = new LinkedHashMap<>();
-        private final Map<String, String[]> nas = new LinkedHashMap<>();
-        private final Map<String, UserRecord> users = new LinkedHashMap<>();
-        private final List<IdentityStore> stores = new ArrayList<>();
-        private final List<CredentialVerifier> verifiers = new ArrayList<>();
-        private final Map<String, AccountingSink> sinks = new LinkedHashMap<>();
-        private final RecordingSink recorder = new RecordingSink();
-        private final List<String> eap = new ArrayList<>();
-        private Map<String, String> generated = Map.of();
-        private Path directory;
-        private int authPort;
-        private int accountingPort;
-        private int coaPort;
-        private int members = 1;
-        private int radiusServers = 1;
+        final Map<String, String> settings = new LinkedHashMap<>();
+        final Map<String, String[]> nas = new LinkedHashMap<>();
+        final Map<String, UserRecord> users = new LinkedHashMap<>();
+        final List<IdentityStore> stores = new ArrayList<>();
+        final List<CredentialVerifier> verifiers = new ArrayList<>();
+        final Map<String, AccountingSink> sinks = new LinkedHashMap<>();
+        final RecordingSink recorder = new RecordingSink();
+        final List<String> eap = new ArrayList<>();
+        Map<String, String> generated = Map.of();
+        Path directory;
+        int authPort;
+        int accountingPort;
+        int coaPort;
+        int members = 1;
+        int radiusServers = 1;
 
         private Builder() {}
 
@@ -853,151 +851,13 @@ public final class EmbeddedRadiusward implements AutoCloseable {
             }
         }
 
+        /** The settings this builder starts with (tests); {@link EmbeddedSettings#values}. */
+        Map<String, String> values(Path dir, int basePort) {
+            return EmbeddedSettings.values(this, dir, basePort);
+        }
+
         private boolean needsPki() {
             return eap.stream().anyMatch(TLS_METHODS::contains) && !settings.containsKey("auth.eap.tls.certificate");
-        }
-
-        /** The embedded defaults, then what the builder's methods say, then {@link #setting}s. */
-        Map<String, String> values(Path dir, int basePort) {
-            Map<String, String> v = new LinkedHashMap<>();
-            v.put("profile", "small");
-            v.put("cluster.node.id", "0");
-            v.put("cluster.members", String.join(", ", java.util.Collections.nCopies(members, "localhost")));
-            v.put("cluster.base.port", Integer.toString(basePort));
-            v.put("cluster.data.dir", dir.resolve("data").toString());
-            v.put("cluster.aeron.dir", dir.resolve("aeron/member-0").toString());
-            v.put("cluster.disk.min.free", "0");
-            v.put("archive.file.sync.level", "0"); // nothing to survive: no fsync
-            v.put("archive.segment.length", "8m"); // instead of 128 MB preallocated on disk
-            v.put("log.purge.interval", "1s"); // the members report their state version this often
-            v.put("service.max.sessions", "10000");
-            v.put("server.id", "1");
-            v.put("server.listen.host", "127.0.0.1");
-            v.put("server.listen.port", Integer.toString(accountingPort));
-            v.put("server.aeron.dir", dir.resolve("aeron/server-1").toString());
-            v.put("server.pending.capacity", "1024");
-            v.put("server.auth.enabled", "true");
-            v.put("server.auth.port", Integer.toString(authPort));
-            v.put("server.auth.workers", "2");
-            v.put("auth.reject.delay", "0s"); // tests should not wait a second for every reject
-            v.put("auth.plugins.dir", dir.resolve("plugins").toString());
-            v.put("export.plugins.dir", dir.resolve("plugins").toString());
-            v.put("dictionary.dir", dir.resolve("dictionary.d").toString());
-            v.put("coa.enabled", "true");
-            if (nas.isEmpty()) {
-                v.put("nas." + DEFAULT_NAS + ".address", "127.0.0.1");
-                v.put("nas." + DEFAULT_NAS + ".secret", DEFAULT_SECRET);
-            }
-            nas.forEach((name, entry) -> {
-                v.put("nas." + name + ".address", entry[0]);
-                v.put("nas." + name + ".secret", entry[1]);
-            });
-            if (coaPort > 0) {
-                for (String name : nas.isEmpty() ? List.of(DEFAULT_NAS) : List.copyOf(nas.keySet())) {
-                    v.put("nas." + name + ".coa.port", Integer.toString(coaPort));
-                }
-            }
-            if (!eap.isEmpty()) {
-                v.put("auth.eap.methods", String.join(", ", eap));
-                if (eap.contains("teap")) {
-                    v.put("auth.eap.teap.inner", "mschapv2, gtc, basic");
-                }
-            }
-            v.putAll(generated);
-            List<String> storeNames = new ArrayList<>();
-            if (!users.isEmpty()) {
-                storeNames.add("users");
-                v.put("auth.store.users.type", "embedded-users");
-                v.put("auth.store.users.chap", "true");
-                v.put("auth.store.users.mschap", "true");
-            }
-            for (int i = 0; i < stores.size(); i++) {
-                String name = "store-" + (i + 1);
-                storeNames.add(name);
-                v.put("auth.store." + name + ".type", "embedded-" + name);
-                if (!verifiers.isEmpty()) {
-                    v.put("auth.store." + name + ".verifier", "verifier");
-                }
-            }
-            if (!verifiers.isEmpty()) {
-                v.put("auth.verifiers", "verifier");
-                v.put("auth.verifier.verifier.type", "embedded-verifier");
-            }
-            if (storeNames.isEmpty()) {
-                storeNames.add("users"); // no users yet: every login is rejected, as by an empty users file
-                v.put("auth.store.users.type", "embedded-users");
-            }
-            v.put("auth.stores", String.join(", ", storeNames));
-            List<String> sinkNames = new ArrayList<>();
-            sinkNames.add(RecordingSink.NAME);
-            v.put("sink." + RecordingSink.NAME + ".type", RecordingSink.TYPE);
-            v.put("sink." + RecordingSink.NAME + ".mode", "sessions+events");
-            v.put("sink." + RecordingSink.NAME + ".batch.linger", "20ms");
-            sinks.keySet().forEach(name -> {
-                sinkNames.add(name);
-                v.put("sink." + name + ".type", "embedded-" + name);
-                v.put("sink." + name + ".batch.linger", "20ms");
-            });
-            v.put("export.sinks", String.join(", ", sinkNames));
-            v.putAll(settings);
-            v.put("export.sinks", withOwnSink(v.get("export.sinks")));
-            return v;
-        }
-
-        /**
-         * The sink list with the embedded server's own sink first: a {@code setting("export.sinks", ...)} replaces the
-         * whole list, and without {@value RecordingSink#NAME} {@code accounting()} and {@code awaitAccounting(...)}
-         * would silently see nothing.
-         */
-        static String withOwnSink(String sinks) {
-            List<String> names = new ArrayList<>();
-            names.add(RecordingSink.NAME);
-            for (String name : sinks == null ? new String[0] : sinks.split(",")) {
-                String trimmed = name.trim();
-                if (!trimmed.isEmpty() && !trimmed.equals(RecordingSink.NAME)) {
-                    names.add(trimmed);
-                }
-            }
-            return String.join(", ", names);
-        }
-
-        private AuthPlugins plugins() {
-            List<IdentityStoreProvider> providers = new ArrayList<>();
-            Map<String, UserRecord> byName = Map.copyOf(users);
-            providers.add(IdentityStoreProvider.of("embedded-users", context -> new IdentityStore() {
-                @Override
-                public Optional<UserRecord> lookup(String userName) {
-                    return Optional.ofNullable(byName.get(userName.toLowerCase(Locale.ROOT)));
-                }
-
-                @Override
-                public void close() {}
-            }));
-            for (int i = 0; i < stores.size(); i++) {
-                IdentityStore store = stores.get(i);
-                providers.add(IdentityStoreProvider.of("embedded-store-" + (i + 1), context -> Kept.store(store)));
-            }
-            List<CredentialVerifierProvider> verifierProviders = new ArrayList<>();
-            for (CredentialVerifier verifier : verifiers) {
-                verifierProviders.add(
-                        CredentialVerifierProvider.of("embedded-verifier", context -> Kept.verifier(verifier)));
-            }
-            return new AuthPlugins(providers, verifierProviders);
-        }
-
-        SinkProvider[] sinkProviders() {
-            List<SinkProvider> providers = new ArrayList<>();
-            providers.add(SinkProvider.of(RecordingSink.TYPE, () -> recorder));
-            sinks.forEach((name, sink) -> providers.add(SinkProvider.of("embedded-" + name, () -> Kept.sink(sink))));
-            return providers.toArray(SinkProvider[]::new);
-        }
-
-        /** The developer's instances: the server and the exporter close only views of them; we close them once. */
-        List<AutoCloseable> owned() {
-            List<AutoCloseable> all = new ArrayList<>(stores);
-            all.addAll(verifiers);
-            all.addAll(sinks.values());
-            return all;
         }
     }
 }
