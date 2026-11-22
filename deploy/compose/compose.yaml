@@ -24,7 +24,9 @@ x-node: &node
     RADIUSWARD_PROFILE: ${RADIUSWARD_PROFILE:-small}
     PG_PASSWORD: ${PG_PASSWORD:-radiusward}
   healthcheck:
-    test: ["CMD", "radiusward", "probe", "http://127.0.0.1:9090/ready"]
+    # bash's /dev/tcp, not `radiusward probe`: a second JVM in the container every 5 s cost tens of MB, and at high
+    # load that pushed a RADIUS server over its limit (killed by the kernel, 2026-11-22)
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
     interval: 5s
     timeout: 4s
     retries: 12
@@ -34,11 +36,13 @@ x-server: &server
   image: ${RADIUSWARD_IMAGE:-radiusward:dev}
   command: ["server", "--config", "/etc/radiusward/server.properties", "--config", "/etc/radiusward/nas-clients.properties"]
   shm_size: 128m
-  mem_limit: 384m
+  mem_limit: 512m   # heap 192m + ~80m JVM + up to ~100m Aeron in /dev/shm + headroom (docker.md)
   cpus: 1.0
   restart: unless-stopped
   healthcheck:
-    test: ["CMD", "radiusward", "probe", "http://127.0.0.1:9090/ready"]
+    # bash's /dev/tcp, not `radiusward probe`: a second JVM in the container every 5 s cost tens of MB, and at high
+    # load that pushed a RADIUS server over its limit (killed by the kernel, 2026-11-22)
+    test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9090 && printf 'GET /ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
     interval: 5s
     timeout: 4s
     retries: 12

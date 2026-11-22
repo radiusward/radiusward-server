@@ -17,7 +17,7 @@ Ship profiles, default **small**:
 | Aeron term length | 1–4 MB | 8 MB | 16–64 MB |
 | media driver threading | SHARED | SHARED_NETWORK | DEDICATED |
 | idle strategy | backoff / sleeping | backoff | busy-spin |
-| RADIUS server limit | 256–384 MiB | 512 MiB | 1 GiB |
+| RADIUS server limit | 512 MiB (384 MiB until 2026-11-22) | 512 MiB | 1 GiB |
 
 Budget for a small node: Aeron buffers in `/dev/shm` ~64–100 MB, heap ~256 MB, session state off-heap up to
 ~460 MB at 2M sessions (member and replica, ADR 0012, 0036), metaspace + code cache
@@ -39,6 +39,11 @@ primitive collections, streamed snapshots, explicit JVM flags (`-Xmx`, `MaxMetas
   offered for 2 min, ~32k/s served): members at most **448 MiB** heap + native + `/dev/shm` (the rest of the
   1 GiB is page cache, reclaimable), RADIUS servers at most **321 MiB** of 384 MiB; no OOM kill. The small profile
   holds its 2M-session maximum within 1 GiB.
+- Measured 2026-11-22 (a leader killed at 24,000 requests/s in the Compose stack): a RADIUS server reached about
+  385 MiB (272 MiB of its own, 90 MiB of Aeron buffers in `/dev/shm`, the rest mapped files) and the Compose health
+  check, `radiusward probe`, started a second JVM in the same container; the kernel killed the server for exceeding
+  384 MiB, and Docker restarted it 7 s later. Since then the RADIUS server's Compose limit is 512 MiB and the health
+  checks read `/ready` with bash, not a JVM. `OverloadIT` measures without a health check and without a failover.
 - The RADIUS server has the least headroom (~16 % at 384 MiB): response cache (~340k entries at that rate) and
   1 KiB per pending slot for stored commands (ADR 0011).
 - Profiles appear as Helm values and compose files.

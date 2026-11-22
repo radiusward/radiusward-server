@@ -20,8 +20,18 @@ case "$component:$profile" in
     radclient:*)           heap=512m ;;
     cluster-backup:*)      heap=256m;  direct=256m ;;    # a media driver and an archive, no sessions (ADR 0065)
     admin:*)               heap=256m ;;   # verifiers keep the last event of every session of an ack log
-    *)                     heap=64m ;;    # probe, version, cluster-tool
+    probe:*)               heap=32m; light=1 ;;   # health checks: small, starts fast, little memory next to the server
+    *)                     heap=64m ;;    # version, cluster-tool
 esac
+
+# a short-lived tool commits its heap as it goes and skips the optimising compiler; the long-running ones commit theirs
+# at start, so the container's limit is met at start and not under load
+xms=$heap
+gc=-XX:+UseG1GC
+if [ -n "${light:-}" ]; then
+    xms=8m
+    gc="-XX:+UseSerialGC -XX:TieredStopAtLevel=1"
+fi
 
 # defaults for config keys (environment overrides beat properties files; see docs/configuration.md)
 export RADIUSWARD_CLUSTER_DATA_DIR="${RADIUSWARD_CLUSTER_DATA_DIR:-/var/lib/radiusward}"
@@ -34,8 +44,8 @@ export RADIUSWARD_MANAGEMENT_HTTP_HOST="${RADIUSWARD_MANAGEMENT_HTTP_HOST:-0.0.0
 
 # shellcheck disable=SC2086
 exec java \
-    -Xms$heap -Xmx$heap ${direct:+-XX:MaxDirectMemorySize=$direct} \
+    -Xms$xms -Xmx$heap ${direct:+-XX:MaxDirectMemorySize=$direct} \
     -XX:MaxMetaspaceSize=96m -XX:ReservedCodeCacheSize=48m -Xss512k \
-    -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError \
+    $gc -XX:+ExitOnOutOfMemoryError \
     ${JAVA_OPTS:-} \
     -jar /opt/radiusward/radiusward.jar "$@"
