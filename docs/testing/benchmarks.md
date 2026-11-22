@@ -46,12 +46,14 @@ and the harness waits until every member is ready again.
   (Access-Requests with PAP, CHAP and MS-CHAPv2, all correct: rejects are held back `auth.reject.delay` on purpose and
   would set the p99) and `mix` (70 % accounting, 30 % authentication). Each step runs `--generators` radclient
   containers on the stack's network for `--duration` seconds at a share of the target rate.
-- A step **fails** when an accounting request is lost, an Access-Request times out or is answered wrongly, the p99
+- A step **fails** when an accounting request goes unanswered (no Accounting-Response after the load generator's
+  4 attempts, which radiusward allows since it never answers before the commit; whether acknowledged records survive is
+  what the [fault-injection tests](strategy.md) check), an Access-Request times out or is answered wrongly, the p99
   latency passes `--p99-limit` (500 ms), or less than 90 % of the target rate is answered (the achieved rate counts
   answers over the step's length, not requests sent).
 - After the first failed step the harness **bisects** between the last good and the failed rate until they are
   `--resolution` (10 %) apart; the highest rate that passed is the **ceiling**.
-- A step that only misses its rate while nothing was lost and p99 stayed within the limit was held back by the load
+- A step that only misses its rate while every request was answered and p99 stayed within the limit was held back by the load
   generators or the host, not by radiusward: it runs again with twice the generators (up to `--max-generators`).
   If it still misses, the ladder stops and the ceiling is a **lower bound**, shown as "≥" and marked `load_limited`.
 - `radclient load` catches up after a stall of up to 100 ms (a GC pause, a busy host) by sending faster for a moment,
@@ -72,7 +74,7 @@ and the harness waits until every member is ready again.
 | AWS | `scripts/bench-aws.sh` or `bench-aws.yml` on demand: the ECS stack with generators on their own instances ([below](#on-amazon-ecs)) | the ceiling per profile |
 
 On a MacBook (Colima, 8 vCPU) the first runs carried accounting at 1,000/s (p99 61 ms), authentication at 2,000/s
-(p99 29 ms) and the mix at 2,000/s with every step passing; a leader kill at 700/s lost nothing and caused no
+(p99 29 ms) and the mix at 2,000/s with every step passing; a leader kill at 700/s left nothing unanswered and caused no
 retransmission (longest wait 2.2 s).
 
 On a GitHub runner (4 vCPU shared by three members, two RADIUS servers, PostgreSQL and the generators), the run of
@@ -84,7 +86,7 @@ On a GitHub runner (4 vCPU shared by three members, two RADIUS servers, PostgreS
 | authentication | **≥ 15,053/s** | nothing: every step up to 16,000/s passed, p99 200 ms | RADIUS servers 0.7 each, members 0.2 |
 | mix (70/30) | **6,821/s** | p99 708 ms at 7,500/s | |
 
-A leader killed at 2,611/s lost nothing and caused no retransmission (longest wait 2.5 s). JMH: the full receive
+A leader killed at 2,611/s left nothing unanswered and caused no retransmission (longest wait 2.5 s). JMH: the full receive
 path at 1.3 operations/µs, about 1.3 million packets per second on one core. Accounting is bounded by replication
 and fsync on three members sharing four cores; authentication runs on the RADIUS servers and stays far from its limit. The
 numbers of one shared runner vary from run to run (the mix carried more accounting than the accounting ladder

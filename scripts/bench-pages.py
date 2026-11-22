@@ -66,6 +66,8 @@ def per_rate(steps):
 def pretty(reason):
     """A harness reason in plain words: 'p99 609.3 ms > 500.0 ms' → 'p99 609 ms, over 500 ms'."""
     import re
+    # runs recorded before 2026-11-22 said "lost" for requests that only went unanswered
+    reason = re.sub(r"(\d+) accounting requests lost", r"\1 accounting requests unanswered after 4 attempts", reason)
     reason = re.sub(r"p99 ([\d.]+) ms > ([\d.]+) ms",
                     lambda m: f"p99 {float(m.group(1)):,.0f} ms, over {float(m.group(2)):,.0f} ms", reason)
     return re.sub(r"only ([\d.]+) of (\d+) requests/s arrived",
@@ -205,10 +207,13 @@ def kpis(run):
     if f and "accounting" in f:
         a = f["accounting"]
         ok = not f.get("problems")
-        cards.append(kpi(f"{fmt(a.get('failed', 0))}<small> lost</small>", "Leader killed under load",
+        cards.append(kpi(f"{fmt(a.get('failed', 0))}<small> unanswered</small>", "Leader killed under load",
                          [f"the cluster leader killed at {fmt(f['target_rps'])} accounting requests/s",
                           f"{fmt(a.get('retransmissions'))} retransmissions, longest wait {fmt(a.get('max_ms'))} ms",
-                          "every acknowledged record kept" if ok else esc("; ".join(f["problems"]))],
+                          "every request answered within 4 attempts" if ok
+                          else esc("; ".join(pretty(p) for p in f["problems"])),
+                          "unanswered: no Accounting-Response after 4 attempts, which radiusward allows; that "
+                          "acknowledged records survive is checked by the fault-injection tests"],
                          "good" if ok else "bad"))
     return '<div class="kpis">' + "".join(cards) + "</div>"
 
@@ -276,7 +281,7 @@ def steps_table(w, limit):
                     f"<td class='num'>{s.get('generators', '')}</td><td>{esc(verdict)}</td></tr>")
     return (f"<details><summary>Every step, by rate</summary><p class='muted small'>After the first failed step the "
             f"harness bisects between the last good and the failed rate, so the run order (#) is not ascending. A step "
-            f"passes with nothing lost, p99 under {fmt(limit)} ms and at least 90 % of the rate answered.</p>"
+            f"passes with every request answered, p99 under {fmt(limit)} ms and at least 90 % of the rate answered.</p>"
             f"<table><tr><th class='num'>Target</th><th class='num'>Answered</th><th class='num'>p99</th><th class='num'>#</th>"
             f"<th class='num'>Generators</th><th>Result</th></tr>"
             + "".join(rows) + "</table></details>")
@@ -424,7 +429,7 @@ Accounting-Response goes out only once the record is stored with fsync on a majo
 that was acknowledged. This page shows how much load it carries, how fast it answers, and what a crash of the cluster
 leader costs under load — measured with the same open harness in every environment.</p>
 <p class="rules"><b>How a result is measured:</b> the request rate rises step by step. A step passes only if
-<b>no request is lost</b>, <b>99 % of the answers come within 500 ms</b> (p99) and at least 90 % of the target rate is
+<b>every request is answered</b> (within 4 attempts, as a NAS retries), <b>99 % of the answers come within 500 ms</b> (p99) and at least 90 % of the target rate is
 answered. The highest passing rate is the ceiling; "≥" marks a lower bound, where the limit lies higher.</p>
 {sections}
 {trend}

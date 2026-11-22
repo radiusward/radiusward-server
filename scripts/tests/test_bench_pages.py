@@ -32,7 +32,10 @@ class HelpersTest(unittest.TestCase):
     def test_reasons_in_plain_words(self):
         self.assertEqual(pages.pretty("p99 609.3 ms > 500.0 ms"), "p99 609 ms, over 500 ms")
         self.assertEqual(pages.pretty("only 3000.0 of 4000 requests/s arrived"), "only 3,000 of 4,000/s answered")
-        self.assertEqual(pages.pretty("3 accounting requests lost"), "3 accounting requests lost")
+        self.assertEqual(pages.pretty("3 accounting requests lost"), "3 accounting requests unanswered after 4 attempts",
+                         "runs recorded with the old wording read as the new")
+        self.assertEqual(pages.pretty("3 accounting requests unanswered after 4 attempts"),
+                         "3 accounting requests unanswered after 4 attempts")
 
     def test_a_rate_probed_again_shows_its_last_probe(self):
         steps = [{"target_rps": 2000, "generators": 1}, {"target_rps": 1000}, {"target_rps": 2000, "generators": 2}]
