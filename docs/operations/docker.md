@@ -50,15 +50,17 @@ docker compose -f compose.yaml -f compose.large.yaml up -d
 
 | Profile | Member | RADIUS server | `/dev/shm` member | Heap member / RADIUS server |
 |---|---|---|---|---|
-| small (default) | 1 GiB, 1 CPU | 384 MiB | 512 MiB | 384m / 192m |
+| small (default) | 1 GiB, 1 CPU | 512 MiB | 512 MiB | 256m / 192m |
 | standard | 2 GiB, 2 CPU | 768 MiB | 1 GiB | 1g / 384m |
 | large | see `compose.large.yaml` | | | 2560m / 768m |
 
 Tools run in the same image with their own heap: `radclient` 512m, `admin` 256m (its verifiers stream an ack log
-and keep one event per session), `probe`/`cluster-tool` 64m; `JAVA_OPTS` overrides it.
+and keep one event per session), `probe` 32m (committed as it grows, quick to start), `cluster-tool` 64m; `JAVA_OPTS` overrides it.
 
 Measured with the small profile ([ADR 0004](../adr/0004-memory-budget.md)): 2M sessions at ~32k requests/s
-stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per RADIUS server.
+stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per RADIUS server. A RADIUS server needs its heap (192m), about
+80 MiB for the JVM itself and up to about 100 MiB of Aeron buffers in `/dev/shm`, which fill only under heavy traffic;
+hence 512 MiB. At 384 MiB, a leader killed at 24,000 requests/s left a RADIUS server killed by the kernel for memory.
 
 ## Things to know
 
@@ -74,7 +76,8 @@ stay at ≤ 448 MiB unreclaimable per member and ≤ 321 MiB per RADIUS server.
   `cluster.disk.min.free` (default 1 GiB) or they report not ready; a full disk stops a member.
 - **fsync**: keep `archive.file.sync.level=2`. Anything lower can lose acknowledged events on power loss
   (measured, `PowerLossIT`).
-- Health checks call `radiusward probe http://127.0.0.1:9090/ready`.
+- Health checks read `/ready` with bash (`/dev/tcp`), not `radiusward probe`: a JVM started in the container every 5 s
+  adds tens of MiB to its memory, which counts against the limit.
 - A RADIUS server reloads its configuration on SIGHUP: `docker kill -s HUP <container>` (the entrypoint `exec`s Java, so
   the signal reaches it). What is reloaded: [ADR 0054](../adr/0054-config-reload.md).
 
