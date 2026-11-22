@@ -82,8 +82,8 @@ class VerdictTest(unittest.TestCase):
     def test_a_good_step_passes(self):
         self.assertEqual(bench.verdict(self.step(), 500), ([], False))
 
-    def test_lost_requests_latency_and_errors_are_the_servers(self):
-        for step, text in ((self.step(accounting={"failed": 3}), "3 accounting requests lost"),
+    def test_unanswered_requests_latency_and_errors_are_the_servers(self):
+        for step, text in ((self.step(accounting={"failed": 3}), "3 accounting requests unanswered after 4 attempts"),
                            (self.step(access={"timeouts": 2}), "2 Access-Request timeouts"),
                            (self.step(p99_ms=900.0), "p99 900.0 ms > 500 ms"),
                            (self.step(error="no generator summary"), "no generator summary")):

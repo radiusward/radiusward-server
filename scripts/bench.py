@@ -4,7 +4,7 @@
 """Benchmark harness (ADR 0066, docs/testing/benchmarks.md).
 
 Starts the compose stack (or uses a running one), climbs a ladder of request rates for accounting, authentication
-and a mix with radclient load generators in containers until p99 latency passes the limit, a request is lost or the
+and a mix with radclient load generators in containers until p99 latency passes the limit, a request goes unanswered or the
 target rate no longer arrives, samples every container's CPU and memory, kills the leader at 70 % of the accounting
 ceiling, optionally runs the JMH suite, and writes one JSON result.
 
@@ -41,6 +41,12 @@ SERVER_PORTS = [9190, 9191]
 STACK = None                               # LocalStack or EcsStack, set by main()
 ARGS = None
 MAX_PROBES = 19                            # per workload: 20M session ids each within the workload's 400M
+# The load generators' retransmissions (--retries): a request is given up after this many more attempts, as a NAS does
+# after its own. "Unanswered" means that: no Accounting-Response after them all, which radiusward allows (it does not
+# answer before the commit) -- not a record that was acknowledged and then went missing; this harness cannot see that.
+RETRIES = 3
+ATTEMPTS = RETRIES + 1
+
 LOAD = re.compile(r"^load: sent (\d+), acked (\d+), failed (\d+), retransmissions (\d+) in ([\d.]+)s \(([\d.]+) req/s\);"
                   r" latency p50 ([\d.]+) ms, p99 ([\d.]+) ms, max ([\d.]+) ms")
 ACCESS = re.compile(r"^access: sent (\d+) \((\d+) with a wrong password\), accepted (\d+), rejected (\d+), challenged (\d+),"
@@ -275,7 +281,7 @@ def generators(workload, rate, seconds, count, image, first_session, interim):
     for g in range(count):
         args = ["radclient", "load", "--server", ",".join(f"{gw}:1813" for gw in STACK.servers()),
                 "--retry-other-server", "--secret", ARGS.secret, "--nas", "20", "--duration", f"{seconds}s", "--timeout", "3s",
-                "--retries", "3", "--first-session", str(first_session + g * 2_000_000)]
+                "--retries", str(RETRIES), "--first-session", str(first_session + g * 2_000_000)]
         if workload == "accounting":
             args += ["--sessions", str(per * interim), "--rate", str(per), "--interim", f"{interim}s", "--no-stop"]
         elif workload == "access":
@@ -356,7 +362,7 @@ def combine(outputs, target, workload, seconds):
 
 
 def verdict(step, limit_ms):
-    """Why a step failed: (reasons, load_limited). A step that is short of its target rate while nothing was lost and
+    """Why a step failed: (reasons, load_limited). A step that is short of its target rate while every request was answered and
     p99 stayed within the limit was limited by the load generators or the host, not by radiusward."""
     reasons, server = [], False
     if "error" in step:
@@ -364,7 +370,7 @@ def verdict(step, limit_ms):
         server = True
     a, x = step.get("accounting", {}), step.get("access", {})
     if a.get("failed"):
-        reasons.append(f"{a['failed']} accounting requests lost")
+        reasons.append(f"{a['failed']} accounting requests unanswered after {ATTEMPTS} attempts")
         server = True
     if x.get("timeouts") or x.get("unexpected"):
         reasons.append(f"{x.get('timeouts', 0)} Access-Request timeouts, {x.get('unexpected', 0)} wrong answers")
@@ -454,7 +460,7 @@ def ladder(workload, steps, args, image, first):
     passed = [r["rps"] for r in results if not r["problems"]]
     load_limited = failed is not None and failed["load_limited"]
     if load_limited:
-        passed.append(failed["rps"])  # nothing lost, latency fine: radiusward carried what arrived
+        passed.append(failed["rps"])  # every request answered, latency fine: radiusward carried what arrived
     return {"steps": results, "ceiling_rps": max(passed, default=0), "load_limited": load_limited,
             "stopped_by": "; ".join(failed["problems"]) if failed else None}
 
@@ -496,10 +502,10 @@ def failover(ceiling, args, image):
     killer.join()
     step = combine(outputs, rate, "accounting", max(90, args.duration))
     step["killed_member"] = victim.get("member")
-    step["problems"] = verdict(step, 10_000)[0]  # a failover is allowed its gap; losses are not
+    step["problems"] = verdict(step, 10_000)[0]  # a failover is allowed its gap, not requests left unanswered
     log(f"  {step['rps']}/s, max {step.get('accounting', {}).get('max_ms')} ms, "
         f"{step.get('accounting', {}).get('retransmissions')} retransmissions"
-        + (f"  ✗ {'; '.join(step['problems'])}" if step["problems"] else "  ✓ nothing lost"))
+        + (f"  ✗ {'; '.join(step['problems'])}" if step["problems"] else "  ✓ every request answered"))
     STACK.recover()
     return step
 
