@@ -138,7 +138,7 @@
         <exec-plugin.version>3.7.0</exec-plugin.version>
         <build-helper.version>3.8.0</build-helper.version>
         <shade-plugin.version>3.6.2</shade-plugin.version>
-        <spotless.version>3.11.0</spotless.version>
+        <spotless.version>3.12.0</spotless.version>
         <palantir-java-format.version>2.103.0</palantir-java-format.version>
 
         <!-- Agrona 2.x / Aeron need access to jdk.internal.misc.Unsafe; every JVM we start must pass this -->
